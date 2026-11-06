@@ -156,15 +156,11 @@ struct OverviewArtifactRow: View {
                     .disabled(resource == nil || preparing)
                 Button("Quick Look", systemImage: "eye") { prepare(sharing: false) }
                     .disabled(resource == nil || preparing)
+                let toyBox = api.channelURL(channelID: store.id, files: [artifact.file])
                 Button("Open in Toy Box", systemImage: "arrow.up.forward.app") {
-                    guard let url = api.channelURL(channelID: store.id, files: [artifact.file]) else {
-                        error = "The Toy Box editor link is unavailable."
-                        return
-                    }
-                    openURL(url) { accepted in
-                        if !accepted { error = "The Toy Box editor could not be opened." }
-                    }
+                    if let toyBox { openURL(toyBox) }
                 }
+                .disabled(toyBox == nil)
                 Divider()
                 Button("Remove from Channel", systemImage: "trash", role: .destructive, action: remove)
                     .disabled(!canRemove)

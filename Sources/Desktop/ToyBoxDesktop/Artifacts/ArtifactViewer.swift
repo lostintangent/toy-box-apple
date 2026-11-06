@@ -512,6 +512,7 @@ struct ArtifactViewerToolbar: ToolbarContent {
 
     @ViewBuilder private var titleMenu: some View {
         Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { opener.openInToyBox(app: app) }
+            .disabled(opener.toyBoxURL(app: app) == nil)
         Button("Reload", systemImage: "arrow.clockwise") { opener.reload() }
             .disabled(opener.isUnavailable)
         Button("Copy Link", systemImage: "link") { opener.copyLink() }.disabled(opener.resource == nil)

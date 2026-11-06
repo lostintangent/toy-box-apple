@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 public enum ArtifactWebError: LocalizedError, Equatable, Sendable {
-    case invalidServer, missingRules, blockedNavigation, browserUnavailable, rootDocumentUnavailable, rootNavigationUnavailable
+    case invalidServer, missingRules, blockedNavigation, rootDocumentUnavailable, rootNavigationUnavailable
     case invalidReadingState
 
     public var errorDescription: String? {
@@ -10,7 +10,6 @@ public enum ArtifactWebError: LocalizedError, Equatable, Sendable {
         case .invalidServer: "The artifact's server address is unavailable."
         case .missingRules: "The artifact's network isolation could not be installed."
         case .blockedNavigation: "This document tried to open an unsupported address."
-        case .browserUnavailable: "The link could not be opened in your default browser."
         case .rootDocumentUnavailable: "The document's sandboxed address could not be created."
         case .rootNavigationUnavailable: "This document cannot replace its sandboxed page. Forms that navigate and other page navigation are not supported in the artifact viewer."
         case .invalidReadingState: "The document's reading position could not be saved."

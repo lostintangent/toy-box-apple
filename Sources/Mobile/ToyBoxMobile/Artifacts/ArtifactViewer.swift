@@ -193,8 +193,10 @@ struct ArtifactViewer: View {
             .labelStyle(.iconOnly)
             .disabled(!canPrepareOriginal)
             Menu {
-                Button("Open in Toy Box", systemImage: "arrow.up.forward.app", action: openInToyBox)
-                    .disabled(session.isUnavailable || session.artifact == nil)
+                Button("Open in Toy Box", systemImage: "arrow.up.forward.app") {
+                    if let toyBoxURL { openURL(toyBoxURL) }
+                }
+                .disabled(session.isUnavailable || toyBoxURL == nil)
                 Button("Reload", systemImage: "arrow.clockwise") { reader.reload(session) }
                     .disabled(session.isUnavailable || session.isLoading)
                 Button("Copy Link", systemImage: "link") { UIPasteboard.general.url = session.resource }
@@ -250,16 +252,10 @@ struct ArtifactViewer: View {
         withAnimation(.easeInOut(duration: 0.2)) { _ = session.select(id) }
     }
 
-    private func openInToyBox() {
+    private var toyBoxURL: URL? {
         guard let artifact = session.artifact, let channel = session.channelID,
-              let api = app.api, api.baseURL == session.server,
-              let url = api.channelURL(channelID: channel, files: [artifact.file]) else {
-            session.actionError = "The Toy Box editor link is unavailable."
-            return
-        }
-        openURL(url) { accepted in
-            if !accepted { session.actionError = "The Toy Box editor could not be opened." }
-        }
+              let api = app.api, api.baseURL == session.server else { return nil }
+        return api.channelURL(channelID: channel, files: [artifact.file])
     }
 }
 

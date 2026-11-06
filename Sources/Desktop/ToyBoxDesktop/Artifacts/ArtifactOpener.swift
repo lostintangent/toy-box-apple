@@ -170,13 +170,14 @@ final class ArtifactOpener {
         if !NSWorkspace.shared.open(file) { actionError = "The file could not be opened by its default application." }
     }
 
+    func toyBoxURL(app: AppModel) -> URL? {
+        guard let artifact, let channelID = session.channelID else { return nil }
+        return app.channelURL(channelID: channelID, files: [artifact.file])
+    }
+
     func openInToyBox(app: AppModel) {
-        guard let artifact, let channelID = session.channelID,
-              let url = app.channelURL(channelID: channelID, files: [artifact.file]) else {
-            actionError = "The channel's Toy Box editor link is unavailable."
-            return
-        }
-        if !NSWorkspace.shared.open(url) { actionError = "The Toy Box editor could not be opened." }
+        guard let url = toyBoxURL(app: app) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     var canPageUsingKeys: Bool {

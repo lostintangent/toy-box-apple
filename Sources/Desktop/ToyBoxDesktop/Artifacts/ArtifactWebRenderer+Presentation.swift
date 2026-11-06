@@ -3,20 +3,18 @@ import ToyBoxUI
 import WebKit
 
 extension ArtifactWebRenderer {
-    convenience init(openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
+    convenience init(openURL: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) }) {
         self.init(presentation: MacArtifactWebPresentation(openURL: openURL))
     }
 }
 
 @MainActor
 private final class MacArtifactWebPresentation: ArtifactWebPresenting {
-    let openURL: (URL) -> Bool
+    let openURL: (URL) -> Void
 
-    init(openURL: @escaping (URL) -> Bool) { self.openURL = openURL }
+    init(openURL: @escaping (URL) -> Void) { self.openURL = openURL }
 
-    func openInBrowser(_ url: URL, completion: @escaping @MainActor @Sendable (Bool) -> Void) {
-        completion(openURL(url))
-    }
+    func openInBrowser(_ url: URL) { openURL(url) }
 
     func showAlert(_ message: String, for webView: WKWebView,
                    completion: @escaping @MainActor @Sendable () -> Void) -> Bool {

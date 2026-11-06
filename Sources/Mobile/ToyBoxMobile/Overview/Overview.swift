@@ -109,7 +109,6 @@ final class ChannelOverview {
     var navigationPath: [OverviewRoute] = []
     var expandedSections: [OverviewSection: Bool] = [:]
     var purposeExpanded = false
-    var previewError: String?
     var taskDisclosure: [String: Disclosure] = [:]
     var showsOnlyInProgressTasks = false
     var showsOnlyWorkingAgents = false

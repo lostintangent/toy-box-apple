@@ -7,7 +7,7 @@ import WebKit
 @MainActor
 /// Dialog methods return false without completing when native presentation is unavailable.
 public protocol ArtifactWebPresenting: AnyObject {
-    func openInBrowser(_ url: URL, completion: @escaping @MainActor @Sendable (Bool) -> Void)
+    func openInBrowser(_ url: URL)
     func showAlert(_ message: String, for webView: WKWebView,
                    completion: @escaping @MainActor @Sendable () -> Void) -> Bool
     func showConfirmation(_ message: String, for webView: WKWebView,
@@ -192,7 +192,7 @@ public final class ArtifactWebRenderer: NSObject, WKNavigationDelegate, WKUIDele
             error = reason.localizedDescription
             decisionHandler(.cancel)
         case .external(let url):
-            openInBrowser(url)
+            presentation.openInBrowser(url)
             decisionHandler(.cancel)
         case .fragment(let fragment):
             decisionHandler(.cancel)
@@ -215,7 +215,7 @@ public final class ArtifactWebRenderer: NSObject, WKNavigationDelegate, WKUIDele
     public func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                         for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         switch ArtifactWebPolicy.popup(navigationAction.request.url, kind: kind(navigationAction)) {
-        case .external(let url): openInBrowser(url)
+        case .external(let url): presentation.openInBrowser(url)
         case .block(let reason): error = reason.localizedDescription
         }
         return nil
@@ -245,14 +245,6 @@ public final class ArtifactWebRenderer: NSObject, WKNavigationDelegate, WKUIDele
         if !presentation.showPrompt(prompt, defaultText: defaultText, for: webView, completion: completionHandler) {
             error = "This document tried to show a dialog before its viewer was ready."
             completionHandler(nil)
-        }
-    }
-
-    private func openInBrowser(_ url: URL) {
-        let token = generation
-        presentation.openInBrowser(url) { [weak self] opened in
-            guard let self, generation == token else { return }
-            if !opened { error = ArtifactWebError.browserUnavailable.localizedDescription }
         }
     }
 

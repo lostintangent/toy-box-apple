@@ -135,10 +135,7 @@ struct ArtifactViewerTests {
         let fixture = try ArtifactHTTPFixture()
         try await fixture.start()
         defer { fixture.stop() }
-        let web = ArtifactWebRenderer(openURL: { _ in
-            Issue.record("The fixture must not open a browser.")
-            return false
-        })
+        let web = ArtifactWebRenderer(openURL: { _ in Issue.record("The fixture must not open a browser.") })
         defer { web.stop() }
         let probe = ArtifactWebProbe()
         probe.attach(to: web.webView)
@@ -215,7 +212,7 @@ struct ArtifactViewerTests {
         try await fixture.start()
         defer { fixture.stop() }
         var opened: [URL] = []
-        let web = ArtifactWebRenderer(openURL: { opened.append($0); return true })
+        let web = ArtifactWebRenderer(openURL: { opened.append($0) })
         defer { web.stop() }
         web.webView.frame = NSRect(x: 0, y: 0, width: 640, height: 400)
         #expect(web.webView.configuration.userContentController.userScripts.isEmpty)
@@ -574,10 +571,7 @@ struct ArtifactViewerTests {
         try await fixture.start()
         defer { fixture.stop() }
         let destination = fixture.url("/api/serve/test/next.html")
-        let web = ArtifactWebRenderer(openURL: { _ in
-            Issue.record("The fixture must not open a browser.")
-            return false
-        })
+        let web = ArtifactWebRenderer(openURL: { _ in Issue.record("The fixture must not open a browser.") })
         defer { web.stop() }
         await web.load("""
             <!doctype html><html><body><form id="form" method="\(method == "form-get" ? "get" : "post")" action="\(destination.absoluteString)">

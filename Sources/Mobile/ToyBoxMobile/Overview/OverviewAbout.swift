@@ -41,10 +41,7 @@ struct OverviewAboutSection: View {
                                 OverviewFolderRow(directory: directory)
                                     .id(directory)
                             }
-                            if let preview {
-                                previewRow(preview)
-                                if let error = session.previewError { ManagementError(message: error) }
-                            }
+                            if let preview { previewRow(preview) }
                         }
                         .symbolRenderingMode(.monochrome)
                     }
@@ -73,10 +70,7 @@ struct OverviewAboutSection: View {
             }
         } else if preview.kind == "url", let address = preview.url.flatMap(store.api.resourceURL) {
             Button {
-                session.previewError = nil
-                openURL(address) { accepted in
-                    if !accepted { session.previewError = "The preview could not be opened." }
-                }
+                openURL(address)
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
                     previewTitle("Open Preview", systemImage: "globe")

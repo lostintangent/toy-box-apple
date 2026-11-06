@@ -13,11 +13,7 @@ extension ArtifactWebRenderer {
 
 @MainActor
 private final class PhoneArtifactWebPresentation: ArtifactWebPresenting {
-    func openInBrowser(_ url: URL, completion: @escaping @MainActor @Sendable (Bool) -> Void) {
-        UIApplication.shared.open(url, options: [:]) { opened in
-            Task { @MainActor in completion(opened) }
-        }
-    }
+    func openInBrowser(_ url: URL) { UIApplication.shared.open(url) }
 
     func showAlert(_ message: String, for webView: WKWebView,
                    completion: @escaping @MainActor @Sendable () -> Void) -> Bool {

@@ -14,7 +14,7 @@ import ToyBoxUI
 /// rows stay, and `OverviewSlots` hands each row the new channel's item at its position, because
 /// building rows is most of what a switch costs here. Everything that belongs to one channel still
 /// starts over: the scroll position, each row's disclosure, popover, Quick Look and run state, and
-/// About's purpose expansion and errors. Rows keep that state per item and visit, so it never
+/// About's purpose expansion. Rows keep that state per item and visit, so it never
 /// follows a row to another channel. Collapsed sections belong to the window and stay as they are.
 struct OverviewInspector: View {
     let store: ChannelStore
@@ -223,11 +223,10 @@ private struct OverviewAbout: View {
                         OverviewFolderRow(
                             directory: directory,
                             availability: app.folderAvailability(path: directory, server: store.api.baseURL),
-                            visit: visit,
                             channelURL: { [app, id = store.id] in app.channelURL(channelID: id) })
                     }
                     if let preview {
-                        OverviewPreviewRow(preview: preview, api: store.api, visit: visit)
+                        OverviewPreviewRow(preview: preview, api: store.api)
                     }
                 }
                 .padding(.top, 10)
@@ -366,15 +365,7 @@ struct OverviewFolderRow: View {
     let directory: String
     /// Read from the app's shared folder cache, the same check as the sidebar's folder token.
     let availability: ChannelFolderAvailability
-    /// The channel visit the row belongs to, so an error stays with the channel it happened in.
-    var visit = ""
     let channelURL: () -> URL?
-    @ViewState private var errors = OverviewItemState<String?>(nil)
-
-    private var error: String? {
-        get { errors[visit] }
-        nonmutating set { errors[visit] = newValue }
-    }
 
     private var help: String {
         switch availability {
@@ -386,45 +377,38 @@ struct OverviewFolderRow: View {
 
     var body: some View {
         let revealable = availability == .openable
-        VStack(alignment: .leading, spacing: 4) {
-            OverviewPropertyRow(symbol: availability == .missing ? "questionmark.folder" : "folder") {
-                HStack(spacing: 4) {
-                    Text(ChannelFolderName.name(of: directory))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                        .help(help)
-                        .accessibilityLabel("Folder")
-                        .accessibilityValue(directory)
-                        .accessibilityHint(revealable ? "" : help)
-                    if revealable {
-                        Button(action: showInFinder) {
-                            Image(systemName: "arrow.forward.circle.fill")
-                                .foregroundStyle(.tertiary)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Show in Finder")
-                        .accessibilityLabel("Show in Finder")
+        OverviewPropertyRow(symbol: availability == .missing ? "questionmark.folder" : "folder") {
+            HStack(spacing: 4) {
+                Text(ChannelFolderName.name(of: directory))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+                    .help(help)
+                    .accessibilityLabel("Folder")
+                    .accessibilityValue(directory)
+                    .accessibilityHint(revealable ? "" : help)
+                if revealable {
+                    Button(action: showInFinder) {
+                        Image(systemName: "arrow.forward.circle.fill")
+                            .foregroundStyle(.tertiary)
+                            .contentShape(Rectangle())
                     }
-                    Spacer(minLength: 0)
+                    .buttonStyle(.plain)
+                    .help("Show in Finder")
+                    .accessibilityLabel("Show in Finder")
                 }
+                Spacer(minLength: 0)
             }
-            .contextMenu {
-                if revealable { Button("Show in Finder", action: showInFinder) }
-                Button("Copy Path") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(directory, forType: .string)
-                }
-                Button("Open in Toy Box") {
-                    guard let url = channelURL() else {
-                        error = "The channel URL is unavailable."
-                        return
-                    }
-                    if !NSWorkspace.shared.open(url) { error = "Toy Box could not be opened." }
-                }
+        }
+        .contextMenu {
+            if revealable { Button("Show in Finder", action: showInFinder) }
+            Button("Copy Path") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(directory, forType: .string)
             }
-            if let error { ManagementError(message: error) }
+            let url = channelURL()
+            Button("Open in Toy Box") { if let url { NSWorkspace.shared.open(url) } }
+                .disabled(url == nil)
         }
     }
 
@@ -439,14 +423,6 @@ struct OverviewPreviewRow: View {
     @Environment(\.openWindow) private var openWindow
     let preview: ChannelPreview
     let api: ChannelAPI
-    /// The channel visit the row belongs to, so an error stays with the channel it happened in.
-    let visit: String
-    @ViewState private var errors = OverviewItemState<String?>(nil)
-
-    private var error: String? {
-        get { errors[visit] }
-        nonmutating set { errors[visit] = newValue }
-    }
 
     private var target: URL? {
         preview.kind == "url" ? preview.url.flatMap(api.resourceURL) : nil
@@ -460,30 +436,29 @@ struct OverviewPreviewRow: View {
         return host + port + path
     }
 
+    private var screenID: String? {
+        preview.kind == "screen" ? preview.screenId : nil
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            OverviewPropertyRow(symbol: "play.rectangle") {
-                HStack(spacing: 0) {
-                    Button(action: open) {
-                        Text(title).lineLimit(1).truncationMode(.middle)
-                    }
-                    .buttonStyle(.link)
-                    .help(preview.kind == "url"
-                          ? (target?.absoluteString ?? preview.url ?? "Preview")
-                          : "Opens this window preview")
-                    .accessibilityLabel("Preview, \(title)")
-                    Spacer(minLength: 0)
+        OverviewPropertyRow(symbol: "play.rectangle") {
+            HStack(spacing: 0) {
+                Button(action: open) {
+                    Text(title).lineLimit(1).truncationMode(.middle)
                 }
+                .buttonStyle(.link)
+                .disabled(screenID == nil && target == nil)
+                .help(preview.kind == "url"
+                      ? (target?.absoluteString ?? preview.url ?? "Preview")
+                      : "Opens this window preview")
+                .accessibilityLabel("Preview, \(title)")
+                Spacer(minLength: 0)
             }
-            if let error { ManagementError(message: error) }
         }
     }
 
     private func open() {
-        if preview.kind == "screen", let screenID = preview.screenId {
-            return openWindow(id: "screens", value: screenID)
-        }
-        guard let target else { error = "The preview URL is unavailable."; return }
-        error = NSWorkspace.shared.open(target) ? nil : "The preview could not be opened."
+        if let screenID { return openWindow(id: "screens", value: screenID) }
+        if let target { NSWorkspace.shared.open(target) }
     }
 }
