@@ -1143,7 +1143,8 @@ orange border to pending bubbles only. VoiceOver reads "Needs your reply" with t
 exposes Reply as an action. On the phone, a header too wide for one line stacks, and its "Needs
 your reply" or "Replied" wraps like the name, so at the largest text sizes the header never widens
 the bubble past its column.
-Reply and Copy Message appear on hover or keyboard focus and in the context menu. As with AppKit's
+Reply, Copy Message and Bookmark appear on hover or keyboard focus, in the toolbar Bookmarks
+describes, and in the context menu. As with AppKit's
 tracking areas, a message that slides under a still pointer, as when the transcript follows a new
 message or scrolls, shows them once the pointer moves. After the reader's own scroll settles, the
 message under the still pointer is selectable at once, so a drag can start without moving first.
@@ -1151,7 +1152,8 @@ One the transcript carries there itself, as when following a new message, waits 
 to move. Reply prepends the agent's mention once,
 preserves the draft, focuses the composer and leaves the caret after the mention. Deleted agents
 cannot be replied to. Your own
-messages expose Copy Message as an accessibility action, as well as in their context menu. Keep
+messages get the same toolbar, mirrored, and expose Copy Message as an accessibility action and in
+their context menu. Keep
 message selection, link selection and context menus usable independently.
 
 System rows are channel events, not speech, so they sit in the neutral center of the
@@ -1499,6 +1501,110 @@ when results remain incomplete. Preserve the text field's native editable value.
 Use semantic colors in both appearances, the system focus treatment and native Increase
 Contrast/Reduce Transparency behavior. Reduce Motion uses the reveal path's nonmoving alternative.
 
+#### Bookmarks
+
+Bookmarks mark user and agent messages to come back to. They belong to the user, and every
+client shares them (see Protocol). System rows can't be bookmarked, and neither can a row that's
+still sending or wasn't sent, since it has no sequence yet. When `ChannelState.bookmarks` is nil
+the server predates bookmarks, so neither app shows any bookmark control, mark, menu item, button
+or list.
+
+**Symbols and color.** The outline `bookmark` means Bookmark, a system blue `bookmark.fill` means
+bookmarked, and `bookmark.slash` means Remove Bookmark in menus and swipe actions. It's the New
+divider's blue, and only the bookmarked state uses it. Every way to bookmark or remove one is
+disabled while the channel isn't connected, like Send, and existing marks stay.
+
+**Mac hover toolbar.** Every message shares one hover toolbar, 24 points tall: 24 x 20 buttons
+with 13-point symbols, 2 points apart inside 2 points of padding, on `.regularMaterial` in an
+8-point continuous rounded rectangle with the 0.5-point separator hairline. A 12-point separator
+rule with 3 points on each side sets Bookmark apart. Agent messages read Reply, Copy, rule,
+Bookmark at the bubble's top trailing corner, 8 points in from its edge, and a deleted agent's
+drop Reply. The user's own messages mirror it at the top leading corner: Bookmark, rule, Copy.
+The toolbar's top sits 16 points above the bubble, so it ends 8 points into the bubble's 10-point
+top padding and never covers the first line. It never covers the header either. Where it would
+overlap the header's text, as on a short bubble, it slides outward to start 8 points past that
+text, or to end 8 points before it on the user's side, even beyond the bubble.
+
+**Hover feedback.** Each button highlights under the pointer like an accessory-bar button: a
+6-point continuous rounded fill, concentric with the toolbar, of primary at 12% in Dark and 8% in
+Light, 17% and 13% while pressed, and its symbol turns from secondary to primary ink. The fill
+fades over 120 ms. Full Keyboard Access draws the system focus ring on the focused button. One
+small button style draws this for the whole toolbar, as `TokenCapsuleButtonStyle` does for the
+sidebar's capsule. Help reads "Reply to Ada", "Copy Message", "Bookmark" or "Remove Bookmark".
+
+**Mac at rest.** A bookmarked message keeps a chip showing when it isn't hovered: the toolbar
+with only its blue bookmark, 28 x 24, exactly where the bookmark sits in the full toolbar.
+Hovering or focusing the message grows the rest of the toolbar out of the chip over 120 ms, so the
+bookmark never moves, and clicking it removes the bookmark, like a tapback in Messages. Reduce
+Motion fades the other buttons in without the width change. The context menu ends with a divider
+and Bookmark or Remove Bookmark, after Reply to Ada and Copy Message on agent messages and after
+Copy Message on the user's.
+
+**Phone menu and mark.** The long-press menu ends with its own section holding Bookmark or Remove
+Bookmark, after Reply, Copy Message and Select Text. The user's own messages have no Reply. A
+bookmarked message shows a 24-point circle of regular glass holding a 12-point blue
+`bookmark.fill` on the bubble's outer top corner, trailing for agents and leading for the user's
+own. It sits where the Mac's chip does, 16 points above the bubble and 8 in from its edge, under
+the same header rule. The mark is display-only, with no hit testing, because a 24-point target
+invites mis-taps. Long-press or the list removes a bookmark.
+
+**Accessibility.** On both apps the message's label adds "Bookmarked", and Bookmark or Remove
+Bookmark is one of its actions. Using that action announces "Bookmarked" or "Bookmark removed"
+once. The Mac's chip and the phone's mark are hidden, since the label carries the state.
+
+**Failed writes.** A toggle shows at once and makes one attempt. If the write fails, the mark goes
+back and the channel window shows one alert, "Couldn't Bookmark Message" or "Couldn't Remove
+Bookmark", with the readable failure and OK. Toggling again is the retry. Removing from either
+list reports through the same alert.
+
+**Opening the list.** On the Mac, Bookmarks leads the composer tray while the channel has any: a
+28-high borderless button with the blue `bookmark.fill` and the count in the tray's 12-point
+secondary label, with help and label "Bookmarks" and the count as its value. Bookmarks alone make
+the tray visible, and the button never collapses. It opens a `.popover(arrowEdge: .top)` like the
+artifacts list, with the same native glass. On the phone, a 44-point circle of
+`.regular.interactive()` glass with a blue `bookmark.fill` at body size leads the floating
+activity row, 8 points before the working capsule, in every form of the row. It's labeled
+"Bookmarks" with the count as its value and offers the large-content viewer. It opens the list
+exactly as the capsule opens Working Now: `.popover` with `.presentationDetents([.medium,
+.large])`, a sheet on the folded phone and an anchored popover when the Duo is unfolded. Either
+button stays while its list is open, even after the last bookmark goes, so the list keeps its
+anchor.
+
+**The list.** Both lists show ChannelClient's shared list of bookmarked messages, newest first,
+with no filter. Each row has the author's avatar and name, the time and a preview. The user's own
+messages show "You" with a secondary `person.crop.circle.fill`, and deleted agents keep the
+deleted identity. Times use `ChannelActivityTime`: 4:55 PM, Yesterday, a weekday, then a short
+date. VoiceOver reads them as "today at 4:55 PM", never "Last activity". The preview is each
+entry's shared `preview`, the first line of the message's plain text as the web shows it, or the
+attachment count when it has no text. Previews truncate natively at the tail, with no fade.
+Choosing a row closes the list and calls `interaction.reveal(sequence:)`, which pages back and
+scrolls there like Input Needed.
+
+| Part | Mac | iPhone |
+| --- | --- | --- |
+| Frame | "Bookmarks" in headline at a 16-point inset, then the rows. 360 wide, max 420 high, scrolling | `NavigationStack` with the inline title "Bookmarks" and a trailing Close (`role: .close`, "Close Bookmarks"), like Working Now. A plain `List` with its background hidden, so the glass shows, and native separators |
+| Row | At least 48 high and 2 apart, with 8-point padding inside an 8-point inset, so avatars align with the title. A 20-point avatar, 8 points to the text. The name in 13 semibold with the time trailing in 11 secondary, and the preview in 12 secondary on one line | A 28-point avatar centered on the name's line, 12 points to the text. The name in body semibold with the time trailing in subheadline, and the preview in subheadline on up to two lines, both in `ChannelInk.secondary` |
+| Highlight | One highlight that the pointer and the arrow keys share: primary at 8% in Dark and 6% in Light, in a 6-point continuous rounded rectangle, the quiet gray of the toolbar's hover. The highlighted row's time becomes a Remove button, `xmark.circle.fill` in secondary, with help "Remove Bookmark" | The system's row highlight on touch |
+| Remove | The highlighted row's Remove button, the Delete key or Remove Bookmark in the row's context menu | A trailing swipe to Remove, `bookmark.slash` in blue, with full swipe allowed |
+| Open | Click, Return or Space | Tap |
+
+**Mac keyboard.** The list is one keyboard target, like a menu, and takes focus when the popover
+opens, with no row highlighted. Down highlights the newest row and Up the oldest. After that each
+arrow moves one row, stopping at the ends and scrolling the row into view. Hovering a row moves
+the highlight there, so the arrows continue from wherever the pointer left it. Return or Space
+opens the highlighted row. Delete or Forward Delete removes it and moves the highlight to the next
+row, or to the previous one at the end. With nothing highlighted, these keys do nothing. Escape
+closes the list, and focus returns where it was. VoiceOver reads each row as one button, "Lead,
+today at 4:55 PM, Where should the shared library sit…", with a Remove Bookmark action, and the
+highlighted row is selected.
+
+**States.** Opening either list calls `loadHistory(through:)` with the oldest bookmark. A row whose
+message isn't loaded yet shows a static placeholder at its final size, a quaternary circle for the
+avatar and two rounded bars for the name and preview, with no shimmer and no actions. If loading
+fails, a footer under the placeholders reads "Couldn't load older messages" with Try Again.
+Removing the last bookmark while the list is open shows "No Bookmarks" in a
+`ContentUnavailableView` with `bookmark`, and the button leaves when the list closes.
+
 ### Composer and tray
 
 The composer covers:
@@ -1667,19 +1773,21 @@ Again, never an automatic retry. Keep the original UUID when verifying or explic
 that attempted send so a 409 cannot deliver it twice. Do not clear a newer draft when an older
 send eventually succeeds.
 
-The tray is a compact 28-point header inside the floating composer. Lead with the newest shared
+The tray is a compact 28-point header inside the floating composer. Lead with Bookmarks when the
+channel has any (see Bookmarks), then the newest shared
 artifact as a borderless document action, then `+N` for remaining artifacts. Trailing controls are
 Tasks with direct-root `done/total`, and Preview when set. Tasks speaks as the label "Tasks" with
 the value "1 of 4 done", never the visible slash. Keep every action on the same baseline,
 without a separate progress underline. Zero-content controls
 are absent. When space is insufficient, collapse artifact names before hiding Tasks or Preview,
-and use a native overflow menu rather than a horizontally scrolling toolbar. Artifacts and Tasks
-open anchored native popovers, preferred 360 wide, max 420 high. Task rows are the same projection
+and use a native overflow menu rather than a horizontally scrolling toolbar. Bookmarks, Artifacts
+and Tasks open anchored native popovers, preferred 360 wide, max 420 high. Task rows are the same projection
 as the inspector. URL Preview opens the configured URL in the default browser. Screen Preview
 opens the screen's live window (see Screens).
 
 The tray is Mac only. The iPhone composer has no tray at any screen height, size class or text
-size. Tasks, Artifacts and Preview live in Overview, with no separate channel bar button.
+size. Tasks, Artifacts and Preview live in Overview, with no separate channel bar button, and
+Bookmarks open from the floating activity row.
 
 ### Overview
 
