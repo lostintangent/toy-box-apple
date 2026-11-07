@@ -136,7 +136,7 @@ struct TranscriptFindTests {
         try #require(entries.count == 2)
         let interaction = ChannelInteraction()
         func child(_ entry: AgentRunEntry, query: String) -> TranscriptAgentMessage {
-            .init(entry: entry, agent: agent, agents: [agent], api: api, interaction: interaction,
+            .init(entry: entry, agent: agent, agents: [agent], channelID: "find", api: api, interaction: interaction,
                   statusReactions: [], expanded: false,
                   findHighlight: entry.message.sequence == 1 ? .mac(query: query, isCurrent: true) : nil,
                   onSetExpanded: { _, _ in })

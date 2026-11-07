@@ -54,7 +54,7 @@ struct TranscriptTests {
         let api = try ChannelAPI(serverURL: "https://show-more.invalid")
         for expanded in [false, true] {
             let host = NSHostingView(rootView: TranscriptAgentMessage(
-                entry: entries[0], agent: lead, agents: [lead, moss], api: api, interaction: ChannelInteraction(),
+                entry: entries[0], agent: lead, agents: [lead, moss], channelID: "show-more", api: api, interaction: ChannelInteraction(),
                 statusReactions: [], expanded: expanded, onSetExpanded: { _, _ in }).frame(width: 500))
             host.frame = NSRect(x: 0, y: 0, width: 500, height: 800)
             host.layoutSubtreeIfNeeded()

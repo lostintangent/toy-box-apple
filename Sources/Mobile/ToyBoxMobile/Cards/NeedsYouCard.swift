@@ -133,7 +133,9 @@ struct NeedsYouCard: View {
             // A choice holds the card as it was while it sends, as the talk card holds its note.
             let isSending = isReplying && cards.phase == .sending
             TranscriptRequestActions(spacing: 8, sequence: entry.sequence, choices: isSending ? entry.heldChoices : choices,
-                                     replyHelp: "Reply to \(requester)", onChoose: choose, onReply: reply)
+                                     replyHelp: "Reply to \(requester)",
+                                     readAloud: .init(channelID: channel.id, sequence: entry.sequence, text: markdown),
+                                     onChoose: choose, onReply: reply)
                 .controlSize(.small)
                 .font(.footnote)
                 .labelStyle(InlineLabelStyle())

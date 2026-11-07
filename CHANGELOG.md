@@ -1,6 +1,16 @@
 # Changelog
 
+## Mac 0.1.26
+
+### Features
+
+- A request waiting for you can now be read aloud, so you can hear it while you do something else.
+
 ## iPhone 0.1.24
+
+### Features
+
+- A request waiting for you can now be read aloud, from the channel list or the conversation, and it keeps reading if you lock your phone.
 
 ### Bugs/Polish
 

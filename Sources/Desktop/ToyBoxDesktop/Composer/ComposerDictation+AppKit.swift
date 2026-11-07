@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import ChannelClient
 import Speech
+import ToyBoxUI
 
 extension ComposerDictation {
     convenience init() { self.init(system: .live) }
@@ -41,7 +42,11 @@ extension DictationSystem {
                 [.denied, .restricted].contains(SFSpeechRecognizer.authorizationStatus())
             },
             installAssets: DictationRecognizer.installAssets,
-            makeSource: { MicrophoneDictationSource() },
+            makeSource: {
+                // The microphone would hear the reader's voice.
+                TranscriptReadAloud.shared.stop()
+                return MicrophoneDictationSource()
+            },
             makeRecognizer: { DictationRecognizer(locale: $0, contextualStrings: $1, source: $2) },
             announce: { message in
                 guard let element = NSApp.keyWindow ?? NSApp.mainWindow else { return }

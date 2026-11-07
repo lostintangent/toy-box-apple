@@ -2,6 +2,7 @@ import AVFoundation
 import ChannelClient
 import OSLog
 import Speech
+import ToyBoxUI
 import UIKit
 
 extension DictationSystem {
@@ -21,7 +22,11 @@ extension DictationSystem {
                 [.denied, .restricted].contains(SFSpeechRecognizer.authorizationStatus())
             },
             installAssets: DictationRecognizer.installAssets,
-            makeSource: { MobileDictationAudioSource() },
+            makeSource: {
+                // The microphone takes the audio session next, so the reader leaves it active.
+                TranscriptReadAloud.shared.stop(releasingAudio: false)
+                return MobileDictationAudioSource()
+            },
             makeRecognizer: { DictationRecognizer(locale: $0, contextualStrings: $1, source: $2) },
             announce: { UIAccessibility.post(notification: .announcement, argument: $0) },
             openSettings: { _ in

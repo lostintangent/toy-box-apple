@@ -109,7 +109,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                     VStack(alignment: .leading, spacing: TranscriptSpacing.entry) {
                         ForEach(entries) { entry in
                             TranscriptAgentMessage(entry: entry, agent: agent, agents: channel.agents,
-                                                   api: channel.api, interaction: interaction,
+                                                   channelID: channel.id, api: channel.api, interaction: interaction,
                                                    statusReactions: statusReactions[entry.message.sequence] ?? [],
                                                    expanded: expandedMessageIds.contains(entry.id),
                                                    findHighlight: findHighlights[entry.message.sequence],
@@ -296,6 +296,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
     let entry: AgentRunEntry
     let agent: ChannelAgent
     let agents: [ChannelAgent]
+    let channelID: String
     let api: ChannelAPI
     let interaction: ChannelInteraction
     let statusReactions: [ChannelReaction]
@@ -315,7 +316,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.entry == rhs.entry && lhs.agent == rhs.agent && lhs.agents == rhs.agents
-            && lhs.api.baseURL == rhs.api.baseURL && lhs.interaction === rhs.interaction
+            && lhs.channelID == rhs.channelID && lhs.api.baseURL == rhs.api.baseURL && lhs.interaction === rhs.interaction
             && lhs.statusReactions == rhs.statusReactions && lhs.expanded == rhs.expanded
             && lhs.findHighlight == rhs.findHighlight && lhs.choices == rhs.choices
             && lhs.bookmark == rhs.bookmark
@@ -340,7 +341,10 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
                     }
                     if isPending && agent.deleted != true {
                         TranscriptRequestActions(spacing: 6, sequence: entry.message.sequence, choices: choices,
-                                                 replyHelp: "Reply to \(agent.name)", onChoose: onChoose) {
+                                                 replyHelp: "Reply to \(agent.name)",
+                                                 readAloud: .init(channelID: channelID, sequence: entry.message.sequence,
+                                                                  text: entry.message.text),
+                                                 onChoose: onChoose) {
                             interaction.reply(to: agent)
                         }
                         .controlSize(.small)

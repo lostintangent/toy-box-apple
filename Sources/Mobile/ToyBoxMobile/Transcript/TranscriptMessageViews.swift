@@ -6,11 +6,12 @@ import ToyBoxUI
 
 /// Everything a row needs from its channel, compared cheaply so unchanged rows skip their bodies.
 struct TranscriptRowChannel: Equatable {
+    let id: String
     let agents: [ChannelAgent]
     let api: ChannelAPI
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.agents == rhs.agents && lhs.api.baseURL == rhs.api.baseURL
+        lhs.id == rhs.id && lhs.agents == rhs.agents && lhs.api.baseURL == rhs.api.baseURL
     }
 }
 
@@ -230,7 +231,10 @@ struct TranscriptAgentMessage: View {
                         }
                         if entry.request == .pending && agent.deleted != true {
                             TranscriptRequestActions(spacing: 8, sequence: entry.message.sequence, choices: choices,
-                                                     replyHelp: "Reply to \(agent.name)", onChoose: onChoose) {
+                                                     replyHelp: "Reply to \(agent.name)",
+                                                     readAloud: .init(channelID: channel.id, sequence: entry.message.sequence,
+                                                                      text: entry.message.text),
+                                                     onChoose: onChoose) {
                                 interaction.reply(to: agent)
                             }
                             .controlSize(.small)

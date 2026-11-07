@@ -229,7 +229,7 @@ struct ConversationView: View {
 
     var body: some View {
         let items = items
-        let channel = TranscriptRowChannel(agents: store.roster, api: store.api)
+        let channel = TranscriptRowChannel(id: store.id, agents: store.roster, api: store.api)
         let statusReactions = statusReactions
         let card = interaction.messageView == .all ? catchUp.map { (session: $0, store: store) } : nil
         let requestChoices = TranscriptRequestChoices(request: store.request, attempts: store.sendAttempts,

@@ -58,24 +58,27 @@ extension ChannelInteraction {
 /// A pending request's answers inside its bubble: its suggested replies in the lead's order, then Reply
 /// with its arrow, as small bordered buttons at their natural widths that wrap onto the next line like
 /// words. Long labels wrap in full, so the bubble grows taller, never wider. Without replies, Reply alone
-/// still ends the request. The host picks the spacing, control size and font. A chosen reply leaves at
+/// still ends the request. Read Aloud follows Reply when the host passes the request's text. The host picks the spacing, control size and font. A chosen reply leaves at
 /// once, before its send reaches the outbox, so a second tap can't send it twice.
 public struct TranscriptRequestActions: View {
     let spacing: CGFloat
     let sequence: Int
     let choices: TranscriptRequestChoices?
     let replyHelp: String
+    let readAloud: TranscriptReadAloud.Request?
     let onChoose: (String) -> Void
     let onReply: () -> Void
     @ViewState private var chosen = false
 
     /// `sequence` is the pending request's own message, which shows `choices` only when they're its own.
     public init(spacing: CGFloat, sequence: Int, choices: TranscriptRequestChoices?, replyHelp: String,
+                readAloud: TranscriptReadAloud.Request? = nil,
                 onChoose: @escaping (String) -> Void, onReply: @escaping () -> Void) {
         self.spacing = spacing
         self.sequence = sequence
         self.choices = choices
         self.replyHelp = replyHelp
+        self.readAloud = readAloud
         self.onChoose = onChoose
         self.onReply = onReply
     }
@@ -105,6 +108,10 @@ public struct TranscriptRequestActions: View {
             .help(replyHelp)
             .accessibilityIdentifier("reply-\(sequence)")
             .modifier(TouchTarget())
+            if let readAloud {
+                TranscriptReadAloudButton(request: readAloud)
+                    .modifier(TouchTarget())
+            }
         }
         .buttonStyle(.bordered)
         #if os(iOS)
