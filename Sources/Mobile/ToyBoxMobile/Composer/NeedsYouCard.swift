@@ -15,12 +15,13 @@ extension NeedsYouCards {
                   animate: { withAnimation(Self.motion($0), $1) })
     }
 
-    /// The talk card's springs, or short eases without bounce under Reduce Motion.
+    /// The talk card's motion, or short eases without bounce under Reduce Motion.
     static func motion(_ motion: Motion) -> Animation {
         if UIAccessibility.isReduceMotionEnabled { return .easeInOut(duration: 0.2) }
         return switch motion {
         case .open, .lift: .spring(duration: 0.4, bounce: 0.12)
-        case .sent, .shrink: .smooth(duration: 0.35)
+        case .sent: .smooth(duration: 0.35)
+        case .settle: .easeOut(duration: 0.4)
         }
     }
 }
@@ -34,11 +35,15 @@ extension ChannelWaitingRequests.Entry {
         TranscriptRequestChoices(sequence: sequence, labels: request?.message.suggestedReplies ?? [],
                                  attempts: attempts, isConnected: isConnected)
     }
+
+    /// The choices as they were before one began sending, which the card holds until it confirms.
+    var heldChoices: TranscriptRequestChoices? { choices(attempts: [], isConnected: true) }
 }
 
-/// The open card: the channel's heading, the whole question, then the choices and Reply, or the
-/// reply's progress. Lifted above the dimmed list, a typed reply's field and its Cancel and Send
-/// take the choices' place. The question scrolls only once the card would run past `maxHeight`.
+/// The open card: the channel's heading, the whole question, then the choices and Reply, which
+/// hold while a choice sends. Lifted above the dimmed list, a typed reply's field and its Cancel
+/// and Send take the choices' place. The question scrolls only once the card would run past
+/// `maxHeight`.
 struct NeedsYouCard: View {
     /// How far the card's sides sit outside the row's content.
     static let margin: CGFloat = 12
@@ -126,7 +131,6 @@ struct NeedsYouCard: View {
             CardSurface(surface: .pendingAgent, tint: Channel.Attention.waiting.color(in: colorScheme),
                         base: isLifted, shadow: isLifted)
         }
-        .sensoryFeedback(.success, trigger: !isLifted && isReplying && cards.phase == .sent) { _, sent in sent }
         .accessibilityElement(children: .contain)
     }
 
@@ -159,14 +163,27 @@ struct NeedsYouCard: View {
     @ViewBuilder private var footer: some View {
         if isLifted {
             NeedsYouReplyField(cards: cards, prompt: "Reply to \(requester)")
-        } else if isReplying, !cards.isLifted, let phase = cards.phase {
+        } else if isReplying, !cards.isLifted, cards.hasFailed, let phase = cards.phase {
             NeedsYouReplyStatus(cards: cards, phase: phase)
         } else {
-            TranscriptRequestActions(spacing: 8, sequence: entry.sequence, choices: choices,
+            // A choice holds the card as it was while it sends, as the talk card holds its note.
+            let isSending = isReplying && cards.phase == .sending
+            TranscriptRequestActions(spacing: 8, sequence: entry.sequence, choices: isSending ? entry.heldChoices : choices,
                                      replyHelp: "Reply to \(requester)", onChoose: choose, onReply: reply)
                 .controlSize(.small)
                 .font(.footnote)
                 .labelStyle(InlineLabelStyle())
+                // The actions hide a chosen reply themselves, so the held ones start afresh.
+                .id(isSending)
+                .allowsHitTesting(!isSending)
+                .overlay(alignment: .bottomTrailing) {
+                    if isSending, cards.showsProgress {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(height: 28)
+                            .accessibilityLabel("Sending")
+                    }
+                }
         }
     }
 }
@@ -221,21 +238,16 @@ struct NeedsYouReplyField: View {
     }
 }
 
-/// A reply's progress where the choices were: Sending, then Sent with its words, or Not Sent with
-/// Send Again.
+/// A failed reply where the choices were: Not Sent with its words and Send Again, then Sending while
+/// it repeats.
 struct NeedsYouReplyStatus: View {
     let cards: NeedsYouCards
     let phase: NeedsYouCards.Phase
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 switch phase {
-                case .sent:
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(Channel.Attention.finished.color(in: colorScheme))
-                    Text("Sent")
                 case .failed(let failure):
                     Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
                     Text(failure.label)
@@ -264,6 +276,12 @@ struct NeedsYouReplyStatus: View {
 }
 
 extension View {
+    /// The row's mark, which wears the done check once the row's reply sends from its card, then
+    /// settles back to the channel's own mark.
+    func needsYouMark(_ check: NeedsYouCards.Check?, emphasized: Bool) -> some View {
+        modifier(NeedsYouMarkSlot(check: check, emphasized: emphasized))
+    }
+
     /// Lifts the open card's typed reply above the list, from the card's row at `card` in global
     /// space. Holds the list still and dims its rows, rises above the keyboard, and ends the reply
     /// as a draft when anything in `context` changes or the channel leaves `channelIDs`.
@@ -316,6 +334,39 @@ private struct NeedsYouList<Card: View>: ViewModifier {
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase != .active { cards.leave() }
+            }
+    }
+}
+
+private struct NeedsYouMarkSlot: ViewModifier {
+    let check: NeedsYouCards.Check?
+    let emphasized: Bool
+
+    func body(content: Content) -> some View {
+        // The check's mark settles on the channel's own face, so handing back to it is invisible.
+        ZStack {
+            if let check {
+                NeedsYouMark(check: check, emphasized: emphasized).transition(.identity)
+            } else {
+                content.transition(.identity)
+            }
+        }
+    }
+}
+
+/// The talk card's mark on a row whose card has just shrunk into it. The row only now draws it, so
+/// it starts on the channel's face and swaps to the check once it's on screen.
+private struct NeedsYouMark: View {
+    let check: NeedsYouCards.Check
+    let emphasized: Bool
+    @ViewState private var face = CardMark.Face.channel
+
+    var body: some View {
+        CardMark(face: face, emphasized: emphasized)
+            .task(id: check) {
+                withAnimation(NeedsYouCards.motion(check == .sent ? .sent : .settle)) {
+                    face = check == .sent ? .check : .channel
+                }
             }
     }
 }

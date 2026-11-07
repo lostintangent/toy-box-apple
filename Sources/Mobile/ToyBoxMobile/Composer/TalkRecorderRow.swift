@@ -205,12 +205,9 @@ private struct TalkMark: View {
     let recorder: TalkRecorder
     let emphasized: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.talkGrown) private var grown
 
-    private enum Face { case mic, check, channel }
-
-    private var face: Face {
+    private var face: CardMark.Face {
         guard grown else { return .channel }
         return switch recorder.phase {
         case .sent, .landed: .check
@@ -221,21 +218,10 @@ private struct TalkMark: View {
 
     var body: some View {
         let level = recorder.isListening ? recorder.dictation.level : 0
-        Button(action: recorder.resume) { glyph }
+        Button(action: recorder.resume) { CardMark(face: face, emphasized: emphasized) }
             .buttonStyle(TalkMarkButtonStyle())
             // A disabled button grays its accent, so the mic only stops taking taps.
             .allowsHitTesting(recorder.canResume)
-            .background {
-                // Each face keeps its own fill so the change cross-fades instead of jumping. The
-                // check brings its own circle.
-                ZStack {
-                    Circle()
-                        .fill(emphasized ? AnyShapeStyle(Color.white.opacity(0.22)) : AnyShapeStyle(ChannelMark.cyan.gradient))
-                        .opacity(face == .channel ? 1 : 0)
-                    Circle().fill(Color.accentColor.opacity(0.15)).opacity(face == .mic ? 1 : 0)
-                }
-                .frame(width: 28, height: 28)
-            }
             .background {
                 if face == .mic {
                     // The glow is wider than the mark, so the halo keeps the mark's own frame.
@@ -253,33 +239,6 @@ private struct TalkMark: View {
                 }
             }
             .animation(.linear(duration: 0.08), value: level)
-            .sensoryFeedback(.success, trigger: face == .check) { _, sent in sent }
-    }
-
-    private var glyph: some View {
-        Image(systemName: symbol)
-            // At this size the check's circle fills the mark's 28 points, with its check knocked out.
-            .font(.system(size: face == .check ? 27.4 : 28 * 14 / 30, weight: .semibold))
-            .symbolRenderingMode(.monochrome)
-            .foregroundStyle(ink)
-            .contentTransition(.symbolEffect(.replace))
-            .frame(width: 28, height: 28)
-    }
-
-    private var symbol: String {
-        switch face {
-        case .mic: "mic.fill"
-        case .check: "checkmark.circle.fill"
-        case .channel: "number"
-        }
-    }
-
-    private var ink: Color {
-        switch face {
-        case .mic: .accentColor
-        case .check: ChannelTaskColors.changes(in: colorScheme).added
-        case .channel: .white
-        }
     }
 }
 

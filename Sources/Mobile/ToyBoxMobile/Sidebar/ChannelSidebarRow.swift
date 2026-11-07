@@ -16,6 +16,8 @@ struct ChannelSidebarRow: View {
     var talk: TalkRecorder? = nil
     /// A waiting request's question, which takes the folder's or purpose's place in one line.
     var question: String? = nil
+    /// The done check, once this row's reply sends from its Needs You card.
+    var check: NeedsYouCards.Check? = nil
     @Environment(\.backgroundProminence) private var prominence
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -23,6 +25,7 @@ struct ChannelSidebarRow: View {
     var body: some View {
         HStack(spacing: 12) {
             ChannelMark(size: 28, emphasized: prominence == .increased)
+                .needsYouMark(check, emphasized: prominence == .increased)
                 .talkMark(talk, emphasized: prominence == .increased)
             VStack(alignment: .leading, spacing: 8) {
                 heading

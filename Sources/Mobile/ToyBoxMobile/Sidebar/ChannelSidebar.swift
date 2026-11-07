@@ -13,6 +13,8 @@ struct ChannelSidebar: View {
     let isCollapsed: Bool
     @ViewState private var query = ""
     @ViewState private var pull = PullGesture()
+    /// True while a finger or a fling still moves the list.
+    @ViewState private var isScrolling = false
     @ViewState private var talk = TalkRecorder()
     @ViewState private var cards = NeedsYouCards()
     /// The list's visible area in global space.
@@ -21,6 +23,8 @@ struct ChannelSidebar: View {
     /// swipe slides it sideways.
     @ViewState private var cardRow: CGRect?
     @ViewState private var cardHeight: CGFloat = 0
+    /// The open card, when the person caused it to open, which may scroll the list as it grows.
+    @ViewState private var revealing: NeedsYouCards.Request?
     /// The open card in global space while a typed reply lifts it above the list.
     @ViewState private var liftedCard: CGRect?
 
@@ -76,10 +80,14 @@ struct ChannelSidebar: View {
                         ForEach(channels) { channel in
                             let face = faces[channel.id]
                             let isOpen = open?.channel.id == channel.id
+                            let isCard = isOpen || cards.replying?.channel.id == channel.id || cards.checks[channel.id] != nil
                             // A card opens and shrinks from its row's top, inside the row and in the card's
-                            // shape, which reaches past the row's sides.
+                            // shape, which reaches past the row's sides. A card's row ends at the card's own
+                            // edge, so its corners stay round as it shrinks.
                             ZStack(alignment: .top) { self.face(face, of: channel, now: now, reach: reach) }
-                                .clipShape(CardShape(overflow: 2 * NeedsYouCard.margin).offset(x: -NeedsYouCard.margin))
+                                .clipShape(CardShape(overflow: NeedsYouCard.margin + (isCard ? reach : NeedsYouCard.margin),
+                                                     animatesOverflow: false)
+                                    .offset(x: -NeedsYouCard.margin))
                                 // A waiting row opens its card rather than its channel.
                                 .selectionDisabled(face != nil)
                                 .opacity(cards.isLifted && !isOpen ? 0.4 : 1)
@@ -113,13 +121,19 @@ struct ChannelSidebar: View {
                 }
                 .listSectionSeparator(.hidden)
             }
-            // The whole card comes into view when it opens or grows, since its question scrolls only
-            // once it would run past the visible list.
-            .onChange(of: open?.channel.id) { reveal(open, in: proxy) }
+            // A card the person opens comes fully into view as it opens and grows, since its question
+            // scrolls only once it would run past the visible list.
+            .onChange(of: open?.card) { previous, card in
+                revealing = cards.reveals(card, after: previous) ? card : nil
+                reveal(open, in: proxy)
+            }
             .onChange(of: cardHeight) { reveal(open, in: proxy) }
         }
         .onScrollPhaseChange { _, phase in
             pull.isTouching = phase == .tracking || phase == .interacting
+            isScrolling = pull.isTouching || phase == .decelerating
+            // Once the person moves the list, their scroll wins over a card that grows later.
+            if phase == .interacting || phase == .decelerating { revealing = nil }
         }
         .talkList(talk, channelIDs: ids, onGlass: !isCollapsed, endsWhenChanging: [
             model.selectedChannelID, model.cover, management.flow?.id, searchFocused.wrappedValue,
@@ -173,7 +187,7 @@ struct ChannelSidebar: View {
     }
 
     private func reveal(_ open: ChannelWaitingRequests.Entry?, in proxy: ScrollViewProxy) {
-        guard let open, !cards.isLifted, !pull.isTouching else { return }
+        guard let open, open.card == revealing, !cards.isLifted, !isScrolling else { return }
         withAnimation { proxy.scrollTo(open.channel.id) }
     }
 
@@ -248,7 +262,7 @@ struct ChannelSidebar: View {
             channel: presentation.channel(channel), agents: agents,
             working: presentation.working(channel, agents: agents),
             attention: presentation.attention(channel), now: now, isCollapsed: isCollapsed,
-            talk: talk.channelID == channel.id ? talk : nil, question: question
+            talk: talk.channelID == channel.id ? talk : nil, question: question, check: cards.checks[channel.id]
         )
     }
 

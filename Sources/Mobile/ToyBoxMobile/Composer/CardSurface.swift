@@ -58,13 +58,62 @@ struct CardSurface: View {
     }
 }
 
-/// The card's corners, extended past its trailing edge by `overflow`.
+/// The mark a card's row wears: the channel's own face, the mic while the talk card records, or the
+/// done check once a card's message sends. Each face keeps its own fill, so a change cross-fades,
+/// the glyph swaps through `.replace`, and the check arrives with the success tap.
+struct CardMark: View {
+    enum Face { case channel, mic, check }
+
+    let face: Face
+    var emphasized = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Image(systemName: symbol)
+            // At this size the check's circle fills the mark's 28 points, with its check knocked out.
+            .font(.system(size: face == .check ? 27.4 : 28 * 14 / 30, weight: .semibold))
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(ink)
+            .contentTransition(.symbolEffect(.replace))
+            .frame(width: 28, height: 28)
+            .background {
+                // The check brings its own circle.
+                ZStack {
+                    Circle()
+                        .fill(emphasized ? AnyShapeStyle(Color.white.opacity(0.22)) : AnyShapeStyle(ChannelMark.cyan.gradient))
+                        .opacity(face == .channel ? 1 : 0)
+                    Circle().fill(Color.accentColor.opacity(0.15)).opacity(face == .mic ? 1 : 0)
+                }
+            }
+            .sensoryFeedback(.success, trigger: face == .check) { _, sent in sent }
+    }
+
+    private var symbol: String {
+        switch face {
+        case .mic: "mic.fill"
+        case .check: "checkmark.circle.fill"
+        case .channel: "number"
+        }
+    }
+
+    private var ink: Color {
+        switch face {
+        case .mic: .accentColor
+        case .check: ChannelTaskColors.changes(in: colorScheme).added
+        case .channel: .white
+        }
+    }
+}
+
+/// The card's corners, extended past its trailing edge by `overflow`, which moves with its view's
+/// animation unless `animatesOverflow` is false.
 struct CardShape: Shape {
     var overflow: CGFloat = 0
+    var animatesOverflow = true
 
     var animatableData: CGFloat {
-        get { overflow }
-        set { overflow = newValue }
+        get { animatesOverflow ? overflow : 0 }
+        set { if animatesOverflow { overflow = newValue } }
     }
 
     func path(in rect: CGRect) -> Path {

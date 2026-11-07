@@ -1220,8 +1220,10 @@ card rather than the channel. Unfolded, the channel the detail column shows stay
 **One open card.** The newest waiting request's row is open as a card, and only one is open at a
 time. Tapping another waiting row opens its card as the other closes, in one
 `.spring(duration: 0.4, bounce: 0.12)`. A card the user opened stays open while its request
-waits. When a card opens or grows, the list scrolls it fully into view, unless a finger is on the
-list.
+waits. The list scrolls only for a card the user opened, by tapping its row or by answering the
+card before it, and brings it fully into view as it opens and grows. A card that opens because a
+request arrived leaves the list where it is. The list never scrolls while a finger is on it or a
+fling is still slowing, and once the user scrolls it, a card that grows later stays put.
 
 **The card.** It's the talk card's surface in Needs You orange: 20-point continuous corners, the
 0.5-point edge and the wash, with no base, no shadow and no dimming, so the list stays fully
@@ -1236,19 +1238,24 @@ choices and Reply always stay in view. The lines above and below the card hide, 
 Talk swipe.
 
 **Choices.** A choice sends at once as written, through the channel's outbox with its own UUID,
-as in the transcript. "Sending" takes the choices' place, with the composer's spinner after
-300 ms. Confirmation shows the completion green's `checkmark.circle.fill`, "Sent" and the reply's
-words, with `.sensoryFeedback(.success)`. After 1.6 seconds the card shrinks back into its row
-with `.smooth(duration: 0.35)`, still showing Sent, as the next waiting request's card opens in
-the same motion. An answered request never reopens while the catalog catches up.
+as in the transcript. The card holds as it was while the reply sends, its choices still and
+ignoring taps, with the composer's spinner after 300 ms. On confirmation it runs the talk card's
+beats. In one `.smooth(duration: 0.35)` transaction the card shrinks straight back into its row
+as the next waiting request's card opens, and the row's mark becomes the talk card's done check
+through `.replace`, with `.sensoryFeedback(.success)`. Two seconds after the card lands, the check
+swaps back to the channel mark through the same `.replace`. No word says Sent and the reply's
+words don't show, because the check does. Answering the next card before then leaves the first
+check in place, and each row settles on its own. An answered request never reopens while the
+catalog catches up.
 
 **Reply.** Reply lifts the card above the list, where it gains the recorder's base and shadow and
 every other row dims to 40% and ignores taps. A plain field takes the choices' place, focused at
 once with the prompt "Reply to [requester]", and grows to five lines. Cancel and Send are the
 talk card's controls. The card follows the recorder's Room rules within the area above the
 keyboard, so its controls always stay visible. The reply leads with the requester's `@handle`
-unless it starts with a mention, and Send then goes as a choice does: Sent lowers the card into
-its row, and the shrink follows.
+unless it starts with a mention. Send holds the lifted card while the reply sends, then on
+confirmation the card lowers back into the list and its row wears the check, as a choice's
+does.
 
 **Failure.** A failed reply keeps its card with its words, "Not sent" or "Delivery not
 confirmed", and Send Again on the same UUID. Nothing retries on its own, and the choices never
@@ -1260,10 +1267,10 @@ sheet, backgrounding, or the channel going away ends it, and saves its words as 
 draft, after any draft already there.
 
 **Reduce Motion and VoiceOver.** Under Reduce Motion each beat is a 0.2-second ease without
-bounce. A waiting row's hint is "Shows the request", and the card's heading reads the channel's
+bounce, and the check keeps its 2-second hold. A waiting row's hint is "Shows the request", and the card's heading reads the channel's
 name with the hint "Opens the channel at this request". The lifted card is modal, and the escape
-gesture cancels. A sent reply announces "Reply sent in [channel]", and a failure announces its
-label.
+gesture cancels. A sent reply announces "Reply sent in [channel]", so the check is hidden from
+VoiceOver, and a failure announces its label.
 
 ### Transcript
 

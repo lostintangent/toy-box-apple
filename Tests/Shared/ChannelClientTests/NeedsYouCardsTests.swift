@@ -5,7 +5,7 @@ import Testing
 @testable import ChannelClient
 
 /// The phone list's Needs You cards, from the newest opening to a reply shrinking back into its
-/// row, with a mock server and beats the test ends. See Needs You in the list in docs/spec.md.
+/// row and its check settling, with a mock server and beats the test ends. See Needs You in the list in docs/spec.md.
 @Suite(.timeLimit(.minutes(1))) @MainActor
 struct NeedsYouCardsTests {
     struct Posted: Decodable { var id: String; var content: String }
@@ -14,43 +14,52 @@ struct NeedsYouCardsTests {
     let beats = CardBeats<NeedsYouCards.Motion>()
     let draft = ComposerDraft(imageIsReadable: { _ in false })
 
-    @Test func theNewestCardOpensAChoiceSendsAtOnceAndTheNextOpensAsItShrinks() async throws {
-        let posts = Mutex<[Posted]>([])
+    @Test func aChoiceSendsAtOnceThenItsRowWearsTheCheckAsTheNextCardOpens() async throws {
+        let posts = Mutex<[(path: String, body: Posted)]>([])
         let mock = MockTransport { request, _ in
-            #expect(request.url?.path == "/api/v1/channels/b/messages")
             let body = try JSONDecoder().decode(Posted.self, from: requestBody(request))
-            posts.withLock { $0.append(body) }
-            let message = ChannelMessage(id: body.id, sequence: 9, timestamp: "2026-11-07T10:01:00Z",
+            posts.withLock { $0.append((request.url?.path ?? "", body)) }
+            let message = ChannelMessage(id: body.id, sequence: 30, timestamp: "2026-11-07T10:01:00Z",
                                          sender: .user, content: .text(body.content))
             return try .json(MessageEnvelope(message: message), status: 201)
         }
-        let store = ChannelStore(id: "b", api: try mock.api(), sendJournal: nil)
+        let api = try mock.api()
+        let stores = (a: ChannelStore(id: "a", api: api, sendJournal: nil), b: ChannelStore(id: "b", api: api, sendJournal: nil))
         var announcements: [String] = []
         let cards = cards { announcements.append($0) }
-        let (a, b) = (entry("a", 12), entry("b", 7))
+        let (a, b, c) = (entry("a", 12), entry("b", 7), entry("c", 20))
         #expect(cards.open(in: [a, b]) == a, "The newest request opens")
         cards.choose(b.card)
         #expect(cards.open(in: [a, b]) == b)
+        #expect(cards.reveals(b.card, after: a.card), "A card the person opens scrolls into view")
 
-        await cards.send("Near the entrance", to: b, on: store)
+        await cards.send("Near the entrance", to: b, on: stores.b)
         let posted = posts.withLock { $0 }
-        #expect(posted.map(\.content) == ["Near the entrance"], "A choice goes at once, as written")
-        #expect(UUID(uuidString: posted[0].id) != nil)
-        #expect(cards.phase == .sent && cards.words == "Near the entrance")
-        #expect(cards.open(in: [a]) == b, "Sent stays open after the catalog drops the request")
+        #expect(posted.map(\.path) == ["/api/v1/channels/b/messages"])
+        #expect(posted.map(\.body.content) == ["Near the entrance"], "A choice goes at once, as written")
+        #expect(UUID(uuidString: posted[0].body.id) != nil)
+        #expect(cards.replying == nil && cards.phase == nil && cards.words.isEmpty,
+                "On confirmation the card shrinks straight back into its row")
+        #expect(cards.checks == ["b": .sent], "Its row wears the check")
+        #expect(cards.open(in: [a]) == a && cards.reveals(a.card, after: b.card),
+                "The next card opens in the same motion, and scrolls into view")
+        #expect(cards.open(in: [c, a]) == c && !cards.reveals(c.card, after: a.card),
+                "A request that arrives opens without moving the list")
         #expect(announcements == ["Reply sent in b"])
 
-        try await beats.end(.seconds(1.6))
-        try await eventually { cards.isShrinking }
-        #expect(cards.open(in: [a]) == a, "The next card opens as the answered one shrinks")
-        #expect(cards.replying == b && cards.phase == .sent, "The shrinking card still shows Sent")
-        try await beats.end(.seconds(0.5))
-        try await eventually { cards.replying == nil }
-        #expect(cards.phase == nil && !cards.isShrinking)
-        #expect(cards.open(in: [b, a]) == a && !cards.isWaiting(b),
+        await cards.send("Beside the desks", to: a, on: stores.a)
+        #expect(cards.checks == ["b": .sent, "a": .sent], "Answering the next card leaves the first check in place")
+        try await beats.end(.seconds(2.35))
+        try await eventually { cards.checks["b"] == .settling }
+        #expect(cards.checks["a"] == .sent, "Each row settles on its own")
+        try await beats.end(.seconds(2.35))
+        try await beats.end(.seconds(0.45))
+        try await beats.end(.seconds(0.45))
+        try await eventually { cards.checks.isEmpty }
+        #expect(cards.open(in: [b, a]) == nil && !cards.isWaiting(b),
                 "An answered request never reopens while the catalog catches up")
-        #expect(beats.motions == [.open, .sent, .shrink])
-        #expect(store.sendAttempts.isEmpty)
+        #expect(beats.motions == [.open, .sent, .sent, .settle, .settle])
+        #expect(stores.a.sendAttempts.isEmpty && stores.b.sendAttempts.isEmpty)
     }
 
     @Test(arguments: [false, true])
@@ -89,13 +98,15 @@ struct NeedsYouCardsTests {
 
         await cards.send("Near the entrance", to: a, on: store)
         #expect(cards.phase == .failed(failure) && !cards.isLifted && cards.words == "Near the entrance")
+        #expect(cards.hasFailed && cards.checks.isEmpty, "A failure keeps its card, with no check")
         await cards.send()
         let chosen = posts.withLock { Array($0.dropFirst(2)) }
         #expect(chosen.map(\.content) == ["Near the entrance", "Near the entrance"])
         #expect(Set(chosen.map(\.id)).count == 1, "Send Again reuses the choice's UUID")
         let b = entry("b", 7)
         cards.choose(b.card)
-        #expect(cards.replying == nil && cards.open(in: [b, a]) == b, "Opening another card closes a failed one")
+        #expect(cards.replying == nil && !cards.hasFailed && cards.open(in: [b, a]) == b,
+                "Opening another card closes a failed one")
         #expect(beats.motions == [.lift, .lift, .open])
         #expect(store.sendAttempts.map(\.id) == [posted[0].id, chosen[0].id],
                 "Failed replies wait in the outbox, so their choices never return")
