@@ -89,6 +89,8 @@ public struct TranscriptRequestActions: View {
                 ForEach(Array((choices?.labels(for: sequence) ?? []).enumerated()), id: \.offset) { index, label in
                     Button {
                         chosen = true
+                        // An answered request loses its Stop button, so it stops reading too.
+                        if let readAloud { TranscriptReadAloud.shared.stop(readAloud) }
                         onChoose(label)
                     } label: {
                         // A Mac bordered button keeps one line unless told otherwise, and would truncate. A

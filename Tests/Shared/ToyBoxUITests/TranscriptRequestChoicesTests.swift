@@ -1,3 +1,4 @@
+import AVFoundation
 @testable import ChannelClient
 import ChannelKit
 import Testing
@@ -136,5 +137,31 @@ struct ChoiceFlowLayoutTests {
             .frame(width: width, alignment: .leading))
         renderer.scale = 1
         return try #require(renderer.cgImage).height
+    }
+}
+
+/// Read Aloud waits while dictation listens, since the phone would lose its microphone and the Mac would
+/// transcribe the reader's voice.
+@MainActor struct TranscriptReadAloudTests {
+    private final class Source: DictationAudioSource, @unchecked Sendable {
+        var fails = false
+        func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) throws {
+            if fails { throw CancellationError() }
+        }
+        func stop() {}
+    }
+
+    @Test func theMicrophoneHoldsReadAloudOffOnlyWhileItListens() throws {
+        let reader = TranscriptReadAloud.shared
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let source = Source()
+        let microphone = TranscriptReadAloud.Microphone(source)
+        try microphone.start(format: format) { _ in }
+        #expect(reader.isMicrophoneOpen)
+        microphone.stop()
+        #expect(!reader.isMicrophoneOpen)
+        source.fails = true
+        #expect(throws: CancellationError.self) { try microphone.start(format: format) { _ in } }
+        #expect(!reader.isMicrophoneOpen)
     }
 }

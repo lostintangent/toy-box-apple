@@ -22,11 +22,8 @@ extension DictationSystem {
                 [.denied, .restricted].contains(SFSpeechRecognizer.authorizationStatus())
             },
             installAssets: DictationRecognizer.installAssets,
-            makeSource: {
-                // The microphone takes the audio session next, so the reader leaves it active.
-                TranscriptReadAloud.shared.stop(releasingAudio: false)
-                return MobileDictationAudioSource()
-            },
+            // The microphone takes the audio session itself, so the reader leaves it active.
+            makeSource: { TranscriptReadAloud.Microphone(MobileDictationAudioSource(), releasingAudio: false) },
             makeRecognizer: { DictationRecognizer(locale: $0, contextualStrings: $1, source: $2) },
             announce: { UIAccessibility.post(notification: .announcement, argument: $0) },
             openSettings: { _ in

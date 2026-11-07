@@ -1,4 +1,5 @@
 import AVFoundation
+import ChannelClient
 import ChannelKit
 import Observation
 import OSLog
@@ -26,6 +27,8 @@ import SwiftUI
     }
 
     public private(set) var reading: Request?
+    /// Dictation is listening, so Read Aloud waits rather than speak into the microphone.
+    public private(set) var isMicrophoneOpen = false
     @ObservationIgnored private let synthesizer = AVSpeechSynthesizer()
     @ObservationIgnored private let delegate = Delegate()
     @ObservationIgnored private var utterance: AVSpeechUtterance?
@@ -64,6 +67,11 @@ import SwiftUI
         synthesizer.speak(utterance)
     }
 
+    /// Stops reading `request`, if it's the one being read.
+    public func stop(_ request: Request) {
+        if isReading(request) { stop() }
+    }
+
     /// Stops reading. `releasingAudio` is false when the caller is taking the audio session itself.
     public func stop(releasingAudio: Bool = true) {
         guard reading != nil else { return }
@@ -89,6 +97,37 @@ import SwiftUI
             Self.logger.error("Read Aloud audio session could not deactivate: \(error.localizedDescription)")
         }
         #endif
+    }
+
+    /// Dictation's microphone, which stops reading as it opens and holds Read Aloud off until it closes.
+    /// `releasingAudio` is false when the source takes the audio session itself. Dictation starts and
+    /// stops its source on the main actor.
+    package final class Microphone: DictationAudioSource, @unchecked Sendable {
+        private let source: DictationAudioSource
+        private let releasesAudio: Bool
+
+        package init(_ source: DictationAudioSource, releasingAudio: Bool = true) {
+            self.source = source
+            releasesAudio = releasingAudio
+        }
+
+        package func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) throws {
+            MainActor.assumeIsolated {
+                TranscriptReadAloud.shared.stop(releasingAudio: releasesAudio)
+                TranscriptReadAloud.shared.isMicrophoneOpen = true
+            }
+            do {
+                try source.start(format: format, handler: handler)
+            } catch {
+                MainActor.assumeIsolated { TranscriptReadAloud.shared.isMicrophoneOpen = false }
+                throw error
+            }
+        }
+
+        package func stop() {
+            source.stop()
+            MainActor.assumeIsolated { TranscriptReadAloud.shared.isMicrophoneOpen = false }
+        }
     }
 
     private static let logger = Logger(subsystem: "dev.toybox", category: "ReadAloud")
@@ -130,6 +169,7 @@ struct TranscriptReadAloudButton: View {
             }
         }
         .labelStyle(.iconOnly)
+        .disabled(reader.isMicrophoneOpen)
         .help(isReading ? "Stop Reading" : "Read Aloud")
         .accessibilityIdentifier("read-aloud-\(request.sequence)")
     }
