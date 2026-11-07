@@ -116,11 +116,11 @@ private struct TalkCard<Row: View>: View {
         let overflow = recorder.hidesTrailingColumn ? 0 : max(cell.maxX - right, 0) + Self.margin
         let lines = fiveLines ?? 5 * TalkNote.lineHeight(dynamicTypeSize)
         let chrome = note.height - note.words
-        // The card rises only when its tallest size, with five lines of words, can't fit below.
-        let shortfall = cell.maxY + chrome + lines - room.maxY
-        let top = cell.minY - max(0, min(shortfall, cell.minY - room.minY))
-        let wordsLimit = max(lines / 5, min(lines, room.maxY - top - cell.height - chrome))
-        VStack(alignment: .leading, spacing: 0) {
+        let placement = TalkRecorder.Placement(row: cell, room: room)
+        // The highest the card rises, at its tallest, with five lines of words.
+        let highest = placement.top(height: cell.height + chrome + lines)
+        let wordsLimit = max(lines / 5, min(lines, room.maxY - highest - cell.height - chrome))
+        let card = VStack(alignment: .leading, spacing: 0) {
             row
                 .frame(width: cell.width, height: cell.height)
                 .accessibilityActions {
@@ -138,7 +138,7 @@ private struct TalkCard<Row: View>: View {
         .frame(width: max(right - left, 0), alignment: .leading)
         // Sized by layout rather than a measurement, so the card's edge always moves in the same
         // transaction as the controls.
-        .frame(maxHeight: max(open ? room.maxY - top : cell.height, 0), alignment: .top)
+        .frame(maxHeight: max(open ? room.maxY - highest : cell.height, 0), alignment: .top)
         .fixedSize(horizontal: false, vertical: true)
         // Reveals the note as the card grows, and clips everything the card draws to its shape.
         .clipShape(TalkCardShape(overflow: overflow))
@@ -153,7 +153,6 @@ private struct TalkCard<Row: View>: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fiveLines = $0 }
         }
         .background { TalkSurface(recorder: recorder, lifted: open, onGlass: onGlass) }
-        .offset(x: left, y: open ? top : cell.minY)
         .environment(\.talkGrown, recorder.isGrown)
         .environment(\.talkTrailingInset, cell.maxX - contentEnd)
         .allowsHitTesting(recorder.isOpen)
@@ -165,6 +164,26 @@ private struct TalkCard<Row: View>: View {
         }
         .onChange(of: recorder.phase == .sent) { _, sent in
             if sent { headingFocused = true }
+        }
+        TalkCardLayout(placement: placement, x: left, isOpen: open) { card }
+    }
+}
+
+/// Places the card from its own laid-out height, so its top edge moves in the same transaction as
+/// its size, and a card growing up holds its bottom still.
+private struct TalkCardLayout: Layout {
+    let placement: TalkRecorder.Placement
+    let x: CGFloat
+    let isOpen: Bool
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        proposal.replacingUnspecifiedDimensions()
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for card in subviews {
+            let top = isOpen ? placement.top(height: card.sizeThatFits(.unspecified).height) : placement.row.minY
+            card.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + top), proposal: .unspecified)
         }
     }
 }

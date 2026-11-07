@@ -159,6 +159,21 @@ struct TalkRecorderTests {
         Set(channels.map(\.id).filter(recorder.hidesLine(under:)))
     }
 
+    @Test func theCardStaysOnItsRowAndGrowsUpOnlyOnceItsBottomMeetsTheRooms() {
+        let room = CGRect(x: 0, y: 8, width: 390, height: 600)
+        let middle = TalkRecorder.Placement(row: CGRect(x: 0, y: 200, width: 390, height: 72), room: room)
+        #expect([72, 190, 330].map(middle.top(height:)) == [200, 200, 200], "A row with room below never moves")
+
+        let bottom = TalkRecorder.Placement(row: CGRect(x: 0, y: 500, width: 390, height: 72), room: room)
+        #expect(bottom.top(height: 108) == 500, "The card stays on its row while it fits below")
+        #expect(bottom.top(height: 190) == 418, "Then it holds its bottom on the room's and grows up")
+        #expect(bottom.top(height: 330) == 278)
+        #expect(bottom.top(height: 700) == 8, "It never rises past the room's top")
+
+        let scrolledUnder = TalkRecorder.Placement(row: CGRect(x: 0, y: 0, width: 390, height: 72), room: room)
+        #expect(scrolledUnder.top(height: 700) == 0, "A row under the room's top is never pushed down")
+    }
+
     /// Opens the recorder on the store's row, as the swipe does, once it's listening.
     private func start(on store: ChannelStore, order: [String] = [],
                        announce: @escaping @MainActor (String) -> Void = { _ in }) async throws -> TalkRecorder {

@@ -33,6 +33,25 @@ package final class TalkRecorder: DictationTextTarget {
         }
     }
 
+    /// Where the open card sits over the list: on the held row, growing down until its bottom
+    /// meets the room's, then holding that bottom and growing up, never past the room's top.
+    package struct Placement: Equatable, Sendable {
+        /// The held row, in the list's space.
+        package var row: CGRect
+        /// The part of the list's visible area the card keeps inside.
+        package var room: CGRect
+
+        package init(row: CGRect, room: CGRect) {
+            self.row = row
+            self.room = room
+        }
+
+        /// The card's top when it's `height` tall.
+        package func top(height: CGFloat) -> CGFloat {
+            row.minY - max(0, min(row.minY + height - room.maxY, row.minY - room.minY))
+        }
+    }
+
     package enum TimeFace: Hashable {
         case counter, offline, failed(ChannelSendPhase), noteTime
     }

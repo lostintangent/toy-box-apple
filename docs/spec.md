@@ -1079,13 +1079,15 @@ with `.spring(duration: 0.4, bounce: 0.12)`, which starts the moment the swipe a
 it overlaps the system closing the swipe. Never drive a size frame by frame or insert a second
 row for the note.
 
-**Room.** The card grows downward when its tallest size, with five lines of words, fits above
-the bottom of the list's visible area, inside the safe area and any bottom bar. Otherwise its
-top rises by just the shortfall in the same opening spring, carrying the heading with it, so a
-row near the bottom reads as lifting. That's the only time the heading moves, and from then on
-the card grows only downward. If even that doesn't fit, as at accessibility text sizes or in
-landscape, the card fills the visible list and its words show fewer lines. Closing returns the
-top to the row in the same transaction that shrinks the card.
+**Room.** The card opens on its row and grows downward, so a row with room below for the card's
+tallest size, with five lines of words, never moves. Near the bottom of the list's visible area,
+inside the safe area and any bottom bar, the card grows downward only until its bottom meets that
+edge. From then on it holds its bottom there and grows upward, carrying the heading with it, never
+past the top of the visible area. The top edge moves in the same transaction as the card's size,
+so the bottom holds still as lines arrive. If even the top of the visible area leaves too little
+room, as at accessibility text sizes or in landscape, the card fills the visible list and its
+words show fewer lines. Closing returns the top to the row in the same transaction that shrinks
+the card.
 
 **Edges.** The card's sides sit 12 points outside the row's text, before the mark and past the
 time's trailing edge, and never beyond the list's visible area. At accessibility sizes, where the
@@ -1115,7 +1117,7 @@ changes and the band never blinks off and on. It still ignores taps.
 | Mark | 28-point channel circle with `number` | 28-point circle of accent at 15% with an accent `mic.fill`. Never a solid fill, because Send is the only filled control | The fill animates and the symbol swaps with `.contentTransition(.symbolEffect(.replace))` |
 | Time and chevron | Last activity, then the folded `chevron.forward` | The elapsed time, "0:06", in caption, secondary and tabular, on the time's exact baseline and trailing edge. The chevron's space stays empty, so nothing on the top line shifts | The time leaves with a 2-point blur and fade over 0.15 seconds, then the counter fades in over 0.15 seconds, so the two never show together. Every later swap in this slot, to Offline, Not sent or back to the time, works the same way. The chevron and attention mark fade out with the time. The counter ticks with `.contentTransition(.numericText())` |
 | Line 2 | Folder or purpose, working stack, attention | The waveform, 24 high | Line 2 fades out with a 2-point blur over 0.15 seconds as the bars rise from 20% of their height |
-| Words | None | Body text 8 points below the waveform, up to five lines, then the oldest line scrolls under a 12-point top fade. "Listening…" in secondary until the first word. Tentative words are secondary and settle to primary as they finalize | Each new line grows the card with `.smooth(duration: 0.25)`. Up to five lines, the lines already shown hold still and the new one appears beneath them, while the controls and the card's bottom edge move down together in that one transaction. Only from the sixth line does the text move, as the oldest line slides up under the fade |
+| Words | None | Body text 8 points below the waveform, up to five lines, then the oldest line scrolls under a 12-point top fade. "Listening…" in secondary until the first word. Tentative words are secondary and settle to primary as they finalize | Each new line grows the card with `.smooth(duration: 0.25)`. Up to five lines, the lines already shown hold still and the new one appears beneath them, while the controls and the card's bottom edge move down together in that one transaction. Once the card holds its bottom near the end of the list, the heading, the lines and the top edge move up together instead. Only from the sixth line does the text move, as the oldest line slides up under the fade |
 | Controls | None | A trailing pair 10 points below the words: Cancel, a 32-point circle of primary at 12% with `xmark`, then 12 points, then Send, the composer's 32-point accent circle with a white `arrow.up`. Both have 44-point hit targets. Send keeps the quaternary fill until there's a finalized word | Fade in and scale from 90%, 0.06 seconds behind the spring |
 
 **Alive while you talk.** Your voice drives the recorder through the dictation level, smoothed
