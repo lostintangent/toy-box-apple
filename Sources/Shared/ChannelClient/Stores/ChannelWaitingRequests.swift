@@ -4,7 +4,8 @@ import Observation
 
 /// Which requests are waiting, newest first, and the message behind each, so the menu bar, Dock,
 /// notifications and both widgets agree. A channel's own store supplies its request when it has
-/// it. Otherwise its history is looked up, and the message is remembered until the next request.
+/// it. Otherwise its history is looked up once for everyone who asks, and the message is
+/// remembered until the next request.
 @MainActor @Observable
 public final class ChannelWaitingRequests {
     public struct Entry: Equatable, Sendable {
@@ -19,7 +20,7 @@ public final class ChannelWaitingRequests {
 
     public let catalog: ChannelCatalogStore
     private var remembered: [String: ChannelRequestMessage] = [:]
-    @ObservationIgnored private var lookups: [String: Int] = [:]
+    @ObservationIgnored private var lookups: [String: Lookup] = [:]
 
     public init(catalog: ChannelCatalogStore) {
         self.catalog = catalog
@@ -40,14 +41,8 @@ public final class ChannelWaitingRequests {
     /// Looks up each request that isn't known yet in the background, once. A failed lookup tries
     /// again on the next call.
     public func resolve(openChannelIDs: Set<String> = []) {
-        for entry in entries(openChannelIDs: openChannelIDs)
-        where entry.request == nil && lookups[entry.channel.id] != entry.sequence {
-            let (channelID, sequence) = (entry.channel.id, entry.sequence)
-            lookups[channelID] = sequence
-            Task {
-                _ = try? await message(channelID: channelID, sequence: sequence)
-                if lookups[channelID] == sequence { lookups[channelID] = nil }
-            }
+        for entry in entries(openChannelIDs: openChannelIDs) where entry.request == nil {
+            lookup(channelID: entry.channel.id, sequence: entry.sequence)
         }
     }
 
@@ -58,10 +53,32 @@ public final class ChannelWaitingRequests {
         resolve(openChannelIDs: openChannelIDs)
     }
 
-    /// A request's message from its channel's store, otherwise its history. Throws when the history
-    /// can't be read.
+    /// A request's message from its channel's store, otherwise its history, joining a lookup that's
+    /// already under way. Throws when the history can't be read. A cancelled caller stops waiting at
+    /// once, and the lookup carries on for anyone else.
     public func message(channelID: String, sequence: Int) async throws -> ChannelRequestMessage? {
         if let known = known(channelID, sequence) { return known }
+        return try await lookup(channelID: channelID, sequence: sequence).message()
+    }
+
+    /// The lookup under way for a request, otherwise a new one. It's forgotten when it ends, so a
+    /// failed one can be tried again.
+    @discardableResult
+    private func lookup(channelID: String, sequence: Int) -> Lookup {
+        if let lookup = lookups[channelID], lookup.sequence == sequence { return lookup }
+        let lookup = Lookup(sequence: sequence)
+        lookups[channelID] = lookup
+        Task {
+            let result: Result<ChannelRequestMessage?, any Error>
+            do { result = .success(try await find(channelID: channelID, sequence: sequence)) }
+            catch { result = .failure(error) }
+            if lookups[channelID] === lookup { lookups[channelID] = nil }
+            lookup.finish(result)
+        }
+        return lookup
+    }
+
+    private func find(channelID: String, sequence: Int) async throws -> ChannelRequestMessage? {
         let store = catalog.existingChannel(id: channelID)
         var found = store?.state.flatMap { ChannelWaitingRequest.message(at: sequence, in: $0) }
             .map { ChannelRequestMessage(message: $0, agents: store?.roster ?? []) }
@@ -79,6 +96,35 @@ public final class ChannelWaitingRequests {
         let store = catalog.existingChannel(id: channelID)
         if let live = store?.request, live.sequence == sequence { return .init(message: live, agents: store?.roster ?? []) }
         return remembered[channelID].flatMap { $0.message.sequence == sequence ? $0 : nil }
+    }
+
+    /// One request's lookup, which everyone asking for that request waits on.
+    @MainActor private final class Lookup {
+        let sequence: Int
+        private var result: Result<ChannelRequestMessage?, any Error>?
+        private var waiters: [UUID: CheckedContinuation<ChannelRequestMessage?, any Error>] = [:]
+
+        init(sequence: Int) {
+            self.sequence = sequence
+        }
+
+        func message() async throws -> ChannelRequestMessage? {
+            let waiter = UUID()
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    if let result { continuation.resume(with: result) } else { waiters[waiter] = continuation }
+                }
+            } onCancel: {
+                Task { @MainActor in self.waiters.removeValue(forKey: waiter)?.resume(throwing: CancellationError()) }
+            }
+        }
+
+        func finish(_ result: Result<ChannelRequestMessage?, any Error>) {
+            self.result = result
+            let waiting = waiters.values
+            waiters = [:]
+            for waiter in waiting { waiter.resume(with: result) }
+        }
     }
 }
 

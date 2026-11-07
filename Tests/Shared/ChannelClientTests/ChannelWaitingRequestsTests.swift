@@ -8,6 +8,7 @@ import Testing
 @Suite("Waiting requests", .timeLimit(.minutes(1)))
 final class ChannelWaitingRequestsTests {
     private let lookups = Mutex([String: Int]())
+    private var transport: MockTransport?
 
     private func listed(_ id: String, request: Int?, updated: String = "08:00") -> Channel {
         Channel(id: id, name: id, model: .init(provider: "test", name: "test"), requestSequence: request,
@@ -19,17 +20,22 @@ final class ChannelWaitingRequestsTests {
               content: .text(text), request: true)
     }
 
-    /// A loaded catalog whose histories answer from `pages`, failing while it returns nil.
-    private func catalog(_ channels: [Channel], loaded: ChannelMessage, live: Bool,
+    /// A loaded catalog whose histories answer from `pages`, failing while it returns nil. A held
+    /// first lookup waits for the transport to finish it.
+    private func catalog(_ channels: [Channel], loaded: ChannelMessage, live: Bool, holdingFirstLookup: Bool = false,
                          pages: @escaping @Sendable (String, Int) -> [ChannelMessage]?) async throws -> ChannelCatalogStore {
-        let catalog = ChannelCatalogStore(api: try MockTransport { [self] request, _ in
+        let transport = MockTransport { [self] request, _ in
             let path = request.url?.pathComponents ?? []
             guard path.last == "messages" else { return try .json(ChannelCatalog(lead: testLeadProfile, channels: channels)) }
             let channel = path[path.count - 2]
             let attempt = lookups.withLock { $0[channel, default: 0] += 1; return $0[channel] ?? 0 }
             guard let messages = pages(channel, attempt) else { return MockResponse(status: 503) }
-            return try .json(ChannelHistoryPage(version: 1, revision: 1, messages: messages))
-        }.api())
+            var page = try MockResponse.json(ChannelHistoryPage(version: 1, revision: 1, messages: messages))
+            page.keepOpen = holdingFirstLookup && attempt == 1
+            return page
+        }
+        self.transport = transport
+        let catalog = ChannelCatalogStore(api: try transport.api())
         await catalog.refresh()
         var state = testState(revision: 1, messages: [loaded])
         state.channel.requestSequence = loaded.sequence
@@ -77,6 +83,26 @@ final class ChannelWaitingRequestsTests {
         #expect(requests.entries().first { $0.channel.id == "b" }?.request == nil)
         try await eventually { requests.entries().first { $0.channel.id == "b" }?.request != nil }
         #expect(lookups.withLock { $0 } == ["b": 3])
+    }
+
+    @Test func everyoneAskingForARequestSharesOneLookupAndACancelledCallerStopsWaiting() async throws {
+        let catalog = try await catalog([listed("test", request: 7), listed("a", request: 12)],
+                                        loaded: asked(7, in: "test", "Pick one?", at: "09:00"), live: true,
+                                        holdingFirstLookup: true) { _, _ in [self.asked(12, in: "a", "Ship it?", at: "11:00")] }
+        let transport = try #require(transport)
+        let requests = ChannelWaitingRequests(catalog: catalog)
+        requests.resolve()
+        let abandoned = Task { try await requests.message(channelID: "a", sequence: 12) }
+        try await eventually(observing: transport) { transport.pendingCount(for: "/api/v1/channels/a/messages") == 1 }
+
+        abandoned.cancel()
+        await #expect(throws: CancellationError.self) { try await abandoned.value }
+        #expect(transport.pendingCount(for: "/api/v1/channels/a/messages") == 1, "The lookup carries on for the rest")
+
+        let finish = Task { transport.finishPendingResponses() }
+        #expect(try await requests.message(channelID: "a", sequence: 12)?.quote == "Ship it?")
+        #expect(await finish.value == 1)
+        #expect(lookups.withLock { $0 } == ["a": 1])
     }
 
     @Test func repliesReachTheStoreAndTheWaitingEntryFromBothSources() async throws {
