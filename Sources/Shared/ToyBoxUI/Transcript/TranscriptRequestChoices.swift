@@ -79,7 +79,7 @@ public struct TranscriptRequestActions: View {
                     } label: {
                         // A Mac bordered button keeps one line unless told otherwise, and would truncate. A
                         // label that wraps fills the row, rather than stopping at its widest line.
-                        Text(label).lineLimit(nil).multilineTextAlignment(.center).frame(maxWidth: .infinity)
+                        Text(label).lineLimit(nil).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .disabled(choices?.canSend != true)
                     .help("Send \u{201C}\(label)\u{201D}")

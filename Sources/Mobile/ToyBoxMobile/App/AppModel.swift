@@ -14,6 +14,8 @@ final class AppModel {
     let following: ChannelFollowController
     private(set) var serverURL = ""
     private(set) var catalog: ChannelCatalogStore?
+    /// The waiting requests the channel list and the Needs You widget share.
+    private(set) var waitingRequests: ChannelWaitingRequests?
     private(set) var configurationError: String?
     private(set) var isActive = false
     private(set) var selectedStore: ChannelStore?
@@ -134,8 +136,13 @@ final class AppModel {
     var canCreateChannel: Bool { canManageChannels }
 
     var sidebarPresentation: ChannelSidebarPresentation {
+        ChannelSidebarPresentation(catalog: catalog, openChannelIDs: openChannelIDs)
+    }
+
+    /// The channel on screen, whose live state the list and its requests read.
+    var openChannelIDs: Set<String> {
         let visible = isActive ? visibleChannelID : nil
-        return ChannelSidebarPresentation(catalog: catalog, openChannelIDs: Set(visible.map { [$0] } ?? []))
+        return Set(visible.map { [$0] } ?? [])
     }
 
     func hold(_ store: ChannelStore) {
@@ -174,6 +181,7 @@ final class AppModel {
         self.serverURL = api.baseURL.absoluteString
         serverIdentity = identity
         catalog = ChannelCatalogStore(api: api)
+        waitingRequests = catalog.map(ChannelWaitingRequests.init)
         notifications.configure(api: api)
         configurationError = nil
         navigationNotice = nil
@@ -316,6 +324,7 @@ final class AppModel {
             notifications.updateBadge(catalog.channels.filter { $0.attention == .waiting }.count)
             shareHistory?.prune(serverURL: catalog.api.baseURL.absoluteString, keeping: Set(catalog.channels.map(\.id)))
         }
+        waitingRequests?.resolve(openChannelIDs: openChannelIDs)
         updateWidget(generation: generation)
     }
 
@@ -328,7 +337,7 @@ final class AppModel {
             repeat {
                 widgetUpdateRequested = false
                 do {
-                    try await widgetPublisher?.update(catalog: catalog, serverURL: serverURL)
+                    try await widgetPublisher?.update(requests: waitingRequests, serverURL: serverURL)
                 } catch {
                     if Task.isCancelled || error is CancellationError
                         || (error as? URLError)?.code == .cancelled { break }

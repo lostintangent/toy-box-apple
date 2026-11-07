@@ -14,7 +14,7 @@ struct TalkRecorderTests {
     struct MessageEnvelope: Encodable { var version = 1; var message: ChannelMessage }
 
     let recognizer = TalkTestRecognizer()
-    let beats = TalkBeats()
+    let beats = CardBeats<TalkRecorder.Motion>()
     let draft = ComposerDraft(imageIsReadable: { _ in false })
     let channels = ["new", "test", "b", "newer", "a"].map {
         Channel(id: $0, name: $0, model: .init(provider: "test", name: "test"), updatedAt: "")
@@ -215,13 +215,13 @@ struct TalkRecorderTests {
     func cancel() { isCancelled = true }
 }
 
-/// Holds each pause in the card's motion until the test ends it, and logs each beat's motion.
-@MainActor @Observable final class TalkBeats {
+/// Holds each pause in a card's motion until the test ends it, and logs each beat's motion.
+@MainActor @Observable final class CardBeats<Motion> {
     private(set) var waiting: [Duration] = []
-    private(set) var motions: [TalkRecorder.Motion] = []
+    private(set) var motions: [Motion] = []
     @ObservationIgnored private var held: [(id: UUID, continuation: CheckedContinuation<Void, Never>)] = []
 
-    func animate(_ motion: TalkRecorder.Motion, _ change: () -> Void) {
+    func animate(_ motion: Motion, _ change: () -> Void) {
         change()
         motions.append(motion)
     }

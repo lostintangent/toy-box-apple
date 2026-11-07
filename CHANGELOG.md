@@ -1,5 +1,21 @@
 # Changelog
 
+## iPhone 0.1.22
+
+### Features
+
+- When a channel needs you, the channel list shows its question, and you can answer it right there with a suggested reply or your own words, without opening the channel.
+
+### Bugs/Polish
+
+- Long suggested replies that wrap now read like ordinary text, which makes them easier to scan.
+
+## Mac 0.1.25
+
+### Bugs/Polish
+
+- Long suggested replies that wrap now read like ordinary text, in the conversation and the menu bar, which makes them easier to scan.
+
 ## iPhone 0.1.21
 
 ### Bugs/Polish

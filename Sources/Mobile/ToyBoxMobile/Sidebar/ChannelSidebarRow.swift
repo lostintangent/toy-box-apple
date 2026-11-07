@@ -14,6 +14,8 @@ struct ChannelSidebarRow: View {
     var isCollapsed = false
     /// The swipe-to-talk recorder, only while it's on this row.
     var talk: TalkRecorder? = nil
+    /// A waiting request's question, which takes the folder's or purpose's place in one line.
+    var question: String? = nil
     @Environment(\.backgroundProminence) private var prominence
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -111,7 +113,14 @@ struct ChannelSidebarRow: View {
     }
 
     @ViewBuilder private func detail(yields: Bool) -> some View {
-        if let path = channel.directory, !path.isEmpty {
+        if let question {
+            Text(question)
+                .font(.subheadline)
+                .foregroundStyle(prominence == .increased ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+                .frame(minWidth: 0, idealWidth: yields ? nil : 60, maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
+        } else if let path = channel.directory, !path.isEmpty {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Image(systemName: "folder")
                 Text(ChannelFolderName.name(of: path))
@@ -160,7 +169,7 @@ struct ChannelSidebarRow: View {
     }
 
     private var accessibilityDetails: String {
-        var parts = [channel.directory ?? channel.purpose ?? ""]
+        var parts = [question ?? channel.directory ?? channel.purpose ?? ""]
         if !attentionText.isEmpty { parts.append(attentionText) }
         if !working.isEmpty { parts.append(working.map(\.name).formatted(.list(type: .and)) + " working") }
         parts.append("Team: " + agents.map(\.name).formatted(.list(type: .and)))

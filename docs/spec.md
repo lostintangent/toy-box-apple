@@ -1205,6 +1205,66 @@ The Magic Tap sends and the escape gesture cancels. A send announces "Sent to Le
 error. At accessibility text sizes the recorder keeps the stacked heading, and its words and
 controls grow with the text.
 
+#### Needs You in the list
+
+Phone only. A channel waiting for the user shows its request in the list, and the user can answer
+it there without opening the channel. The list and the Needs You widget read one
+`ChannelWaitingRequests`, so they agree on which requests wait, newest first, and on each one's
+words. `NeedsYouCards` in ChannelClient holds the cards' rules, and the views only draw them.
+
+**Waiting rows.** A waiting channel's row shows its question in one line of primary text in place
+of its folder or purpose, up to three lines at accessibility sizes, and keeps its attention mark.
+Until the request's message is known, it reads "Needs your reply". Tapping a waiting row opens its
+card rather than the channel. Unfolded, the channel the detail column shows stays an ordinary row.
+
+**One open card.** The newest waiting request's row is open as a card, and only one is open at a
+time. Tapping another waiting row opens its card as the other closes, in one
+`.spring(duration: 0.4, bounce: 0.12)`. A card the user opened stays open while its request
+waits. When a card opens or grows, the list scrolls it fully into view, unless a finger is on the
+list.
+
+**The card.** It's the talk card's surface in Needs You orange: 20-point continuous corners, the
+0.5-point edge and the wash, with no base, no shadow and no dimming, so the list stays fully
+usable around it. Its sides sit 12 points outside the row's content, as the recorder's do, except
+that a folded list ends at its rows, so there the content steps in instead. The mark centers
+between the heading and the question's first line. The heading keeps the row's name, time and
+folded chevron, and tapping it opens the channel at the request. The whole question follows in
+body text, with the attention mark on its first line, then the choices and Reply in the phone's
+layout under Suggested replies. The card grows to fit the whole question, which scrolls only once
+the card would run past the visible list, fading at whichever edge it continues past, so the
+choices and Reply always stay in view. The lines above and below the card hide, and it offers no
+Talk swipe.
+
+**Choices.** A choice sends at once as written, through the channel's outbox with its own UUID,
+as in the transcript. "Sending" takes the choices' place, with the composer's spinner after
+300 ms. Confirmation shows the completion green's `checkmark.circle.fill`, "Sent" and the reply's
+words, with `.sensoryFeedback(.success)`. After 1.6 seconds the card shrinks back into its row
+with `.smooth(duration: 0.35)`, still showing Sent, as the next waiting request's card opens in
+the same motion. An answered request never reopens while the catalog catches up.
+
+**Reply.** Reply lifts the card above the list, where it gains the recorder's base and shadow and
+every other row dims to 40% and ignores taps. A plain field takes the choices' place, focused at
+once with the prompt "Reply to [requester]", and grows to five lines. Cancel and Send are the
+talk card's controls. The card follows the recorder's Room rules within the area above the
+keyboard, so its controls always stay visible. The reply leads with the requester's `@handle`
+unless it starts with a mention, and Send then goes as a choice does: Sent lowers the card into
+its row, and the shrink follows.
+
+**Failure.** A failed reply keeps its card with its words, "Not sent" or "Delivery not
+confirmed", and Send Again on the same UUID. Nothing retries on its own, and the choices never
+return, since the outbox holds the attempt. Cancel, or opening another card, closes the failed
+card and leaves the reply in the channel's outbox, where the conversation offers Send Again.
+
+**Leaving.** Cancel discards a typed reply. Opening a channel, Search, Settings or a management
+sheet, backgrounding, or the channel going away ends it, and saves its words as that channel's
+draft, after any draft already there.
+
+**Reduce Motion and VoiceOver.** Under Reduce Motion each beat is a 0.2-second ease without
+bounce. A waiting row's hint is "Shows the request", and the card's heading reads the channel's
+name with the hint "Opens the channel at this request". The lifted card is modal, and the escape
+gesture cancels. A sent reply announces "Reply sent in [channel]", and a failure announces its
+label.
+
 ### Transcript
 
 Use the canonical row projection unchanged. Avatar column is 32, gap is 12, and body begins 44
@@ -1549,9 +1609,9 @@ A request may offer two to four suggested replies. ChannelKit reads them through
 
 **Instant send.** A tap sends the label as the user's reply at once, through the same optimistic send as Reply, with a caller-owned UUID kept in the outbox until the server confirms it. Choices leave when the user answers. A failed send stays in the outbox with Send Again, and the choices do not return. Reading a request never answers it, and choices never send in the background.
 
-**Where choices appear.** Choices appear on the transcript's pending request, the Mac menu bar inbox, the Mac notification banner, the phone transcript and the phone Lock Screen notification. They do not appear on sidebar or menu badges (counts only), the composer's Input needed state (it opens the question, and choices stay in the transcript), the Dock menu, Spotlight, the morning digest, Control Center, Quick Send or the Siri snippet. Menu items cannot hold buttons, so those surfaces keep Reply or open the channel.
+**Where choices appear.** Choices appear on the transcript's pending request, the Mac menu bar inbox, the Mac notification banner, the phone transcript, the phone list's Needs You card and the phone Lock Screen notification. They do not appear on sidebar or menu badges (counts only), the composer's Input needed state (it opens the question, and choices stay in the transcript), the Dock menu, Spotlight, the morning digest, Control Center, Quick Send or the Siri snippet. Menu items cannot hold buttons, so those surfaces keep Reply or open the channel.
 
-**Layout.** Every surface keeps the lead's order for its choices, with Reply last. Labels wrap in full and never truncate, except the first Mac banner action, which macOS truncates. With no choices, Reply is the only action, so the request still looks finished. Lock Screen and banner actions are laid out by the system, so the platform rules below do not govern them.
+**Layout.** Every surface keeps the lead's order for its choices, with Reply last. Labels wrap in full, reading from the leading edge, and never truncate, except the first Mac banner action, which macOS truncates. With no choices, Reply is the only action, so the request still looks finished. Lock Screen and banner actions are laid out by the system, so the platform rules below do not govern them.
 
 **Phone layout.** The phone uses the Mac layout below, with 8 points between buttons, at the small control size and the footnote font. Reply is the same small untinted bordered button with its arrow as on the Mac, so a request without choices shows only that button, at its natural width on the leading edge. Each button keeps a hit target at least 44 points tall, and long labels wrap inside their own full-width button. A wrap makes the bubble taller, never wider.
 

@@ -141,7 +141,7 @@ private struct TalkCard<Row: View>: View {
         .frame(maxHeight: max(open ? room.maxY - highest : cell.height, 0), alignment: .top)
         .fixedSize(horizontal: false, vertical: true)
         // Reveals the note as the card grows, and clips everything the card draws to its shape.
-        .clipShape(TalkCardShape(overflow: overflow))
+        .clipShape(CardShape(overflow: overflow))
         .background {
             // SwiftUI spaces body lines wider than the font's own line height, so the limit comes
             // from laying out five real lines.
@@ -165,42 +165,7 @@ private struct TalkCard<Row: View>: View {
         .onChange(of: recorder.phase == .sent) { _, sent in
             if sent { headingFocused = true }
         }
-        TalkCardLayout(placement: placement, x: left, isOpen: open) { card }
-    }
-}
-
-/// Places the card from its own laid-out height, so its top edge moves in the same transaction as
-/// its size, and a card growing up holds its bottom still.
-private struct TalkCardLayout: Layout {
-    let placement: TalkRecorder.Placement
-    let x: CGFloat
-    let isOpen: Bool
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        proposal.replacingUnspecifiedDimensions()
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        for card in subviews {
-            let top = isOpen ? placement.top(height: card.sizeThatFits(.unspecified).height) : placement.row.minY
-            card.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + top), proposal: .unspecified)
-        }
-    }
-}
-
-/// The card's 20-point continuous corners, extended past its trailing edge by `overflow`.
-private struct TalkCardShape: Shape {
-    var overflow: CGFloat
-
-    var animatableData: CGFloat {
-        get { overflow }
-        set { overflow = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        var rect = rect
-        rect.size.width += overflow
-        return RoundedRectangle(cornerRadius: 20, style: .continuous).path(in: rect)
+        CardLayout(placement: placement, x: left, isOpen: open) { card }
     }
 }
 
@@ -623,43 +588,9 @@ private struct TalkNote: View {
     }
 
     private var controls: some View {
-        HStack(spacing: 0) {
-            Button(action: recorder.cancel) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 32, height: 32)
-                    .background(Color.primary.opacity(0.12), in: Circle())
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(recorder.phase == .sending)
-            .keyboardShortcut(.cancelAction)
-            .accessibilityLabel("Cancel")
-            Button(action: send) { sendLabel }
-                .buttonStyle(.plain)
-                .disabled(!recorder.canSend)
-                .keyboardShortcut(.return, modifiers: .command)
-                .accessibilityLabel(isFailed ? "Send Again" : "Send to Lead")
-        }
-    }
-
-    private var sendLabel: some View {
-        let active = recorder.canSend || recorder.phase == .sending
-        return Group {
-            if recorder.showsProgress {
-                ProgressView().frame(width: 32, height: 32)
-            } else {
-                Image(systemName: isFailed ? "arrow.clockwise" : "arrow.up")
-                    .font(.system(size: 17, weight: .medium))
-                    .frame(width: 32, height: 32)
-                    .background(active ? Color.accentColor : Color(uiColor: .quaternaryLabel), in: Circle())
-                    .foregroundStyle(active ? .white : .secondary)
-            }
-        }
-        .frame(width: 44, height: 44)
-        .contentShape(Rectangle())
+        CardControls(canCancel: recorder.phase != .sending, canSend: recorder.canSend,
+                     isSending: recorder.phase == .sending, showsProgress: recorder.showsProgress,
+                     isFailed: isFailed, sendLabel: "Send to Lead", cancel: recorder.cancel, send: send)
     }
 
     private func send() {
@@ -674,14 +605,9 @@ private struct TalkSurface: View {
     let recorder: TalkRecorder
     let lifted: Bool
     let onGlass: Bool
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.talkGrown) private var grown
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-        let surface = TranscriptSurface.user
-        let isDark = colorScheme == .dark
         let landed = recorder.phase == .landed
         // Once the card is back on the row, the cell's own background, separator or selection
         // shows through it again.
@@ -693,31 +619,12 @@ private struct TalkSurface: View {
         let lands = Animation.easeOut(duration: 0.2).delay(0.2)
         let unfill: Animation = landed ? .easeOut(duration: 0.4) : lands
         let lift: Animation = lifted ? .easeInOut(duration: 0.2) : lands
-        // Each fade is scoped to its opacity or shadow, so the surface's size always moves with the
-        // card's own transaction.
-        ZStack {
-            // Folded, the base matches the list's own background, so it's solid from the first
-            // frame and the dimmed rows never show through. Only the wash fades in.
-            shape.fill(Color(uiColor: .systemBackground))
-                .animation(based ? nil : unfill) { $0.opacity(based ? 1 : 0) }
-            ZStack {
-                ForEach(Array(surface.fills(isDark: isDark, canvasIsBlack: true).enumerated()), id: \.offset) {
-                    shape.fill($0.element)
-                }
-            }
-            .animation(filled ? (onGlass ? nil : .easeInOut(duration: 0.2)) : unfill) { $0.opacity(filled ? 1 : 0) }
-        }
-        .animation(lift) { $0.shadow(color: .black.opacity(lifted ? (isDark ? 0.3 : 0.12) : 0), radius: 24, y: 8) }
-        .overlay {
-            Group {
-                if contrast == .increased, let edge = surface.increasedContrastEdge {
-                    shape.strokeBorder(edge, lineWidth: 1)
-                } else {
-                    shape.strokeBorder(Color.accentColor.opacity(0.3), lineWidth: 0.5)
-                }
-            }
-            .animation(lift) { $0.opacity(lifted ? 1 : 0) }
-        }
+        // Folded, the base matches the list's own background, so it's solid from the first frame
+        // and the dimmed rows never show through. Only the wash fades in.
+        CardSurface(surface: .user, tint: .accentColor, base: based, wash: filled, edge: lifted, shadow: lifted,
+                    animations: .init(base: based ? nil : unfill,
+                                      wash: filled ? (onGlass ? nil : .easeInOut(duration: 0.2)) : unfill,
+                                      edge: lift, shadow: lift))
     }
 }
 

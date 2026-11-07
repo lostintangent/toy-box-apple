@@ -191,7 +191,7 @@ struct MenuBarInbox: View {
         ChoiceFlowLayout(spacing: 6) {
             ForEach(Array(labels.enumerated()), id: \.offset) { _, choice in
                 Button { sendChoice(choice, to: item) } label: {
-                    Text(choice).lineLimit(nil).multilineTextAlignment(.center).frame(maxWidth: .infinity)
+                    Text(choice).lineLimit(nil).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)

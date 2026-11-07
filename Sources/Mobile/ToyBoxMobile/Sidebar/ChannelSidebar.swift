@@ -14,6 +14,15 @@ struct ChannelSidebar: View {
     @ViewState private var query = ""
     @ViewState private var pull = PullGesture()
     @ViewState private var talk = TalkRecorder()
+    @ViewState private var cards = NeedsYouCards()
+    /// The list's visible area in global space.
+    @ViewState private var listBounds: CGRect = .zero
+    /// The open card's row in global space, kept from its first layout at each width, since a
+    /// swipe slides it sideways.
+    @ViewState private var cardRow: CGRect?
+    @ViewState private var cardHeight: CGFloat = 0
+    /// The open card in global space while a typed reply lifts it above the list.
+    @ViewState private var liftedCard: CGRect?
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -27,60 +36,152 @@ struct ChannelSidebar: View {
 
     private var presentation: ChannelSidebarPresentation { model.sidebarPresentation }
 
+    /// Waiting requests, newest first, except the one the unfolded detail column already shows.
+    private var waiting: [ChannelWaitingRequests.Entry] {
+        let shown = isCollapsed ? nil : model.selectedChannelID
+        return (model.waitingRequests?.entries(openChannelIDs: model.openChannelIDs) ?? [])
+            .filter { $0.channel.id != shown }
+    }
+
+    private enum Face {
+        /// The open card, with its whole question, choices and Reply.
+        case card(ChannelWaitingRequests.Entry)
+        /// A waiting row, with its question in one line.
+        case question(ChannelWaitingRequests.Entry)
+    }
+
     private func channelList(now: Date) -> some View {
         @Bindable var model = model
-        return List(selection: $model.selectedChannelID) {
-            Section {
-                if initialLoading {
-                    ForEach(0..<3) { _ in
-                        ChannelSidebarPlaceholder()
-                            .listRowInsets(.vertical, 0)
-                            .listRowSeparator(.hidden)
-                    }
-                } else {
-                    ForEach(channels) { channel in
-                        NavigationLink(value: channel.id) {
-                            row(channel, now: now)
+        let waiting = waiting
+        let open = cards.open(in: waiting)
+        let faces = Dictionary(waiting.filter(cards.isWaiting).map { ($0.channel.id, Face.question($0)) }) { a, _ in a }
+            .merging(open.map { [$0.channel.id: Face.card($0)] } ?? [:]) { _, open in open }
+        let ids = channels.map(\.id)
+        // A folded list ends where its rows do, so the card's content steps in there instead.
+        let reach = min(max(listBounds.maxX - (cardRow?.maxX ?? listBounds.maxX), 0), NeedsYouCard.margin)
+        // The lines above and below the open card.
+        let hiddenLines: Set<String> = open.flatMap { open in
+            ids.firstIndex(of: open.channel.id).map { index in Set([open.channel.id] + (index > 0 ? [ids[index - 1]] : [])) }
+        } ?? []
+        return ScrollViewReader { proxy in
+            List(selection: $model.selectedChannelID) {
+                Section {
+                    if initialLoading {
+                        ForEach(0..<3) { _ in
+                            ChannelSidebarPlaceholder()
+                                .listRowInsets(.vertical, 0)
+                                .listRowSeparator(.hidden)
                         }
-                        .navigationLinkIndicatorVisibility(.hidden)
-                        .listRowInsets(.vertical, 0)
-                        .contextMenu {
-                            // UIKit lifts menus itself, so a dimmed row offers none while a note is open.
-                            if !talk.isOpen { contextMenu(channel) }
-                        } preview: {
-                            ChannelSidebarPreview(channel: presentation.channel(channel), agents: presentation.agents(channel))
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            if !talk.isOpen {
-                                Button(role: .destructive) {
-                                    management.present(.deleteChannel(channelId: channel.id))
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
+                    } else {
+                        ForEach(channels) { channel in
+                            let face = faces[channel.id]
+                            let isOpen = open?.channel.id == channel.id
+                            // A card opens and shrinks from its row's top, inside the row and in the card's
+                            // shape, which reaches past the row's sides.
+                            ZStack(alignment: .top) { self.face(face, of: channel, now: now, reach: reach) }
+                                .clipShape(CardShape(overflow: 2 * NeedsYouCard.margin).offset(x: -NeedsYouCard.margin))
+                                // A waiting row opens its card rather than its channel.
+                                .selectionDisabled(face != nil)
+                                .opacity(cards.isLifted && !isOpen ? 0.4 : 1)
+                                .animation(.easeInOut(duration: 0.25), value: cards.isLifted)
+                                .listRowInsets(.vertical, 0)
+                                .contextMenu {
+                                    // UIKit lifts menus itself, so a dimmed row offers none while a note is open.
+                                    if !talk.isOpen { contextMenu(channel) }
+                                } preview: {
+                                    ChannelSidebarPreview(channel: presentation.channel(channel), agents: presentation.agents(channel))
                                 }
-                                .disabled(!model.canManageChannels)
-                            }
-                        }
-                        // UIKit hides the line under a selected row until its highlight fades, which
-                        // lingers after Back on the folded phone.
-                        .talkRow(channel.id, recorder: talk, offered: !searchFocused.wrappedValue,
-                                 line: isCollapsed ? .visible : .automatic) {
-                            talk(to: channel)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    if !talk.isOpen {
+                                        Button(role: .destructive) {
+                                            management.present(.deleteChannel(channelId: channel.id))
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                        .disabled(!model.canManageChannels)
+                                    }
+                                }
+                                // UIKit hides the line under a selected row until its highlight fades, which
+                                // lingers after Back on the folded phone.
+                                .talkRow(channel.id, recorder: talk,
+                                         offered: !searchFocused.wrappedValue && !cards.isLifted && !isOpen,
+                                         line: hiddenLines.contains(channel.id) ? .hidden : isCollapsed ? .visible : .automatic) {
+                                    talk(to: channel)
+                                }
                         }
                     }
                 }
+                .listSectionSeparator(.hidden)
             }
-            .listSectionSeparator(.hidden)
+            // The whole card comes into view when it opens or grows, since its question scrolls only
+            // once it would run past the visible list.
+            .onChange(of: open?.channel.id) { reveal(open, in: proxy) }
+            .onChange(of: cardHeight) { reveal(open, in: proxy) }
         }
         .onScrollPhaseChange { _, phase in
             pull.isTouching = phase == .tracking || phase == .interacting
         }
-        .talkList(talk, channelIDs: channels.map(\.id), onGlass: !isCollapsed, endsWhenChanging: [
+        .talkList(talk, channelIDs: ids, onGlass: !isCollapsed, endsWhenChanging: [
             model.selectedChannelID, model.cover, management.flow?.id, searchFocused.wrappedValue,
         ]) { channelID in
             if let channel = channels.first(where: { $0.id == channelID }) {
                 row(channel, now: now)
             }
         }
+        .needsYouList(cards, card: liftedCard, channelIDs: ids, bounds: $listBounds, endsWhenChanging: [
+            model.selectedChannelID, model.cover, management.flow?.id, searchFocused.wrappedValue,
+        ]) { maxHeight in
+            if let entry = cards.replying, let channel = channels.first(where: { $0.id == entry.channel.id }) {
+                card(entry, in: channel, now: now, isLifted: true, reach: reach, maxHeight: maxHeight)
+            }
+        }
+        .onChange(of: cards.isLifted) { _, lifted in
+            if !lifted { liftedCard = nil }
+        }
+    }
+
+    /// A channel's row: the open card, a waiting row with its question, or an ordinary row.
+    @ViewBuilder private func face(_ face: Face?, of channel: Channel, now: Date, reach: CGFloat) -> some View {
+        switch face {
+        case .card(let entry):
+            card(entry, in: channel, now: now, reach: reach, maxHeight: listBounds.height - 16)
+                .background {
+                    if cards.isLifted {
+                        Color.clear.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { liftedCard = $0 }
+                    }
+                }
+                // The lifted copy draws the card while a typed reply is open.
+                .opacity(cards.isLifted && liftedCard != nil ? 0 : 1)
+                .padding(.leading, -NeedsYouCard.margin)
+                .padding(.trailing, -reach)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { row in
+                    if cardRow?.width != row.width { cardRow = row }
+                    cardHeight = row.height
+                }
+        case .question(let entry):
+            Button { cards.choose(entry.card) } label: {
+                row(channel, now: now, question: entry.question)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows the request")
+        case nil:
+            NavigationLink(value: channel.id) {
+                row(channel, now: now)
+            }
+            .navigationLinkIndicatorVisibility(.hidden)
+        }
+    }
+
+    private func reveal(_ open: ChannelWaitingRequests.Entry?, in proxy: ScrollViewProxy) {
+        guard let open, !cards.isLifted, !pull.isTouching else { return }
+        withAnimation { proxy.scrollTo(open.channel.id) }
+    }
+
+    private func card(_ entry: ChannelWaitingRequests.Entry, in channel: Channel, now: Date, isLifted: Bool = false,
+                      reach: CGFloat, maxHeight: CGFloat) -> NeedsYouCard {
+        NeedsYouCard(channel: presentation.channel(channel), entry: entry, cards: cards, choices: choices(entry),
+                     now: now, isCollapsed: isCollapsed, isLifted: isLifted, reach: reach, maxHeight: maxHeight,
+                     open: { open(entry) }, choose: { choose($0, for: entry) }, reply: { reply(to: entry) })
     }
 
     var body: some View {
@@ -141,14 +242,39 @@ struct ChannelSidebar: View {
         }
     }
 
-    private func row(_ channel: Channel, now: Date) -> some View {
+    private func row(_ channel: Channel, now: Date, question: String? = nil) -> some View {
         let agents = presentation.agents(channel)
         return ChannelSidebarRow(
             channel: presentation.channel(channel), agents: agents,
             working: presentation.working(channel, agents: agents),
             attention: presentation.attention(channel), now: now, isCollapsed: isCollapsed,
-            talk: talk.channelID == channel.id ? talk : nil
+            talk: talk.channelID == channel.id ? talk : nil, question: question
         )
+    }
+
+    private var isOffline: Bool {
+        if case .failed = model.catalog?.phase { return true }
+        return false
+    }
+
+    private func choices(_ entry: ChannelWaitingRequests.Entry) -> TranscriptRequestChoices? {
+        entry.choices(attempts: model.catalog?.existingChannel(id: entry.channel.id)?.sendAttempts ?? [],
+                      isConnected: !isOffline)
+    }
+
+    private func open(_ entry: ChannelWaitingRequests.Entry) {
+        let server = model.serverURL
+        Task { await model.openChannel(id: entry.channel.id, sequence: entry.sequence, expectedServer: server) }
+    }
+
+    private func choose(_ choice: String, for entry: ChannelWaitingRequests.Entry) {
+        guard let catalog = model.catalog else { return }
+        Task { await cards.send(choice, to: entry, on: catalog.channel(id: entry.channel.id)) }
+    }
+
+    private func reply(to entry: ChannelWaitingRequests.Entry) {
+        guard let catalog = model.catalog else { return }
+        cards.reply(to: entry, on: catalog.channel(id: entry.channel.id))
     }
 
     private func talk(to channel: Channel) {

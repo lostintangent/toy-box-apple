@@ -9,8 +9,6 @@ public final class MobileWidgetSnapshotPublisher {
     private let file: URL
     private let reload: @MainActor () -> Void
     private var previous: NeedsYouSnapshot?
-    /// One per catalog, so a server change forgets the last one's requests.
-    private var requests: ChannelWaitingRequests?
     private var generation = UUID()
     private let logger = Logger(subsystem: "dev.toybox.mobile", category: "Widget")
 
@@ -34,10 +32,11 @@ public final class MobileWidgetSnapshotPublisher {
         }
     }
 
-    public func update(catalog: ChannelCatalogStore?, serverURL: String) async throws {
+    /// Publishes the app's waiting requests, which the channel list shares, so both agree.
+    public func update(requests: ChannelWaitingRequests?, serverURL: String) async throws {
         let token = UUID()
         generation = token
-        guard let catalog, catalog.api.baseURL.absoluteString == serverURL,
+        guard let requests, case let catalog = requests.catalog, catalog.api.baseURL.absoluteString == serverURL,
               catalog.isLoaded, catalog.phase.message == nil else {
             var snapshot = previous?.serverURL == serverURL ? previous : nil
             if snapshot != nil { snapshot?.isOffline = true }
@@ -47,7 +46,7 @@ public final class MobileWidgetSnapshotPublisher {
             ))
             return
         }
-        let snapshot = try await resolvedSnapshot(catalog: catalog, serverURL: serverURL, token: token,
+        let snapshot = try await resolvedSnapshot(requests: requests, serverURL: serverURL, token: token,
                                                   allowsPartialHistory: true)
         try publish(snapshot)
     }
@@ -97,14 +96,13 @@ public final class MobileWidgetSnapshotPublisher {
         try Task.checkCancellation()
         if let failure = catalog.phase.failure { throw failure }
         return try await resolvedSnapshot(
-            catalog: catalog, serverURL: serverURL, token: token, allowsPartialHistory: false)
+            requests: ChannelWaitingRequests(catalog: catalog), serverURL: serverURL, token: token,
+            allowsPartialHistory: false)
     }
 
-    private func resolvedSnapshot(catalog: ChannelCatalogStore, serverURL: String, token: UUID,
+    private func resolvedSnapshot(requests: ChannelWaitingRequests, serverURL: String, token: UUID,
                                   allowsPartialHistory: Bool) async throws -> NeedsYouSnapshot {
-        guard catalog.state != nil else { throw ChannelAPIError.invalidResponse }
-        let requests = self.requests.flatMap { $0.catalog === catalog ? $0 : nil } ?? ChannelWaitingRequests(catalog: catalog)
-        self.requests = requests
+        guard requests.catalog.state != nil else { throw ChannelAPIError.invalidResponse }
         var offline = false
         for entry in requests.entries() {
             guard entry.sequence < Int.max, ChannelWaitingRequest.Identity(
