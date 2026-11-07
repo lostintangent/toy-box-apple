@@ -58,26 +58,18 @@ struct ChannelSidebar: View {
             .filter { $0.channel.id != shown }
     }
 
-    private enum Face {
-        /// The open card, with its whole question, choices and Reply.
-        case card(ChannelWaitingRequests.Entry)
-        /// A waiting row, with its question in one line.
-        case question(ChannelWaitingRequests.Entry)
-    }
-
     private func channelList(now: Date) -> some View {
         @Bindable var model = model
         let waiting = waiting
         let open = cards.open(in: waiting)
-        let faces = Dictionary(waiting.filter(cards.isWaiting).map { ($0.channel.id, Face.question($0)) }) { a, _ in a }
-            .merging(open.map { [$0.channel.id: Face.card($0)] } ?? [:]) { _, open in open }
+        let waitingRows = cards.rows(in: waiting)
         let ids = channels.map(\.id)
         // A folded list ends where its rows do, so the card's content steps in there instead.
         let reach = min(max(listBounds.maxX - (cardRow?.maxX ?? listBounds.maxX), 0), NeedsYouCard.margin)
-        // The lines above and below the open card.
-        let hiddenLines: Set<String> = open.flatMap { open in
-            ids.firstIndex(of: open.channel.id).map { index in Set([open.channel.id] + (index > 0 ? [ids[index - 1]] : [])) }
-        } ?? []
+        let hiddenLines = cards.hiddenLines(in: waiting, order: ids)
+        // Opening a channel, Settings or Screens, a management flow or Search ends a card held over the list.
+        let listContext: [AnyHashable?] = [model.selectedChannelID, model.cover, management.flow?.id,
+                                           searchFocused.wrappedValue]
         return ScrollViewReader { proxy in
             List(selection: $model.selectedChannelID) {
                 Section {
@@ -89,18 +81,18 @@ struct ChannelSidebar: View {
                         }
                     } else {
                         ForEach(channels) { channel in
-                            let face = faces[channel.id]
+                            let waitingRow = waitingRows[channel.id]
                             let isOpen = open?.channel.id == channel.id
                             let isCard = isOpen || cards.replying?.channel.id == channel.id || checks[channel.id] != nil
                             // A card opens and shrinks from its row's top, inside the row and in the card's
                             // shape, which reaches past the row's sides. A card's row ends at the card's own
                             // edge, so its corners stay round as it shrinks.
-                            ZStack(alignment: .top) { self.face(face, of: channel, now: now, reach: reach) }
+                            ZStack(alignment: .top) { rowContent(waitingRow, of: channel, now: now, reach: reach) }
                                 .clipShape(CardShape(overflow: NeedsYouCard.margin + (isCard ? reach : NeedsYouCard.margin),
                                                      animatesOverflow: false)
                                     .offset(x: -NeedsYouCard.margin))
                                 // A waiting row opens its card rather than its channel.
-                                .selectionDisabled(face != nil)
+                                .selectionDisabled(waitingRow != nil)
                                 .opacity(cards.isLifted && !isOpen ? 0.4 : 1)
                                 .animation(.easeInOut(duration: 0.25), value: cards.isLifted)
                                 .listRowInsets(.vertical, 0)
@@ -146,16 +138,13 @@ struct ChannelSidebar: View {
             // Once the person moves the list, their scroll wins over a card that grows later.
             if phase == .interacting || phase == .decelerating { revealing = nil }
         }
-        .talkList(talk, channelIDs: ids, onGlass: !isCollapsed, endsWhenChanging: [
-            model.selectedChannelID, model.cover, management.flow?.id, searchFocused.wrappedValue,
-        ]) { channelID in
+        .talkList(talk, channelIDs: ids, onGlass: !isCollapsed, endsWhenChanging: listContext) { channelID in
             if let channel = channels.first(where: { $0.id == channelID }) {
                 row(channel, now: now)
             }
         }
-        .needsYouList(cards, card: liftedCard, channelIDs: ids, bounds: $listBounds, endsWhenChanging: [
-            model.selectedChannelID, model.cover, management.flow?.id, searchFocused.wrappedValue,
-        ]) { entry, maxHeight in
+        .needsYouList(cards, card: liftedCard, channelIDs: ids, bounds: $listBounds,
+                      endsWhenChanging: listContext) { entry, maxHeight in
             if let channel = channels.first(where: { $0.id == entry.channel.id }) {
                 card(entry, in: channel, now: now, isLifted: true, maxHeight: maxHeight)
             }
@@ -172,8 +161,9 @@ struct ChannelSidebar: View {
     }
 
     /// A channel's row: the open card, a waiting row with its question, or an ordinary row.
-    @ViewBuilder private func face(_ face: Face?, of channel: Channel, now: Date, reach: CGFloat) -> some View {
-        switch face {
+    @ViewBuilder private func rowContent(_ waitingRow: NeedsYouCards.Row?, of channel: Channel, now: Date,
+                                         reach: CGFloat) -> some View {
+        switch waitingRow {
         case .card(let entry):
             card(entry, in: channel, now: now, maxHeight: listBounds.height - 16)
                 .background {
@@ -212,7 +202,7 @@ struct ChannelSidebar: View {
                       maxHeight: CGFloat) -> NeedsYouCard {
         NeedsYouCard(channel: presentation.channel(channel), entry: entry, cards: cards, choices: choices(entry),
                      now: now, isCollapsed: isCollapsed, isLifted: isLifted, maxHeight: maxHeight,
-                     open: { open(entry) }, choose: { choose($0, for: entry) }, reply: { reply(to: entry) })
+                     open: { openChannel(entry) }, choose: { choose($0, for: entry) }, reply: { reply(to: entry) })
     }
 
     var body: some View {
@@ -283,17 +273,12 @@ struct ChannelSidebar: View {
         )
     }
 
-    private var isOffline: Bool {
-        if case .failed = model.catalog?.phase { return true }
-        return false
-    }
-
     private func choices(_ entry: ChannelWaitingRequests.Entry) -> TranscriptRequestChoices? {
         entry.choices(attempts: model.catalog?.existingChannel(id: entry.channel.id)?.sendAttempts ?? [],
-                      isConnected: !isOffline)
+                      isConnected: model.catalog?.phase.failure == nil)
     }
 
-    private func open(_ entry: ChannelWaitingRequests.Entry) {
+    private func openChannel(_ entry: ChannelWaitingRequests.Entry) {
         let server = model.serverURL
         Task { await model.openChannel(id: entry.channel.id, sequence: entry.sequence, expectedServer: server) }
     }
