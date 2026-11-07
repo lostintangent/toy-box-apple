@@ -76,7 +76,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
             && lhs.highlightedSequence == rhs.highlightedSequence && lhs.catchUp === rhs.catchUp
             && lhs.store === rhs.store && lhs.expandedMessageIds == rhs.expandedMessageIds
             && lhs.findHighlights == rhs.findHighlights && lhs.requestChoices == rhs.requestChoices
-            && lhs.bookmarks == rhs.bookmarks
+            && lhs.bookmarks == rhs.bookmarks && lhs.isConnected == rhs.isConnected
     }
 
     private func bookmark(_ sequence: Int) -> TranscriptBookmark? {

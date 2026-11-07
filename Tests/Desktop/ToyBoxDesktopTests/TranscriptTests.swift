@@ -1297,6 +1297,26 @@ struct TranscriptTests {
         #expect(abs(try await actionsMinX(bubbleWidth: 100, edge: .leading, headerWidth: 120) + 88) < 0.5)
     }
 
+    /// A row first drawn while the channel connects must enable its bookmarks once it's connected.
+    @MainActor
+    @Test func aRowRedrawsWhenItsBookmarksBecomeChangeable() throws {
+        let lead = ChannelAgent.lead(id: "lead")
+        let store = ChannelStore(id: "bookmarks", api: try ChannelAPI(serverURL: "https://bookmarks.invalid"),
+                                 sendJournal: nil)
+        let message = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-10-22T10:00:00Z",
+                                     sender: .agent("lead"), content: .text("Hello"))
+        let row = try #require(TranscriptRowBuilder().rows([message], lead: lead, members: []).last)
+        let channel = TranscriptRowChannel(agents: [lead], id: "bookmarks", historyStart: 1, api: store.api)
+        func content(bookmarks: Set<Int>?, isConnected: Bool) -> TranscriptRowContent {
+            TranscriptRowContent(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil,
+                                 catchUp: nil, store: store, expandedMessageIds: [], bookmarks: bookmarks,
+                                 isConnected: isConnected, onSetExpanded: { _, _ in })
+        }
+        #expect(content(bookmarks: [], isConnected: false) != content(bookmarks: [], isConnected: true))
+        // Without bookmarks, the connection changes nothing the row draws.
+        #expect(content(bookmarks: nil, isConnected: false) == content(bookmarks: nil, isConnected: true))
+    }
+
     private func encodedImage(width: Int, height: Int, type: UTType, orientation: Int = 1) throws -> String {
         var generator = SystemRandomNumberGenerator()
         let count = width * height * 4

@@ -15,6 +15,7 @@
 ### Bugs/Polish
 
 - Long suggested replies that wrap now read like ordinary text, in the conversation and the menu bar, which makes them easier to scan.
+- The bookmark button on a message works again after the app opens or reconnects to its server, instead of ignoring the pointer.
 
 ## iPhone 0.1.21
 
