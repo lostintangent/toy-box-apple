@@ -2822,26 +2822,13 @@ text arrives late. Agent avatars as the notification image need Communication No
 are out of scope.
 
 Reply is a `UNTextInputNotificationAction`: title "Reply", button "Send", placeholder "Reply". It
-posts in the background without activating the app or opening a window. The posted text is
-addressed exactly like the in-app Reply: prepend the requester's `@handle ` unless the reply
-already starts with an @mention. Post through the channel's shared `ChannelStore` background send
-with a fresh message ID, which records it in the channel's outbox before its request, and retry
-once after 2 seconds with the same ID only for a transport failure. A 409 for that ID means the
-server already has it and counts as sent. On success, mark the channel read through the reply's own
-sequence, as replying from a Messages notification does, and show nothing else. Empty or
-whitespace-only replies post nothing.
-
-When a reply can't be sent, never lose it and never post it twice. A reply that was attempted but
-not confirmed may already be on the server, so it keeps its message ID and waits in the channel's
-outbox, as on the phone. Send Again reuses that ID, and Edit follows the composer's rule for
-restoring an unsent message, so the server accepts it at most once. Leave the draft untouched and
-deliver one notification: title the channel name, body "Your reply wasn't sent. It's waiting in the
-channel so you can send it again." Activating it opens the channel with the composer focused. A
-reply that can't have been posted has no ID to keep. A deleted channel saves the text as that
-channel's draft, appending after a blank line when a draft exists, and says "Your reply wasn't sent
-because [channel] was deleted." A notification from a server other than the current one never posts
-to the current server. It saves its draft under its own server and says "Your reply wasn't sent.
-It's saved as a draft."
+sends in the background without activating the app or opening a window. The text is addressed
+exactly like the in-app Reply: prepend the requester's `@handle ` unless the reply already starts
+with an @mention. A reply or choice goes to the app's outbox for the server that posted the
+notification, answering that notification's request, and the notification clears. The outbox
+delivers it, so the action never waits on the network, never retries itself and never posts a
+second notification. A failure waits in the channel as Not sent with Retry. Replying doesn't mark
+the channel read. Empty or whitespace-only replies send nothing.
 
 Notifications withdraw themselves. Remove a channel's delivered request notification as soon as
 its `requestSequence` changes or clears, wherever it was answered. Remove a completion once
@@ -2853,7 +2840,11 @@ Settings toggles apply throughout.
 
 **Phone.** The phone's request and completion alerts arrive by push. Their text, badge, service
 extension and routing are under Push and topic subscriptions, and their Lock Screen reply choices
-are under Suggested replies.
+are under Suggested replies. A Lock Screen reply or choice is addressed like the Mac's and goes to
+the app's outbox for the server the alert came from, which the service extension records on the
+alert, answering that alert's request. Only that notification clears. While the outbox is sending,
+the app delegate holds background time, so the reply finishes after the action returns. One still
+sending when that time runs out goes out at the next launch.
 
 ### Menu bar extra
 
@@ -2895,8 +2886,10 @@ fixed footer, with 16-point content insets.
 | Empty and unavailable | "All caught up" when nothing needs attention, "Connecting…" before the first catalog, "No channels yet" with the main-window route, and "Connect to Toy Box" with Settings for invalid configuration. Offline keeps cached rows, says requests may be out of date and offers Retry |
 | Footer | A fixed Quick Send command with the configured shortcut, then Open Toy Box and Settings. Close the inbox before opening another surface. No Quit, because this is a regular Dock app |
 
-An open inbox preserves its original request order and appends newly waiting channels. Answered
-and confirmed-sent rows stay in place until the next opening. A newer request never silently
+An open inbox preserves its original request order and appends newly waiting channels. A reply
+or choice turns its row Replied the moment the outbox saves it, and the editor folds away. Its
+delivery shows in the channel, never in the inbox. Answered and Replied rows stay in place until
+the next opening. A newer request never silently
 replaces the original quote. If an expanded request is answered or replaced, keep its editable
 draft, disable sending and show the corresponding explanation with Open Channel. Reply drafts
 are separate from main-window and Quick Send drafts, keyed by normalized server URL, channel and
@@ -2991,20 +2984,20 @@ the chooser instead of selecting an urgent channel. No-server, no-channel and de
 states offer Settings, the main window or Choose Channel. A channel list that can't load offers
 Retry. An offline target keeps its note without Retry, because the channel reconnects on its own.
 
-Return sends, Shift-Return inserts a newline and Command-Return sends and opens the confirmed
-message. IME and mention completion consume Return first. Escape closes completion or a picker
+Return sends, Shift-Return inserts a newline and Command-Return sends and opens the channel. IME and mention completion consume Return first. Escape closes completion or a picker
 before stopping dictation, then hides the panel. Command-W, another global shortcut press or a
 click away also hide it, preserving the draft. Owned sheets and popovers are not outside clicks.
 Images and dictation reuse the main composer's validation and permission handling. Opening Quick
 Send never requests microphone permission, reads the general clipboard or marks messages read.
 
-Both auxiliary editors use the channel's shared outbox and one caller-owned message UUID.
-Sending is read-only and makes one attempt. Hiding does not cancel or retry delivery.
-Unconfirmed delivery retains the submitted text and images with explicit Edit and Send Again.
-Send Again reuses the original UUID. Confirmation clears only the unchanged submitted revision,
-announces once and shows Sent. Quick Send hides after 700 ms, or opens the confirmed message for
-Command-Return. A confirmation while hidden never reopens the panel. Changing servers closes
-both surfaces and cancels navigation from the old server.
+Both auxiliary editors send through the app's outbox, like the channel composer. Their Send
+follows the channel list rather than the channel, so it never waits for a channel to connect and
+is disabled only while the list is offline, with "Toy Box isn't connected". Saving clears the
+draft and announces the send once. Quick Send then closes at once, or opens the channel for
+Command-Return, and the message shows in its channel as Sending. A message that fails stays there
+as Not sent with Retry, never in Quick Send or the inbox. Shared content that arrives while a send
+saves opens in a fresh editor instead of closing the panel. Changing servers closes both surfaces
+and never opens a channel from the old server.
 
 General settings places the native Quick Send shortcut recorder below Show in menu bar. The
 default is Control-Shift-Space. It records physical keys, displays the current keyboard layout,
@@ -3280,8 +3273,8 @@ chevron. Each row runs Open Channel. "Plus 2 more channels" follows when there a
 
 The card is a hidden `SnippetIntent` that carries its content as JSON, so the system can redraw
 it after a relaunch without the server or the model. Its `perform` only reads. It shows the
-request as Replied once the app has sent a reply to it, or once a window's live store has a
-message from you after it, and never connects a channel. The view is plain SwiftUI with
+request as Replied once it's no longer waiting, including while the app's answer to it is still
+sending, and never connects a channel. The view is plain SwiftUI with
 `AgentAvatarView`, because the system archives it, and its buttons are `Button(intent:)`, because
 closures don't run in a snippet. Reply is a hidden background `ReplyIntent`. It asks "What do you
 want to say to Lead?", confirms "Send “[text]” to Lead in Studio demo?", then sends "@lead [text]"
@@ -3289,12 +3282,11 @@ through Send Message's path, mentioning the asker as the transcript's Reply does
 they've left. It returns no dialog, so the card redraws as Replied.
 
 Send Message trims the text and refuses an empty one before asking anything. It confirms with
-`requestConfirmation(actionName: .send)` and "Send “[text]” to [channel]?", then posts once
-through the channel's shared `ChannelStore` with a fresh caller-owned ID, so it joins the outbox
-and appears in an open window at once. It never retries. A rejection says "Your message to
-[channel] wasn't sent. It's waiting in the channel so you can send it again." An unconfirmed
-delivery says "Your Toy Box server didn't confirm your message to [channel]. Open the channel to
-see if it arrived before you send it again." Other errors: "Toy Box isn't connected to a
+`requestConfirmation(actionName: .send)` and "Send “[text]” to [channel]?", then saves the message
+to the app's outbox, which shows it in the channel at once and delivers it once the server can take
+it. It never waits on the network, so it never reports a delivery failure. A message the server
+refuses waits in the channel as Not sent with Retry. Siri finds channels in the app's channel list,
+waiting for its first load when the app has just launched. Other errors: "Toy Box isn't connected to a
 server. Choose one in Settings.", "Can't connect to your Toy Box server. Check that it's running,
 then try again." and "That channel isn't on your Toy Box server anymore." Errors about the server
 always say "your Toy Box server", since "Toy Box" alone also names the app.

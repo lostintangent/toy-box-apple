@@ -5,6 +5,7 @@
 ### Features
 
 - A request waiting for you can now be read aloud, so you can hear it while you do something else.
+- Quick Send, menu bar replies, notification replies and Siri now finish the moment you send, and a message that can't go out waits in its channel so you can send it again.
 
 ### Bugs/Polish
 
@@ -15,6 +16,7 @@
 ### Features
 
 - A request waiting for you can now be read aloud, from the channel list or the conversation, and it keeps reading if you lock your phone.
+- A reply from the Lock Screen now keeps sending after you put your phone away, and one that can't go out waits in its channel so you can send it again.
 
 ### Bugs/Polish
 

@@ -14,7 +14,7 @@ struct MenuBarInboxRequests: Equatable {
         let current = Dictionary(status.waiting.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for index in requests.indices {
             switch requests[index].state {
-            case .sent, .sending, .notSent: continue
+            case .replied: continue
             case .waiting, .answered, .newerRequest: break
             }
             let previous = requests[index].item
@@ -33,7 +33,8 @@ struct MenuBarInboxRequests: Equatable {
         requests += status.waiting.filter { !retained.contains($0.id) }.map { Request(item: $0) }
     }
 
-    /// Sets a request's row state. A row that's sending or not sent keeps it until the next opening.
+    /// Sets a request's row state. A replied row keeps it until the next opening, so nothing slides out
+    /// from under the pointer.
     mutating func record(_ channelID: String, _ status: Request.Status) {
         guard let index = requests.firstIndex(where: { $0.id == channelID }) else { return }
         requests[index].state = status
@@ -41,24 +42,20 @@ struct MenuBarInboxRequests: Equatable {
 
     struct Request: Equatable, Identifiable {
         enum Status: Equatable {
-            case waiting, answered, newerRequest, sending, sent, notSent
+            case waiting, answered, newerRequest, replied
 
             var notice: String? {
                 switch self {
                 case .waiting: nil
                 case .answered: "This request was answered elsewhere"
                 case .newerRequest: "A newer request is waiting"
-                case .sending: "Sending reply…"
-                case .sent: "Reply sent"
-                case .notSent: "Reply not sent. Open the channel to send it again."
+                case .replied: "Replied"
                 }
             }
 
             var symbol: String {
                 switch self {
-                case .sent: "checkmark.circle"
-                case .notSent: "exclamationmark.circle"
-                case .sending: "paperplane"
+                case .replied: "checkmark.circle"
                 case .waiting, .answered, .newerRequest: "info.circle"
                 }
             }
@@ -71,11 +68,11 @@ struct MenuBarInboxRequests: Equatable {
         var canChoose: Bool { state == .waiting && !item.replies.isEmpty }
 
         /// The choices this row still offers. The outbox takes a choice off the row for good, as the
-        /// transcript does. The inbox sends in the background, so a disconnected channel doesn't disable them.
-        func choices(attempts: [ChannelSendAttempt]) -> [String] {
-            guard canChoose, let sequence = item.sequence else { return [] }
+        /// transcript does, and they disable while the catalog can't connect, as every Send does.
+        func choices(attempts: [ChannelSendAttempt], isConnected: Bool) -> TranscriptRequestChoices? {
+            guard canChoose, let sequence = item.sequence else { return nil }
             return TranscriptRequestChoices(sequence: sequence, labels: item.replies, attempts: attempts,
-                                            isConnected: true)?.labels ?? []
+                                            isConnected: isConnected)
         }
     }
 }

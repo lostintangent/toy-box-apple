@@ -419,6 +419,39 @@ struct IntentsTests {
         #expect(host.confirmations.isEmpty && host.held.isEmpty)
     }
 
+    // MARK: Sending
+
+    @Test func sendMessageSavesToTheOutboxFromTheLoadedCatalogWithoutConnecting() async throws {
+        let host = TestHost(api: try ChannelAPI(serverURL: "https://server.test"))
+        host.channels = [channel("c", "Docs")]
+        var intent = SendMessageIntent(channel: ChannelEntity(id: "c", name: "Docs"), message: "  Ship it\n")
+        intent.context = host.context
+        _ = try await intent.perform()
+        let server = try #require(URL(string: "https://server.test"))
+        #expect(host.sent == [.init(text: "Ship it", channelID: "c", server: server, request: nil)])
+        #expect(host.confirmations == [.init(channel: "Docs", message: "Ship it")] && host.held.isEmpty)
+
+        var reply = ReplyIntent(channel: ChannelEntity(id: "c", name: "Docs"), recipient: "Design Lead", request: 4,
+                                message: "Sounds good")
+        reply.context = host.context
+        _ = try await reply.perform()
+        #expect(host.sent.last == .init(text: "@design-lead Sounds good", channelID: "c", server: server, request: 4))
+    }
+
+    @Test func sendMessageNamesNoChannelUntilTheCatalogLoads() async throws {
+        let host = TestHost(api: try ChannelAPI(serverURL: "https://server.test"))
+        let context = host.context
+        context.connectionTimeout = .zero
+        await #expect(throws: ChannelIntentError.unreachable) {
+            try await context.send("Hi", to: "c") { _ in }
+        }
+        host.channels = [channel("d", "Notes")]
+        await #expect(throws: ChannelIntentError.channelNotFound) {
+            try await context.send("Hi", to: "c") { _ in }
+        }
+        #expect(host.confirmations.isEmpty && host.sent.isEmpty)
+    }
+
     @Test func anEmptyMessageIsNeverConfirmedOrSent() async throws {
         let host = TestHost(api: nil)
         var intent = SendMessageIntent(channel: ChannelEntity(channel("c", "Docs")), message: " \n ")
@@ -462,7 +495,7 @@ extension IntentsTests {
 
         @Test(.enabled(if: demoURL != nil))
         func queryFindsChannelsAndOpenRoutesThem() async throws {
-            let host = try TestHost.demo()
+            let host = try await TestHost.demo()
             var query = ChannelQuery()
             query.context = host.context
             let suggested = try await query.suggestedEntities()
@@ -480,7 +513,7 @@ extension IntentsTests {
 
         @Test(.enabled(if: demoURL != nil))
         func catchMeUpReadsAChannelWithoutMarkingIt() async throws {
-            let host = try TestHost.demo()
+            let host = try await TestHost.demo()
             let channel = try #require(try await host.api?.catalog().channels.first { $0.id == "studio-demo" })
             RequestRecorder.reset()
             var intent = CatchMeUpIntent(channel: ChannelEntity(channel))
@@ -499,7 +532,7 @@ extension IntentsTests {
 
         @Test(.enabled(if: demoURL != nil))
         func catchMeUpWithoutAChannelCoversEveryChannelThatNeedsYou() async throws {
-            let host = try TestHost.demo()
+            let host = try await TestHost.demo()
             let api = try #require(host.api)
             let needing = CatchUpAnswer.needingAttention(try await api.catalog().channels)
             RequestRecorder.reset()
@@ -518,7 +551,7 @@ extension IntentsTests {
         /// Runs before any other test posts, which would answer the demo's request.
         @Test(.enabled(if: demoURL != nil))
         func cardReplyMentionsWhoAskedAndTurnsTheCardToReplied() async throws {
-            let host = try TestHost.demo()
+            let host = try await TestHost.demo()
             let api = try #require(host.api)
             let channel = try #require(try await api.catalog().channels.first { $0.id == "studio-demo" })
             let context = host.context
@@ -544,6 +577,7 @@ extension IntentsTests {
             #expect(posted.map(\.text) == [recipient.map { "@\(ChannelAgent.handle(forName: $0)) \(text)" } ?? text])
             #expect(posted.first?.sender == .user)
             if reply != nil {
+                host.channels = try await api.catalog().channels
                 #expect(context.withReplies(card).isReplied)
                 #expect(state.channel.requestSequence == nil)
             }
@@ -551,7 +585,7 @@ extension IntentsTests {
 
         @Test(.enabled(if: demoURL != nil))
         func sendMessageConfirmsThenPostsOnce() async throws {
-            let host = try TestHost.demo()
+            let host = try await TestHost.demo()
             let api = try #require(host.api)
             let channel = try #require(try await api.catalog().channels.first { $0.id == "studio-demo" })
             let text = "Siri intent fixture \(UUID().uuidString.prefix(8))"
@@ -561,20 +595,18 @@ extension IntentsTests {
             _ = try await intent.perform()
 
             #expect(host.confirmations == [.init(channel: "Studio demo", message: text)])
-            #expect(RequestRecorder.requests.contains("POST /api/v1/channels/studio-demo/messages"))
+            #expect(RequestRecorder.requests.filter { !$0.hasPrefix("GET ") } == ["POST /api/v1/channels/studio-demo/messages"])
             var snapshot = api.observe(channelId: "studio-demo").makeAsyncIterator()
             let state = try #require(try await snapshot.next()?.state)
             let posted = state.messages.filter { $0.text == text }
             #expect(posted.count == 1 && posted.first?.sender == .user)
             #expect(state.channel.latestSequence > channel.latestSequence)
-            let store = try #require(host.store("studio-demo"))
-            #expect(store.sendAttempts.allSatisfy { $0.phase == .confirmed })
-            #expect(host.holds["studio-demo"] == 0, "The intent released the channel it held")
+            #expect(host.held.isEmpty, "Sending never connects the channel")
         }
 
         @Test(.enabled(if: demoURL != nil))
         func declinedConfirmationSendsNothing() async throws {
-            let host = try TestHost.demo()
+            let host = try await TestHost.demo()
             let channel = try #require(try await host.api?.catalog().channels.first { $0.id == "studio-demo" })
             host.declines = true
             RequestRecorder.reset()
@@ -588,7 +620,7 @@ extension IntentsTests {
         /// Run alone against a fresh private demo, before any other fixture replies.
         @Test(.enabled(if: demoURL != nil))
         func spotlightReplyConfirmsAndAnswersTheOriginalRequestWithoutOpeningOrMarkingRead() async throws {
-            let host = try TestHost.demo()
+            let host = try await TestHost.demo()
             let api = try #require(host.api)
             let context = host.context
             _ = try await context.catchUp(channelID: "studio-demo")
@@ -599,6 +631,7 @@ extension IntentsTests {
                                          agent: agent, sequence: request.sequence,
                                          quote: MarkdownBlock.plainText(request.text))
             let entry = try #require(WaitingRequestEntry(item: item, serverURL: api.baseURL.absoluteString))
+            host.waitingRequests = [entry]
             let text = "Spotlight reply fixture \(UUID().uuidString.prefix(8))"
             var intent = ReplyToRequestIntent(request: WaitingRequestEntity(entry), message: "  \(text)\n")
             intent.context = context
@@ -611,9 +644,9 @@ extension IntentsTests {
             let after = try #require(try await stream.next()?.state)
             #expect(after.channel.requestSequence == nil)
             #expect(after.channel.seenThrough == before.channel.seenThrough)
-            #expect(after.messages.filter { $0.id == intent.sendID }.map(\.text) == ["@\(agent.handle) \(text)"])
-            #expect(host.opened.isEmpty && host.store("studio-demo")?.sendAttempts.isEmpty == true)
-            print("Spotlight request reply: confirmed \(agent.name) in \(before.channel.name), one POST, no read write, UUID \(intent.sendID)")
+            #expect(after.messages.filter { $0.text.hasSuffix(text) }.map(\.text) == ["@\(agent.handle) \(text)"])
+            #expect(host.opened.isEmpty)
+            print("Spotlight request reply: confirmed \(agent.name) in \(before.channel.name), one POST, no read write")
         }
     }
 }
@@ -650,6 +683,11 @@ private final class TestHost {
     private(set) var held: [String] = []
     private(set) var opened: [String] = []
     private(set) var confirmations: [ChannelIntents.SendConfirmation] = []
+    private(set) var sent: [ChannelIntents.Outgoing] = []
+    /// The loaded catalog's channels, or nil before it loads.
+    var channels: [Channel]?
+    /// Delivers what the intents save, as the outbox would. Only the demo server sets it.
+    var deliver: (@MainActor (ChannelIntents.Outgoing) async throws -> Void)?
     var declines = false
     var waitingRequests: [WaitingRequestEntry] = []
     private(set) var revealedRequests: [String] = []
@@ -657,6 +695,7 @@ private final class TestHost {
     var context: ChannelIntents {
         let context = ChannelIntents(host: .init(
             api: { self.api },
+            channels: { self.channels },
             store: { self.store($0) },
             hold: { store in
                 self.held.append(store.id)
@@ -667,8 +706,13 @@ private final class TestHost {
                 self.holds[store.id, default: 1] -= 1
                 if self.holds[store.id] == 0 { store.disconnect() }
             },
+            send: { message in
+                self.sent.append(message)
+                do { try await self.deliver?(message) } catch { Issue.record(error) }
+            },
             open: { self.opened.append($0) },
             requests: { self.waitingRequests },
+            isWaiting: { id, request in self.channels?.first { $0.id == id }.map { $0.requestSequence == request } ?? true },
             revealRequest: { self.revealedRequests.append("\($0):\($1)") }
         ), intelligence: UnavailableIntelligence(), summarizes: { false })
         context.confirmationOverride = { prompt in
@@ -683,8 +727,9 @@ private final class TestHost {
         self.api = api
     }
 
-    /// The demo server, through a session that records each request. Never the live server.
-    static func demo() throws -> TestHost {
+    /// The demo server and its loaded catalog, through a session that records each request. Never
+    /// the live server.
+    static func demo() async throws -> TestHost {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RequestRecorder.self] + (configuration.protocolClasses ?? [])
         let api = try ChannelAPI(serverURL: #require(IntentsTests.Demo.demoURL),
@@ -692,7 +737,10 @@ private final class TestHost {
         guard ["localhost", "127.0.0.1"].contains(api.baseURL.host), api.baseURL.port != 3100 else {
             throw ChannelAPIError.invalidServerURL
         }
-        return TestHost(api: api)
+        let host = TestHost(api: api)
+        host.channels = try await api.catalog().channels
+        host.deliver = { _ = try await api.post(channelId: $0.channelID, content: $0.text) }
+        return host
     }
 
     func store(_ id: String) -> ChannelStore? {

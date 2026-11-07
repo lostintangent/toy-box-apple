@@ -53,8 +53,7 @@ final class QuickSendPrefillInbox {
     @discardableResult
     func apply(to session: AuxiliaryComposerSession) -> Bool {
         guard draft.revision != lastAppliedRevision, session.store.api.baseURL == serverURL,
-              hasPendingContent, !draft.isLoadingImages, !session.isReadOnly,
-              !session.isSubmitting, session.confirmation == nil, session.store.phase != .deleted else { return false }
+              hasPendingContent, !draft.isLoadingImages, !session.isSubmitting, session.confirmation == nil, session.store.phase != .deleted else { return false }
         session.prepareForExternalEdit?()
         let revision = draft.revision
         session.draft.append(contentsOf: draft)

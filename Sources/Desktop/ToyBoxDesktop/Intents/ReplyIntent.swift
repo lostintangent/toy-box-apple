@@ -1,7 +1,7 @@
 import AppIntents
 
-/// The Catch Me Up card's Reply. It asks what to say, confirms, then sends once through the same
-/// outbox as the composer, mentioning whoever asked the way the transcript's Reply does.
+/// The Catch Me Up card's Reply. It asks what to say, confirms, then saves it to the same outbox as
+/// the composer, mentioning whoever asked the way the transcript's Reply does.
 struct ReplyIntent: AppIntent {
     static let title: LocalizedStringResource = "Reply"
     static let description = IntentDescription("Replies in a channel after you confirm it.")
@@ -15,7 +15,7 @@ struct ReplyIntent: AppIntent {
     @Parameter(title: "Recipient")
     var recipient: String?
 
-    /// The request's sequence, which the card shows as Replied once this sends.
+    /// The request's sequence, which the card shows as Replied once this is saved.
     @Parameter(title: "Request")
     var request: Int?
 
@@ -40,7 +40,7 @@ struct ReplyIntent: AppIntent {
                 else { "What do you want to say?" }
             text = try await $message.requestValue(question)
         }
-        try await context.reply(text, to: channel.id, recipient: recipient, request: request) { prompt in
+        try await context.send(text, to: channel.id, recipient: recipient, answering: request) { prompt in
             try await requestConfirmation(actionName: .send, dialog: "\(prompt.question)")
         }
         return .result()

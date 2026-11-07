@@ -37,9 +37,6 @@ struct RootView: View {
     /// keeps their first build off the launch's critical path. Once mounted, they stay.
     @ViewState private var mountsSurroundings = false
     @ViewState private var isOverviewSheetPresented = false
-    /// The channel whose composer takes focus once it appears, after a notification's reply
-    /// wasn't sent and waits there as a draft.
-    @ViewState private var composerFocusChannelID: String?
     @ViewState private var handoff = ChannelHandoffNavigation()
     #if DEBUG
     @ViewState private var didRunHandoffProof = false
@@ -201,7 +198,6 @@ struct RootView: View {
             artifactOpener.close(animated: false)
             isOverviewSheetPresented = false
             if !model.launchOptions.isSnapshot { restoredSelectedId = id }
-            if id != composerFocusChannelID { composerFocusChannelID = nil }
             model.updateWindow(windowID, channelID: id, isKey: isKeyWindow)
         }
         .onChange(of: model.serverURL) { _, _ in
@@ -253,7 +249,6 @@ struct RootView: View {
         artifactOpener.close(animated: false)
         management.flow = nil
         setOverviewVisible(false)
-        composerFocusChannelID = nil
         selectedId = nil
         Task {
             await handoff.continueActivity(activity, currentCatalog: { model.catalog }) { id in
@@ -304,10 +299,8 @@ struct RootView: View {
                               windowHeight: windowHeight ?? CGFloat(model.launchOptions.height),
                               isOverviewSheetPresented: $isOverviewSheetPresented,
                               mountsSurroundings: $mountsSurroundings,
-                              focusesComposer: composerFocusChannelID == selectedId,
                               onBack: { selectChannel(nil) },
-                              onSelect: { selectChannel($0) },
-                              onComposerFocused: { composerFocusChannelID = nil })
+                              onSelect: { selectChannel($0) })
                 // A switch keeps the detail and its toolbar, which hand per-channel state to
                 // the new store. Only another server starts over.
                 .id(model.serverURL)
@@ -355,7 +348,6 @@ struct RootView: View {
         handoff.cancel()
         selectedId = request.channelID
         if let sequence = request.sequence { interaction.reveal(sequence: sequence) }
-        composerFocusChannelID = request.focusComposer ? request.channelID : nil
         model.navigationRequest = nil
     }
 

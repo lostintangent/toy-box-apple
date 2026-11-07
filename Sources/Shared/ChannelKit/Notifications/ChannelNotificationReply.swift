@@ -15,11 +15,5 @@ extension ChannelNotification {
             }
             content = "@\(handle) \(trimmed)"
         }
-
-        /// A reply that couldn't be sent, added to the channel's draft after a blank line.
-        public func appended(to draft: String) -> String {
-            let kept = draft.replacing(/\s+$/, with: "")
-            return kept.isEmpty ? content : kept + "\n\n" + content
-        }
     }
 }

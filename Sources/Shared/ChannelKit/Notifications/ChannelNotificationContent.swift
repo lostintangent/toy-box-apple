@@ -5,7 +5,6 @@ extension ChannelNotification {
     public struct Content: Equatable, Sendable {
         public static let bodyLimit = 400
         public static let waitingBody = "Your team is waiting for your reply."
-        public static let unsentBody = "Your reply wasn't sent. It's saved as a draft."
         public static let requestPlaceholder = "Waiting for your reply"
         public static let completionPlaceholder = "Tasks completed"
         /// A waiting request whose requester or words aren't known yet.
@@ -30,10 +29,6 @@ extension ChannelNotification {
             case let count: text = "All \(count) tasks completed"
             }
             self.init(body: text)
-        }
-
-        public init(deletedChannel channel: String) {
-            self.init(body: "Your reply wasn't sent because \(channel) was deleted.")
         }
 
         public static func subtitle(requester: String) -> String {
