@@ -8,17 +8,6 @@ import Observation
 /// list in docs/spec.md.
 @MainActor @Observable
 package final class NeedsYouCards {
-    /// One waiting request, by its channel and its message's sequence.
-    package struct Request: Hashable, Sendable {
-        package var channelID: String
-        package var sequence: Int
-
-        package init(channelID: String, sequence: Int) {
-            self.channelID = channelID
-            self.sequence = sequence
-        }
-    }
-
     package enum Phase: Equatable {
         /// The card lifted above the list, with the field for a typed reply.
         case composing
@@ -27,16 +16,8 @@ package final class NeedsYouCards {
         case failed(ChannelSendPhase)
     }
 
-    /// The done check a row wears once its reply sends here, as the talk card's row does.
-    package enum Check: Equatable, Sendable {
-        /// The card has shrunk back into its row, which wears the check.
-        case sent
-        /// The check swaps back to the channel's mark.
-        case settling
-    }
-
     /// What a waiting channel's row shows.
-    package enum Face: Equatable {
+    package enum Row: Equatable {
         /// The open card, with its whole question, choices and Reply.
         case card(ChannelWaitingRequests.Entry)
         /// A waiting row, with its question in one line.
@@ -52,33 +33,35 @@ package final class NeedsYouCards {
         let handle: String?
         var phase: Phase
         var hasFailed = false
-        var attempt: CardSend?
+        /// The reply's one attempt in the channel's outbox, which Send Again repeats under its UUID.
+        var attempt: (id: String, content: String)?
+        var postingSince: ContinuousClock.Instant?
     }
 
     private var answer: Answer?
     /// The typed reply, or the chosen reply once it's sending.
     package var words = ""
-    /// The rows wearing the done check, by channel.
-    package private(set) var checks: [String: Check] = [:]
     /// The card the person opened, which stays open while its request waits.
-    package private(set) var chosen: Request?
+    package private(set) var opened: ChannelWaitingRequests.Entry.ID?
     /// Requests answered here, which never reopen while the catalog catches up.
-    package private(set) var answered: Set<Request> = []
-    @ObservationIgnored private var settles: [String: Task<Void, Never>] = [:]
+    package private(set) var answered: Set<ChannelWaitingRequests.Entry.ID> = []
+    @ObservationIgnored private let checks: CardChecks
     @ObservationIgnored private let draft: @MainActor (ChannelStore) -> ComposerDraft
     @ObservationIgnored private let announce: @MainActor (String) -> Void
     @ObservationIgnored private let animate: @MainActor (CardMotion, () -> Void) -> Void
     @ObservationIgnored private let pause: @MainActor (Duration) async -> Void
 
     /// - Parameters:
+    ///   - checks: The list's done checks, which a row wears once its reply sends.
     ///   - draft: The channel's composer draft, which keeps a typed reply left mid-way.
     ///   - announce: Speaks a VoiceOver announcement.
     ///   - animate: Applies one beat's change in that beat's motion.
     ///   - pause: Waits while a beat's motion plays, before the next beat.
-    package init(draft: @escaping @MainActor (ChannelStore) -> ComposerDraft,
+    package init(checks: CardChecks, draft: @escaping @MainActor (ChannelStore) -> ComposerDraft,
                  announce: @escaping @MainActor (String) -> Void,
                  animate: @escaping @MainActor (CardMotion, () -> Void) -> Void = { $1() },
                  pause: @escaping @MainActor (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
+        self.checks = checks
         self.draft = draft
         self.announce = announce
         self.animate = animate
@@ -93,37 +76,38 @@ package final class NeedsYouCards {
     package var isLifted: Bool { answer?.isLifted == true }
     /// True once the reply has failed, so its card keeps the failure's place while Send Again retries.
     package var hasFailed: Bool { answer?.hasFailed == true }
-    /// True once a send has gone 300 ms without confirming.
-    package var showsProgress: Bool { answer?.attempt?.showsProgress == true }
+    /// When the reply's attempt began posting, which Send's progress waits 300 ms from.
+    package var postingSince: ContinuousClock.Instant? { answer?.postingSince }
 
     /// The open card among the waiting requests, newest first: the one being answered, otherwise
     /// the one the person opened while it waits, otherwise the newest.
     package func open(in waiting: [ChannelWaitingRequests.Entry]) -> ChannelWaitingRequests.Entry? {
-        if let replying { return waiting.first { $0.card == replying.card } ?? replying }
-        let unanswered = waiting.filter { !answered.contains($0.card) }
-        return unanswered.first { $0.card == chosen } ?? unanswered.first
+        if let replying { return waiting.first { $0.id == replying.id } ?? replying }
+        let unanswered = waiting.filter { !answered.contains($0.id) }
+        return unanswered.first { $0.id == opened } ?? unanswered.first
     }
 
     /// True when the open card changed from `previous` to `card` because of the person: a tap on
     /// its row, or their answer to the card before it. Only those scroll the list, so a request
     /// arriving never moves it under someone reading.
-    package func reveals(_ card: Request?, after previous: Request?) -> Bool {
+    package func reveals(_ card: ChannelWaitingRequests.Entry.ID?,
+                         after previous: ChannelWaitingRequests.Entry.ID?) -> Bool {
         guard let card else { return false }
-        return card == chosen || previous.map(answered.contains) == true
+        return card == opened || previous.map(answered.contains) == true
     }
 
     /// True when the request still needs an answer here, so its row shows its question.
     package func isWaiting(_ entry: ChannelWaitingRequests.Entry) -> Bool {
-        !answered.contains(entry.card)
+        !answered.contains(entry.id)
     }
 
-    /// Each waiting row's face, by channel. A request answered here leaves an ordinary row while
-    /// the catalog catches up.
-    package func faces(in waiting: [ChannelWaitingRequests.Entry]) -> [String: Face] {
-        var faces: [String: Face] = [:]
-        for entry in waiting where isWaiting(entry) { faces[entry.channel.id] = .question(entry) }
-        if let open = open(in: waiting) { faces[open.channel.id] = .card(open) }
-        return faces
+    /// What each waiting row shows, by channel. A request answered here leaves an ordinary row
+    /// while the catalog catches up.
+    package func rows(in waiting: [ChannelWaitingRequests.Entry]) -> [String: Row] {
+        var rows: [String: Row] = [:]
+        for entry in waiting where isWaiting(entry) { rows[entry.channel.id] = .question(entry) }
+        if let open = open(in: waiting) { rows[open.channel.id] = .card(open) }
+        return rows
     }
 
     /// The rows whose bottom line the open card covers: its own, and the one above, whose line is the
@@ -135,19 +119,20 @@ package final class NeedsYouCards {
 
     /// Opens a compact row's card, closing the others. A failed reply's card closes too, and its
     /// reply waits in the channel's outbox.
-    package func choose(_ request: Request) {
-        guard !isLifted, phase != .sending, chosen != request || replying != nil else { return }
+    package func open(_ request: ChannelWaitingRequests.Entry.ID) {
+        guard !isLifted, phase != .sending, opened != request || replying != nil else { return }
         animate(.open) {
             if case .failed = phase { close() }
-            chosen = request
+            opened = request
         }
     }
 
     /// Sends a choice at once as written, through the channel's outbox with a new UUID.
     package func send(_ choice: String, to entry: ChannelWaitingRequests.Entry, on store: ChannelStore) async {
         guard answer == nil else { return }
-        chosen = entry.card
-        answer = Answer(entry: entry, isLifted: false, store: store, handle: nil, phase: .sending, attempt: CardSend(choice))
+        opened = entry.id
+        answer = Answer(entry: entry, isLifted: false, store: store, handle: nil, phase: .sending,
+                        attempt: (UUID().uuidString, choice))
         words = choice
         await deliver()
     }
@@ -157,7 +142,7 @@ package final class NeedsYouCards {
     package func reply(to entry: ChannelWaitingRequests.Entry, on store: ChannelStore) {
         guard answer == nil else { return }
         animate(.open) {
-            chosen = entry.card
+            opened = entry.id
             answer = Answer(entry: entry, isLifted: true, store: store, handle: entry.request?.requester?.handle,
                             phase: .composing)
             words = ""
@@ -173,7 +158,7 @@ package final class NeedsYouCards {
     package func send() async {
         if case .failed = phase { return await deliver() }
         guard canSend, let content = ChannelNotification.Reply(words, to: answer?.handle)?.content else { return }
-        answer?.attempt = CardSend(content)
+        answer?.attempt = (UUID().uuidString, content)
         await deliver()
     }
 
@@ -181,37 +166,28 @@ package final class NeedsYouCards {
         guard let answer, let attempt = answer.attempt else { return }
         let entry = answer.entry
         self.answer?.phase = .sending
-        let failure = await attempt.post(to: answer.store)
-        guard self.answer?.attempt === attempt else { return }
-        if let failure {
+        self.answer?.postingSince = .now
+        let posted: Bool
+        do {
+            try await answer.store.postInBackground(id: attempt.id, content: attempt.content)
+            posted = true
+        } catch { posted = false }
+        guard self.answer?.attempt?.id == attempt.id else { return }
+        self.answer?.postingSince = nil
+        guard posted else {
+            let failure = answer.store.failedPhase(ofSend: attempt.id)
             self.answer?.phase = .failed(failure)
             self.answer?.hasFailed = true
             return announce(failure.label)
         }
         // The card shrinks straight back into its row, which wears the check, as the next opens.
+        // Each row's check settles on its own, so answering the next card leaves this one's in place.
         animate(.sent) {
-            answered.insert(entry.card)
-            checks[entry.channel.id] = .sent
+            answered.insert(entry.id)
+            checks.sent(entry.channel.id)
             close()
         }
         announce("Reply sent in \(entry.channel.name)")
-        settle(entry.channel.id)
-    }
-
-    /// Holds the check as long as the talk card does, through the shrink and two seconds more, then
-    /// swaps it back to the channel's mark. Each row settles on its own, so answering the next card
-    /// leaves this one's check in place.
-    private func settle(_ channelID: String) {
-        settles[channelID]?.cancel()
-        settles[channelID] = Task { [weak self] in
-            await self?.pause(.seconds(2.35))
-            guard let self, !Task.isCancelled else { return }
-            animate(.settle) { checks[channelID] = .settling }
-            await pause(.seconds(0.45))
-            guard !Task.isCancelled else { return }
-            checks[channelID] = nil
-            settles[channelID] = nil
-        }
     }
 
     /// Lowers a typed reply back into its row and discards its words. After a failure, the reply
@@ -240,9 +216,4 @@ package final class NeedsYouCards {
         answer = nil
         words = ""
     }
-}
-
-extension ChannelWaitingRequests.Entry {
-    /// The request's identity, which outlives the entry's channel details.
-    package var card: NeedsYouCards.Request { .init(channelID: channel.id, sequence: sequence) }
 }

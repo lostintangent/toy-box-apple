@@ -9,20 +9,10 @@ import UIKit
 
 extension NeedsYouCards {
     /// The phone's cards, with drafts, VoiceOver announcements and the spec's springs.
-    convenience init() {
-        self.init(draft: { .shared(serverURL: $0.api.baseURL, channelID: $0.id, imageIsReadable: ComposerSession.imageIsReadable) },
+    convenience init(checks: CardChecks) {
+        self.init(checks: checks, draft: { .shared(serverURL: $0.api.baseURL, channelID: $0.id, imageIsReadable: ComposerSession.imageIsReadable) },
                   announce: { UIAccessibility.post(notification: .announcement, argument: $0) },
-                  animate: { withAnimation(Self.motion($0), $1) })
-    }
-
-    /// The talk card's motion, or short eases without bounce under Reduce Motion.
-    static func motion(_ motion: CardMotion) -> Animation {
-        if UIAccessibility.isReduceMotionEnabled { return .easeInOut(duration: 0.2) }
-        return switch motion {
-        case .open: .spring(duration: 0.4, bounce: 0.12)
-        case .sent: .smooth(duration: 0.35)
-        case .settle: .easeOut(duration: 0.4)
-        }
+                  animate: { withAnimation($0.animation, $1) })
     }
 }
 
@@ -68,7 +58,7 @@ struct NeedsYouCard: View {
     /// Whether the question runs on above or below what's shown.
     @ViewState private var hidden: Edge.Set = []
 
-    private var isReplying: Bool { cards.replying?.card == entry.card }
+    private var isReplying: Bool { cards.replying?.id == entry.id }
 
     var body: some View {
         let lineHeight = UIFont.preferredFont(forTextStyle: .body).lineHeight
@@ -178,8 +168,8 @@ struct NeedsYouCard: View {
                 .id(isSending)
                 .allowsHitTesting(!isSending)
                 .overlay(alignment: .bottomTrailing) {
-                    if isSending, cards.showsProgress {
-                        ProgressView()
+                    if isSending {
+                        DelayedProgressView(since: cards.postingSince)
                             .controlSize(.small)
                             .frame(height: 28)
                             .accessibilityLabel("Sending")
@@ -229,7 +219,7 @@ struct NeedsYouReplyField: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             CardControls(canCancel: cards.phase != .sending, canSend: cards.canSend || failure != nil,
-                         isSending: cards.phase == .sending, showsProgress: cards.showsProgress,
+                         isSending: cards.phase == .sending, postingSince: cards.postingSince,
                          isFailed: failure != nil, sendLabel: "Send Reply", cancel: cards.cancel,
                          send: { Task { await cards.send() } })
                 // The circles end where the card's content does.
@@ -244,6 +234,7 @@ struct NeedsYouReplyField: View {
 struct NeedsYouReplyStatus: View {
     let cards: NeedsYouCards
     let phase: NeedsYouCards.Phase
+    @ViewState private var showsProgress = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -253,7 +244,7 @@ struct NeedsYouReplyStatus: View {
                     Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
                     Text(failure.label)
                 case .sending, .composing:
-                    if cards.showsProgress { ProgressView().controlSize(.mini) }
+                    if showsProgress { ProgressView().controlSize(.mini) }
                     Text("Sending")
                 }
             }
@@ -272,6 +263,7 @@ struct NeedsYouReplyStatus: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .cardProgress(since: cards.postingSince, $showsProgress)
         .accessibilityElement(children: .combine)
     }
 }
@@ -279,7 +271,7 @@ struct NeedsYouReplyStatus: View {
 extension View {
     /// The row's mark, which wears the done check once the row's reply sends from its card, then
     /// settles back to the channel's own mark.
-    func needsYouMark(_ check: NeedsYouCards.Check?, emphasized: Bool) -> some View {
+    func needsYouMark(_ check: CardChecks.Check?, emphasized: Bool) -> some View {
         modifier(NeedsYouMarkSlot(check: check, emphasized: emphasized))
     }
 
@@ -340,7 +332,7 @@ private struct NeedsYouList<Card: View>: ViewModifier {
 }
 
 private struct NeedsYouMarkSlot: ViewModifier {
-    let check: NeedsYouCards.Check?
+    let check: CardChecks.Check?
     let emphasized: Bool
 
     func body(content: Content) -> some View {
@@ -358,14 +350,14 @@ private struct NeedsYouMarkSlot: ViewModifier {
 /// The talk card's mark on a row whose card has just shrunk into it. The row only now draws it, so
 /// it starts on the channel's face and swaps to the check once it's on screen.
 private struct NeedsYouMark: View {
-    let check: NeedsYouCards.Check
+    let check: CardChecks.Check
     let emphasized: Bool
     @ViewState private var face = CardMark.Face.channel
 
     var body: some View {
         CardMark(face: face, emphasized: emphasized)
             .task(id: check) {
-                withAnimation(NeedsYouCards.motion(check == .sent ? .sent : .settle)) {
+                withAnimation((check == .sent ? CardMotion.sent : .settle).animation) {
                     face = check == .sent ? .check : .channel
                 }
             }

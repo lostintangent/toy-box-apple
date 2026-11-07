@@ -425,6 +425,12 @@ public final class ChannelStore {
         return result
     }
 
+    /// The phase a failed background send leaves its attempt in, which Send Again repeats under the
+    /// same UUID.
+    package func failedPhase(ofSend id: String) -> ChannelSendPhase {
+        sendAttempts.first { $0.id == id }?.phase == .deliveryNotConfirmed ? .deliveryNotConfirmed : .notSent
+    }
+
     private func post(id suppliedId: String?, content: String, attachments: [ChannelAttachment],
                       requiresConnection: Bool,
                       onRecorded: (@MainActor () -> Void)? = nil) async throws -> ChannelSendResult {

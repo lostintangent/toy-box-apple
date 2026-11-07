@@ -11,8 +11,14 @@ struct NeedsYouCardsTests {
     struct Posted: Decodable { var id: String; var content: String }
     struct MessageEnvelope: Encodable { var version = 1; var message: ChannelMessage }
 
-    let beats = CardBeats()
+    let beats: CardBeats
+    let checks: CardChecks
     let draft = ComposerDraft(imageIsReadable: { _ in false })
+
+    init() {
+        beats = CardBeats()
+        checks = CardChecks(animate: beats.animate, pause: beats.pause)
+    }
 
     @Test func aChoiceSendsAtOnceThenItsRowWearsTheCheckAsTheNextCardOpens() async throws {
         let posts = Mutex<[(path: String, body: Posted)]>([])
@@ -29,12 +35,12 @@ struct NeedsYouCardsTests {
         let cards = cards { announcements.append($0) }
         let (a, b, c) = (entry("a", 12), entry("b", 7), entry("c", 20))
         #expect(cards.open(in: [a, b]) == a, "The newest request opens")
-        cards.choose(b.card)
+        cards.open(b.id)
         #expect(cards.open(in: [a, b]) == b)
-        #expect(cards.faces(in: [a, b]) == ["a": .question(a), "b": .card(b)], "The open card replaces its row's question")
+        #expect(cards.rows(in: [a, b]) == ["a": .question(a), "b": .card(b)], "The open card replaces its row's question")
         #expect(cards.hiddenLines(in: [a, b], order: ["a", "x", "b", "y"]) == ["x", "b"],
                 "The open card's row and the row above it hide their lines")
-        #expect(cards.reveals(b.card, after: a.card), "A card the person opens scrolls into view")
+        #expect(cards.reveals(b.id, after: a.id), "A card the person opens scrolls into view")
 
         await cards.send("Near the entrance", to: b, on: stores.b)
         let posted = posts.withLock { $0 }
@@ -43,23 +49,23 @@ struct NeedsYouCardsTests {
         #expect(UUID(uuidString: posted[0].body.id) != nil)
         #expect(cards.replying == nil && cards.phase == nil && cards.words.isEmpty,
                 "On confirmation the card shrinks straight back into its row")
-        #expect(cards.checks == ["b": .sent], "Its row wears the check")
-        #expect(cards.faces(in: [b, a]) == ["a": .card(a)], "The answered row is ordinary while the catalog catches up")
-        #expect(cards.open(in: [a]) == a && cards.reveals(a.card, after: b.card),
+        #expect(checks.rows == ["b": .sent], "Its row wears the check")
+        #expect(cards.rows(in: [b, a]) == ["a": .card(a)], "The answered row is ordinary while the catalog catches up")
+        #expect(cards.open(in: [a]) == a && cards.reveals(a.id, after: b.id),
                 "The next card opens in the same motion, and scrolls into view")
-        #expect(cards.open(in: [c, a]) == c && !cards.reveals(c.card, after: a.card),
+        #expect(cards.open(in: [c, a]) == c && !cards.reveals(c.id, after: a.id),
                 "A request that arrives opens without moving the list")
         #expect(announcements == ["Reply sent in b"])
 
         await cards.send("Beside the desks", to: a, on: stores.a)
-        #expect(cards.checks == ["b": .sent, "a": .sent], "Answering the next card leaves the first check in place")
+        #expect(checks.rows == ["b": .sent, "a": .sent], "Answering the next card leaves the first check in place")
         try await beats.end(.seconds(2.35))
-        try await eventually { cards.checks["b"] == .settling }
-        #expect(cards.checks["a"] == .sent, "Each row settles on its own")
+        try await eventually { checks["b"] == .settling }
+        #expect(checks["a"] == .sent, "Each row settles on its own")
         try await beats.end(.seconds(2.35))
         try await beats.end(.seconds(0.45))
         try await beats.end(.seconds(0.45))
-        try await eventually { cards.checks.isEmpty }
+        try await eventually { checks.rows.isEmpty }
         #expect(cards.open(in: [b, a]) == nil && !cards.isWaiting(b),
                 "An answered request never reopens while the catalog catches up")
         #expect(beats.motions == [.open, .sent, .sent, .settle, .settle])
@@ -94,7 +100,7 @@ struct NeedsYouCardsTests {
         #expect(Set(posted.map(\.id)).count == 1, "Send Again reuses the reply's UUID")
         #expect(announcements == [failure.label, failure.label])
 
-        cards.choose(entry("b", 7).card)
+        cards.open(entry("b", 7).id)
         #expect(cards.open(in: [entry("b", 7), a]) == a, "A lifted reply holds the list")
         cards.cancel()
         #expect(cards.replying == nil && !cards.isLifted && cards.isWaiting(a))
@@ -102,13 +108,13 @@ struct NeedsYouCardsTests {
 
         await cards.send("Near the entrance", to: a, on: store)
         #expect(cards.phase == .failed(failure) && !cards.isLifted && cards.words == "Near the entrance")
-        #expect(cards.hasFailed && cards.checks.isEmpty, "A failure keeps its card, with no check")
+        #expect(cards.hasFailed && checks.rows.isEmpty, "A failure keeps its card, with no check")
         await cards.send()
         let chosen = posts.withLock { Array($0.dropFirst(2)) }
         #expect(chosen.map(\.content) == ["Near the entrance", "Near the entrance"])
         #expect(Set(chosen.map(\.id)).count == 1, "Send Again reuses the choice's UUID")
         let b = entry("b", 7)
-        cards.choose(b.card)
+        cards.open(b.id)
         #expect(cards.replying == nil && !cards.hasFailed && cards.open(in: [b, a]) == b,
                 "Opening another card closes a failed one")
         #expect(beats.motions == [.open, .open, .open])
@@ -145,6 +151,6 @@ struct NeedsYouCardsTests {
 
     private func cards(announce: @escaping @MainActor (String) -> Void = { _ in }) -> NeedsYouCards {
         let draft = draft
-        return NeedsYouCards(draft: { _ in draft }, announce: announce, animate: beats.animate, pause: beats.pause)
+        return NeedsYouCards(checks: checks, draft: { _ in draft }, announce: announce, animate: beats.animate, pause: beats.pause)
     }
 }

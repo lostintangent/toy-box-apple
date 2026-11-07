@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 // What the channel list's two cards share, the talk card and the Needs You card, so they move,
-// sit and send alike. See Talk to the Lead and Needs You in the list in docs/spec.md.
+// sit and settle alike. See Talk to the Lead and Needs You in the list in docs/spec.md.
 
 /// A card's beats, which the app animates with the spec's springs. A card that closes without
 /// sending plays `open` in reverse.
@@ -27,40 +27,53 @@ package struct CardPlacement: Equatable, Sendable {
     }
 }
 
-/// A message a card sends: one attempt through the channel's outbox under its own UUID, which
-/// Send Again repeats, so the server can't deliver it twice.
+/// The done check a list row wears once its card sends: through the card's shrink and two seconds
+/// more, then it settles back to the channel's mark. The list owns one for both of its cards, and
+/// each row's check settles on its own.
 @MainActor @Observable
-package final class CardSend {
-    /// True once the send has gone 300 ms without confirming.
-    package private(set) var showsProgress = false
-    /// When the server committed the message.
-    package private(set) var sentAt: Date?
-    @ObservationIgnored private let id = UUID().uuidString
-    @ObservationIgnored private let content: String
-
-    package init(_ content: String) {
-        self.content = content
+package final class CardChecks {
+    package enum Check: Equatable, Sendable {
+        /// The card has shrunk back into its row, which wears the check.
+        case sent
+        /// The check swaps back to the channel's mark.
+        case settling
     }
 
-    /// Posts the message, and returns the failure the outbox shows, or nil once the server has it.
-    package func post(to store: ChannelStore) async -> ChannelSendPhase? {
-        let progress = Task { [weak self] in
-            try await Task.sleep(for: .milliseconds(300))
-            self?.showsProgress = true
+    /// The rows wearing a check, by channel.
+    package private(set) var rows: [String: Check] = [:]
+    @ObservationIgnored private var settles: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private let animate: @MainActor (CardMotion, () -> Void) -> Void
+    @ObservationIgnored private let pause: @MainActor (Duration) async -> Void
+
+    /// - Parameters:
+    ///   - animate: Applies one beat's change in that beat's motion.
+    ///   - pause: Waits while a beat's motion plays, before the next beat.
+    package init(animate: @escaping @MainActor (CardMotion, () -> Void) -> Void = { $1() },
+                 pause: @escaping @MainActor (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
+        self.animate = animate
+        self.pause = pause
+    }
+
+    package subscript(channelID: String) -> Check? { rows[channelID] }
+
+    /// Puts the check on the row, in the card's own `sent` beat, and settles it 2.35 seconds later.
+    package func sent(_ channelID: String) {
+        settles[channelID]?.cancel()
+        rows[channelID] = .sent
+        settles[channelID] = Task { [weak self] in
+            await self?.pause(.seconds(2.35))
+            guard let self, !Task.isCancelled else { return }
+            animate(.settle) { rows[channelID] = .settling }
+            await pause(.seconds(0.45))
+            guard !Task.isCancelled else { return }
+            rows[channelID] = nil
+            settles[channelID] = nil
         }
-        defer {
-            progress.cancel()
-            showsProgress = false
-        }
-        do {
-            let result = try await store.postInBackground(id: id, content: content)
-            sentAt = if case .committed(let message) = result {
-                (try? Date(message.timestamp, strategy: .iso8601)) ?? .now
-            } else { .now }
-            return nil
-        } catch {
-            return store.sendAttempts.first { $0.id == id }?.phase == .deliveryNotConfirmed
-                ? .deliveryNotConfirmed : .notSent
-        }
+    }
+
+    /// Takes the check off the row at once, as when a new card replaces it.
+    package func clear(_ channelID: String) {
+        settles.removeValue(forKey: channelID)?.cancel()
+        rows[channelID] = nil
     }
 }

@@ -15,8 +15,9 @@ struct ChannelSidebar: View {
     @ViewState private var pull = PullGesture()
     /// True while a finger or a fling still moves the list.
     @ViewState private var isScrolling = false
-    @ViewState private var talk = TalkRecorder()
-    @ViewState private var cards = NeedsYouCards()
+    @ViewState private var checks: CardChecks
+    @ViewState private var talk: TalkRecorder
+    @ViewState private var cards: NeedsYouCards
     /// The list's visible area in global space.
     @ViewState private var listBounds: CGRect = .zero
     /// The open card's row in global space, kept from its first layout at each width, since a
@@ -24,9 +25,19 @@ struct ChannelSidebar: View {
     @ViewState private var cardRow: CGRect?
     @ViewState private var cardHeight: CGFloat = 0
     /// The open card, when the person caused it to open, which may scroll the list as it grows.
-    @ViewState private var revealing: NeedsYouCards.Request?
+    @ViewState private var revealing: ChannelWaitingRequests.Entry.ID?
     /// The open card in global space while a typed reply lifts it above the list.
     @ViewState private var liftedCard: CGRect?
+
+    init(searchFocused: FocusState<Bool>.Binding, isCollapsed: Bool) {
+        self.searchFocused = searchFocused
+        self.isCollapsed = isCollapsed
+        // Both cards share the list's done checks, so a row wears one check whichever card sent.
+        let checks = CardChecks()
+        _checks = .init(initialValue: checks)
+        _talk = .init(initialValue: TalkRecorder(checks: checks))
+        _cards = .init(initialValue: NeedsYouCards(checks: checks))
+    }
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -80,7 +91,7 @@ struct ChannelSidebar: View {
                         ForEach(channels) { channel in
                             let face = faces[channel.id]
                             let isOpen = open?.channel.id == channel.id
-                            let isCard = isOpen || cards.replying?.channel.id == channel.id || cards.checks[channel.id] != nil
+                            let isCard = isOpen || cards.replying?.channel.id == channel.id || checks[channel.id] != nil
                             // A card opens and shrinks from its row's top, inside the row and in the card's
                             // shape, which reaches past the row's sides. A card's row ends at the card's own
                             // edge, so its corners stay round as it shrinks.
@@ -123,7 +134,7 @@ struct ChannelSidebar: View {
             }
             // A card the person opens comes fully into view as it opens and grows, since its question
             // scrolls only once it would run past the visible list.
-            .onChange(of: open?.card) { previous, card in
+            .onChange(of: open?.id) { previous, card in
                 revealing = cards.reveals(card, after: previous) ? card : nil
                 reveal(open, in: proxy)
             }
@@ -173,7 +184,7 @@ struct ChannelSidebar: View {
                     cardHeight = row.height
                 }
         case .question(let entry):
-            Button { cards.choose(entry.card) } label: {
+            Button { cards.open(entry.id) } label: {
                 row(channel, now: now, question: entry.question)
             }
             .buttonStyle(.plain)
@@ -187,7 +198,7 @@ struct ChannelSidebar: View {
     }
 
     private func reveal(_ open: ChannelWaitingRequests.Entry?, in proxy: ScrollViewProxy) {
-        guard let open, open.card == revealing, !cards.isLifted, !isScrolling else { return }
+        guard let open, open.id == revealing, !cards.isLifted, !isScrolling else { return }
         withAnimation { proxy.scrollTo(open.channel.id) }
     }
 
@@ -262,7 +273,7 @@ struct ChannelSidebar: View {
             channel: presentation.channel(channel), agents: agents,
             working: presentation.working(channel, agents: agents),
             attention: presentation.attention(channel), now: now, isCollapsed: isCollapsed,
-            talk: talk.channelID == channel.id ? talk : nil, question: question, check: cards.checks[channel.id]
+            talk: talk.channelID == channel.id ? talk : nil, question: question, check: checks[channel.id]
         )
     }
 

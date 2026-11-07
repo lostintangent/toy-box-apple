@@ -46,6 +46,14 @@ public enum ChannelSendResult: Equatable, Sendable {
     case alreadyAccepted(id: String)
 }
 
+extension ChannelSendResult {
+    /// When the server committed the message, or now when it had already accepted it.
+    package var sentAt: Date {
+        guard case .committed(let message) = self else { return .now }
+        return (try? Date(message.timestamp, strategy: .iso8601)) ?? .now
+    }
+}
+
 public actor ChannelSendJournal {
     public static let shared = ChannelSendJournal(
         directory: .savedWriting().appending(path: "Outbox", directoryHint: .isDirectory)

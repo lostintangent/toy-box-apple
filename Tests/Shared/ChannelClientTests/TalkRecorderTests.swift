@@ -14,10 +14,16 @@ struct TalkRecorderTests {
     struct MessageEnvelope: Encodable { var version = 1; var message: ChannelMessage }
 
     let recognizer = TalkTestRecognizer()
-    let beats = CardBeats()
+    let beats: CardBeats
+    let checks: CardChecks
     let draft = ComposerDraft(imageIsReadable: { _ in false })
     let channels = ["new", "test", "b", "newer", "a"].map {
         Channel(id: $0, name: $0, model: .init(provider: "test", name: "test"), updatedAt: "")
+    }
+
+    init() {
+        beats = CardBeats()
+        checks = CardChecks(animate: beats.animate, pause: beats.pause)
     }
 
     @Test func aNoteSendsOnlyItsFinishedWordsOnceAndTalkingAgainFromTheCheckKeepsTheCard() async throws {
@@ -40,10 +46,10 @@ struct TalkRecorderTests {
         recorder.cell = cell
         recorder.isGrown = true
         #expect(recorder.isOpen && recorder.hidesTrailingColumn)
-        #expect(recorder.timeFace == .counter)
+        #expect(recorder.timeSlot == .counter)
         #expect(recorder.ordered(channels).map(\.id) == ["a", "test", "b", "new", "newer"],
                 "Activity can't move rows beneath the card, and new channels follow in server order")
-        #expect(lines(hiddenBy: recorder) == ["a", "test", "b"],
+        #expect(recorder.hiddenLines == ["a", "test", "b"],
                 "The lines above and below the held row and under the next row hide, so the card never crosses one")
 
         recognizer.send("Put the library", isFinal: true)
@@ -56,9 +62,9 @@ struct TalkRecorderTests {
         #expect(posts.withLock { $0.map(\.content) } == ["Put the library beside the desks"],
                 "Plain words reach the Lead with no mention or request answer")
         #expect(recorder.phase == .sent && !recorder.isOpen && recorder.hidesTrailingColumn)
-        #expect(beats.motions.last == .sent && lines(hiddenBy: recorder).isEmpty,
+        #expect(beats.motions.last == .sent && recorder.hiddenLines.isEmpty,
                 "The lines return as the card starts shrinking, not once it closes")
-        #expect(recorder.timeFace == .noteTime)
+        #expect(recorder.timeSlot == .noteTime)
         #expect(recorder.sentAt == (try? Date("2026-10-27T00:00:00Z", strategy: .iso8601)),
                 "The row shows the server's time for the note")
         #expect(recorder.rowValue(details: "Now") == "Sent to Lead. Now")
@@ -72,7 +78,7 @@ struct TalkRecorderTests {
         #expect(recorder.phase == .recording)
         #expect(recorder.cell == cell && recorder.isGrown, "The card stays up, so the check swaps straight to the mic")
         #expect(recorder.finalizedWords.isEmpty && recorder.sentAt == nil)
-        #expect(lines(hiddenBy: recorder) == ["a", "test", "b"])
+        #expect(recorder.hiddenLines == ["a", "test", "b"])
         try await eventually { beats.waiting.isEmpty }
 
         try await eventually { recorder.isListening }
@@ -82,9 +88,10 @@ struct TalkRecorderTests {
         #expect(sent.map(\.content).last == "And a lamp")
         #expect(Set(sent.map(\.id)).count == 2, "Each note is its own message")
         try await beats.end(.seconds(0.35))
-        try await beats.end(.seconds(2))
-        try await eventually { recorder.phase == .settling }
-        #expect(recorder.timeFace == nil && recorder.rowValue(details: "Now") == "Now")
+        try await eventually { recorder.phase == .landed }
+        try await beats.end(.seconds(2.35))
+        try await eventually { checks["test"] == .settling }
+        #expect(recorder.timeSlot == nil && recorder.rowValue(details: "Now") == "Now")
         #expect(recorder.ordered(channels).map(\.id) == ["a", "test", "b", "new", "newer"])
         try await beats.end(.seconds(0.45))
         try await eventually { recorder.phase == nil }
@@ -111,9 +118,9 @@ struct TalkRecorderTests {
         await recorder.send()
         let failure: ChannelSendPhase = rejected ? .notSent : .deliveryNotConfirmed
         #expect(recorder.phase == .failed(failure))
-        #expect(recorder.isOpen && recorder.canSend && recorder.timeFace == .failed(failure))
+        #expect(recorder.isOpen && recorder.canSend && recorder.timeSlot == .failed(failure))
         #expect(recorder.rowValue(details: "Now") == failure.label)
-        #expect(lines(hiddenBy: recorder) == ["test", "a"], "The first row has no line above to hide")
+        #expect(recorder.hiddenLines == ["test", "a"], "The first row has no line above to hide")
 
         await recorder.send()
         #expect(recorder.phase == .failed(failure))
@@ -122,8 +129,8 @@ struct TalkRecorderTests {
         #expect(announcements == [failure.label, failure.label])
 
         recorder.cancel()
-        #expect(recorder.phase == .settling && !recorder.isOpen)
-        #expect(lines(hiddenBy: recorder).isEmpty, "Cancel brings the lines back as the card starts shrinking")
+        #expect(recorder.phase == .cancelled && !recorder.isOpen)
+        #expect(recorder.hiddenLines.isEmpty, "Cancel brings the lines back as the card starts shrinking")
         try await beats.end(.seconds(0.45))
         try await eventually { recorder.phase == nil }
         #expect(beats.motions == [.open, .open])
@@ -154,11 +161,6 @@ struct TalkRecorderTests {
         #expect(store.sendAttempts.isEmpty)
     }
 
-    /// The channels whose row hides the line under it.
-    private func lines(hiddenBy recorder: TalkRecorder) -> Set<String> {
-        Set(channels.map(\.id).filter(recorder.hidesLine(under:)))
-    }
-
     @Test func theCardStaysOnItsRowAndGrowsUpOnlyOnceItsBottomMeetsTheRooms() {
         let room = CGRect(x: 0, y: 8, width: 390, height: 600)
         let middle = CardPlacement(row: CGRect(x: 0, y: 200, width: 390, height: 72), room: room)
@@ -181,7 +183,7 @@ struct TalkRecorderTests {
         system.makeRecognizer = { [recognizer] _, _, _ in recognizer }
         system.refreshNotifications = []
         let draft = draft
-        let recorder = TalkRecorder(system: system, draft: { _ in draft }, announce: announce,
+        let recorder = TalkRecorder(system: system, checks: checks, draft: { _ in draft }, announce: announce,
                                     animate: beats.animate, pause: beats.pause)
         await recorder.dictation.refreshLanguageSupport()
         recorder.start(store, name: "Studio", order: order)
@@ -238,10 +240,10 @@ struct TalkRecorderTests {
         }
     }
 
-    /// Waits until the next pause is `duration`, then ends it.
+    /// Waits until a pause of `duration` is waiting, then ends the earliest one.
     func end(_ duration: Duration) async throws {
-        try await eventually { waiting.first == duration }
-        end(held[0].id)
+        try await eventually { waiting.contains(duration) }
+        end(held[waiting.firstIndex(of: duration)!].id)
     }
 
     private func end(_ id: UUID) {

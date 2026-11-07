@@ -160,7 +160,7 @@ private struct TalkCard<Row: View>: View {
         .accessibilityAddTraits(recorder.isOpen ? .isModal : [])
         // Grows once the note has measured, in one transaction with every slot's swap.
         .onChange(of: note.height > 0) { _, measured in
-            if measured, !recorder.isGrown { withAnimation(TalkRecorder.motion(.open)) { recorder.isGrown = true } }
+            if measured, !recorder.isGrown { withAnimation(CardMotion.open.animation) { recorder.isGrown = true } }
         }
         .onChange(of: recorder.phase == .sent) { _, sent in
             if sent { headingFocused = true }
@@ -210,9 +210,8 @@ private struct TalkMark: View {
     private var face: CardMark.Face {
         guard grown else { return .channel }
         return switch recorder.phase {
-        case .sent, .landed: .check
-        case .settling, nil: .channel
         case .recording, .sending, .failed: .mic
+        case .sent, .landed, .cancelled, nil: recorder.isChecked ? .check : .channel
         }
     }
 
@@ -276,7 +275,7 @@ private struct TalkTimeSlot: ViewModifier {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     func body(content: Content) -> some View {
-        let face = grown ? recorder?.timeFace : nil
+        let face = grown ? recorder?.timeSlot : nil
         let replaced = face != nil
         // The time trails the title, or leads its own line below it at accessibility sizes.
         let edge: HorizontalAlignment = dynamicTypeSize.isAccessibilitySize ? .leading : .trailing
@@ -313,7 +312,7 @@ private struct TalkFaceExit: ViewModifier {
 
 private struct TalkTime: View {
     let recorder: TalkRecorder
-    let face: TalkRecorder.TimeFace
+    let face: TalkRecorder.TimeSlot
     @Environment(\.backgroundProminence) private var prominence
 
     static let exit = Animation.easeIn(duration: 0.15)
@@ -465,7 +464,7 @@ private struct TalkNote: View {
                 .padding(.trailing, -6)
                 .opacity(grown ? 1 : 0)
                 .scaleEffect(grown ? 1 : 0.9, anchor: .trailing)
-                .animation(TalkRecorder.motion(.open).delay(0.06), value: grown)
+                .animation(CardMotion.open.animation.delay(0.06), value: grown)
         }
         // Lines up with the channel's name, and ends where the card's content does.
         .padding(.leading, 40)
@@ -548,7 +547,7 @@ private struct TalkNote: View {
 
     private var controls: some View {
         CardControls(canCancel: recorder.phase != .sending, canSend: recorder.canSend,
-                     isSending: recorder.phase == .sending, showsProgress: recorder.showsProgress,
+                     isSending: recorder.phase == .sending, postingSince: recorder.postingSince,
                      isFailed: isFailed, sendLabel: "Send to Lead", cancel: recorder.cancel, send: send)
     }
 
@@ -570,7 +569,7 @@ private struct TalkSurface: View {
         let landed = recorder.phase == .landed
         // Once the card is back on the row, the cell's own background, separator or selection
         // shows through it again.
-        let based = !landed && recorder.phase != .settling
+        let based = !landed && recorder.phase != .cancelled
         // Glass can't be matched, so there the row steps once to the card's own color.
         let filled = (grown || onGlass) && based
         // The card lands about 0.2 seconds into its shrink, so the edge and shadow, and Cancel's
@@ -602,7 +601,7 @@ private struct TalkRow: ViewModifier {
         // Dims with the card's growth, since rows don't animate in the swipe action's transaction.
         let isDimmed = recorder.isOpen && recorder.isGrown && !isHeld
         let offersTalk = offered && recorder.isAvailable && !recorder.isOpen
-        let hidesLine = recorder.hidesLine(under: channelID)
+        let hidesLine = recorder.hiddenLines.contains(channelID)
         content
             .opacity(isCovered ? 0 : isDimmed ? 0.4 : 1)
             .animation(.easeInOut(duration: 0.25), value: isDimmed)
@@ -625,7 +624,7 @@ private struct TalkRow: ViewModifier {
             }
             // Focus comes back to the row once the card hands it back.
             .onChange(of: isHeld ? recorder.phase : nil) { old, new in
-                if old == .settling, new == nil { focused = true }
+                if old == .landed || old == .cancelled, new == nil { focused = true }
             }
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 if offersTalk {

@@ -15,10 +15,10 @@ package final class TalkRecorder: DictationTextTarget {
         case failed(ChannelSendPhase)
         /// The card shrinking back into the row as the mic becomes the done check.
         case sent
-        /// The card has landed, and the row wears the done check for two seconds.
+        /// The card has landed, and stays on its row until the row's check settles.
         case landed
-        /// The row easing back to the channel's mark after the check or Cancel.
-        case settling
+        /// The card easing back into its row after Cancel.
+        case cancelled
     }
 
     /// The held row's frame in the window, and how far before its trailing edge the row's text
@@ -33,7 +33,7 @@ package final class TalkRecorder: DictationTextTarget {
         }
     }
 
-    package enum TimeFace: Hashable {
+    package enum TimeSlot: Hashable {
         case counter, offline, failed(ChannelSendPhase), noteTime
     }
 
@@ -46,8 +46,8 @@ package final class TalkRecorder: DictationTextTarget {
     package private(set) var transcript = DictationTranscript()
     /// The voice level, newest first, sampled about 12 times a second while listening.
     package private(set) var levels: [Double] = []
-    /// True once a send has gone 300 ms without confirming.
-    package var showsProgress: Bool { attempt?.showsProgress == true }
+    /// When the note's attempt began posting, which Send's progress waits 300 ms from.
+    package private(set) var postingSince: ContinuousClock.Instant?
     package private(set) var listeningSince: Date?
     /// The held row in the window, which the card opens on and returns to.
     package var cell: Cell?
@@ -56,17 +56,19 @@ package final class TalkRecorder: DictationTextTarget {
     /// transaction doesn't animate.
     package var isGrown = false
     /// When the server committed the note, which the row shows as its time until it settles.
-    package var sentAt: Date? { attempt?.sentAt }
+    package private(set) var sentAt: Date?
     /// The list's order when the note began, held until the row settles so the sent note's
     /// activity can't move its row mid-beat.
     package private(set) var order: [String]?
     @ObservationIgnored private var listened: TimeInterval = 0
     @ObservationIgnored private var store: ChannelStore?
     @ObservationIgnored private weak var catalog: ChannelCatalogStore?
-    private var attempt: CardSend?
+    /// The note's one attempt in the channel's outbox, which Send Again repeats under its UUID.
+    @ObservationIgnored private var attempt: (id: String, content: String)?
+    @ObservationIgnored private let checks: CardChecks
     @ObservationIgnored private var following: Task<Void, Never>?
     @ObservationIgnored private var sampling: Task<Void, Never>?
-    @ObservationIgnored private var settling: Task<Void, Never>?
+    @ObservationIgnored private var closing: Task<Void, Never>?
     @ObservationIgnored private let draft: @MainActor (ChannelStore) -> ComposerDraft
     @ObservationIgnored private let announce: @MainActor (String) -> Void
     @ObservationIgnored private let animate: @MainActor (CardMotion, () -> Void) -> Void
@@ -75,15 +77,18 @@ package final class TalkRecorder: DictationTextTarget {
     package static let sampleCount = 64
 
     /// - Parameters:
+    ///   - checks: The list's done checks, which the row wears once its note sends.
     ///   - draft: The channel's composer draft, which keeps the words of a note left mid-way.
     ///   - announce: Speaks a VoiceOver announcement.
     ///   - animate: Applies one beat's change in that beat's motion.
     ///   - pause: Waits while a beat's motion plays, before the next beat.
-    package init(system: DictationSystem, draft: @escaping @MainActor (ChannelStore) -> ComposerDraft,
+    package init(system: DictationSystem, checks: CardChecks,
+                 draft: @escaping @MainActor (ChannelStore) -> ComposerDraft,
                  announce: @escaping @MainActor (String) -> Void,
                  animate: @escaping @MainActor (CardMotion, () -> Void) -> Void = { $1() },
                  pause: @escaping @MainActor (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
         dictation = ComposerDictation(system: system)
+        self.checks = checks
         self.draft = draft
         self.announce = announce
         self.animate = animate
@@ -98,36 +103,40 @@ package final class TalkRecorder: DictationTextTarget {
     package var isOpen: Bool {
         switch phase {
         case .recording, .sending, .failed: true
-        case .sent, .landed, .settling, nil: false
+        case .sent, .landed, .cancelled, nil: false
         }
     }
 
-    /// What the row's time slot shows in place of the time, until the row settles.
-    package var timeFace: TimeFace? {
+    /// True while the held row wears the done check, from the note's Send until the check settles.
+    package var isChecked: Bool {
+        guard phase == .sent || phase == .landed, let channelID else { return false }
+        return checks[channelID] == .sent
+    }
+
+    /// What the row's time slot shows in place of the time, until the row's check settles.
+    package var timeSlot: TimeSlot? {
         switch phase {
         case .recording, .sending: isOffline ? .offline : .counter
         case .failed(let failure): .failed(failure)
-        case .sent, .landed: .noteTime
-        case .settling, nil: nil
+        case .sent, .landed: isChecked ? .noteTime : nil
+        case .cancelled, nil: nil
         }
     }
 
-    /// True while the card is open over this row's bottom line: the row above the held one, whose
-    /// line is the held row's top, the held row and the row below it, so the card never crosses a
-    /// line. The lines return in the shrink's own transaction, on Send and on Cancel.
-    package func hidesLine(under channelID: String) -> Bool {
-        guard isOpen, let held = self.channelID else { return false }
-        if channelID == held { return true }
-        guard let order, let heldIndex = order.firstIndex(of: held),
-              let index = order.firstIndex(of: channelID) else { return false }
-        return abs(index - heldIndex) == 1
+    /// The rows whose bottom line the open card covers: the held row, the row above it, whose line
+    /// is the held row's top, and the row below it, so the card never crosses a line. The lines
+    /// return in the shrink's own transaction, on Send and on Cancel.
+    package var hiddenLines: Set<String> {
+        guard isOpen, let held = channelID else { return [] }
+        guard let order, let index = order.firstIndex(of: held) else { return [held] }
+        return Set(order[max(index - 1, 0)...min(index + 1, order.count - 1)])
     }
 
     /// The chevron and attention mark stay hidden until the card has landed.
     package var hidesTrailingColumn: Bool {
         switch phase {
         case .recording, .sending, .failed, .sent: true
-        case .landed, .settling, nil: false
+        case .landed, .cancelled, nil: false
         }
     }
 
@@ -137,8 +146,8 @@ package final class TalkRecorder: DictationTextTarget {
         case .recording: canResume ? "Paused" : isOffline ? "Recording, offline" : "Recording"
         case .sending: "Sending"
         case .failed(let failure): failure.label
-        case .sent, .landed: "Sent to Lead. " + details
-        case .settling, nil: details
+        case .sent, .landed: isChecked ? "Sent to Lead. " + details : details
+        case .cancelled, nil: details
         }
     }
 
@@ -201,6 +210,7 @@ package final class TalkRecorder: DictationTextTarget {
         self.catalog = catalog
         self.order = order
         attempt = nil
+        sentAt = nil
         committed = ""
         transcript = .init()
         levels = Array(repeating: 0, count: Self.sampleCount)
@@ -243,44 +253,42 @@ package final class TalkRecorder: DictationTextTarget {
             return
         }
         dictation.draftSent()
-        attempt = CardSend(words)
+        attempt = (UUID().uuidString, words)
         await deliver(to: store)
     }
 
     private func deliver(to store: ChannelStore) async {
         guard let attempt else { return }
         phase = .sending
-        let failure = await attempt.post(to: store)
-        guard self.store === store, self.attempt === attempt else { return }
-        if let failure {
+        postingSince = .now
+        let sentAt: Date?
+        do { sentAt = try await store.postInBackground(id: attempt.id, content: attempt.content).sentAt }
+        catch { sentAt = nil }
+        guard self.store === store, self.attempt?.id == attempt.id else { return }
+        postingSince = nil
+        guard let sentAt else {
+            let failure = store.failedPhase(ofSend: attempt.id)
             phase = .failed(failure)
             return announce(failure.label)
         }
-        animate(.sent) { phase = .sent }
+        self.sentAt = sentAt
+        animate(.sent) {
+            phase = .sent
+            checks.sent(store.id)
+        }
         announce("Sent to Lead in \(channelName)")
-        settleAfterSent()
+        land(store.id)
     }
 
-    /// Lands the card as its shrink ends, then holds the check for two seconds before settling.
-    private func settleAfterSent() {
-        settling?.cancel()
-        settling = Task { [weak self] in
+    /// Lands the card as its shrink ends, then ends the note once its row's check has settled.
+    private func land(_ channelID: String) {
+        closing?.cancel()
+        closing = Task { [weak self] in
             await self?.pause(.seconds(0.35))
             guard let self, !Task.isCancelled, phase == .sent else { return }
             animate(.settle) { phase = .landed }
-            await pause(.seconds(2))
+            for await check in Observations({ [checks] in checks[channelID] }) where check == nil { break }
             guard !Task.isCancelled, phase == .landed else { return }
-            settle(.settle)
-        }
-    }
-
-    /// Eases the row back, then ends the note once the row has settled.
-    private func settle(_ motion: CardMotion) {
-        animate(motion) { phase = .settling }
-        settling?.cancel()
-        settling = Task { [weak self] in
-            await self?.pause(.seconds(0.45))
-            guard let self, !Task.isCancelled, phase == .settling else { return }
             close()
         }
     }
@@ -295,8 +303,14 @@ package final class TalkRecorder: DictationTextTarget {
             sampling?.cancel()
             listeningSince = nil
             dictation.leaveDraft()
-            settle(.open)
-        case .sending, .sent, .landed, .settling, nil:
+            animate(.open) { phase = .cancelled }
+            closing?.cancel()
+            closing = Task { [weak self] in
+                await self?.pause(.seconds(0.45))
+                guard let self, !Task.isCancelled, phase == .cancelled else { return }
+                close()
+            }
+        case .sending, .sent, .landed, .cancelled, nil:
             break
         }
     }
@@ -317,6 +331,8 @@ package final class TalkRecorder: DictationTextTarget {
     }
 
     private func close(keepingCell: Bool = false) {
+        // A sent note's check leaves with its card, and talking again swaps it straight to the mic.
+        if phase == .sent || phase == .landed, let channelID { checks.clear(channelID) }
         phase = nil
         channelID = nil
         if !keepingCell {
@@ -326,10 +342,12 @@ package final class TalkRecorder: DictationTextTarget {
         order = nil
         following?.cancel()
         sampling?.cancel()
-        settling?.cancel()
+        closing?.cancel()
         dictation.leaveDraft()
         store = nil
         attempt = nil
+        postingSince = nil
+        sentAt = nil
         committed = ""
         transcript = .init()
         listeningSince = nil

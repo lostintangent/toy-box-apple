@@ -147,12 +147,14 @@ struct CardControls: View {
     let canCancel: Bool
     let canSend: Bool
     let isSending: Bool
-    let showsProgress: Bool
+    /// When the card's attempt began posting.
+    let postingSince: ContinuousClock.Instant?
     let isFailed: Bool
     /// Send's accessibility label before any failure.
     let sendLabel: String
     let cancel: () -> Void
     let send: () -> Void
+    @ViewState private var showsProgress = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -175,6 +177,7 @@ struct CardControls: View {
                 .keyboardShortcut(.return, modifiers: .command)
                 .accessibilityLabel(isFailed ? "Send Again" : sendLabel)
         }
+        .cardProgress(since: postingSince, $showsProgress)
     }
 
     private var sendFace: some View {
@@ -192,5 +195,41 @@ struct CardControls: View {
         }
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
+    }
+}
+
+extension View {
+    /// Sets `showsProgress` once a card's attempt that began posting at `since` has gone 300 ms
+    /// without confirming, as `DelayedProgressView` waits, for a place that swaps its content for
+    /// the progress.
+    func cardProgress(since: ContinuousClock.Instant?, _ showsProgress: Binding<Bool>) -> some View {
+        task(id: since) {
+            showsProgress.wrappedValue = false
+            guard let since else { return }
+            let remaining = DelayedProgressView.delay - since.duration(to: .now)
+            if remaining > .zero {
+                do { try await Task.sleep(for: remaining) } catch { return }
+            }
+            showsProgress.wrappedValue = true
+        }
+    }
+}
+
+extension CardMotion {
+    /// The beat's spring from the spec, or a short ease without bounce under Reduce Motion.
+    @MainActor var animation: Animation {
+        if UIAccessibility.isReduceMotionEnabled { return .easeInOut(duration: 0.2) }
+        return switch self {
+        case .open: .spring(duration: 0.4, bounce: 0.12)
+        case .sent: .smooth(duration: 0.35)
+        case .settle: .easeOut(duration: 0.4)
+        }
+    }
+}
+
+extension CardChecks {
+    /// The list's done checks, settling with the spec's springs.
+    convenience init() {
+        self.init(animate: { withAnimation($0.animation, $1) })
     }
 }

@@ -8,12 +8,21 @@ import Observation
 /// remembered until the next request.
 @MainActor @Observable
 public final class ChannelWaitingRequests {
-    public struct Entry: Equatable, Sendable {
+    public struct Entry: Equatable, Identifiable, Sendable {
+        /// A request's identity, by its channel and its message's sequence, which outlives the
+        /// channel's details.
+        public struct ID: Hashable, Sendable {
+            public var channelID: String
+            public var sequence: Int
+        }
+
         /// As the sidebar shows it.
         public var channel: Channel
         public var sequence: Int
         /// The request's message, once it's known.
         public var request: ChannelRequestMessage?
+
+        public var id: ID { .init(channelID: channel.id, sequence: sequence) }
 
         public var requestedAt: Date? { request.flatMap { try? Date($0.message.timestamp, strategy: .iso8601) } }
         /// The question as plain text, or the notification's words until its message is known.

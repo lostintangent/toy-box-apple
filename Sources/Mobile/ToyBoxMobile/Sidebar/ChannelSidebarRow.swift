@@ -17,7 +17,7 @@ struct ChannelSidebarRow: View {
     /// A waiting request's question, which takes the folder's or purpose's place in one line.
     var question: String? = nil
     /// The done check, once this row's reply sends from its Needs You card.
-    var check: NeedsYouCards.Check? = nil
+    var check: CardChecks.Check? = nil
     @Environment(\.backgroundProminence) private var prominence
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
