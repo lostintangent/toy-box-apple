@@ -122,6 +122,33 @@ struct NeedsYouCardsTests {
                 "Failed replies wait in the outbox, so their choices never return")
     }
 
+    @Test func aSentTypedReplyShrinksBackIntoItsRowAsTheNextCardOpens() async throws {
+        let mock = MockTransport { request, _ in
+            let body = try JSONDecoder().decode(Posted.self, from: requestBody(request))
+            let message = ChannelMessage(id: body.id, sequence: 30, timestamp: "2026-11-07T10:01:00Z",
+                                         sender: .user, content: .text(body.content))
+            return try .json(MessageEnvelope(message: message), status: 201)
+        }
+        let store = ChannelStore(id: "a", api: try mock.api(), sendJournal: nil)
+        let cards = cards()
+        let (a, b) = (entry("a", 12), entry("b", 7))
+        cards.reply(to: a, on: store)
+        cards.words = "Beside the desks"
+        let sending = Task { await cards.send() }
+        try await eventually { cards.landing == a }
+        #expect(!cards.isLifted && cards.replying == nil && checks["a"] == .sent,
+                "The lifted card lowers in the sent beat, onto its row wearing the check")
+        #expect(cards.words == "Beside the desks", "The words fade with the card rather than blanking")
+        #expect(cards.open(in: [b, a]) == b, "The next card opens beneath it")
+        try await beats.end(.seconds(0.35))
+        await sending.value
+        #expect(cards.landing == nil && cards.words.isEmpty, "The card is gone once it has shrunk into its row")
+        #expect(beats.motions == [.open, .sent])
+        try await beats.end(.seconds(2.35))
+        try await beats.end(.seconds(0.45))
+        try await eventually { checks.rows.isEmpty }
+    }
+
     @Test(arguments: [false, true])
     func endingATypedReplyNeverPostsAndOnlyLeavingKeepsItsWords(leaves: Bool) async throws {
         let mock = MockTransport { _, _ in

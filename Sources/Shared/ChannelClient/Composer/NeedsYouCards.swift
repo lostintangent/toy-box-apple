@@ -39,12 +39,14 @@ package final class NeedsYouCards {
     }
 
     private var answer: Answer?
-    /// The typed reply, or the chosen reply once it's sending.
+    /// The typed reply, kept while its card lands, or the chosen reply once it's sending.
     package var words = ""
     /// The card the person opened, which stays open while its request waits.
     package private(set) var opened: ChannelWaitingRequests.Entry.ID?
     /// Requests answered here, which never reopen while the catalog catches up.
     package private(set) var answered: Set<ChannelWaitingRequests.Entry.ID> = []
+    /// A sent typed reply's card while it shrinks from above the list back into its row.
+    package private(set) var landing: ChannelWaitingRequests.Entry?
     @ObservationIgnored private let checks: CardChecks
     @ObservationIgnored private let draft: @MainActor (ChannelStore) -> ComposerDraft
     @ObservationIgnored private let announce: @MainActor (String) -> Void
@@ -142,6 +144,7 @@ package final class NeedsYouCards {
     package func reply(to entry: ChannelWaitingRequests.Entry, on store: ChannelStore) {
         guard answer == nil else { return }
         animate(.open) {
+            landing = nil
             opened = entry.id
             answer = Answer(entry: entry, isLifted: true, store: store, handle: entry.request?.requester?.handle,
                             phase: .composing)
@@ -182,12 +185,23 @@ package final class NeedsYouCards {
         }
         // The card shrinks straight back into its row, which wears the check, as the next opens.
         // Each row's check settles on its own, so answering the next card leaves this one's in place.
+        // A typed reply's words fade with its card rather than blanking as it lands.
         animate(.sent) {
             answered.insert(entry.id)
             checks.sent(entry.channel.id)
-            close()
+            if answer.isLifted {
+                landing = entry
+                self.answer = nil
+            } else {
+                close()
+            }
         }
         announce("Reply sent in \(entry.channel.name)")
+        guard landing?.id == entry.id else { return }
+        await pause(.seconds(0.35))
+        guard landing?.id == entry.id else { return }
+        landing = nil
+        if self.answer == nil { words = "" }
     }
 
     /// Lowers a typed reply back into its row and discards its words. After a failure, the reply

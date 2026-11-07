@@ -8,6 +8,7 @@
 - A request opened in the channel list now reads exactly as it does in the conversation, with its formatting, lists and code intact.
 - Opening a long request from the channel list now lands on it, instead of leaving the conversation blank.
 - A channel's name now floats over the conversation as a glass button that opens its actions, and messages fade softly beneath it instead of stopping at a hard bar.
+- After you send your own reply to a request in the channel list, the card settles straight back into its row, so it's clear where your answer went.
 
 ## iPhone 0.1.22
 

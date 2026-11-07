@@ -21,18 +21,6 @@ package final class TalkRecorder: DictationTextTarget {
         case cancelled
     }
 
-    /// The held row's frame in the window, and how far before its trailing edge the row's text
-    /// ends, which is the time's trailing edge unless the time leads its own line.
-    package struct Cell: Equatable {
-        package var frame: CGRect
-        package var textInset: CGFloat = 0
-
-        package init(frame: CGRect, textInset: CGFloat = 0) {
-            self.frame = frame
-            self.textInset = textInset
-        }
-    }
-
     package enum TimeSlot: Hashable {
         case counter, offline, failed(ChannelSendPhase), noteTime
     }
@@ -49,12 +37,6 @@ package final class TalkRecorder: DictationTextTarget {
     /// When the note's attempt began posting, which Send's progress waits 300 ms from.
     package private(set) var postingSince: ContinuousClock.Instant?
     package private(set) var listeningSince: Date?
-    /// The held row in the window, which the card opens on and returns to.
-    package var cell: Cell?
-    /// True once the card has grown from the row. The card's growth, every slot's swap and the
-    /// list's dim follow it, so they run in the card's own spring, since the swipe action's
-    /// transaction doesn't animate.
-    package var isGrown = false
     /// When the server committed the note, which the row shows as its time until it settles.
     package private(set) var sentAt: Date?
     /// The list's order when the note began, held until the row settles so the sent note's
@@ -99,8 +81,8 @@ package final class TalkRecorder: DictationTextTarget {
     /// Talk shows only where dictation supports the person's language.
     package var isAvailable: Bool { dictation.availability != .checking && dictation.availability != .unsupported }
 
-    /// True while the recorder holds the list, which dims every other row.
-    package var isOpen: Bool {
+    /// True while the card is lifted above the list, which holds still with every other row dimmed.
+    package var isLifted: Bool {
         switch phase {
         case .recording, .sending, .failed: true
         case .sent, .landed, .cancelled, nil: false
@@ -127,7 +109,7 @@ package final class TalkRecorder: DictationTextTarget {
     /// is the held row's top, and the row below it, so the card never crosses a line. The lines
     /// return in the shrink's own transaction, on Send and on Cancel.
     package var hiddenLines: Set<String> {
-        guard isOpen, let held = channelID else { return [] }
+        guard isLifted, let held = channelID else { return [] }
         guard let order, let index = order.firstIndex(of: held) else { return [held] }
         return Set(order[max(index - 1, 0)...min(index + 1, order.count - 1)])
     }
@@ -137,17 +119,6 @@ package final class TalkRecorder: DictationTextTarget {
         switch phase {
         case .recording, .sending, .failed, .sent: true
         case .landed, .cancelled, nil: false
-        }
-    }
-
-    /// The channel row's accessibility value while the recorder is on it.
-    package func rowValue(details: String) -> String {
-        switch phase {
-        case .recording: canResume ? "Paused" : isOffline ? "Recording, offline" : "Recording"
-        case .sending: "Sending"
-        case .failed(let failure): failure.label
-        case .sent, .landed: isChecked ? "Sent to Lead. " + details : details
-        case .cancelled, nil: details
         }
     }
 
@@ -202,10 +173,8 @@ package final class TalkRecorder: DictationTextTarget {
     /// Opens the recorder on the channel's row and starts listening.
     package func start(_ store: ChannelStore, name: String, contextualNames: [String] = [],
                        catalog: ChannelCatalogStore? = nil, order: [String] = []) {
-        guard isAvailable, !isOpen else { return }
-        // Talking again on a row that still wears the check keeps its card, so the check swaps
-        // straight to the mic.
-        if phase != nil { close(keepingCell: channelID == store.id) }
+        guard isAvailable, !isLifted else { return }
+        if phase != nil { close() }
         self.store = store
         self.catalog = catalog
         self.order = order
@@ -330,15 +299,11 @@ package final class TalkRecorder: DictationTextTarget {
         close()
     }
 
-    private func close(keepingCell: Bool = false) {
+    private func close() {
         // A sent note's check leaves with its card, and talking again swaps it straight to the mic.
         if phase == .sent || phase == .landed, let channelID { checks.clear(channelID) }
         phase = nil
         channelID = nil
-        if !keepingCell {
-            cell = nil
-            isGrown = false
-        }
         order = nil
         following?.cancel()
         sampling?.cancel()

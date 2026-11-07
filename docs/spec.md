@@ -1266,8 +1266,9 @@ once with the prompt "Reply to [requester]", and grows to five lines. Cancel and
 talk card's controls. The card follows the recorder's Room rules within the area above the
 keyboard, so its controls always stay visible. The reply leads with the requester's `@handle`
 unless it starts with a mention. Send holds the lifted card while the reply sends, then on
-confirmation the card lowers back into the list and its row wears the check, as a choice's
-does.
+confirmation it shrinks from above the list straight into its row, its words fading with its base
+and shadow, in the choices' one transaction as the next card opens, and its row wears the check,
+as a choice's does.
 
 **Failure.** A failed reply keeps its card with its words, "Not sent" or "Delivery not
 confirmed", and Send Again on the same UUID. Nothing retries on its own, and the choices never

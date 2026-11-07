@@ -43,9 +43,6 @@ struct NeedsYouCard: View {
     var isCollapsed = false
     /// The copy above the dimmed list while a typed reply is open.
     var isLifted = false
-    /// How far the card reaches past the row's trailing edge. A folded list ends where its rows
-    /// do, so there the card's content steps in instead.
-    var reach = Self.margin
     /// The tallest the card can be and still fit in the list's visible area.
     let maxHeight: CGFloat
     let open: () -> Void
@@ -111,9 +108,9 @@ struct NeedsYouCard: View {
         .padding(Self.margin)
         // Everything but the question, which is what the question gives way to.
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chrome = max($0 - (shown ?? 0), 0) }
+        // A lifted card's base and shadow come from the list, so they outlast its shrink into its row.
         .background {
-            CardSurface(surface: .pendingAgent, tint: Channel.Attention.waiting.color(in: colorScheme),
-                        base: isLifted, shadow: isLifted)
+            CardSurface(surface: .pendingAgent, tint: Channel.Attention.waiting.color(in: colorScheme))
         }
         .accessibilityElement(children: .contain)
     }
@@ -124,20 +121,7 @@ struct NeedsYouCard: View {
                 .font(.headline)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                if let date = try? Date(channel.updatedAt, strategy: .iso8601) {
-                    Text(ChannelActivityTime.label(for: date, now: now))
-                        .font(.caption)
-                        .foregroundStyle(ChannelInk.secondary)
-                }
-                if isCollapsed {
-                    Image(systemName: "chevron.forward")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Color(uiColor: .tertiaryLabel))
-                        .accessibilityHidden(true)
-                }
-            }
-            .fixedSize()
+            ChannelSidebarRow.Activity(channel: channel, now: now, isCollapsed: isCollapsed)
         }
         .contentShape(Rectangle())
     }
@@ -275,59 +259,78 @@ extension View {
         modifier(NeedsYouMarkSlot(check: check, emphasized: emphasized))
     }
 
-    /// Lifts the open card's typed reply above the list, from the card's row at `card` in global
-    /// space. Holds the list still and dims its rows, rises above the keyboard, and ends the reply
-    /// as a draft when anything in `context` changes or the channel leaves `channelIDs`.
-    /// Reports the list's visible area in global space to `bounds` while no reply holds the list.
-    func needsYouList<Card: View>(_ cards: NeedsYouCards, card: CGRect?, channelIDs: [String],
-                                  bounds: Binding<CGRect>, endsWhenChanging context: [AnyHashable?],
-                                  @ViewBuilder lifted: @escaping (_ maxHeight: CGFloat) -> Card) -> some View {
+    /// Lifts the open card's typed reply, drawn by `lifted`, above the list from the card's row at
+    /// `card` in global space, and rises above the keyboard. Once the reply sends, the card shrinks
+    /// back into its row, drawn by `row`. Holds the list while lifted, and ends the reply as a draft
+    /// when anything in `context` changes or the channel leaves `channelIDs`. Reports the list's
+    /// visible area in global space to `bounds` while no reply holds the list.
+    func needsYouList<Card: View, Row: View>(
+        _ cards: NeedsYouCards, card: CGRect?, channelIDs: [String], bounds: Binding<CGRect>,
+        endsWhenChanging context: [AnyHashable?],
+        @ViewBuilder lifted: @escaping (_ entry: ChannelWaitingRequests.Entry, _ maxHeight: CGFloat) -> Card,
+        @ViewBuilder row: @escaping (_ channelID: String) -> Row
+    ) -> some View {
         modifier(NeedsYouList(cards: cards, card: card, channelIDs: channelIDs, bounds: bounds, context: context,
-                              lifted: lifted))
+                              lifted: lifted, row: row))
     }
 }
 
-private struct NeedsYouList<Card: View>: ViewModifier {
+private struct NeedsYouList<Card: View, Row: View>: ViewModifier {
     let cards: NeedsYouCards
     let card: CGRect?
     let channelIDs: [String]
     @Binding var bounds: CGRect
     let context: [AnyHashable?]
-    let lifted: (CGFloat) -> Card
-    @Environment(\.scenePhase) private var scenePhase
+    let lifted: (ChannelWaitingRequests.Entry, CGFloat) -> Card
+    let row: (String) -> Row
+    /// The lifted card's row, kept while the card shrinks back into it.
+    @ViewState private var cardRow: CGRect?
+    @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
+        let entry = cards.isLifted ? cards.replying : cards.landing
         content
-            .scrollDisabled(cards.isLifted)
-            .accessibilityHidden(cards.isLifted)
-            .overlay {
-                GeometryReader { proxy in
-                    // Inside the safe area and any bar. The keyboard only makes room for a lifted card.
-                    Color.clear.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-                        if !cards.isLifted { bounds = frame }
-                    }
-                    if cards.isLifted, let card {
-                        // The dimmed rows ignore taps.
-                        Color.clear.contentShape(Rectangle())
-                        let origin = proxy.frame(in: .global).origin
-                        let row = card.offsetBy(dx: -origin.x, dy: -origin.y)
-                        // The list's visible area, above the keyboard, inside the safe area and any bar.
-                        let room = CGRect(origin: .zero, size: proxy.size).insetBy(dx: 0, dy: 8)
-                        CardLayout(placement: .init(row: row, room: room), x: row.minX, isOpen: true) {
-                            lifted(room.height)
-                                .frame(width: row.width)
-                                .accessibilityAddTraits(.isModal)
-                        }
+            .cardList(isLifted: cards.isLifted, channelID: cards.replying?.channel.id, channelIDs: channelIDs,
+                      endsWhenChanging: context, end: cards.leave) { list in
+                Color.clear.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                    if !cards.isLifted { bounds = frame }
+                }
+                if let entry, let cardRow {
+                    let row = cardRow.offsetBy(dx: -list.minX, dy: -list.minY)
+                    // The list's visible area, above the keyboard, inside the safe area and any bar.
+                    let room = CGRect(origin: .zero, size: list.size).insetBy(dx: 0, dy: 8)
+                    CardLayout(placement: .init(row: row, room: room), x: row.minX, isLifted: cards.isLifted) {
+                        landing(entry, maxHeight: room.height)
+                            .frame(width: row.width)
                     }
                 }
             }
-            .onChange(of: context) { cards.leave() }
-            .onChange(of: cards.replying.map { !channelIDs.contains($0.channel.id) } ?? false) { _, isGone in
-                if isGone { cards.leave() }
+            .onChange(of: card) { _, card in
+                if let card { cardRow = card }
             }
-            .onChange(of: scenePhase) { _, phase in
-                if phase != .active { cards.leave() }
+            // Another card's reply opens from its own row, once the list reports it.
+            .onChange(of: entry?.id) { cardRow = nil }
+    }
+
+    /// The lifted card, or, once it sends, its row with the check, which the card's shape clips as
+    /// it shrinks onto the list's own. The base and shadow sit outside the clip and fade as it lands.
+    private func landing(_ entry: ChannelWaitingRequests.Entry, maxHeight: CGFloat) -> some View {
+        ZStack(alignment: .top) {
+            if cards.isLifted {
+                lifted(entry, maxHeight)
+            } else {
+                row(entry.channel.id)
+                    .environment(\.cardMarkTaps, false)
             }
+        }
+        .clipShape(CardShape())
+        .background {
+            CardSurface(surface: .pendingAgent, tint: Channel.Attention.waiting.color(in: colorScheme),
+                        base: cards.isLifted, wash: false, edge: false, shadow: cards.isLifted)
+        }
+        .accessibilityAddTraits(cards.isLifted ? .isModal : [])
+        .accessibilityHidden(!cards.isLifted)
+        .allowsHitTesting(cards.isLifted)
     }
 }
 
@@ -336,7 +339,7 @@ private struct NeedsYouMarkSlot: ViewModifier {
     let emphasized: Bool
 
     func body(content: Content) -> some View {
-        // The check's mark settles on the channel's own face, so handing back to it is invisible.
+        // The check's mark settles on the channel's own mark, so handing back to it is invisible.
         ZStack {
             if let check {
                 NeedsYouMark(check: check, emphasized: emphasized).transition(.identity)
@@ -348,17 +351,17 @@ private struct NeedsYouMarkSlot: ViewModifier {
 }
 
 /// The talk card's mark on a row whose card has just shrunk into it. The row only now draws it, so
-/// it starts on the channel's face and swaps to the check once it's on screen.
+/// it starts on the channel's mark and swaps to the check once it's on screen.
 private struct NeedsYouMark: View {
     let check: CardChecks.Check
     let emphasized: Bool
-    @ViewState private var face = CardMark.Face.channel
+    @ViewState private var glyph = CardMark.Glyph.channel
 
     var body: some View {
-        CardMark(face: face, emphasized: emphasized)
+        CardMark(glyph: glyph, emphasized: emphasized)
             .task(id: check) {
                 withAnimation((check == .sent ? CardMotion.sent : .settle).animation) {
-                    face = check == .sent ? .check : .channel
+                    glyph = check == .sent ? .check : .channel
                 }
             }
     }

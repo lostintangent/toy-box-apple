@@ -27,9 +27,15 @@ extension View {
         modifier(TalkFades(recorder: recorder))
     }
 
-    /// The row's second line, which gives way to the waveform while the recorder is open.
+    /// The row's second line, which gives way to the waveform while the card is lifted.
     func talkLine(_ recorder: TalkRecorder?) -> some View {
         modifier(TalkLineSlot(recorder: recorder))
+    }
+
+    /// The row's accessibility value, its `details`, which the note's state replaces while the
+    /// recorder is on the row.
+    func talkValue(_ recorder: TalkRecorder?, details: String) -> some View {
+        accessibilityValue(recorder?.rowValue(details: details) ?? details)
     }
 
     /// Offers Talk on a channel row when `offered`, and dims the row while another row records.
@@ -39,8 +45,8 @@ extension View {
         modifier(TalkRow(channelID: channelID, recorder: recorder, offered: offered, line: line, start: start))
     }
 
-    /// Floats the recorder over the list from the held row, drawn by `row`. Holds the list still
-    /// while recording, and ends the note as a draft when anything in `context` changes, such as
+    /// Floats the recorder over the list from the held row, drawn by `row`. Holds the list while the
+    /// card is lifted, and ends the note as a draft when anything in `context` changes, such as
     /// opening a channel, Search or Settings, or when the held channel leaves `channelIDs`. Pass
     /// `onGlass` for the unfolded Liquid Glass sidebar, which no opaque base can match.
     func talkList<Row: View>(_ recorder: TalkRecorder, channelIDs: [String], onGlass: Bool = false,
@@ -81,10 +87,38 @@ private struct TalkTextEndKey: PreferenceKey {
     }
 }
 
+/// The held row as the list lays it out, which the card opens on and returns to. The list keeps it
+/// while the recorder holds a row, and the row reports where it sits. It's keyed by channel, so
+/// talking again on a row that still wears the check keeps its card, and the check swaps straight
+/// to the mic.
+@MainActor @Observable private final class TalkHold {
+    /// The held row's frame in the window, and how far before its trailing edge the row's text
+    /// ends, which is the time's trailing edge unless the time leads its own line.
+    struct Cell: Equatable {
+        var channelID: String
+        var frame: CGRect
+        var textInset: CGFloat
+    }
+
+    var cell: Cell?
+    /// The row whose card has grown. The card's growth, every slot's swap and the list's dim follow
+    /// it, so they run in the card's own spring, since the swipe action's transaction doesn't animate.
+    var grown: String?
+
+    func isGrown(_ channelID: String?) -> Bool { channelID != nil && grown == channelID }
+
+    /// Lets go of the row once the recorder does, so the next note grows afresh.
+    func release() {
+        cell = nil
+        grown = nil
+    }
+}
+
 /// The recorder: a card over the list that opens on the held row's cell, draws the row's own
 /// content in the same places, then grows over the dimmed rows.
 private struct TalkCard<Row: View>: View {
     let recorder: TalkRecorder
+    let hold: TalkHold
     /// The held row's content, in the card's space.
     let cell: CGRect
     /// How far before the cell's trailing edge the row's text ends.
@@ -105,7 +139,8 @@ private struct TalkCard<Row: View>: View {
     private static var margin: CGFloat { 12 }
 
     var body: some View {
-        let open = recorder.isGrown && recorder.isOpen
+        let grown = hold.isGrown(recorder.channelID)
+        let lifted = grown && recorder.isLifted
         let room = bounds.insetBy(dx: 0, dy: Self.inset)
         let left = max(bounds.minX, cell.minX - Self.margin)
         let right = min(bounds.maxX, cell.maxX - textInset + Self.margin)
@@ -130,15 +165,15 @@ private struct TalkCard<Row: View>: View {
             TalkNote(recorder: recorder, wordsLimit: wordsLimit, size: $note)
                 .frame(width: max(contentEnd - cell.minX, 0))
                 .fixedSize(horizontal: false, vertical: true)
-                .opacity(open ? 1 : 0)
-                .transaction(value: open) { if !open { $0.animation = .easeOut(duration: 0.15) } }
-                .accessibilityHidden(!recorder.isOpen)
+                .opacity(lifted ? 1 : 0)
+                .transaction(value: lifted) { if !lifted { $0.animation = .easeOut(duration: 0.15) } }
+                .accessibilityHidden(!recorder.isLifted)
         }
         .padding(.leading, cell.minX - left)
         .frame(width: max(right - left, 0), alignment: .leading)
         // Sized by layout rather than a measurement, so the card's edge always moves in the same
         // transaction as the controls.
-        .frame(maxHeight: max(open ? room.maxY - highest : cell.height, 0), alignment: .top)
+        .frame(maxHeight: max(lifted ? room.maxY - highest : cell.height, 0), alignment: .top)
         .fixedSize(horizontal: false, vertical: true)
         // Reveals the note as the card grows, and clips everything the card draws to its shape.
         .clipShape(CardShape(overflow: overflow))
@@ -152,20 +187,20 @@ private struct TalkCard<Row: View>: View {
                 .accessibilityHidden(true)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fiveLines = $0 }
         }
-        .background { TalkSurface(recorder: recorder, lifted: open, onGlass: onGlass) }
-        .environment(\.talkGrown, recorder.isGrown)
+        .background { TalkSurface(recorder: recorder, lifted: lifted, onGlass: onGlass) }
+        .environment(\.talkGrown, grown)
         .environment(\.talkTrailingInset, cell.maxX - contentEnd)
-        .allowsHitTesting(recorder.isOpen)
+        .allowsHitTesting(recorder.isLifted)
         .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(recorder.isOpen ? .isModal : [])
+        .accessibilityAddTraits(recorder.isLifted ? .isModal : [])
         // Grows once the note has measured, in one transaction with every slot's swap.
         .onChange(of: note.height > 0) { _, measured in
-            if measured, !recorder.isGrown { withAnimation(CardMotion.open.animation) { recorder.isGrown = true } }
+            if measured, !grown { withAnimation(CardMotion.open.animation) { hold.grown = recorder.channelID } }
         }
         .onChange(of: recorder.phase == .sent) { _, sent in
             if sent { headingFocused = true }
         }
-        CardLayout(placement: placement, x: left, isOpen: open) { card }
+        CardLayout(placement: placement, x: left, isLifted: lifted) { card }
     }
 }
 
@@ -207,7 +242,7 @@ private struct TalkMark: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.talkGrown) private var grown
 
-    private var face: CardMark.Face {
+    private var glyph: CardMark.Glyph {
         guard grown else { return .channel }
         return switch recorder.phase {
         case .recording, .sending, .failed: .mic
@@ -217,12 +252,12 @@ private struct TalkMark: View {
 
     var body: some View {
         let level = recorder.isListening ? recorder.dictation.level : 0
-        Button(action: recorder.resume) { CardMark(face: face, emphasized: emphasized) }
+        Button(action: recorder.resume) { CardMark(glyph: glyph, emphasized: emphasized) }
             .buttonStyle(TalkMarkButtonStyle())
             // A disabled button grays its accent, so the mic only stops taking taps.
             .allowsHitTesting(recorder.canResume)
             .background {
-                if face == .mic {
+                if glyph == .mic {
                     // The glow is wider than the mark, so the halo keeps the mark's own frame.
                     ZStack {
                         Circle()
@@ -352,7 +387,7 @@ private struct TalkLineSlot: ViewModifier {
     @Environment(\.talkTrailingInset) private var trailingInset
 
     func body(content: Content) -> some View {
-        let shows = grown && recorder?.isOpen == true
+        let shows = grown && recorder?.isLifted == true
         content
             .modifier(TalkFaceExit(gone: shows))
             // Line 2 leaves quickly, and returns over the second half of Sent's collapse.
@@ -482,8 +517,8 @@ private struct TalkNote: View {
         .accessibilityAction(.magicTap) { send() }
         .accessibilityAction(.escape) { recorder.cancel() }
         // Talking again from the check reuses the card, so focus follows each opening.
-        .onChange(of: recorder.isOpen, initial: true) { _, open in
-            if open { wordsFocused = true }
+        .onChange(of: recorder.isLifted, initial: true) { _, lifted in
+            if lifted { wordsFocused = true }
         }
     }
 
@@ -592,33 +627,34 @@ private struct TalkRow: ViewModifier {
     let offered: Bool
     let line: Visibility
     let start: () -> Void
+    @Environment(TalkHold.self) private var hold: TalkHold?
     @AccessibilityFocusState private var focused: Bool
 
     func body(content: Content) -> some View {
         let isHeld = recorder.channelID == channelID
         // The card draws this row while it's up, so the cell's own content hides beneath it.
-        let isCovered = isHeld && recorder.cell != nil
+        let isCovered = isHeld && hold?.cell?.channelID == channelID
         // Dims with the card's growth, since rows don't animate in the swipe action's transaction.
-        let isDimmed = recorder.isOpen && recorder.isGrown && !isHeld
-        let offersTalk = offered && recorder.isAvailable && !recorder.isOpen
+        let isDimmed = recorder.isLifted && hold?.isGrown(recorder.channelID) == true && !isHeld
+        let offersTalk = offered && recorder.isAvailable && !recorder.isLifted
         let hidesLine = recorder.hiddenLines.contains(channelID)
         content
             .opacity(isCovered ? 0 : isDimmed ? 0.4 : 1)
             .animation(.easeInOut(duration: 0.25), value: isDimmed)
             // Only the held row hides its selection, which returns as the Sent wash fades or as
             // Cancel's card lands. The open channel's row keeps its band while it dims.
-            .selectionDisabled(isHeld && (recorder.isOpen || recorder.phase == .sent))
+            .selectionDisabled(isHeld && (recorder.isLifted || recorder.phase == .sent))
             .accessibilityHidden(isCovered)
             .accessibilityFocused($focused)
             .backgroundPreferenceValue(TalkTextEndKey.self) { textEnd in
                 // Only the held row reports its frame, which it does as soon as the recorder holds it.
                 if isHeld {
-                    Color.clear.onGeometryChange(for: TalkRecorder.Cell.self) { proxy in
+                    Color.clear.onGeometryChange(for: TalkHold.Cell.self) { proxy in
                         let width = proxy.size.width
-                        return TalkRecorder.Cell(frame: proxy.frame(in: .global),
-                                                 textInset: textEnd.map { max(width - proxy[$0].x, 0) } ?? 0)
+                        return TalkHold.Cell(channelID: channelID, frame: proxy.frame(in: .global),
+                                             textInset: textEnd.map { max(width - proxy[$0].x, 0) } ?? 0)
                     } action: { cell in
-                        recorder.cell = cell
+                        hold?.cell = cell
                     }
                 }
             }
@@ -675,39 +711,44 @@ private struct TalkList<Row: View>: ViewModifier {
     let onGlass: Bool
     let context: [AnyHashable?]
     let row: (String) -> Row
+    @ViewState private var hold = TalkHold()
     @Environment(\.scenePhase) private var scenePhase
 
     func body(content: Content) -> some View {
         content
-            .scrollDisabled(recorder.isOpen)
-            .accessibilityHidden(recorder.isOpen)
-            .overlay {
-                GeometryReader { proxy in
-                    // The dimmed rows ignore taps, so the open channel's row can keep its selection.
-                    if recorder.isOpen {
-                        Color.clear.contentShape(Rectangle())
-                    }
-                    if let channelID = recorder.channelID, let cell = recorder.cell {
-                        let origin = proxy.frame(in: .global).origin
-                        TalkCard(recorder: recorder, cell: cell.frame.offsetBy(dx: -origin.x, dy: -origin.y),
-                                 textInset: cell.textInset, bounds: CGRect(origin: .zero, size: proxy.size),
-                                 onGlass: onGlass) {
-                            row(channelID)
-                        }
+            .environment(hold)
+            .cardList(isLifted: recorder.isLifted, channelID: recorder.channelID, channelIDs: channelIDs,
+                      endsWhenChanging: context, end: recorder.leave) { list in
+                if let channelID = recorder.channelID, let cell = hold.cell, cell.channelID == channelID {
+                    TalkCard(recorder: recorder, hold: hold, cell: cell.frame.offsetBy(dx: -list.minX, dy: -list.minY),
+                             textInset: cell.textInset, bounds: CGRect(origin: .zero, size: list.size),
+                             onGlass: onGlass) {
+                        row(channelID)
                     }
                 }
             }
-            .onChange(of: context) { recorder.leave() }
-            .onChange(of: recorder.channelID.map { !channelIDs.contains($0) } ?? false) { _, isGone in
-                if isGone { recorder.leave() }
-            }
-            .onChange(of: scenePhase) { _, phase in
-                if phase != .active { recorder.leave() }
+            // Talking again on a row that still wears the check keeps the recorder on it, so its card
+            // stays up and the check swaps straight to the mic.
+            .onChange(of: recorder.channelID) { _, channelID in
+                if channelID == nil { hold.release() }
             }
             .onAppear { recorder.activate() }
             .onDisappear { recorder.deactivate() }
             .task(id: scenePhase) {
                 if scenePhase == .active { await recorder.dictation.refreshLanguageSupport() }
             }
+    }
+}
+
+private extension TalkRecorder {
+    /// The held row's accessibility value.
+    func rowValue(details: String) -> String {
+        switch phase {
+        case .recording: canResume ? "Paused" : isOffline ? "Recording, offline" : "Recording"
+        case .sending: "Sending"
+        case .failed(let failure): failure.label
+        case .sent, .landed: isChecked ? "Sent to Lead. " + details : details
+        case .cancelled, nil: details
+        }
     }
 }

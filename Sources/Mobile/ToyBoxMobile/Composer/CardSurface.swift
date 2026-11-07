@@ -4,7 +4,7 @@ import ToyBoxUI
 import UIKit
 
 // What the phone's list cards share: the talk card and the Needs You card draw the same surface,
-// place themselves the same way above the list, and end in the same Cancel and Send.
+// hold the list and place themselves above it the same way, and end in the same Cancel and Send.
 
 /// A card's surface: 20-point continuous corners over an opaque base, washed in a transcript
 /// surface's fills, with a thin edge and, while lifted, a shadow. Each layer fades in its own
@@ -58,20 +58,21 @@ struct CardSurface: View {
     }
 }
 
-/// The mark a card's row wears: the channel's own face, the mic while the talk card records, or the
-/// done check once a card's message sends. Each face keeps its own fill, so a change cross-fades,
-/// the glyph swaps through `.replace`, and the check arrives with the success tap.
+/// The mark a card's row wears: the channel's own mark, the mic while the talk card records, or the
+/// done check once a card's message sends. Each glyph keeps its own fill, so a change cross-fades,
+/// the symbol swaps through `.replace`, and the check arrives with the success tap.
 struct CardMark: View {
-    enum Face { case channel, mic, check }
+    enum Glyph { case channel, mic, check }
 
-    let face: Face
+    let glyph: Glyph
     var emphasized = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.cardMarkTaps) private var taps
 
     var body: some View {
         Image(systemName: symbol)
             // At this size the check's circle fills the mark's 28 points, with its check knocked out.
-            .font(.system(size: face == .check ? 27.4 : 28 * 14 / 30, weight: .semibold))
+            .font(.system(size: glyph == .check ? 27.4 : 28 * 14 / 30, weight: .semibold))
             .symbolRenderingMode(.monochrome)
             .foregroundStyle(ink)
             .contentTransition(.symbolEffect(.replace))
@@ -81,15 +82,15 @@ struct CardMark: View {
                 ZStack {
                     Circle()
                         .fill(emphasized ? AnyShapeStyle(Color.white.opacity(0.22)) : AnyShapeStyle(ChannelMark.cyan.gradient))
-                        .opacity(face == .channel ? 1 : 0)
-                    Circle().fill(Color.accentColor.opacity(0.15)).opacity(face == .mic ? 1 : 0)
+                        .opacity(glyph == .channel ? 1 : 0)
+                    Circle().fill(Color.accentColor.opacity(0.15)).opacity(glyph == .mic ? 1 : 0)
                 }
             }
-            .sensoryFeedback(.success, trigger: face == .check) { _, sent in sent }
+            .sensoryFeedback(.success, trigger: glyph == .check) { _, sent in sent && taps }
     }
 
     private var symbol: String {
-        switch face {
+        switch glyph {
         case .mic: "mic.fill"
         case .check: "checkmark.circle.fill"
         case .channel: "number"
@@ -97,11 +98,24 @@ struct CardMark: View {
     }
 
     private var ink: Color {
-        switch face {
+        switch glyph {
         case .mic: .accentColor
         case .check: ChannelTaskColors.changes(in: colorScheme).added
         case .channel: .white
         }
+    }
+}
+
+private struct CardMarkTapsKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    /// Whether a mark's check arrives with the success tap. A copy of a row the list also draws
+    /// leaves the tap to the list's own.
+    var cardMarkTaps: Bool {
+        get { self[CardMarkTapsKey.self] }
+        set { self[CardMarkTapsKey.self] = newValue }
     }
 }
 
@@ -123,12 +137,12 @@ struct CardShape: Shape {
     }
 }
 
-/// Places a card above the list from its own laid-out height, so its top edge moves in the same
-/// transaction as its size, and a card growing up holds its bottom still.
+/// Places a card on its row, or, while lifted, above the list from its own laid-out height, so its
+/// top edge moves in the same transaction as its size, and a card growing up holds its bottom still.
 struct CardLayout: Layout {
     let placement: CardPlacement
     let x: CGFloat
-    let isOpen: Bool
+    let isLifted: Bool
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         proposal.replacingUnspecifiedDimensions()
@@ -136,9 +150,55 @@ struct CardLayout: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         for card in subviews {
-            let top = isOpen ? placement.top(height: card.sizeThatFits(.unspecified).height) : placement.row.minY
+            let top = isLifted ? placement.top(height: card.sizeThatFits(.unspecified).height) : placement.row.minY
             card.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + top), proposal: .unspecified)
         }
+    }
+}
+
+extension View {
+    /// Holds the list under its card. While the card is lifted, the list stops scrolling, leaves
+    /// VoiceOver to the card and lets its dimmed rows ignore taps. `card` draws over the list from the
+    /// list's frame in global space. The card ends through `end` when anything in `context` changes,
+    /// the app leaves the foreground or the card's channel leaves `channelIDs`.
+    func cardList<Card: View>(isLifted: Bool, channelID: String?, channelIDs: [String],
+                              endsWhenChanging context: [AnyHashable?], end: @escaping @MainActor () -> Void,
+                              @ViewBuilder card: @escaping (_ list: CGRect) -> Card) -> some View {
+        modifier(CardList(isLifted: isLifted, channelID: channelID, channelIDs: channelIDs, context: context,
+                          end: end, card: card))
+    }
+}
+
+private struct CardList<Card: View>: ViewModifier {
+    let isLifted: Bool
+    let channelID: String?
+    let channelIDs: [String]
+    let context: [AnyHashable?]
+    let end: @MainActor () -> Void
+    let card: (CGRect) -> Card
+    @Environment(\.scenePhase) private var scenePhase
+
+    func body(content: Content) -> some View {
+        content
+            .scrollDisabled(isLifted)
+            .accessibilityHidden(isLifted)
+            .overlay {
+                // Inside the safe area and any bar, and above the keyboard while it shows.
+                GeometryReader { proxy in
+                    // The dimmed rows ignore taps, so the open channel's row keeps its selection.
+                    if isLifted {
+                        Color.clear.contentShape(Rectangle())
+                    }
+                    card(proxy.frame(in: .global))
+                }
+            }
+            .onChange(of: context) { end() }
+            .onChange(of: channelID.map { !channelIDs.contains($0) } ?? false) { _, isGone in
+                if isGone { end() }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active { end() }
+            }
     }
 }
 

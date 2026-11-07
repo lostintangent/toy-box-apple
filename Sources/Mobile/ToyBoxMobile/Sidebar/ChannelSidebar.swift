@@ -106,12 +106,12 @@ struct ChannelSidebar: View {
                                 .listRowInsets(.vertical, 0)
                                 .contextMenu {
                                     // UIKit lifts menus itself, so a dimmed row offers none while a note is open.
-                                    if !talk.isOpen { contextMenu(channel) }
+                                    if !talk.isLifted { contextMenu(channel) }
                                 } preview: {
                                     ChannelSidebarPreview(channel: presentation.channel(channel), agents: presentation.agents(channel))
                                 }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    if !talk.isOpen {
+                                    if !talk.isLifted {
                                         Button(role: .destructive) {
                                             management.present(.deleteChannel(channelId: channel.id))
                                         } label: {
@@ -155,9 +155,15 @@ struct ChannelSidebar: View {
         }
         .needsYouList(cards, card: liftedCard, channelIDs: ids, bounds: $listBounds, endsWhenChanging: [
             model.selectedChannelID, model.cover, management.flow?.id, searchFocused.wrappedValue,
-        ]) { maxHeight in
-            if let entry = cards.replying, let channel = channels.first(where: { $0.id == entry.channel.id }) {
-                card(entry, in: channel, now: now, isLifted: true, reach: reach, maxHeight: maxHeight)
+        ]) { entry, maxHeight in
+            if let channel = channels.first(where: { $0.id == entry.channel.id }) {
+                card(entry, in: channel, now: now, isLifted: true, maxHeight: maxHeight)
+            }
+        } row: { channelID in
+            if let channel = channels.first(where: { $0.id == channelID }) {
+                row(channel, now: now)
+                    .padding(.leading, NeedsYouCard.margin)
+                    .padding(.trailing, reach)
             }
         }
         .onChange(of: cards.isLifted) { _, lifted in
@@ -169,7 +175,7 @@ struct ChannelSidebar: View {
     @ViewBuilder private func face(_ face: Face?, of channel: Channel, now: Date, reach: CGFloat) -> some View {
         switch face {
         case .card(let entry):
-            card(entry, in: channel, now: now, reach: reach, maxHeight: listBounds.height - 16)
+            card(entry, in: channel, now: now, maxHeight: listBounds.height - 16)
                 .background {
                     if cards.isLifted {
                         Color.clear.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { liftedCard = $0 }
@@ -203,9 +209,9 @@ struct ChannelSidebar: View {
     }
 
     private func card(_ entry: ChannelWaitingRequests.Entry, in channel: Channel, now: Date, isLifted: Bool = false,
-                      reach: CGFloat, maxHeight: CGFloat) -> NeedsYouCard {
+                      maxHeight: CGFloat) -> NeedsYouCard {
         NeedsYouCard(channel: presentation.channel(channel), entry: entry, cards: cards, choices: choices(entry),
-                     now: now, isCollapsed: isCollapsed, isLifted: isLifted, reach: reach, maxHeight: maxHeight,
+                     now: now, isCollapsed: isCollapsed, isLifted: isLifted, maxHeight: maxHeight,
                      open: { open(entry) }, choose: { choose($0, for: entry) }, reply: { reply(to: entry) })
     }
 

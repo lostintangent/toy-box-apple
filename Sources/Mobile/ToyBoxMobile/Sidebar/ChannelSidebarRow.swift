@@ -49,19 +49,19 @@ struct ChannelSidebarRow: View {
         .frame(minHeight: 72)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(channel.name)
-        .accessibilityValue(talk?.rowValue(details: accessibilityDetails) ?? accessibilityDetails)
+        .talkValue(talk, details: accessibilityDetails)
     }
 
     @ViewBuilder private var heading: some View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 4) {
                 title
-                activity
+                Activity(channel: channel, now: now, isCollapsed: isCollapsed, talk: talk)
             }
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 title.lineLimit(1).truncationMode(.tail)
-                activity
+                Activity(channel: channel, now: now, isCollapsed: isCollapsed, talk: talk)
             }
         }
     }
@@ -70,27 +70,6 @@ struct ChannelSidebarRow: View {
         Text(channel.name)
             .font(.headline)
             .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var activity: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
-            ZStack {
-                if let date = try? Date(channel.updatedAt, strategy: .iso8601) {
-                    Text(ChannelActivityTime.label(for: date, now: now))
-                        .font(.caption)
-                        .foregroundStyle(ChannelInk.secondary(for: prominence))
-                }
-            }
-            .talkTime(talk)
-            if isCollapsed {
-                Image(systemName: "chevron.forward")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Color(uiColor: prominence == .increased ? .white : .tertiaryLabel))
-                    .talkFades(talk)
-                    .accessibilityHidden(true)
-            }
-        }
-        .fixedSize()
     }
 
     private var secondLine: some View {
@@ -180,5 +159,38 @@ struct ChannelSidebarRow: View {
             parts.append(ChannelActivityTime.accessibilityLabel(for: date, now: now))
         }
         return parts.filter { !$0.isEmpty }.joined(separator: ". ")
+    }
+}
+
+extension ChannelSidebarRow {
+    /// The row's last activity time, then the chevron when the split view is collapsed. The talk
+    /// card's time takes the time's place, and a Needs You card's heading ends in the same column.
+    struct Activity: View {
+        let channel: Channel
+        let now: Date
+        var isCollapsed = false
+        var talk: TalkRecorder? = nil
+        @Environment(\.backgroundProminence) private var prominence
+
+        var body: some View {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                ZStack {
+                    if let date = try? Date(channel.updatedAt, strategy: .iso8601) {
+                        Text(ChannelActivityTime.label(for: date, now: now))
+                            .font(.caption)
+                            .foregroundStyle(ChannelInk.secondary(for: prominence))
+                    }
+                }
+                .talkTime(talk)
+                if isCollapsed {
+                    Image(systemName: "chevron.forward")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color(uiColor: prominence == .increased ? .white : .tertiaryLabel))
+                        .talkFades(talk)
+                        .accessibilityHidden(true)
+                }
+            }
+            .fixedSize()
+        }
     }
 }

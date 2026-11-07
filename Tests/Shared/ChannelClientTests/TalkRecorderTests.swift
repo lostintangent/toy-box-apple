@@ -42,10 +42,7 @@ struct TalkRecorderTests {
         var announcements: [String] = []
         let recorder = try await start(on: store, order: ["a", "test", "b"]) { announcements.append($0) }
         defer { recorder.deactivate() }
-        let cell = TalkRecorder.Cell(frame: CGRect(x: 20, y: 120, width: 356, height: 72), textInset: 13)
-        recorder.cell = cell
-        recorder.isGrown = true
-        #expect(recorder.isOpen && recorder.hidesTrailingColumn)
+        #expect(recorder.isLifted && recorder.hidesTrailingColumn)
         #expect(recorder.timeSlot == .counter)
         #expect(recorder.ordered(channels).map(\.id) == ["a", "test", "b", "new", "newer"],
                 "Activity can't move rows beneath the card, and new channels follow in server order")
@@ -56,18 +53,17 @@ struct TalkRecorderTests {
         recognizer.send("beside", isFinal: false)
         #expect(recorder.finalizedWords == "Put the library")
         #expect(recorder.tentativeWords == " beside")
-        #expect(recorder.rowValue(details: "Now") == "Recording")
         recognizer.finalWords = [("beside the desks", true)]
         await recorder.send()
         #expect(posts.withLock { $0.map(\.content) } == ["Put the library beside the desks"],
                 "Plain words reach the Lead with no mention or request answer")
-        #expect(recorder.phase == .sent && !recorder.isOpen && recorder.hidesTrailingColumn)
+        #expect(recorder.phase == .sent && !recorder.isLifted && recorder.hidesTrailingColumn)
         #expect(beats.motions.last == .sent && recorder.hiddenLines.isEmpty,
                 "The lines return as the card starts shrinking, not once it closes")
         #expect(recorder.timeSlot == .noteTime)
         #expect(recorder.sentAt == (try? Date("2026-10-27T00:00:00Z", strategy: .iso8601)),
                 "The row shows the server's time for the note")
-        #expect(recorder.rowValue(details: "Now") == "Sent to Lead. Now")
+        #expect(recorder.isChecked)
         #expect(announcements == ["Sent to Lead in Studio"])
         #expect(draft.text == "My own draft")
 
@@ -76,7 +72,8 @@ struct TalkRecorderTests {
         #expect(!recorder.hidesTrailingColumn)
         recorder.start(store, name: "Studio", order: ["a", "test", "b"])
         #expect(recorder.phase == .recording)
-        #expect(recorder.cell == cell && recorder.isGrown, "The card stays up, so the check swaps straight to the mic")
+        #expect(recorder.channelID == "test" && checks["test"] == nil,
+                "The row stays held, so its card stays up and the check swaps straight to the mic")
         #expect(recorder.finalizedWords.isEmpty && recorder.sentAt == nil)
         #expect(recorder.hiddenLines == ["a", "test", "b"])
         try await eventually { beats.waiting.isEmpty }
@@ -91,11 +88,11 @@ struct TalkRecorderTests {
         try await eventually { recorder.phase == .landed }
         try await beats.end(.seconds(2.35))
         try await eventually { checks["test"] == .settling }
-        #expect(recorder.timeSlot == nil && recorder.rowValue(details: "Now") == "Now")
+        #expect(recorder.timeSlot == nil && !recorder.isChecked)
         #expect(recorder.ordered(channels).map(\.id) == ["a", "test", "b", "new", "newer"])
         try await beats.end(.seconds(0.45))
         try await eventually { recorder.phase == nil }
-        #expect(recorder.cell == nil && !recorder.isGrown)
+        #expect(recorder.channelID == nil)
         #expect(recorder.ordered(channels).map(\.id) == channels.map(\.id), "Settling lets the row go")
         #expect(beats.motions == [.open, .sent, .settle, .open, .sent, .settle, .settle])
         #expect(announcements.count == 2)
@@ -118,8 +115,7 @@ struct TalkRecorderTests {
         await recorder.send()
         let failure: ChannelSendPhase = rejected ? .notSent : .deliveryNotConfirmed
         #expect(recorder.phase == .failed(failure))
-        #expect(recorder.isOpen && recorder.canSend && recorder.timeSlot == .failed(failure))
-        #expect(recorder.rowValue(details: "Now") == failure.label)
+        #expect(recorder.isLifted && recorder.canSend && recorder.timeSlot == .failed(failure))
         #expect(recorder.hiddenLines == ["test", "a"], "The first row has no line above to hide")
 
         await recorder.send()
@@ -129,7 +125,7 @@ struct TalkRecorderTests {
         #expect(announcements == [failure.label, failure.label])
 
         recorder.cancel()
-        #expect(recorder.phase == .cancelled && !recorder.isOpen)
+        #expect(recorder.phase == .cancelled && !recorder.isLifted)
         #expect(recorder.hiddenLines.isEmpty, "Cancel brings the lines back as the card starts shrinking")
         try await beats.end(.seconds(0.45))
         try await eventually { recorder.phase == nil }
@@ -151,7 +147,7 @@ struct TalkRecorderTests {
         recognizer.send("Put the library", isFinal: true)
         recognizer.send("by the desks", isFinal: false)
         if leaves { recorder.leave() } else { recorder.cancel() }
-        #expect(!recorder.isOpen)
+        #expect(!recorder.isLifted)
         #expect(recognizer.isCancelled)
         let kept = leaves ? "An earlier draft\n\nPut the library by the desks" : "An earlier draft"
         #expect(draft.text == kept)
