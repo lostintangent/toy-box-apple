@@ -14,6 +14,9 @@ final class AppModel {
     let following: ChannelFollowController
     private(set) var serverURL = ""
     private(set) var catalog: ChannelCatalogStore?
+    /// Every message the user sends until its server confirms it, in the shared container so the
+    /// share extension's sends join it. The current catalog delivers it.
+    let outbox: ChannelOutbox
     /// The waiting requests the channel list and the Needs You widget share.
     private(set) var waitingRequests: ChannelWaitingRequests?
     private(set) var configurationError: String?
@@ -70,6 +73,7 @@ final class AppModel {
         self.following = following ?? ChannelFollowController()
         self.defaults = defaults
         self.session = session
+        outbox = ChannelOutbox(folder: Self.outboxFolder)
         self.notifications.onRegistrationCreated = { [weak self] registration in
             guard let self, self.notifications.currentRegistration == registration,
                   self.serverURL == registration.serverURL else { return }
@@ -80,15 +84,8 @@ final class AppModel {
             await self?.openChannel(id: activation.channel.channelID, sequence: activation.channel.sequence,
                                     expectedServer: activation.serverURL)
         }
-        self.notifications.onReply = { [weak self] payload, text, handle in
-            guard let self, self.notifications.isCurrent(payload), let catalog else { return .notSent }
-            let result = await ComposerSession.sendNotificationReply(
-                text, to: handle, store: catalog.channel(id: payload.channelID),
-                isCurrentRegistration: { [weak self] in
-                    self?.catalog === catalog && self?.notifications.isCurrent(payload) == true
-                })
-            if result == .sent { await catalog.refresh() }
-            return result
+        self.notifications.onReply = { [weak self] reply in
+            await self?.outbox.send(reply.content, to: reply.channelID, on: reply.server, answering: reply.request)
         }
         let address: String?
         if let index = arguments.firstIndex(of: "--server") {
@@ -145,6 +142,13 @@ final class AppModel {
         return Set(visible.map { [$0] } ?? [])
     }
 
+    /// The shared container, where the share extension saves its sends too. Without it, sends still
+    /// go out from the app's own folder.
+    private static var outboxFolder: URL {
+        (try? MobileSharedContainer.url().appending(path: "Sending", directoryHint: .isDirectory))
+            ?? ChannelOutbox.defaultFolder
+    }
+
     func hold(_ store: ChannelStore) {
         connections.hold(store)
         if !isForeground { store.disconnect() }
@@ -168,6 +172,7 @@ final class AppModel {
         widgetUpdate = nil
         cancelNavigation()
         catalog?.stopPolling()
+        catalog?.outbox = nil
         connections.disconnectAll()
         holdsSelectedConnection = false
         selectedChannelID = nil
@@ -181,6 +186,7 @@ final class AppModel {
         self.serverURL = api.baseURL.absoluteString
         serverIdentity = identity
         catalog = ChannelCatalogStore(api: api)
+        catalog?.outbox = outbox
         waitingRequests = catalog.map(ChannelWaitingRequests.init)
         notifications.configure(api: api)
         configurationError = nil

@@ -55,7 +55,6 @@ struct MenuBarInbox: View {
             }
         }
         .onChange(of: model.serverURL) { _, _ in
-            replySession?.cancelOpenOnConfirmation()
             close()
             collapseReply()
         }
@@ -153,7 +152,7 @@ struct MenuBarInbox: View {
                 if let notice = request.state.notice {
                     Label(notice, systemImage: request.state.symbol)
                         .font(.system(size: 12)).foregroundStyle(.secondary)
-                    if request.state != .sent && request.state != .sending {
+                    if request.state != .replied {
                         Button("Open Channel") { open(item) }.controlSize(.small)
                     }
                 }
@@ -169,9 +168,12 @@ struct MenuBarInbox: View {
                         .id("reply-\(item.id)")
                     }
                 } else if request.canReply {
-                    let attempts = model.catalog?.existingChannel(id: item.id)?.sendAttempts ?? []
-                    let labels = request.choices(attempts: attempts)
-                    if !labels.isEmpty { choices(item, labels: labels) }
+                    if let choices = request.choices(
+                        attempts: model.catalog?.existingChannel(id: item.id)?.sendAttempts ?? [],
+                        isConnected: model.catalog?.phase.failure == nil
+                    ) {
+                        self.choices(item, choices)
+                    }
                     Button {
                         expandReply(to: item)
                     } label: {
@@ -187,9 +189,9 @@ struct MenuBarInbox: View {
     }
 
     /// A request's suggested replies as small bordered choices above Reply.
-    private func choices(_ item: MenuBarStatus.Item, labels: [String]) -> some View {
+    private func choices(_ item: MenuBarStatus.Item, _ choices: TranscriptRequestChoices) -> some View {
         ChoiceFlowLayout(spacing: 6) {
-            ForEach(Array(labels.enumerated()), id: \.offset) { _, choice in
+            ForEach(Array(choices.labels.enumerated()), id: \.offset) { _, choice in
                 Button { sendChoice(choice, to: item) } label: {
                     Text(choice).lineLimit(nil).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -199,6 +201,7 @@ struct MenuBarInbox: View {
                 .accessibilityLabel("Send \(choice) in \(item.name)")
             }
         }
+        .disabled(!choices.canSend)
     }
 
     private func working(_ section: MenuBarStatus.Section) -> some View {
@@ -303,7 +306,8 @@ struct MenuBarInbox: View {
         let store = catalog.channel(id: item.id)
         collapseReply()
         replyError = nil
-        replySession = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: sequence), requester: requester)
+        replySession = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: sequence), requester: requester,
+                                                isConnected: { [weak model] in model?.catalog?.phase.failure == nil })
         model.hold(store)
         holdsReplyConnection = true
         expandedChannelID = item.id
@@ -321,28 +325,28 @@ struct MenuBarInbox: View {
         holdsReplyConnection = false
     }
 
+    /// The reply is saved, so the row turns Replied and the editor folds away, or the channel opens.
     private func confirmedReply(_ confirmation: AuxiliaryComposerSession.Confirmation, to item: MenuBarStatus.Item) {
         guard let replySession, model.serverURL == replySession.store.api.baseURL.absoluteString else { return }
-        inbox.record(item.id, .sent)
+        inbox.record(item.id, .replied)
         if confirmation.opensChannel {
-            closeThen { model.activate(channelID: item.id, sequence: confirmation.sequence) }
+            closeThen { model.activate(channelID: item.id) }
+        } else {
+            collapseReply()
         }
     }
 
-    /// Sends a choice the way a notification's choice does: its label, through the channel's outbox,
-    /// so a failure waits there for Open Channel instead of retrying from the menu.
+    /// Sends a choice the way a notification's choice does: its label, saved to the outbox, which
+    /// delivers it and keeps a failure in the channel. The row turns Replied at once.
     private func sendChoice(_ choice: String, to item: MenuBarStatus.Item) {
         guard let catalog = model.catalog, catalog.channels.contains(where: { $0.id == item.id }),
               let content = ChannelNotification.Reply(choice, to: nil)?.content else {
-            inbox.record(item.id, .notSent)
+            replyError = "This channel is no longer available."
             return
         }
-        inbox.record(item.id, .sending)
-        let reply = NotificationReply(store: catalog.channel(id: item.id))
-        Task {
-            let outcome = await reply.send(content)
-            inbox.record(item.id, outcome == .sent ? .sent : .notSent)
-        }
+        inbox.record(item.id, .replied)
+        let outbox = model.outbox, server = catalog.api.baseURL
+        Task { await outbox.send(content, to: item.id, on: server, answering: item.sequence) }
     }
 
     private func open(_ item: MenuBarStatus.Item) {

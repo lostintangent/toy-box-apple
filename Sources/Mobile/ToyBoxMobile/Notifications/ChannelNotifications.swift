@@ -15,6 +15,15 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         var serverURL: String
     }
 
+    /// A reply typed into a notification, or one of its choices, for the outbox. It goes to the
+    /// notification's own server and answers its request.
+    struct Reply: Equatable, Sendable {
+        var content: String
+        var channelID: String
+        var server: URL
+        var request: Int?
+    }
+
     private(set) var authorization: UNAuthorizationStatus = .notDetermined
     private(set) var hasLoadedAuthorization = false
     private(set) var isEnabling = false
@@ -40,14 +49,15 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     @ObservationIgnored var onRegistrationCreated: ((MobilePushRegistration) async -> Void)?
     @ObservationIgnored var onActivate: ((Activation) async -> Void)?
-    @ObservationIgnored var onReply: ((ChannelPushPayload, String, String?) async -> ComposerSession.NotificationReplyOutcome)?
+    /// Saves a reply to the outbox, which delivers it to its server now or once that's current again.
+    @ObservationIgnored var onReply: ((Reply) async -> Void)?
     private var center: UNUserNotificationCenter { .current() }
     nonisolated private static let logger = Logger(subsystem: "dev.toybox.mobile", category: "Notifications")
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let readAuthorization: () async -> UNAuthorizationStatus
     @ObservationIgnored private let requestAuthorization: () async throws -> Bool
     @ObservationIgnored private let openSettings: () async -> Bool
-    @ObservationIgnored private let addNotice: (UNNotificationRequest) async throws -> Void
+    @ObservationIgnored private let removeDelivered: ([String]) -> Void
     @ObservationIgnored private let setBadgeCount: (Int) async throws -> Void
     @ObservationIgnored private var pendingBadgeCount: Int?
     @ObservationIgnored private var badgeUpdate: Task<Void, Never>?
@@ -72,8 +82,8 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
              guard let url = URL(string: UIApplication.openSettingsURLString) else { return false }
              return await UIApplication.shared.open(url)
          },
-         addNotice: @escaping (UNNotificationRequest) async throws -> Void = {
-             try await UNUserNotificationCenter.current().add($0)
+         removeDelivered: @escaping ([String]) -> Void = {
+             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: $0)
          },
          setBadgeCount: @escaping (Int) async throws -> Void = {
              try await UNUserNotificationCenter.current().setBadgeCount($0)
@@ -83,7 +93,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         self.readAuthorization = readAuthorization
         self.requestAuthorization = requestAuthorization
         self.openSettings = openSettings
-        self.addNotice = addNotice
+        self.removeDelivered = removeDelivered
         self.setBadgeCount = setBadgeCount
         enabled = defaults.bool(forKey: "notificationsEnabled")
         requests = defaults.object(forKey: "requestNotifications") as? Bool ?? true
@@ -275,27 +285,29 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         guard currentRegistration?.registrationID == registrationID else { return }
         let stale = ChannelNotification.Delivered.stale(delivered, channels: self.channels, scope: registrationID,
                                               activeChannelID: self.activeChannelID)
-        if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
+        if !stale.isEmpty { removeDelivered(stale) }
     }
 
     func presentation(for payload: ChannelPushPayload?, category: String,
                       badge: NSNumber? = nil) -> UNNotificationPresentationOptions {
-        if category == ChannelNotificationCategory.replyFailed { return [.banner, .list, .sound] }
         guard isEnabled else { return [] }
         if payload == nil, category.isEmpty, badge != nil { return [.badge] }
         if let payload, isCurrent(payload), payload.channelID == activeChannelID { return [] }
         return category == ChannelNotificationCategory.completion ? [.list] : [.banner, .list, .sound]
     }
 
+    /// Handles a notification's action. `server` is the one the notification extension stamped when it
+    /// arrived, which a notification from before that, or a test, leaves out.
     func receive(_ payload: ChannelPushPayload, action: String, text: String?, handle: String?,
-                 replies: [String]? = nil, identifier: String) async {
+                 replies: [String]? = nil, server: String? = nil, identifier: String) async {
         if let label = SuggestedReplies(replies).label(forAction: action) {
-            await sendReply(payload, text: label, handle: nil, identifier: identifier)
+            // A choice sends its label as written, like the web's answer(label), so no handle is added.
+            await sendReply(payload, text: label, handle: nil, server: server, identifier: identifier)
             return
         }
         switch action {
         case ChannelNotificationCategory.reply:
-            await sendReply(payload, text: text, handle: handle, identifier: identifier)
+            await sendReply(payload, text: text, handle: handle, server: server, identifier: identifier)
         case UNNotificationDefaultActionIdentifier:
             guard isCurrent(payload), let currentRegistration else {
                 Self.logger.info("Ignored an alert from a previous notification registration.")
@@ -309,35 +321,20 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    private func sendReply(_ payload: ChannelPushPayload, text: String?, handle: String?,
+    /// Saves a reply or choice to the outbox before the action returns, then clears its notification,
+    /// since the outbox owns it from there and the app keeps it going in the background. A notification
+    /// from an earlier registration that doesn't name its server has nowhere to send it.
+    private func sendReply(_ payload: ChannelPushPayload, text: String?, handle: String?, server: String?,
                            identifier: String) async {
-        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        guard isCurrent(payload), let onReply else {
-            await replyWasNotSent()
+        guard let reply = ChannelNotification.Reply(text ?? "", to: handle), let onReply else { return }
+        let server = server ?? (isCurrent(payload) ? currentRegistration?.serverURL : nil)
+        guard let server = server.flatMap(URL.init(string:)) else {
+            Self.logger.notice("Dropped a reply to a notification from an earlier server that doesn't name it.")
             return
         }
-        switch await onReply(payload, text, handle) {
-        case .sent:
-            center.removeDeliveredNotifications(withIdentifiers: [identifier])
-        case .failed:
-            break
-        case .notSent:
-            await replyWasNotSent()
-        }
-    }
-
-    private func replyWasNotSent() async {
-        let content = UNMutableNotificationContent()
-        content.title = "Toy Box"
-        content.body = "Your reply wasn't sent."
-        content.categoryIdentifier = ChannelNotificationCategory.replyFailed
-        content.sound = .default
-        do {
-            try await addNotice(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
-        } catch {
-            self.error = error.localizedDescription
-            Self.logger.error("Could not show the unsent reply notice: \(error.localizedDescription)")
-        }
+        await onReply(Reply(content: reply.content, channelID: payload.channelID, server: server,
+                            request: payload.kind == .request ? payload.sequence : nil))
+        removeDelivered([identifier])
     }
 
     nonisolated func userNotificationCenter(
@@ -363,11 +360,12 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         let text = (response as? UNTextInputNotificationResponse)?.userText
         let handle = content.userInfo["handle"] as? String
         let replies = content.userInfo["replies"] as? [String]
+        let server = content.userInfo["serverURL"] as? String
         let identifier = response.notification.request.identifier
         Self.completeOnMainActor({
             do {
-                await self.receive(try payload.get(), action: action, text: text,
-                                   handle: handle, replies: replies, identifier: identifier)
+                await self.receive(try payload.get(), action: action, text: text, handle: handle,
+                                   replies: replies, server: server, identifier: identifier)
             } catch {
                 Self.logger.info("Ignored an alert without current channel routing: \(error.localizedDescription)")
             }

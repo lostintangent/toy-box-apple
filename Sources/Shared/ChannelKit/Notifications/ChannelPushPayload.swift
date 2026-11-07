@@ -5,7 +5,6 @@ public enum ChannelNotificationCategory {
     public static let request = ChannelPushPayload.Kind.request.rawValue
     public static let completion = ChannelPushPayload.Kind.completion.rawValue
     public static let reply = "reply"
-    public static let replyFailed = "replyFailed"
 }
 
 public struct ChannelPushPayload: Equatable, Sendable {

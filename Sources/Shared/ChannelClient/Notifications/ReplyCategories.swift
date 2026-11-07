@@ -31,7 +31,7 @@ public enum ReplyCategories {
                                       hiddenPreviewsBodyPlaceholder: ChannelNotification.Content.requestPlaceholder)
     }
 
-    /// The categories every process registers: request, completion and reply failure.
+    /// The categories every process registers: request and completion.
     public static func baseCategories() -> Set<UNNotificationCategory> {
         [
             UNNotificationCategory(identifier: ChannelNotificationCategory.request, actions: [textReply()],
@@ -40,8 +40,6 @@ public enum ReplyCategories {
             UNNotificationCategory(identifier: ChannelNotificationCategory.completion, actions: [],
                                    intentIdentifiers: [],
                                    hiddenPreviewsBodyPlaceholder: ChannelNotification.Content.completionPlaceholder),
-            UNNotificationCategory(identifier: ChannelNotificationCategory.replyFailed, actions: [],
-                                   intentIdentifiers: []),
         ]
     }
 

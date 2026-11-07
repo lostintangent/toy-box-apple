@@ -14,42 +14,11 @@ import UniformTypeIdentifiers
 
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct ComposerTests {
-    @Test func sendIsASpinnerOnlyWhileItsChannelConnectsAndExplainsOnlyOnceUnavailable() async throws {
+    @Test func sendExplainsWhyOnlyOnceItsChannelIsUnavailable() {
         #expect(ChannelConnectionPhase.connecting.sendUnavailableReason == nil)
         #expect(ChannelConnectionPhase.connected.sendUnavailableReason == nil)
         #expect(ChannelConnectionPhase.failed("Offline").sendUnavailableReason == "The channel isn't connected")
         #expect(ChannelConnectionPhase.deleted.sendUnavailableReason == "This channel was deleted")
-
-        try await withDraft { draft, _ in
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.protocolClasses = [UnansweredConnectProtocol.self]
-            let api = try ChannelAPI(serverURL: "http://unanswered.test", session: URLSession(configuration: configuration))
-            let store = ChannelStore(id: "test", api: api, reconnectPolicy: .init(grace: 60), sendJournal: nil)
-            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
-            let host = NSHostingView(rootView: AuxiliaryComposer(
-                session: session, style: .quickSend, onConfirmed: { _ in }, onOpenChannel: {}, onDismiss: {}))
-            host.frame = NSRect(x: 0, y: 0, width: 420, height: 220)
-            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: true)
-            window.isReleasedWhenClosed = false
-            window.contentView = host
-            defer {
-                store.disconnect()
-                window.close()
-            }
-            func spinners(in view: NSView) -> Int {
-                (view is NSProgressIndicator ? 1 : 0) + view.subviews.reduce(0) { $0 + spinners(in: $1) }
-            }
-            store.connect()
-            try await waitForUpdate(of: host, "the composer mounts") { composerInput(in: host) != nil }
-            #expect(store.phase == .connecting)
-            try await waitForUpdate(of: host, "Send waits as a spinner") { spinners(in: host) == 1 }
-
-            let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
-                                  updatedAt: "2026-10-24T00:00:00Z")
-            _ = try store.apply(.init(type: "snapshot", state: .init(revision: 1, channel: channel, lead: .lead(id: "lead"))))
-            #expect(store.phase.isConnected)
-            try await waitForUpdate(of: host, "Send returns once live") { spinners(in: host) == 0 }
-        }
     }
 
     @Test func sharedDraftNormalizesTheMacsNativeSVGInsteadOfLosingIt() async throws {
@@ -89,12 +58,12 @@ struct ComposerTests {
             let session = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8),
                                                    requester: .init(id: "ada", name: "Ada Lovelace"), draft: draft)
             #expect(draft.text == "@ada-lovelace ")
-            #expect(session.canSend)
+            #expect(session.canSend())
             #expect(!session.requestChanged)
             #expect(store.state?.channel.seenThrough == 0)
             session.invalidateRequest()
             #expect(session.requestChanged)
-            #expect(!session.canSend)
+            #expect(!session.canSend())
             #expect(session.requestChangeNotice == "This request was answered elsewhere.")
             session.invalidateRequest(replacementSequence: 9)
             #expect(session.requestChangeNotice == "A newer request is waiting.")
@@ -109,7 +78,7 @@ struct ComposerTests {
             changed.channel.requestSequence = 9
             _ = try store.apply(.init(type: "snapshot", state: changed))
             #expect(session.requestChanged)
-            #expect(!session.canSend)
+            #expect(!session.canSend())
             await session.send()
             #expect(draft.text == "Keep this reply")
             #expect(draft.sendAttemptID == nil)
@@ -125,7 +94,7 @@ struct ComposerTests {
                                  sendJournal: nil)
         let session = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8), draft: draft)
         let offlineChanges = Mutex(0)
-        let offline = withObservationTracking { session.canSend } onChange: {
+        let offline = withObservationTracking { session.canSend() } onChange: {
             offlineChanges.withLock { $0 += 1 }
         }
         #expect(!offline)
@@ -138,7 +107,7 @@ struct ComposerTests {
         _ = try store.apply(.init(type: "snapshot", state: state))
         #expect(offlineChanges.withLock { $0 } == 1)
         let staleChanges = Mutex(0)
-        let stale = withObservationTracking { session.canSend } onChange: {
+        let stale = withObservationTracking { session.canSend() } onChange: {
             staleChanges.withLock { $0 += 1 }
         }
         #expect(!stale)
@@ -190,39 +159,25 @@ struct ComposerTests {
         }
     }
 
-    @Test(arguments: [true, false])
-    func quickSendPrefillWaitsForConfirmationOrAnExplicitEditOfAnImmutableSend(edit: Bool) async throws {
-        try await withDraft { draft, _ in
+    @Test func quickSendPrefillWaitsUntilASavedSendIsPresentedAgain() async throws {
+        try await withDraft { draft, url in
             let server = try #require(URL(string: "http://localhost:3210"))
             let inbox = QuickSendPrefillInbox(serverURL: server, draft: ComposerDraft())
-            draft.text = "Original immutable message"
-            draft.associateSend(id: "original")
             let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString), sendJournal: nil)
-            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
+            let outbox = ChannelOutbox(folder: url.deletingLastPathComponent().appending(path: "Sending"))
+            store.outbox = outbox
+            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft, isConnected: { true })
+            draft.text = "Saved message"
+            await session.send()
+            #expect(session.confirmation != nil)
             inbox.receive(.init(text: "Shared content"))
             #expect(!inbox.apply(to: session))
-            #expect(draft.text == "Original immutable message")
-            #expect(draft.sendAttemptID == "original")
             #expect(inbox.hasPendingContent)
-            if edit {
-                session.edit()
-            } else {
-                let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
-                                      latestSequence: 1, updatedAt: "2026-10-24T00:00:00Z")
-                let message = ChannelMessage(id: "original", sequence: 1, timestamp: channel.updatedAt,
-                                             sender: .user, content: .text(draft.text))
-                _ = try store.apply(.init(type: "snapshot", state: .init(revision: 1, channel: channel,
-                    lead: .lead(id: "lead"), messages: [message])))
-                session.reconcileDelivery()
-                #expect(session.confirmation != nil)
-                #expect(!inbox.apply(to: session))
-                session.beginPresentation()
-            }
+            session.beginPresentation()
             #expect(inbox.apply(to: session))
-            #expect(draft.text == (edit ? "Original immutable message\n\nShared content" : "Shared content"))
+            #expect(draft.text == "Shared content")
             #expect(draft.sendAttemptID == nil)
-            #expect(session.editedUnconfirmedMessage == edit)
-            #expect(store.sendAttempts.isEmpty)
+            withExtendedLifetime(outbox) {}
         }
     }
 
@@ -294,7 +249,7 @@ struct ComposerTests {
             _ = try store.apply(.init(type: "snapshot", state: .init(revision: 2, channel: channel,
                                                                      lead: .lead(id: "lead"))))
             #expect(reopened.requestChanged)
-            #expect(!reopened.canSend)
+            #expect(!reopened.canSend())
             await reopened.send()
             #expect(store.sendAttempts.isEmpty)
             #expect(draft.sendAttemptID == nil)
@@ -401,94 +356,47 @@ struct ComposerTests {
         #expect(chosen == ["alpha", "alpha", "gamma", "beta"], "Either edge of a row chooses it too")
     }
 
-    @Test(arguments: [422, 503])
-    func auxiliarySendAgainUsesTheSharedOutboxAndOriginalImmutableMessage(status: Int) async throws {
-        try await withDraft { draft, _ in
-            let host = UUID().uuidString.lowercased() + ".invalid"
-            AuxiliaryPostProtocol.fixtures.withLock { $0[host] = .init(statuses: [status, 201]) }
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.protocolClasses = [AuxiliaryPostProtocol.self]
-            let transport = URLSession(configuration: configuration)
-            defer {
-                transport.invalidateAndCancel()
-                AuxiliaryPostProtocol.fixtures.withLock { _ = $0.removeValue(forKey: host) }
-            }
-            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://\(host)", session: transport),
-                                     sendJournal: nil)
-            let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
-                                  updatedAt: "2026-10-24T00:00:00Z")
-            _ = try store.apply(.init(type: "snapshot", state: .init(revision: 1, channel: channel,
-                                                                    lead: .lead(id: "lead"))))
-            draft.text = "Original message"
-            draft.append(try sampleImage())
-            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
-            await session.send(opensChannel: true)
-            let originalID = try #require(draft.sendAttemptID)
-            #expect(session.confirmation == nil)
-            #expect(session.isReadOnly)
-            #expect(session.attempt?.phase == (status == 422 ? .notSent : .deliveryNotConfirmed))
-            #expect(session.deliveryNotice?.contains(status == 422 ? "Rejected" : "It may have arrived") == true)
-            #expect(draft.text == "Original message")
-            #expect(draft.images.count == 1)
-            #expect(AuxiliaryPostProtocol.fixtures.withLock { $0[host]?.posts.count } == 1)
-            await session.send()
-            #expect(session.confirmation?.id == originalID)
-            #expect(session.confirmation?.sequence == 7)
-            #expect(session.confirmation?.opensChannel == false)
-            #expect(!draft.hasContent)
-            #expect(store.sendAttempts.isEmpty)
-            #expect(store.state?.channel.seenThrough == 0)
-            let posts = AuxiliaryPostProtocol.fixtures.withLock { $0[host]?.posts ?? [] }
-            #expect(posts.count == 2)
-            #expect(posts.first == posts.last)
-            #expect(posts.first?.id == originalID)
-            #expect(posts.first?.attachments?.count == 1)
-        }
-    }
-
-    @Test func auxiliaryEchoConfirmationClearsOnlyItsOwnUnchangedDraft() async throws {
-        try await withDraft { draft, _ in
+    @Test func auxiliarySendSavesToTheOutboxOnlyWhileTheCatalogIsConnected() async throws {
+        try await withDraft { draft, url in
             let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
                                      sendJournal: nil)
-            draft.text = "An unconfirmed message"
-            draft.associateSend(id: "original")
-            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
-            #expect(session.isReadOnly)
-            #expect(session.deliveryNotice == "Delivery not confirmed. It may have arrived.")
-            let message = ChannelMessage(id: "original", sequence: 9, timestamp: "2026-10-24T00:00:00Z",
-                                         sender: .user, content: .text(draft.text))
-            let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
-                                  latestSequence: 9, updatedAt: message.timestamp)
-            let state = ChannelState(revision: 2, channel: channel, lead: .lead(id: "lead"), messages: [message])
-            _ = try store.apply(.init(type: "snapshot", state: state))
-            session.reconcileDelivery()
-            #expect(session.confirmation?.id == "original")
-            #expect(session.confirmation?.sequence == 9)
-            #expect(session.takeConfirmationPresentation()?.id == "original")
-            #expect(session.takeConfirmationPresentation() == nil)
+            let outbox = ChannelOutbox(folder: url.deletingLastPathComponent().appending(path: "Sending"))
+            store.outbox = outbox
+            let catalogConnected = Mutex(false)
+            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft,
+                                                   isConnected: { catalogConnected.withLock { $0 } })
+            draft.text = "Original message"
+            draft.append(try sampleImage())
+            try await finishLoading(draft)
+            #expect(!session.canSend())
+            await session.send(opensChannel: true)
+            #expect(session.confirmation == nil)
+            #expect(session.error?.contains("connection") == true)
+            #expect(draft.text == "Original message")
+
+            catalogConnected.withLock { $0 = true }
+            #expect(!store.phase.isConnected)
+            #expect(session.canSend(), "QuickSend follows the catalog, not the channel it hasn't opened")
+            await session.send(opensChannel: true)
+            let confirmation = try #require(session.confirmation)
+            #expect(confirmation.opensChannel)
+            #expect(session.error == nil)
+            let id = try #require(UUID(uuidString: confirmation.id))
+            let saved = try #require(outbox.message(id))
+            #expect(saved.channelID == "test")
+            #expect(saved.text == "Original message")
+            #expect(saved.attachments.count == 1)
+            #expect(saved.state == .sending)
             #expect(!draft.hasContent)
             #expect(draft.sendAttemptID == nil)
-            draft.text = "A new draft after confirmation"
-            #expect(!session.canSend)
+
+            draft.text = "A new draft"
+            #expect(!session.canSend(), "A saved send waits until the editor is presented again")
+            #expect(session.takeConfirmationPresentation() == confirmation)
+            #expect(session.takeConfirmationPresentation() == nil)
             session.beginPresentation()
             #expect(session.confirmation == nil)
-            #expect(session.canSend)
-            draft.text = "A different unconfirmed message"
-            draft.associateSend(id: "second")
-            let editedSession = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
-            editedSession.edit()
-            #expect(editedSession.editedUnconfirmedMessage)
-            #expect(draft.sendAttemptID == nil)
-            draft.text = "A newer draft"
-            var second = message
-            second.id = "second"
-            var updated = state
-            updated.revision = 3
-            updated.messages.append(second)
-            _ = try store.apply(.init(type: "snapshot", state: updated))
-            editedSession.reconcileDelivery()
-            #expect(draft.text == "A newer draft")
-            #expect(editedSession.confirmation == nil)
+            #expect(session.canSend())
         }
     }
 
@@ -1806,81 +1714,6 @@ private final class NoContentProtocol: URLProtocol, @unchecked Sendable {
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocolDidFinishLoading(self)
     }
-    override func stopLoading() {}
-}
-
-/// A server that accepts every request and never answers, so a channel stays connecting.
-private final class UnansweredConnectProtocol: URLProtocol, @unchecked Sendable {
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func startLoading() {}
-    override func stopLoading() {}
-}
-
-private final class AuxiliaryPostProtocol: URLProtocol, @unchecked Sendable {
-    struct Posted: Codable, Equatable, Sendable {
-        let id: String
-        let content: String
-        let attachments: [ChannelAttachment]?
-    }
-    struct Fixture: Sendable {
-        var statuses: [Int]
-        var posts: [Posted] = []
-    }
-    private struct Envelope: Encodable {
-        let version = 1
-        let message: ChannelMessage
-    }
-    static let fixtures = Mutex<[String: Fixture]>([:])
-
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        do {
-            let url = try #require(request.url)
-            let host = try #require(url.host)
-            let post = try JSONDecoder().decode(Posted.self, from: body())
-            let status = try Self.fixtures.withLock { fixtures in
-                var fixture = try #require(fixtures[host])
-                let status = try #require(fixture.statuses.first)
-                fixture.statuses.removeFirst()
-                fixture.posts.append(post)
-                fixtures[host] = fixture
-                return status
-            }
-            let data: Data
-            if status == 201 {
-                let message = ChannelMessage(id: post.id, sequence: 7, timestamp: "2026-10-24T00:00:00Z",
-                                             sender: .user, content: .text(post.content), attachments: post.attachments)
-                data = try JSONEncoder().encode(Envelope(message: message))
-            } else {
-                data = Data(#"{"error":"Rejected"}"#.utf8)
-            }
-            let response = try #require(HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1",
-                                                       headerFields: ["Content-Type": "application/json"]))
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data)
-            client?.urlProtocolDidFinishLoading(self)
-        } catch { client?.urlProtocol(self, didFailWithError: error) }
-    }
-
-    private func body() throws -> Data {
-        if let data = request.httpBody { return data }
-        let stream = try #require(request.httpBodyStream)
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        while stream.hasBytesAvailable {
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            guard count >= 0 else { throw ChannelAPIError.invalidResponse }
-            if count == 0 { break }
-            data.append(contentsOf: buffer.prefix(count))
-        }
-        return data
-    }
-
     override func stopLoading() {}
 }
 
