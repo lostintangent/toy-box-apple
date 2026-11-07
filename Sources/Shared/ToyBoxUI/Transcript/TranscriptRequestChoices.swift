@@ -33,6 +33,17 @@ public struct TranscriptRequestChoices: Equatable, Sendable {
     }
 }
 
+extension ChannelWaitingRequests.Entry {
+    /// The choices a Needs You card offers, which leave for good once the outbox holds one.
+    public func choices(attempts: [ChannelSendAttempt], isConnected: Bool) -> TranscriptRequestChoices? {
+        TranscriptRequestChoices(sequence: sequence, labels: request?.message.suggestedReplies ?? [],
+                                 attempts: attempts, isConnected: isConnected)
+    }
+
+    /// The choices as they were before one began sending, which the card holds until it confirms.
+    public var heldChoices: TranscriptRequestChoices? { choices(attempts: [], isConnected: true) }
+}
+
 extension ChannelInteraction {
     /// Sends a suggested reply at once as the user's own message, through the outbox with a new ID,
     /// and follows it to the latest like a composer send.

@@ -113,7 +113,7 @@ Core for a domain or store change instead of working around it in a view.
 | `Sources/Shared/ChannelIntelligence/`, `Tests/Shared/ChannelIntelligenceTests/` | Intelligence |
 | `Sources/Mobile/ToyBoxMobile/App`, `Shell`, `Sidebar`, `Channel`, `Notifications`, `Intents`, `Settings`, `Shared` | Shell |
 | `Sources/Mobile/ToyBoxMobile/Transcript` | Transcript |
-| `Sources/Mobile/ToyBoxMobile/Composer` (composer and tray) | Composer |
+| `Sources/Mobile/ToyBoxMobile/Composer` (composer and tray), `Cards` (the list's talk and Needs You cards) | Composer |
 | `Sources/Mobile/ToyBoxMobile/Overview`, `Artifacts`, `LiveActivities`, `Management`, `Screens` | Overview |
 | `Sources/Mobile/ToyBoxMobileIntegrations/`, `Sources/Mobile/Extensions/ToyBoxMobileNotification/`, `Sources/Mobile/Extensions/ToyBoxMobileShare/`, `Resources/Mobile/` | Core |
 | `Sources/Shared/ToyBoxWidgetViews/`, `Sources/Desktop/Extensions/ToyBoxDesktopWidget/`, `Sources/Mobile/Extensions/ToyBoxMobileWidget/`, `Tests/Mobile/Extensions/ToyBoxMobileWidgetTests/` | Overview |

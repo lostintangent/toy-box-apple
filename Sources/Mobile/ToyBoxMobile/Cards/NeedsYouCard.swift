@@ -16,17 +16,6 @@ extension NeedsYouCards {
     }
 }
 
-extension ChannelWaitingRequests.Entry {
-    /// The choices a card offers, which leave for good once the outbox holds one.
-    func choices(attempts: [ChannelSendAttempt], isConnected: Bool) -> TranscriptRequestChoices? {
-        TranscriptRequestChoices(sequence: sequence, labels: request?.message.suggestedReplies ?? [],
-                                 attempts: attempts, isConnected: isConnected)
-    }
-
-    /// The choices as they were before one began sending, which the card holds until it confirms.
-    var heldChoices: TranscriptRequestChoices? { choices(attempts: [], isConnected: true) }
-}
-
 /// The open card: the channel's heading, the whole question, then the choices and Reply, which
 /// hold while a choice sends. Lifted above the dimmed list, a typed reply's field and its Cancel
 /// and Send take the choices' place. The question scrolls only once the card would run past
