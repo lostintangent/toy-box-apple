@@ -245,7 +245,7 @@ private struct TalkMark: View {
     private var glyph: CardMark.Glyph {
         guard grown else { return .channel }
         return switch recorder.phase {
-        case .recording, .sending, .failed: .mic
+        case .recording, .sending: .mic
         case .sent, .landed, .cancelled, nil: recorder.isChecked ? .check : .channel
         }
     }
@@ -358,7 +358,6 @@ private struct TalkTime: View {
             switch face {
             case .counter: counter
             case .offline: Text("Offline")
-            case .failed(let failure): Text(failure.label)
             case .noteTime:
                 // The note is the channel's new last activity, in the row's own format.
                 Text(ChannelActivityTime.label(for: recorder.sentAt ?? .now, now: .now))
@@ -575,15 +574,10 @@ private struct TalkNote: View {
         .accessibilityFocused($wordsFocused)
     }
 
-    private var isFailed: Bool {
-        if case .failed = recorder.phase { return true }
-        return false
-    }
-
     private var controls: some View {
         CardControls(canCancel: recorder.phase != .sending, canSend: recorder.canSend,
-                     isSending: recorder.phase == .sending, postingSince: recorder.postingSince,
-                     isFailed: isFailed, sendLabel: "Send to Lead", cancel: recorder.cancel, send: send)
+                     isSending: recorder.phase == .sending, sendLabel: "Send to Lead",
+                     cancel: recorder.cancel, send: send)
     }
 
     private func send() {
@@ -746,7 +740,6 @@ private extension TalkRecorder {
         switch phase {
         case .recording: canResume ? "Paused" : isOffline ? "Recording, offline" : "Recording"
         case .sending: "Sending"
-        case .failed(let failure): failure.label
         case .sent, .landed: isChecked ? "Sent to Lead. " + details : details
         case .cancelled, nil: details
         }

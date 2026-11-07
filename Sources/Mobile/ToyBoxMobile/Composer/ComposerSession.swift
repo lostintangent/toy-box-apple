@@ -61,20 +61,6 @@ final class ComposerSession {
         if composer.reply(to: agent, insertingPrefix: insertion) { editor.focus() }
     }
 
-    func edit(_ attempt: ChannelSendAttempt) {
-        dictation.commitNow()
-        guard composer.edit(attempt) else { return }
-        editor.selection = NSRange(location: draft.text.utf16.count, length: 0)
-        editor.focus()
-    }
-
-    func appendPendingEdit() {
-        dictation.commitNow()
-        guard composer.appendPendingEdit() else { return }
-        editor.selection = NSRange(location: draft.text.utf16.count, length: 0)
-        editor.focus()
-    }
-
     func importPhotos(_ items: [PhotosPickerItem]) async {
         guard !items.isEmpty else { return }
         photoImportCount += 1

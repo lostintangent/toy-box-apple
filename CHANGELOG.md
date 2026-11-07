@@ -6,6 +6,7 @@
 
 - A request waiting for you can now be read aloud, so you can hear it while you do something else.
 - Quick Send, menu bar replies, notification replies and Siri now finish the moment you send, and a message that can't go out waits in its channel so you can send it again.
+- A message you send from a channel now keeps going in the background, and one that can't go out waits in the conversation so you can send it again.
 
 ### Bugs/Polish
 
@@ -17,9 +18,11 @@
 
 - A request waiting for you can now be read aloud, from the channel list or the conversation, and it keeps reading if you lock your phone.
 - A reply from the Lock Screen now keeps sending after you put your phone away, marks its channel read once it's sent, and one that can't go out waits in its channel so you can send it again.
+- Messages, answers from the channel list and notes for the Lead now finish the moment you send them, and one that can't go out waits in its channel so you can send it again.
 
 ### Bugs/Polish
 
+- A reply you type in the channel list now waits for a connection, like the suggested replies, so your words stay put while you're offline.
 - After you send your own reply to a request in the channel list, the card settles straight back into its row, so it's clear where your answer went.
 - A message you send now keeps trying on its own through a dropped connection, or while the Mac running your server sleeps, and it never posts twice.
 - Sharing to a channel now closes the share sheet right away, and the message finishes sending in the background, even if you don't open Toy Box.

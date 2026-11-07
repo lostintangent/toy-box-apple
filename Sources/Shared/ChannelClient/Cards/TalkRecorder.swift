@@ -3,16 +3,16 @@ import Foundation
 import Observation
 
 /// Swipe to talk: one spoken note from the channel list to that channel's Lead, without opening
-/// the channel. One recorder serves the whole list, and one row uses it at a time. It holds the
-/// note's rules, and the app draws it and supplies its motion. See Talk to the Lead in docs/spec.md.
+/// the channel. One recorder serves the whole list, and one row uses it at a time. A note goes to
+/// the outbox, so the card closes with its check as soon as it's saved. It holds the note's rules,
+/// and the app draws it and supplies its motion. See Talk to the Lead in docs/spec.md.
 @MainActor @Observable
 package final class TalkRecorder: DictationTextTarget {
     package enum Phase: Equatable {
         /// Listening, paused or getting ready, with the row grown into the recorder.
         case recording
+        /// The transcriber finishing its last words, then the outbox saving the note.
         case sending
-        /// The note stays in the channel's outbox under its UUID, so Send Again can't post it twice.
-        case failed(ChannelSendPhase)
         /// The card shrinking back into the row as the mic becomes the done check.
         case sent
         /// The card has landed, and stays on its row until the row's check settles.
@@ -22,7 +22,7 @@ package final class TalkRecorder: DictationTextTarget {
     }
 
     package enum TimeSlot: Hashable {
-        case counter, offline, failed(ChannelSendPhase), noteTime
+        case counter, offline, noteTime
     }
 
     package let dictation: ComposerDictation
@@ -34,10 +34,8 @@ package final class TalkRecorder: DictationTextTarget {
     package private(set) var transcript = DictationTranscript()
     /// The voice level, newest first, sampled about 12 times a second while listening.
     package private(set) var levels: [Double] = []
-    /// When the note's attempt began posting, which Send's progress waits 300 ms from.
-    package private(set) var postingSince: ContinuousClock.Instant?
     package private(set) var listeningSince: Date?
-    /// When the server committed the note, which the row shows as its time until it settles.
+    /// When the note was sent, which the row shows as its time until it settles.
     package private(set) var sentAt: Date?
     /// The list's order when the note began, held until the row settles so the sent note's
     /// activity can't move its row mid-beat.
@@ -45,8 +43,6 @@ package final class TalkRecorder: DictationTextTarget {
     @ObservationIgnored private var listened: TimeInterval = 0
     @ObservationIgnored private var store: ChannelStore?
     @ObservationIgnored private weak var catalog: ChannelCatalogStore?
-    /// The note's one attempt in the channel's outbox, which Send Again repeats under its UUID.
-    @ObservationIgnored private var attempt: (id: String, content: String)?
     @ObservationIgnored private let checks: CardChecks
     @ObservationIgnored private var following: Task<Void, Never>?
     @ObservationIgnored private var sampling: Task<Void, Never>?
@@ -84,7 +80,7 @@ package final class TalkRecorder: DictationTextTarget {
     /// True while the card is lifted above the list, which holds still with every other row dimmed.
     package var isLifted: Bool {
         switch phase {
-        case .recording, .sending, .failed: true
+        case .recording, .sending: true
         case .sent, .landed, .cancelled, nil: false
         }
     }
@@ -99,7 +95,6 @@ package final class TalkRecorder: DictationTextTarget {
     package var timeSlot: TimeSlot? {
         switch phase {
         case .recording, .sending: isOffline ? .offline : .counter
-        case .failed(let failure): .failed(failure)
         case .sent, .landed: isChecked ? .noteTime : nil
         case .cancelled, nil: nil
         }
@@ -117,7 +112,7 @@ package final class TalkRecorder: DictationTextTarget {
     /// The chevron and attention mark stay hidden until the card has landed.
     package var hidesTrailingColumn: Bool {
         switch phase {
-        case .recording, .sending, .failed, .sent: true
+        case .recording, .sending, .sent: true
         case .landed, .cancelled, nil: false
         }
     }
@@ -136,13 +131,8 @@ package final class TalkRecorder: DictationTextTarget {
     package var isOffline: Bool { catalog?.phase.failure != nil }
 
     package var canSend: Bool {
-        switch phase {
-        case .recording:
-            dictation.phase != .finishing && !isOffline
-                && !finalizedWords.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .failed: !isOffline
-        default: false
-        }
+        phase == .recording && dictation.phase != .finishing && !isOffline && store?.outbox != nil
+            && !finalizedWords.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// The mic offers Resume once listening stops, after silence, a failure or with access off.
@@ -178,7 +168,6 @@ package final class TalkRecorder: DictationTextTarget {
         self.store = store
         self.catalog = catalog
         self.order = order
-        attempt = nil
         sentAt = nil
         committed = ""
         transcript = .init()
@@ -201,10 +190,9 @@ package final class TalkRecorder: DictationTextTarget {
         dictation.toggleRecheckingInput()
     }
 
-    /// Sends the finalized words as a new message to the Lead, or repeats a failed attempt.
+    /// Sends the finalized words as a new message to the Lead.
     package func send() async {
-        guard canSend, let store else { return }
-        if case .failed = phase { return await deliver(to: store) }
+        guard canSend, let store, let outbox = store.outbox else { return }
         phase = .sending
         if dictation.isSessionActive {
             let finalized = await dictation.stop(.send)
@@ -222,25 +210,9 @@ package final class TalkRecorder: DictationTextTarget {
             return
         }
         dictation.draftSent()
-        attempt = (UUID().uuidString, words)
-        await deliver(to: store)
-    }
-
-    private func deliver(to store: ChannelStore) async {
-        guard let attempt else { return }
-        phase = .sending
-        postingSince = .now
-        let sentAt: Date?
-        do { sentAt = try await store.postInBackground(id: attempt.id, content: attempt.content).sentAt }
-        catch { sentAt = nil }
-        guard self.store === store, self.attempt?.id == attempt.id else { return }
-        postingSince = nil
-        guard let sentAt else {
-            let failure = store.failedPhase(ofSend: attempt.id)
-            phase = .failed(failure)
-            return announce(failure.label)
-        }
-        self.sentAt = sentAt
+        let id = await outbox.send(words, to: store.id, on: store.api.baseURL)
+        guard phase == .sending, self.store === store else { return }
+        sentAt = outbox.message(id)?.sentAt ?? .now
         animate(.sent) {
             phase = .sent
             checks.sent(store.id)
@@ -262,25 +234,19 @@ package final class TalkRecorder: DictationTextTarget {
         }
     }
 
-    /// Discards a note nothing has sent, and closes the row with the open spring in reverse. After a
-    /// failure, the note stays in the channel's outbox, where the conversation offers Send Again like
-    /// any failed send.
+    /// Discards a note nothing has sent, and closes the row with the open spring in reverse.
     package func cancel() {
-        switch phase {
-        case .recording, .failed:
-            following?.cancel()
-            sampling?.cancel()
-            listeningSince = nil
-            dictation.leaveDraft()
-            animate(.open) { phase = .cancelled }
-            closing?.cancel()
-            closing = Task { [weak self] in
-                await self?.pause(.seconds(0.45))
-                guard let self, !Task.isCancelled, phase == .cancelled else { return }
-                close()
-            }
-        case .sending, .sent, .landed, .cancelled, nil:
-            break
+        guard phase == .recording else { return }
+        following?.cancel()
+        sampling?.cancel()
+        listeningSince = nil
+        dictation.leaveDraft()
+        animate(.open) { phase = .cancelled }
+        closing?.cancel()
+        closing = Task { [weak self] in
+            await self?.pause(.seconds(0.45))
+            guard let self, !Task.isCancelled, phase == .cancelled else { return }
+            close()
         }
     }
 
@@ -310,8 +276,6 @@ package final class TalkRecorder: DictationTextTarget {
         closing?.cancel()
         dictation.leaveDraft()
         store = nil
-        attempt = nil
-        postingSince = nil
         sentAt = nil
         committed = ""
         transcript = .init()
