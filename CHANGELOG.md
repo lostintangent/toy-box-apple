@@ -1,5 +1,12 @@
 # Changelog
 
+## iPhone 0.1.21
+
+### Bugs/Polish
+
+- Swiping a channel in the list keeps it inside the list, instead of sliding under the controls beside it on a folded Duo.
+- Going back to the channel list on a folded Duo shows the line under the channel you left right away.
+
 ## iPhone 0.1.20
 
 ### Bugs/Polish

@@ -60,7 +60,10 @@ struct ChannelSidebar: View {
                                 .disabled(!model.canManageChannels)
                             }
                         }
-                        .talkRow(channel.id, recorder: talk, offered: !searchFocused.wrappedValue) {
+                        // UIKit hides the line under a selected row until its highlight fades, which
+                        // lingers after Back on the folded phone.
+                        .talkRow(channel.id, recorder: talk, offered: !searchFocused.wrappedValue,
+                                 line: isCollapsed ? .visible : .automatic) {
                             talk(to: channel)
                         }
                     }
@@ -85,6 +88,10 @@ struct ChannelSidebar: View {
             channelList(now: context.date)
         }
         .listStyle(.plain)
+        // The scroll view spans the side safe areas, so a swiped row would slide under the folded
+        // Duo's rail. Clipping sideways keeps it in the content area while rows still scroll under
+        // the title and bottom bar.
+        .mask { Rectangle().ignoresSafeArea(edges: .vertical) }
         .overlay {
             emptyState
         }

@@ -33,9 +33,10 @@ extension View {
     }
 
     /// Offers Talk on a channel row when `offered`, and dims the row while another row records.
-    func talkRow(_ channelID: String, recorder: TalkRecorder, offered: Bool = true,
+    /// The row shows its bottom `line` whenever the recorder doesn't hide it.
+    func talkRow(_ channelID: String, recorder: TalkRecorder, offered: Bool = true, line: Visibility = .automatic,
                  start: @escaping () -> Void) -> some View {
-        modifier(TalkRow(channelID: channelID, recorder: recorder, offered: offered, start: start))
+        modifier(TalkRow(channelID: channelID, recorder: recorder, offered: offered, line: line, start: start))
     }
 
     /// Floats the recorder over the list from the held row, drawn by `row`. Holds the list still
@@ -705,6 +706,7 @@ private struct TalkRow: ViewModifier {
     let channelID: String
     let recorder: TalkRecorder
     let offered: Bool
+    let line: Visibility
     let start: () -> Void
     @AccessibilityFocusState private var focused: Bool
 
@@ -747,7 +749,7 @@ private struct TalkRow: ViewModifier {
                         .accessibilityLabel("Talk to Lead")
                 }
             }
-            .listRowSeparator(hidesLine ? .hidden : .automatic, edges: .bottom)
+            .listRowSeparator(hidesLine ? .hidden : line, edges: .bottom)
             .background { TalkRowLine(isHidden: hidesLine) }
     }
 }
