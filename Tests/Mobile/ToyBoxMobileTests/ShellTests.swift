@@ -262,7 +262,7 @@ struct ShellTests {
         }
     }
 
-    @Test func aCompactChannelWithoutAVerticalBarOpensItsActionsFromATitleButtonAndHasNoMoreButton() async throws {
+    @Test func aCompactChannelWithoutAVerticalBarOpensItsActionsAndNamesYourMessagesFromATitleButton() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
                                  defaults: defaults, session: fixtureSession())
@@ -303,6 +303,19 @@ struct ShellTests {
             #expect(item.additionalOverflowItems == nil)
             #expect(screen.navigationController?.isToolbarHidden == true)
             #expect(screen.toolbarItems?.isEmpty ?? true)
+            #expect(title.item.accessibilityValue ?? "" == "", "All Messages leaves the name alone.")
+            // The menu's items aren't readable here, so the filter is set as its picker would.
+            model.interaction(for: "first").messageView = .yours
+            @MainActor func titleValue() async -> String? {
+                for _ in 0..<20 {
+                    host.view.setNeedsLayout()
+                    host.view.layoutIfNeeded()
+                    if let value = titleButton(in: item)?.item.accessibilityValue, !value.isEmpty { return value }
+                    await Task.yield()
+                }
+                return nil
+            }
+            #expect(await titleValue() == "Your Messages", "Your Messages names itself under the channel's name.")
         }
     }
 
@@ -333,14 +346,6 @@ struct ShellTests {
         }
         visit(controller)
         return screens
-    }
-
-    private func menuActions(in menu: UIMenu) -> [UIAction] {
-        menu.children.flatMap { element -> [UIAction] in
-            if let action = element as? UIAction { return [action] }
-            if let menu = element as? UIMenu { return menuActions(in: menu) }
-            return []
-        }
     }
 
     private func collectionCells(in view: UIView) -> [CGRect] {
