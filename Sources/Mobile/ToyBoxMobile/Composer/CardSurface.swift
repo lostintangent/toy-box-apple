@@ -126,7 +126,7 @@ struct CardShape: Shape {
 /// Places a card above the list from its own laid-out height, so its top edge moves in the same
 /// transaction as its size, and a card growing up holds its bottom still.
 struct CardLayout: Layout {
-    let placement: TalkRecorder.Placement
+    let placement: CardPlacement
     let x: CGFloat
     let isOpen: Bool
 

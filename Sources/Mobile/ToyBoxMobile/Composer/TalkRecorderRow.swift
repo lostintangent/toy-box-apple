@@ -116,7 +116,7 @@ private struct TalkCard<Row: View>: View {
         let overflow = recorder.hidesTrailingColumn ? 0 : max(cell.maxX - right, 0) + Self.margin
         let lines = fiveLines ?? 5 * TalkNote.lineHeight(dynamicTypeSize)
         let chrome = note.height - note.words
-        let placement = TalkRecorder.Placement(row: cell, room: room)
+        let placement = CardPlacement(row: cell, room: room)
         // The highest the card rises, at its tallest, with five lines of words.
         let highest = placement.top(height: cell.height + chrome + lines)
         let wordsLimit = max(lines / 5, min(lines, room.maxY - highest - cell.height - chrome))

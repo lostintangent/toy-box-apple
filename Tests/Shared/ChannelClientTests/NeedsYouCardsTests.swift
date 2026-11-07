@@ -11,7 +11,7 @@ struct NeedsYouCardsTests {
     struct Posted: Decodable { var id: String; var content: String }
     struct MessageEnvelope: Encodable { var version = 1; var message: ChannelMessage }
 
-    let beats = CardBeats<NeedsYouCards.Motion>()
+    let beats = CardBeats()
     let draft = ComposerDraft(imageIsReadable: { _ in false })
 
     @Test func aChoiceSendsAtOnceThenItsRowWearsTheCheckAsTheNextCardOpens() async throws {
@@ -31,6 +31,9 @@ struct NeedsYouCardsTests {
         #expect(cards.open(in: [a, b]) == a, "The newest request opens")
         cards.choose(b.card)
         #expect(cards.open(in: [a, b]) == b)
+        #expect(cards.faces(in: [a, b]) == ["a": .question(a), "b": .card(b)], "The open card replaces its row's question")
+        #expect(cards.hiddenLines(in: [a, b], order: ["a", "x", "b", "y"]) == ["x", "b"],
+                "The open card's row and the row above it hide their lines")
         #expect(cards.reveals(b.card, after: a.card), "A card the person opens scrolls into view")
 
         await cards.send("Near the entrance", to: b, on: stores.b)
@@ -41,6 +44,7 @@ struct NeedsYouCardsTests {
         #expect(cards.replying == nil && cards.phase == nil && cards.words.isEmpty,
                 "On confirmation the card shrinks straight back into its row")
         #expect(cards.checks == ["b": .sent], "Its row wears the check")
+        #expect(cards.faces(in: [b, a]) == ["a": .card(a)], "The answered row is ordinary while the catalog catches up")
         #expect(cards.open(in: [a]) == a && cards.reveals(a.card, after: b.card),
                 "The next card opens in the same motion, and scrolls into view")
         #expect(cards.open(in: [c, a]) == c && !cards.reveals(c.card, after: a.card),
@@ -107,7 +111,7 @@ struct NeedsYouCardsTests {
         cards.choose(b.card)
         #expect(cards.replying == nil && !cards.hasFailed && cards.open(in: [b, a]) == b,
                 "Opening another card closes a failed one")
-        #expect(beats.motions == [.lift, .lift, .open])
+        #expect(beats.motions == [.open, .open, .open])
         #expect(store.sendAttempts.map(\.id) == [posted[0].id, chosen[0].id],
                 "Failed replies wait in the outbox, so their choices never return")
     }

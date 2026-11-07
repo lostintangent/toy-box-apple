@@ -16,6 +16,8 @@ public final class ChannelWaitingRequests {
         public var request: ChannelRequestMessage?
 
         public var requestedAt: Date? { request.flatMap { try? Date($0.message.timestamp, strategy: .iso8601) } }
+        /// The question as plain text, or the notification's words until its message is known.
+        public var question: String { request?.quote ?? ChannelNotification.Content.needsReply }
     }
 
     public let catalog: ChannelCatalogStore
@@ -136,7 +138,7 @@ extension NeedsYouSnapshot {
                   waitingCount: waiting.count, requests: waiting.prefix(5).compactMap { entry in
             guard entry.sequence > 0 else { return nil }
             return Request(channelID: entry.channel.id, channelName: entry.channel.name, sequence: entry.sequence,
-                           quote: entry.request?.quote ?? ChannelNotification.Content.needsReply, requestedAt: entry.requestedAt)
+                           quote: entry.question, requestedAt: entry.requestedAt)
         })
     }
 }

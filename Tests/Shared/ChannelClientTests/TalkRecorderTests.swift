@@ -14,7 +14,7 @@ struct TalkRecorderTests {
     struct MessageEnvelope: Encodable { var version = 1; var message: ChannelMessage }
 
     let recognizer = TalkTestRecognizer()
-    let beats = CardBeats<TalkRecorder.Motion>()
+    let beats = CardBeats()
     let draft = ComposerDraft(imageIsReadable: { _ in false })
     let channels = ["new", "test", "b", "newer", "a"].map {
         Channel(id: $0, name: $0, model: .init(provider: "test", name: "test"), updatedAt: "")
@@ -90,7 +90,7 @@ struct TalkRecorderTests {
         try await eventually { recorder.phase == nil }
         #expect(recorder.cell == nil && !recorder.isGrown)
         #expect(recorder.ordered(channels).map(\.id) == channels.map(\.id), "Settling lets the row go")
-        #expect(beats.motions == [.open, .sent, .land, .open, .sent, .land, .settle])
+        #expect(beats.motions == [.open, .sent, .settle, .open, .sent, .settle, .settle])
         #expect(announcements.count == 2)
         #expect(store.sendAttempts.isEmpty)
     }
@@ -161,16 +161,16 @@ struct TalkRecorderTests {
 
     @Test func theCardStaysOnItsRowAndGrowsUpOnlyOnceItsBottomMeetsTheRooms() {
         let room = CGRect(x: 0, y: 8, width: 390, height: 600)
-        let middle = TalkRecorder.Placement(row: CGRect(x: 0, y: 200, width: 390, height: 72), room: room)
+        let middle = CardPlacement(row: CGRect(x: 0, y: 200, width: 390, height: 72), room: room)
         #expect([72, 190, 330].map(middle.top(height:)) == [200, 200, 200], "A row with room below never moves")
 
-        let bottom = TalkRecorder.Placement(row: CGRect(x: 0, y: 500, width: 390, height: 72), room: room)
+        let bottom = CardPlacement(row: CGRect(x: 0, y: 500, width: 390, height: 72), room: room)
         #expect(bottom.top(height: 108) == 500, "The card stays on its row while it fits below")
         #expect(bottom.top(height: 190) == 418, "Then it holds its bottom on the room's and grows up")
         #expect(bottom.top(height: 330) == 278)
         #expect(bottom.top(height: 700) == 8, "It never rises past the room's top")
 
-        let scrolledUnder = TalkRecorder.Placement(row: CGRect(x: 0, y: 0, width: 390, height: 72), room: room)
+        let scrolledUnder = CardPlacement(row: CGRect(x: 0, y: 0, width: 390, height: 72), room: room)
         #expect(scrolledUnder.top(height: 700) == 0, "A row under the room's top is never pushed down")
     }
 
@@ -216,12 +216,12 @@ struct TalkRecorderTests {
 }
 
 /// Holds each pause in a card's motion until the test ends it, and logs each beat's motion.
-@MainActor @Observable final class CardBeats<Motion> {
+@MainActor @Observable final class CardBeats {
     private(set) var waiting: [Duration] = []
-    private(set) var motions: [Motion] = []
+    private(set) var motions: [CardMotion] = []
     @ObservationIgnored private var held: [(id: UUID, continuation: CheckedContinuation<Void, Never>)] = []
 
-    func animate(_ motion: Motion, _ change: () -> Void) {
+    func animate(_ motion: CardMotion, _ change: () -> Void) {
         change()
         motions.append(motion)
     }
