@@ -29,10 +29,11 @@ public final class ChannelOutbox {
         }
     }
 
-    public enum State: Codable, Equatable, Sendable {
+    public enum State: String, Codable, Equatable, Sendable {
         case sending
-        /// The outbox stopped trying. The reason is the server's when a 4xx gives one.
-        case notSent(reason: String?)
+        /// The outbox stopped trying: the server refused it, or kept failing for the retry window.
+        /// Retry sends it again under the same ID, and Delete withdraws it.
+        case notSent
     }
 
     /// Where each message is saved as its own file.
@@ -124,7 +125,7 @@ public final class ChannelOutbox {
         changed()
     }
 
-    /// Takes a Not sent message out. Edit calls this only once the draft holding it is saved.
+    /// Takes a Not sent message out, for Delete.
     public func withdraw(_ id: UUID) {
         guard let index = queue.firstIndex(where: { $0.id == id }), queue[index].state != .sending else { return }
         queue.remove(at: index)
@@ -286,20 +287,20 @@ public final class ChannelOutbox {
                 // A 409 returns nothing, so an open channel resumes from its last revision to show it.
                 if sent == nil, let store, store.isTrying, !store.holds(id) { store.reconnect() }
                 return
-            case .rejected(let reason):
-                return stop(id, reason: reason)
+            case .rejected:
+                return stop(id)
             case .unreachable:
                 troubleSince = nil
                 troubleCount = 0
                 await pause(reconnectPolicy.delay(attempt: waits), wakesEarly: true)
                 waits += 1
-            case .trouble(let reason, let retryAfter):
+            case .trouble(let retryAfter):
                 waits = 0
                 let since = troubleSince ?? started
                 troubleSince = since
                 let delay = max(Self.backoff(troubleCount), retryAfter ?? 0)
                 troubleCount += 1
-                guard now().timeIntervalSince(since) + delay <= retryWindow else { return stop(id, reason: reason) }
+                guard now().timeIntervalSince(since) + delay <= retryWindow else { return stop(id) }
                 await pause(delay, wakesEarly: false)
             }
         }
@@ -316,16 +317,20 @@ public final class ChannelOutbox {
             request = try api.messageRequest(channelId: message.channelID, id: message.id.uuidString,
                                              content: message.text, attachments: message.attachments)
         } catch {
-            return .rejected(error.localizedDescription)
+            Self.logger.error("A message can't be sent: \(error.localizedDescription)")
+            return .rejected
         }
         do {
             let (data, response) = try await api.session.data(for: request)
-            guard let response = response as? HTTPURLResponse else {
-                return .trouble(ChannelAPIError.invalidResponse.localizedDescription, retryAfter: nil)
-            }
-            return Outcome(response, data: data, isLive: catalog?.isLive ?? false, now: now())
+            guard let response = response as? HTTPURLResponse else { return .trouble(retryAfter: nil) }
+            let outcome = Outcome(response, data: data, isLive: catalog?.isLive ?? false, now: now())
+            if case .accepted = outcome { return outcome }
+            let failure = ChannelAPI.failure(status: response.statusCode, data: data)
+            Self.logger.info("Sending got \(response.statusCode): \(failure.localizedDescription)")
+            return outcome
         } catch {
-            return Outcome(error, isLive: catalog?.isLive ?? false)
+            Self.logger.info("Sending failed: \(error.localizedDescription)")
+            return Outcome(error)
         }
     }
 
@@ -367,9 +372,9 @@ public final class ChannelOutbox {
         changed()
     }
 
-    private func stop(_ id: UUID, reason: String?) {
+    private func stop(_ id: UUID) {
         guard let index = queue.firstIndex(where: { $0.id == id }) else { return }
-        queue[index].state = .notSent(reason: reason)
+        queue[index].state = .notSent
         save(queue[index])
         changed()
     }
@@ -486,9 +491,9 @@ extension ChannelOutbox {
         /// Toy Box can't reach the server, so the message waits for a reconnect, however long.
         case unreachable
         /// The server has trouble, so the message retries within the window.
-        case trouble(String, retryAfter: TimeInterval?)
+        case trouble(retryAfter: TimeInterval?)
         /// The server refused it, so the message stops as Not sent.
-        case rejected(String)
+        case rejected
 
         /// A gateway answers these for a server that isn't running, as Tailscale Serve and Cloudflare
         /// Tunnel do while the Mac sleeps. With the catalog connected, the server itself is in trouble.
@@ -506,20 +511,17 @@ extension ChannelOutbox {
             case 409: self = .accepted(nil)
             case _ where Self.gatewayStatuses.contains(status) && !isLive: self = .unreachable
             case 408, 429, 500...:
-                self = .trouble(ChannelAPI.failure(status: status, data: data).localizedDescription,
-                                retryAfter: Self.retryAfter(response.value(forHTTPHeaderField: "Retry-After"), now: now))
-            case 400..<500: self = .rejected(ChannelAPI.failure(status: status, data: data).message)
-            default: self = .trouble(ChannelAPI.failure(status: status, data: data).localizedDescription, retryAfter: nil)
+                self = .trouble(retryAfter: Self.retryAfter(response.value(forHTTPHeaderField: "Retry-After"), now: now))
+            case 400..<500: self = .rejected
+            default: self = .trouble(retryAfter: nil)
             }
         }
 
-        init(_ error: any Error, isLive: Bool) {
+        init(_ error: any Error) {
             if let error = error as? URLError, Self.unreachableErrors.contains(error.code) {
                 self = .unreachable
-            } else if case ChannelAPIError.invalidMessage(let reason) = error {
-                self = .rejected(reason)
             } else {
-                self = .trouble(error.localizedDescription, retryAfter: nil)
+                self = .trouble(retryAfter: nil)
             }
         }
 
@@ -539,15 +541,7 @@ extension ChannelOutbox {
 extension ChannelOutbox.Message {
     /// The row the store's `sendAttempts` shows, until every view reads the outbox.
     var attempt: ChannelSendAttempt {
-        let reason: String? = if case .notSent(let reason) = state { reason } else { nil }
-        return .init(id: id.uuidString, content: text, attachments: attachments, timestamp: message.timestamp,
-                     phase: state == .sending ? .sending : .notSent, error: reason)
-    }
-}
-
-private extension ChannelAPIError {
-    var message: String {
-        if case .http(_, let message) = self { return message }
-        return localizedDescription
+        .init(id: id.uuidString, content: text, attachments: attachments, timestamp: message.timestamp,
+              phase: state == .sending ? .sending : .notSent)
     }
 }

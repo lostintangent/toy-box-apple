@@ -41,19 +41,22 @@ public final class MobileNotificationHandler {
                 logger.notice("Ignoring notification routing for a different registration.")
                 return unroutable(content)
             }
+            // The payload names only its registration, so a reply after a server switch still knows
+            // which server it answers, as on the Mac.
+            content.userInfo["serverURL"] = selected.serverURL
         } catch {
             logger.error("Could not read notification routing: \(error.localizedDescription)")
             return unroutable(content)
         }
         reloadWidgets()
-        guard payload.kind == .request else { return original }
+        guard payload.kind == .request else { return content }
         let labels = SuggestedReplies(original.userInfo["replies"] as? [String]).labels
-        guard !labels.isEmpty else { return original }
+        guard !labels.isEmpty else { return content }
         let category = ReplyCategories.category(labels: labels)
         await replyCategories.publish(adding: category)
         guard await replyCategories.isRegistered(identifier: category.identifier) else {
             logger.error("Could not register the suggested replies, so the request keeps only the Reply field.")
-            return original
+            return content
         }
         content.categoryIdentifier = category.identifier
         return content
