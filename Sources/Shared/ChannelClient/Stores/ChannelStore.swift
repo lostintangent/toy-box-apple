@@ -116,12 +116,20 @@ public final class ChannelStore {
     public private(set) var readError: String?
     /// The latest bookmark change that failed and was undone, until the next change or a dismissal.
     public private(set) var bookmarkFailure: BookmarkFailure?
-    public private(set) var sendAttempts: [ChannelSendAttempt] = []
+    /// What the store itself is sending, until every entry point sends through `outbox`.
+    private(set) var legacyAttempts: [ChannelSendAttempt] = []
+    /// The rows the transcript shows below the messages: the store's own attempts, then the outbox's.
+    public var sendAttempts: [ChannelSendAttempt] {
+        let sending = outbox?.messages(in: id).map(\.attempt) ?? []
+        return sending.isEmpty ? legacyAttempts : legacyAttempts + sending
+    }
     public private(set) var lastSendFailure: ChannelSendFailure?
     public private(set) var attemptPersistenceError: String?
     public private(set) var optimisticMessageIds: Set<String> = []
     /// Called with the channel's ID after the server accepts each send, retries included.
     @ObservationIgnored public var onSendConfirmed: (@MainActor (String) -> Void)?
+    /// The app's outbox, which delivers every message sent through it. Set by the catalog store.
+    @ObservationIgnored public internal(set) weak var outbox: ChannelOutbox?
 
     @ObservationIgnored private var observation: Task<Void, Never>?
     /// From `connect()` until `disconnect()`. Internal and unobserved, so tests check a disconnect
@@ -413,7 +421,7 @@ public final class ChannelStore {
         do {
             result = try await post(id: id, content: content, attachments: attachments, requiresConnection: false)
         } catch {
-            if sendAttempts.contains(where: { $0.id == id && $0.canRetry }) {
+            if legacyAttempts.contains(where: { $0.id == id && $0.canRetry }) {
                 try await persistSendAttempts()
             }
             throw error
@@ -428,7 +436,7 @@ public final class ChannelStore {
     /// The phase a failed background send leaves its attempt in, which Send Again repeats under the
     /// same UUID.
     package func failedPhase(ofSend id: String) -> ChannelSendPhase {
-        sendAttempts.first { $0.id == id }?.phase == .deliveryNotConfirmed ? .deliveryNotConfirmed : .notSent
+        legacyAttempts.first { $0.id == id }?.phase == .deliveryNotConfirmed ? .deliveryNotConfirmed : .notSent
     }
 
     private func post(id suppliedId: String?, content: String, attachments: [ChannelAttachment],
@@ -451,7 +459,7 @@ public final class ChannelStore {
         guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, id.utf16.count <= 255 else {
             throw ChannelAPIError.invalidMessage("A send attempt requires a valid message ID.")
         }
-        if let existing = sendAttempts.first(where: { $0.id == id }) {
+        if let existing = legacyAttempts.first(where: { $0.id == id }) {
             guard existing.content == trimmed, existing.attachments == attachments else {
                 throw ChannelAPIError.invalidMessage("The attempted message changed. Send it as a new message.")
             }
@@ -469,7 +477,7 @@ public final class ChannelStore {
         let attempt = ChannelSendAttempt(id: id, content: trimmed, attachments: attachments,
                                          timestamp: Date.now.ISO8601Format(.init(includingFractionalSeconds: true)),
                                          phase: .sending)
-        sendAttempts.append(attempt)
+        legacyAttempts.append(attempt)
         optimisticMessageIds.insert(id)
         if isSending {
             recordSendFailure(id: id, phase: .notSent, error: busyError.localizedDescription)
@@ -480,7 +488,17 @@ public final class ChannelStore {
 
     @discardableResult
     public func retrySend(id: String) async throws -> ChannelSendResult {
-        try await retrySend(id: id, requiresConnection: true)
+        if let sending = outboxMessage(id) {
+            outbox?.sendAgain(sending.id)
+            return .alreadyAccepted(id: id)
+        }
+        return try await retrySend(id: id, requiresConnection: true)
+    }
+
+    /// One of this channel's messages in the outbox, by the ID its row shows.
+    private func outboxMessage(_ id: String) -> ChannelOutbox.Message? {
+        guard let outbox, let uuid = UUID(uuidString: id) else { return nil }
+        return outbox.messages(in: self.id).first { $0.id == uuid }
     }
 
     private func retrySend(id: String, requiresConnection: Bool,
@@ -488,7 +506,7 @@ public final class ChannelStore {
         try await restoreSendAttempts()
         guard !requiresConnection || phase.isConnected else { throw ChannelAPIError.disconnected }
         guard !isSending else { throw ChannelAPIError.invalidMessage("A message is already being sent.") }
-        guard let attempt = sendAttempts.first(where: { $0.id == id }), attempt.canRetry else {
+        guard let attempt = legacyAttempts.first(where: { $0.id == id }), attempt.canRetry else {
             throw ChannelAPIError.invalidMessage("This send attempt cannot be repeated.")
         }
         updateAttempt(id: id, phase: .sending, error: nil)
@@ -496,21 +514,28 @@ public final class ChannelStore {
     }
 
     public func discardSendAttempt(id: String) async throws {
-        guard let attempt = sendAttempts.first(where: { $0.id == id }), attempt.phase != .sending else {
+        if let sending = outboxMessage(id) {
+            guard sending.state != .sending else {
+                throw ChannelAPIError.invalidMessage("An in-flight send cannot be removed.")
+            }
+            outbox?.withdraw(sending.id)
+            return
+        }
+        guard let attempt = legacyAttempts.first(where: { $0.id == id }), attempt.phase != .sending else {
             throw ChannelAPIError.invalidMessage("An in-flight send cannot be removed.")
         }
         let failure = lastSendFailure
-        sendAttempts.removeAll { $0.id == id }
+        legacyAttempts.removeAll { $0.id == id }
         optimisticMessageIds.remove(id)
         do {
             try await persistSendAttempts()
             if failure?.messageId == id, lastSendFailure?.id == failure?.id { lastSendFailure = nil }
         }
         catch {
-            if !sendAttempts.contains(where: { $0.id == id }),
+            if !legacyAttempts.contains(where: { $0.id == id }),
                state?.messages.contains(where: { $0.id == id }) != true {
-                sendAttempts.append(attempt)
-                sendAttempts.sort { $0.timestamp < $1.timestamp }
+                legacyAttempts.append(attempt)
+                legacyAttempts.sort { $0.timestamp < $1.timestamp }
                 optimisticMessageIds.insert(id)
             }
             throw error
@@ -589,15 +614,15 @@ public final class ChannelStore {
     }
 
     private func updateAttempt(id: String, phase: ChannelSendPhase, error: String?) {
-        guard let index = sendAttempts.firstIndex(where: { $0.id == id }) else { return }
-        sendAttempts[index].phase = phase
-        sendAttempts[index].error = error
+        guard let index = legacyAttempts.firstIndex(where: { $0.id == id }) else { return }
+        legacyAttempts[index].phase = phase
+        legacyAttempts[index].error = error
     }
 
     private func reconcileSend(id: String) {
         if lastSendFailure?.messageId == id { lastSendFailure = nil }
-        guard sendAttempts.contains(where: { $0.id == id }) else { return }
-        sendAttempts.removeAll { $0.id == id }
+        guard legacyAttempts.contains(where: { $0.id == id }) else { return }
+        legacyAttempts.removeAll { $0.id == id }
         optimisticMessageIds.remove(id)
         saveAttemptsInBackground()
     }
@@ -627,7 +652,7 @@ public final class ChannelStore {
         do {
             let restored = try await load.value
             guard !attemptsRestored else { return }
-            sendAttempts = restored.map { attempt in
+            legacyAttempts = restored.map { attempt in
                 var next = attempt
                 if next.phase == .sending {
                     next.phase = .deliveryNotConfirmed
@@ -635,7 +660,7 @@ public final class ChannelStore {
                 }
                 return next
             }
-            optimisticMessageIds = Set(sendAttempts.map(\.id))
+            optimisticMessageIds = Set(legacyAttempts.map(\.id))
             attemptsRestored = true
             attemptPersistenceError = nil
         } catch {
@@ -665,7 +690,7 @@ public final class ChannelStore {
     }
 
     private func enqueuePersistence() -> Task<Void, any Error> {
-        let attempts = sendAttempts
+        let attempts = legacyAttempts
         let journal = sendJournal
         let server = api.baseURL
         let channelId = id
@@ -775,15 +800,17 @@ public final class ChannelStore {
             stopGrace()
             phase = .deleted
             observation = nil
+            outbox?.channelDeleted(id, on: api.baseURL)
             return true
         }
         if event.type == "snapshot", let snapshot = event.state {
             heldReplay = nil
             settleWrittenBookmarks()
             state = snapshot
+            outbox?.received(snapshot.messages, in: id, on: api.baseURL)
             historyGeneration = UUID()
             acknowledgedRead = snapshot.channel.seenThrough
-            for attempt in sendAttempts where attempt.phase == .confirmed
+            for attempt in legacyAttempts where attempt.phase == .confirmed
                 || snapshot.messages.contains(where: { $0.id == attempt.id }) {
                 reconcileSend(id: attempt.id)
             }
@@ -803,6 +830,7 @@ public final class ChannelStore {
             for event in events {
                 if let message = event.message, event.revision != nil { reconcileSend(id: message.id) }
             }
+            outbox?.received(events.lazy.filter { $0.revision != nil }.compactMap(\.message), in: id, on: api.baseURL)
         } else { throw ChannelAPIError.invalidEvent("pre-snapshot \(event.type)") }
         if event.type == "snapshot" || event.type == "resumed" {
             if !capturedUnread, let state {
@@ -810,12 +838,26 @@ public final class ChannelStore {
                 capturedUnread = true
             }
             if event.type == "resumed" {
-                for attempt in sendAttempts where attempt.phase == .confirmed { reconcileSend(id: attempt.id) }
+                for attempt in legacyAttempts where attempt.phase == .confirmed { reconcileSend(id: attempt.id) }
             }
             stopGrace()
             phase = .connected
+            outbox?.wake()
         }
         return false
+    }
+
+    /// Whether the channel already shows a message the outbox is sending, so it confirms without posting.
+    func holds(_ id: UUID) -> Bool {
+        state?.messages.contains { $0.sender == .user && UUID(uuidString: $0.id) == id } == true
+    }
+
+    /// Shows a message the outbox sent before its event arrives.
+    func mergeSent(_ message: ChannelMessage) {
+        guard var current = state, phase != .deleted else { return }
+        current.messages.removeAll { $0.id == message.id }
+        current.messages = current.messages.merging([message])
+        state = current
     }
 
     /// Observation skips assignments of an equal value, so each slice notifies only when it changes.
@@ -882,11 +924,20 @@ public final class ChannelCatalogStore {
     @ObservationIgnored private var detailStores: [String: ChannelStore] = [:]
     /// Passed to every channel's store, so one place hears each send the server accepts.
     @ObservationIgnored public var onSendConfirmed: (@MainActor (String) -> Void)?
+    /// The app's outbox. Setting it makes this catalog's server the one it delivers to.
+    @ObservationIgnored public var outbox: ChannelOutbox? {
+        didSet {
+            guard oldValue !== outbox else { return }
+            oldValue?.detach(self)
+            for store in detailStores.values { store.outbox = outbox }
+            outbox?.attach(self)
+        }
+    }
     @ObservationIgnored private var catalogGeneration = UUID()
     @ObservationIgnored private var streamGeneration = UUID()
     /// The stream delivered a catalog and hasn't failed since. Only then does a keepalive mean the
     /// catalog is current.
-    @ObservationIgnored private var isLive = false
+    @ObservationIgnored private(set) var isLive = false
     /// The stream loop is waiting out a backoff with no request under way, so a prompt retry can
     /// start over without cancelling anything.
     @ObservationIgnored private var isBackingOff = false
@@ -931,6 +982,7 @@ public final class ChannelCatalogStore {
         if let existing = detailStores[id] { return existing }
         let store = ChannelStore(id: id, api: api, reconnectPolicy: reconnectPolicy)
         store.onSendConfirmed = { [weak self] in self?.onSendConfirmed?($0) }
+        store.outbox = outbox
         detailStores[id] = store
         return store
     }
@@ -1013,6 +1065,7 @@ public final class ChannelCatalogStore {
         keepaliveRefreshDue = now().addingTimeInterval(Self.keepaliveRefreshInterval)
         failingSince = nil
         phase = .connected
+        outbox?.catalogChanged(self, recovered: recovered)
         guard recovered else { return }
         for store in detailStores.values { store.retryPromptly() }
     }
@@ -1130,6 +1183,7 @@ public final class ChannelCatalogStore {
         guard active else { return }
         retryPromptly()
         for store in detailStores.values { store.retryPromptly() }
+        outbox?.reload()
     }
 
     /// Closes the stream and stops retrying. A refresh waiting on it returns.
@@ -1157,6 +1211,7 @@ public final class ChannelCatalogStore {
                 guard let self else { return }
                 if !isLive { openStream() }
                 for store in detailStores.values { store.retryOnNewPath() }
+                outbox?.wake()
             }
         }
     }

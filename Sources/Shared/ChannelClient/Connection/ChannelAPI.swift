@@ -253,6 +253,15 @@ public struct ChannelAPI: Sendable {
 
     public func post(channelId: String, id: String = UUID().uuidString, content: String,
                      attachments: [ChannelAttachment] = []) async throws -> ChannelMessage {
+        let request = try messageRequest(channelId: channelId, id: id, content: content, attachments: attachments)
+        let result = try await JSONDecoder().decode(MessageResponse.self, from: data(for: request))
+        try requireVersion(result.version)
+        return result.message
+    }
+
+    /// The POST that sends a message, so the outbox can read its answer itself.
+    func messageRequest(channelId: String, id: String, content: String,
+                        attachments: [ChannelAttachment]) throws -> URLRequest {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else {
             throw ChannelAPIError.invalidMessage("A message or attachment is required.")
@@ -261,9 +270,22 @@ public struct ChannelAPI: Sendable {
             throw ChannelAPIError.invalidMessage("Messages are limited to 12,000 characters.")
         }
         let body = PostInput(id: id, content: trimmed, attachments: attachments.isEmpty ? nil : attachments)
-        let result: MessageResponse = try await command("POST", channelPath(channelId) + ["messages"], body: body)
-        try requireVersion(result.version)
+        return try commandRequest("POST", channelPath(channelId) + ["messages"], body: body)
+    }
+
+    /// The message a successful send returned, or nil when its body isn't one.
+    static func sentMessage(in data: Data) -> ChannelMessage? {
+        guard let result = try? JSONDecoder().decode(MessageResponse.self, from: data), result.version == 1 else {
+            return nil
+        }
         return result.message
+    }
+
+    /// The error a failed response means, with the server's own message when it gives one.
+    static func failure(status: Int, data: Data) -> ChannelAPIError {
+        let message = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?.error
+            ?? HTTPURLResponse.localizedString(forStatusCode: status)
+        return .http(status: status, message: message)
     }
 
     public func markRead(channelId: String, sequence: Int) async throws -> Int {
@@ -377,9 +399,7 @@ public struct ChannelAPI: Sendable {
         guard let response = response as? HTTPURLResponse else { throw ChannelAPIError.invalidResponse }
         guard (200..<300).contains(response.statusCode) else {
             if response.statusCode == 409 { throw ChannelAPIError.duplicateMessage }
-            let message = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?.error
-                ?? HTTPURLResponse.localizedString(forStatusCode: response.statusCode)
-            throw ChannelAPIError.http(status: response.statusCode, message: message)
+            throw Self.failure(status: response.statusCode, data: data)
         }
         return (data, response)
     }

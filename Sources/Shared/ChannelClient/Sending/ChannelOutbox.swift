@@ -1,0 +1,553 @@
+import ChannelKit
+import Foundation
+import Observation
+import os
+
+/// Every message the user sends, from any entry point, until the server confirms it. One per app,
+/// made at launch. The catalog store for the current server delivers that server's messages, with
+/// no channel window or stream needed. See Sending in docs/spec.md.
+@MainActor @Observable
+public final class ChannelOutbox {
+    public struct Message: Codable, Equatable, Identifiable, Sendable {
+        /// Reused by every attempt, so the server never posts it twice.
+        public let id: UUID
+        /// The normalized server URL it goes to.
+        public let server: String
+        public let channelID: String
+        public let text: String
+        public let attachments: [ChannelAttachment]
+        /// The request it answers.
+        public let request: Int?
+        public let sentAt: Date
+        public internal(set) var state: State
+
+        /// The row a transcript shows until the server's message replaces it.
+        public var message: ChannelMessage {
+            .init(id: id.uuidString, sequence: 0,
+                  timestamp: sentAt.ISO8601Format(.init(includingFractionalSeconds: true)),
+                  sender: .user, content: .text(text), attachments: attachments.isEmpty ? nil : attachments)
+        }
+    }
+
+    public enum State: Codable, Equatable, Sendable {
+        case sending
+        /// The outbox stopped trying. The reason is the server's when a 4xx gives one.
+        case notSent(reason: String?)
+    }
+
+    /// Where each message is saved as its own file.
+    public let folder: URL
+    /// Every message not yet confirmed, on every server, in the order they were sent.
+    private(set) var queue: [Message] = []
+    /// The requests answered by a confirmed message, by server and channel, until the catalog stops
+    /// listing them as waiting.
+    private(set) var answered: [Destination: Set<Int>] = [:]
+    /// The server whose catalog delivers, so rows and the waiting rule read only its messages.
+    public private(set) var server: String?
+    /// True while a message to the current server is still sending, so the phone's app delegate
+    /// holds background time.
+    public private(set) var isDelivering = false
+    /// The saved messages have been read, so delivery can start in order.
+    private(set) var isLoaded = false
+
+    @ObservationIgnored private weak var catalog: ChannelCatalogStore?
+    @ObservationIgnored private var lines: [String: Line] = [:]
+    @ObservationIgnored private var pauses: [UUID: Pause] = [:]
+    /// Confirmed or withdrawn this run, so a scan that read a file before its removal doesn't bring
+    /// the message back.
+    @ObservationIgnored private var removed: Set<UUID> = []
+    @ObservationIgnored private var writes: Task<Void, Never>?
+    @ObservationIgnored private var scanning: Task<Void, Never>?
+    @ObservationIgnored private let retryWindow: TimeInterval
+    @ObservationIgnored private let reconnectPolicy: ReconnectPolicy
+    @ObservationIgnored private let now: () -> Date
+    @ObservationIgnored private let sleep: @Sendable (TimeInterval) async throws -> Void
+
+    /// The Mac's folder, beside its drafts. The phone passes one in its shared app group instead.
+    public static var defaultFolder: URL { .savedWriting().appending(path: "Sending", directoryHint: .isDirectory) }
+
+    public convenience init(folder: URL = ChannelOutbox.defaultFolder) {
+        self.init(folder: folder, retryWindow: 120)
+    }
+
+    /// `now` and `sleep` time retries. Tests pass a clock they move instead of waiting.
+    init(folder: URL, retryWindow: TimeInterval, reconnectPolicy: ReconnectPolicy = .init(),
+         now: @escaping () -> Date = { .now },
+         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
+        self.folder = folder
+        self.retryWindow = retryWindow
+        self.reconnectPolicy = reconnectPolicy
+        self.now = now
+        self.sleep = sleep
+        scan()
+    }
+
+    // MARK: Sending
+
+    /// Shows the message in its channel at once and returns once it's saved. Never throws, and if
+    /// saving fails the message still sends from memory. `answering` is the request the caller acted
+    /// on. Without one, it's the request waiting in that channel now. Sending an ID that's Not sent
+    /// sends it again.
+    @discardableResult
+    public func send(_ text: String, images: [ComposerImage] = [], to channelID: String, on server: URL,
+                     answering request: Int? = nil, id: UUID = UUID()) async -> UUID {
+        if let existing = queue.first(where: { $0.id == id }) {
+            if existing.state != .sending { sendAgain(id) }
+            return id
+        }
+        let destination = Destination(server: Self.key(server), channelID: channelID)
+        let message = Message(id: id, server: destination.server, channelID: channelID,
+                              text: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                              attachments: images.map(\.attachment),
+                              request: request ?? waitingRequest(at: destination), sentAt: now(), state: .sending)
+        removed.remove(id)
+        queue.append(message)
+        let write = save(message)
+        changed()
+        await write.value
+        return id
+    }
+
+    /// The transcript's own rows for a channel on the current server: Sending or Not sent, in order.
+    public func messages(in channelID: String) -> [Message] {
+        guard let server else { return [] }
+        return queue.filter { $0.server == server && $0.channelID == channelID }
+    }
+
+    public func message(_ id: UUID) -> Message? { queue.first { $0.id == id } }
+
+    /// Puts a Not sent message back in line under the same ID.
+    public func sendAgain(_ id: UUID) {
+        guard let index = queue.firstIndex(where: { $0.id == id }), queue[index].state != .sending else { return }
+        queue[index].state = .sending
+        save(queue[index])
+        changed()
+    }
+
+    /// Takes a Not sent message out. Edit calls this only once the draft holding it is saved.
+    public func withdraw(_ id: UUID) {
+        guard let index = queue.firstIndex(where: { $0.id == id }), queue[index].state != .sending else { return }
+        queue.remove(at: index)
+        removed.insert(id)
+        delete(id)
+        changed()
+    }
+
+    // MARK: The waiting rule
+
+    /// Whether a request reads as answered outside its channel: an answer is sending, or one was
+    /// confirmed and the catalog still lists the request. A Not sent answer doesn't count, so the
+    /// request comes back where it was.
+    public func answers(_ request: Int, in channelID: String) -> Bool {
+        guard let server else { return false }
+        let destination = Destination(server: server, channelID: channelID)
+        return answered[destination]?.contains(request) == true || queue.contains {
+            $0.server == server && $0.channelID == channelID && $0.request == request && $0.state == .sending
+        }
+    }
+
+    /// Whether any answer to a request is in the outbox, Sending or Not sent. The channel hides the
+    /// request's choices meanwhile, since a Not sent answer sits right below with Send Again.
+    public func holdsAnswer(to request: Int, in channelID: String) -> Bool {
+        guard let server else { return false }
+        return queue.contains { $0.server == server && $0.channelID == channelID && $0.request == request }
+    }
+
+    // MARK: The catalog store's signals
+
+    /// The catalog store for the current server delivers its messages. Another server's wait.
+    func attach(_ catalog: ChannelCatalogStore) {
+        guard self.catalog !== catalog else { return }
+        for line in lines.values { line.task.cancel() }
+        lines = [:]
+        self.catalog = catalog
+        server = Self.key(catalog.api.baseURL)
+        catalogChanged(catalog, recovered: false)
+        changed()
+    }
+
+    func detach(_ catalog: ChannelCatalogStore) {
+        guard self.catalog === catalog else { return }
+        for line in lines.values { line.task.cancel() }
+        lines = [:]
+        self.catalog = nil
+        server = nil
+        changed()
+    }
+
+    /// Reads the folder again for messages another process saved, such as the share extension.
+    func reload() {
+        scan()
+        wake()
+    }
+
+    /// The server may be reachable again, so every delivery waiting for a connection tries now.
+    func wake() {
+        for (id, pause) in pauses where pause.wakesEarly { resume(id) }
+    }
+
+    /// Each catalog prunes answers the catalog no longer lists as waiting, and drops the messages of
+    /// channels it no longer lists. One that follows a failure means the server is back.
+    func catalogChanged(_ store: ChannelCatalogStore, recovered: Bool) {
+        guard store === catalog, let server, let catalog = store.state else { return }
+        if recovered { wake() }
+        let channels = Dictionary(catalog.channels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for (destination, requests) in answered where destination.server == server {
+            // A catalog older than the request can't say it was answered.
+            let kept = requests.filter { request in
+                guard let channel = channels[destination.channelID] else { return false }
+                return channel.requestSequence == request || channel.latestSequence < request
+            }
+            answered[destination] = kept.isEmpty ? nil : kept
+        }
+        let gone = queue.filter { $0.server == server && channels[$0.channelID] == nil }.map(\.id)
+        guard !gone.isEmpty else { return }
+        for id in gone { drop(id) }
+        changed()
+    }
+
+    /// A channel's stream reported the channel deleted, so its messages leave with it.
+    func channelDeleted(_ channelID: String, on server: URL) {
+        let key = Self.key(server)
+        let gone = queue.filter { $0.server == key && $0.channelID == channelID }.map(\.id)
+        guard !gone.isEmpty else { return }
+        for id in gone { drop(id) }
+        changed()
+    }
+
+    /// A channel's snapshot or replay arrived with these messages, so any of ours among them, Sending
+    /// or Not sent, is confirmed.
+    func received(_ messages: some Sequence<ChannelMessage>, in channelID: String, on server: URL) {
+        let key = Self.key(server)
+        guard queue.contains(where: { $0.server == key && $0.channelID == channelID }) else { return }
+        let ids = Set(messages.lazy.filter { $0.sender == .user }.compactMap { UUID(uuidString: $0.id) })
+        let echoed = queue.filter { $0.server == key && $0.channelID == channelID && ids.contains($0.id) }
+        for message in echoed { confirm(message.id) }
+    }
+
+    // MARK: Delivery
+
+    private struct Line {
+        let token: UUID
+        let task: Task<Void, Never>
+    }
+
+    private struct Pause {
+        let continuation: CheckedContinuation<Void, Never>
+        let wakesEarly: Bool
+        var timer: Task<Void, Never>?
+    }
+
+    /// Recomputes what depends on the queue and starts a line for each channel with a message to send.
+    private func changed() {
+        let delivering = server.map { server in queue.contains { $0.server == server && $0.state == .sending } } ?? false
+        if isDelivering != delivering { isDelivering = delivering }
+        guard isLoaded, let catalog, let server else { return }
+        let api = catalog.api
+        let channels = Set(queue.lazy.filter { $0.server == server && $0.state == .sending }.map(\.channelID))
+        for channelID in channels where lines[channelID] == nil {
+            let token = UUID()
+            lines[channelID] = Line(token: token, task: Task { [weak self] in
+                await self?.deliver(in: channelID, server: server, api: api)
+                self?.lineEnded(channelID, token: token)
+            })
+        }
+    }
+
+    private func lineEnded(_ channelID: String, token: UUID) {
+        guard lines[channelID]?.token == token else { return }
+        lines[channelID] = nil
+        changed()
+    }
+
+    /// Sends a channel's messages one at a time, oldest first. A Not sent message steps out of line.
+    private func deliver(in channelID: String, server: String, api: ChannelAPI) async {
+        while !Task.isCancelled, let next = queue.first(where: {
+            $0.server == server && $0.channelID == channelID && $0.state == .sending
+        }) {
+            await deliver(next.id, api: api)
+        }
+    }
+
+    /// Tries until the server confirms or refuses the message, or it stops being Sending.
+    private func deliver(_ id: UUID, api: ChannelAPI) async {
+        var troubleSince: Date?
+        var troubleCount = 0
+        var waits = 0
+        while !Task.isCancelled, let message = self.message(id), message.state == .sending {
+            let store = catalog?.existingChannel(id: message.channelID)
+            if store?.holds(id) == true { return confirm(id) }
+            let started = now()
+            let outcome = await post(message, api: api)
+            guard !Task.isCancelled, self.message(id)?.state == .sending else { return }
+            switch outcome {
+            case .accepted(let sent):
+                confirm(id, merging: sent)
+                // A 409 returns nothing, so an open channel resumes from its last revision to show it.
+                if sent == nil, let store, store.isTrying, !store.holds(id) { store.reconnect() }
+                return
+            case .rejected(let reason):
+                return stop(id, reason: reason)
+            case .unreachable:
+                troubleSince = nil
+                troubleCount = 0
+                await pause(reconnectPolicy.delay(attempt: waits), wakesEarly: true)
+                waits += 1
+            case .trouble(let reason, let retryAfter):
+                waits = 0
+                let since = troubleSince ?? started
+                troubleSince = since
+                let delay = max(Self.backoff(troubleCount), retryAfter ?? 0)
+                troubleCount += 1
+                guard now().timeIntervalSince(since) + delay <= retryWindow else { return stop(id, reason: reason) }
+                await pause(delay, wakesEarly: false)
+            }
+        }
+    }
+
+    static func backoff(_ attempt: Int) -> TimeInterval {
+        let steps: [TimeInterval] = [1, 2, 4, 8, 15, 30]
+        return attempt < steps.count ? steps[attempt] : 60
+    }
+
+    private func post(_ message: Message, api: ChannelAPI) async -> Outcome {
+        let request: URLRequest
+        do {
+            request = try api.messageRequest(channelId: message.channelID, id: message.id.uuidString,
+                                             content: message.text, attachments: message.attachments)
+        } catch {
+            return .rejected(error.localizedDescription)
+        }
+        do {
+            let (data, response) = try await api.session.data(for: request)
+            guard let response = response as? HTTPURLResponse else {
+                return .trouble(ChannelAPIError.invalidResponse.localizedDescription, retryAfter: nil)
+            }
+            return Outcome(response, data: data, isLive: catalog?.isLive ?? false, now: now())
+        } catch {
+            return Outcome(error, isLive: catalog?.isLive ?? false)
+        }
+    }
+
+    /// Waits for `seconds`, or until `wake()` when `wakesEarly`. Cancelling the task ends it at once.
+    private func pause(_ seconds: TimeInterval, wakesEarly: Bool) async {
+        let id = UUID()
+        let sleep = sleep
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                pauses[id] = Pause(continuation: continuation, wakesEarly: wakesEarly)
+                pauses[id]?.timer = Task { [weak self] in
+                    try? await sleep(seconds)
+                    self?.resume(id)
+                }
+                if Task.isCancelled { resume(id) }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.resume(id) }
+        }
+    }
+
+    private func resume(_ id: UUID) {
+        guard let pause = pauses.removeValue(forKey: id) else { return }
+        pause.timer?.cancel()
+        pause.continuation.resume()
+    }
+
+    private func confirm(_ id: UUID, merging sent: ChannelMessage? = nil) {
+        guard let index = queue.firstIndex(where: { $0.id == id }) else { return }
+        let message = queue.remove(at: index)
+        removed.insert(id)
+        delete(id)
+        let destination = Destination(server: message.server, channelID: message.channelID)
+        if let request = message.request { answered[destination, default: []].insert(request) }
+        if message.server == server, let catalog {
+            if let sent { catalog.existingChannel(id: message.channelID)?.mergeSent(sent) }
+            catalog.onSendConfirmed?(message.channelID)
+        }
+        changed()
+    }
+
+    private func stop(_ id: UUID, reason: String?) {
+        guard let index = queue.firstIndex(where: { $0.id == id }) else { return }
+        queue[index].state = .notSent(reason: reason)
+        save(queue[index])
+        changed()
+    }
+
+    private func drop(_ id: UUID) {
+        queue.removeAll { $0.id == id }
+        removed.insert(id)
+        delete(id)
+    }
+
+    /// The request waiting in a channel on the current server: the open channel's, otherwise the
+    /// catalog's.
+    private func waitingRequest(at destination: Destination) -> Int? {
+        guard let catalog, destination.server == server else { return nil }
+        if let store = catalog.existingChannel(id: destination.channelID), store.isLoaded { return store.requestSequence }
+        return catalog.channels.first { $0.id == destination.channelID }?.requestSequence
+    }
+
+    static func key(_ server: URL) -> String {
+        ChannelWaitingRequest.normalizedServer(server.absoluteString) ?? server.absoluteString
+    }
+
+    // MARK: Files
+
+    nonisolated private static let logger = Logger(subsystem: "dev.toybox", category: "Outbox")
+
+    /// Reads every saved message, then starts delivery. Messages already known stay as they are.
+    private func scan() {
+        let folder = folder
+        let previous = scanning
+        let read = Task.detached(priority: .userInitiated) { Self.read(folder) }
+        scanning = Task { [weak self] in
+            await previous?.value
+            let found = await read.value
+            self?.merge(found)
+        }
+    }
+
+    private func merge(_ found: [Message]) {
+        let known = Set(queue.map(\.id)).union(removed)
+        let added = found.filter { !known.contains($0.id) }
+        if !added.isEmpty {
+            queue.append(contentsOf: added)
+            queue.sort { $0.sentAt < $1.sentAt }
+        }
+        isLoaded = true
+        changed()
+    }
+
+    nonisolated private static func read(_ folder: URL) -> [Message] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+        let decoder = JSONDecoder()
+        return files.filter { $0.pathExtension == "json" }.compactMap { file in
+            do { return try decoder.decode(Message.self, from: Data(contentsOf: file)) }
+            catch {
+                Self.logger.error("Could not read a saved message: \(error.localizedDescription)")
+                return nil
+            }
+        }
+    }
+
+    @discardableResult
+    private func save(_ message: Message) -> Task<Void, Never> {
+        let folder = folder
+        return write { try Self.write(message, in: folder) }
+    }
+
+    private func delete(_ id: UUID) {
+        let file = folder.appending(path: id.uuidString + ".json")
+        write {
+            do { try FileManager.default.removeItem(at: file) }
+            catch let error as CocoaError where error.code == .fileNoSuchFile {}
+        }
+    }
+
+    /// Runs file changes one at a time, in the order they were made, off the main actor.
+    @discardableResult
+    private func write(_ change: @escaping @Sendable () throws -> Void) -> Task<Void, Never> {
+        let previous = writes
+        let task = Task.detached(priority: .userInitiated) {
+            await previous?.value
+            do { try change() }
+            catch { Self.logger.error("Could not save the outbox: \(error.localizedDescription)") }
+        }
+        writes = task
+        return task
+    }
+
+    nonisolated private static func write(_ message: Message, in folder: URL) throws {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let file = folder.appending(path: message.id.uuidString + ".json")
+        try JSONEncoder().encode(message).write(to: file, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+    }
+
+    /// Waits for every file change made so far. Tests read the folder after it.
+    func settled() async {
+        await scanning?.value
+        await writes?.value
+    }
+}
+
+extension ChannelOutbox {
+    struct Destination: Hashable, Sendable {
+        let server: String
+        let channelID: String
+    }
+
+    /// What one attempt's answer means for the message.
+    enum Outcome: Equatable, Sendable {
+        /// A 2xx, with the message when it decodes, or a 409 for an ID the server already has.
+        case accepted(ChannelMessage?)
+        /// Toy Box can't reach the server, so the message waits for a reconnect, however long.
+        case unreachable
+        /// The server has trouble, so the message retries within the window.
+        case trouble(String, retryAfter: TimeInterval?)
+        /// The server refused it, so the message stops as Not sent.
+        case rejected(String)
+
+        /// A gateway answers these for a server that isn't running, as Tailscale Serve and Cloudflare
+        /// Tunnel do while the Mac sleeps. With the catalog connected, the server itself is in trouble.
+        static let gatewayStatuses: Set<Int> = [502, 503, 504, 530]
+
+        static let unreachableErrors: Set<URLError.Code> = [
+            .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost,
+            .dnsLookupFailed, .internationalRoamingOff, .dataNotAllowed, .callIsActive, .cancelled,
+        ]
+
+        init(_ response: HTTPURLResponse, data: Data, isLive: Bool, now: Date) {
+            let status = response.statusCode
+            switch status {
+            case 200..<300: self = .accepted(ChannelAPI.sentMessage(in: data))
+            case 409: self = .accepted(nil)
+            case _ where Self.gatewayStatuses.contains(status) && !isLive: self = .unreachable
+            case 408, 429, 500...:
+                self = .trouble(ChannelAPI.failure(status: status, data: data).localizedDescription,
+                                retryAfter: Self.retryAfter(response.value(forHTTPHeaderField: "Retry-After"), now: now))
+            case 400..<500: self = .rejected(ChannelAPI.failure(status: status, data: data).message)
+            default: self = .trouble(ChannelAPI.failure(status: status, data: data).localizedDescription, retryAfter: nil)
+            }
+        }
+
+        init(_ error: any Error, isLive: Bool) {
+            if let error = error as? URLError, Self.unreachableErrors.contains(error.code) {
+                self = .unreachable
+            } else if case ChannelAPIError.invalidMessage(let reason) = error {
+                self = .rejected(reason)
+            } else {
+                self = .trouble(error.localizedDescription, retryAfter: nil)
+            }
+        }
+
+        /// Seconds, or an HTTP date.
+        static func retryAfter(_ value: String?, now: Date) -> TimeInterval? {
+            guard let value = value?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { return nil }
+            if let seconds = TimeInterval(value) { return max(0, seconds) }
+            let format = DateFormatter()
+            format.locale = Locale(identifier: "en_US_POSIX")
+            format.timeZone = TimeZone(identifier: "GMT")
+            format.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+            return format.date(from: value).map { max(0, $0.timeIntervalSince(now)) }
+        }
+    }
+}
+
+extension ChannelOutbox.Message {
+    /// The row the store's `sendAttempts` shows, until every view reads the outbox.
+    var attempt: ChannelSendAttempt {
+        let reason: String? = if case .notSent(let reason) = state { reason } else { nil }
+        return .init(id: id.uuidString, content: text, attachments: attachments, timestamp: message.timestamp,
+                     phase: state == .sending ? .sending : .notSent, error: reason)
+    }
+}
+
+private extension ChannelAPIError {
+    var message: String {
+        if case .http(_, let message) = self { return message }
+        return localizedDescription
+    }
+}
