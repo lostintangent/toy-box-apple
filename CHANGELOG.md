@@ -6,6 +6,7 @@
 
 - Opening a request in the channel list no longer shifts its time over, and the request reads cleaner, so it feels like the same row growing to show the question.
 - A request opened in the channel list now reads exactly as it does in the conversation, with its formatting, lists and code intact.
+- Opening a long request from the channel list now lands on it, instead of leaving the conversation blank.
 
 ## iPhone 0.1.22
 

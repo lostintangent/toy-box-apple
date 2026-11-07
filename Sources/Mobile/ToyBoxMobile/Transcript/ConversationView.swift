@@ -48,8 +48,9 @@ final class TranscriptScroll {
         rows = current
     }
 
+    /// A row keeps its frame after it scrolls away. The lazy stack caches it and calls onDisappear,
+    /// but its content frame is unchanged when it returns, so it would never report again.
     func measure(_ id: String, frame: CGRect) { frames[id] = frame }
-    func forget(_ id: String) { frames[id] = nil }
 
     private var measured: [Model.RowFrame] {
         rows.compactMap { row in
@@ -259,7 +260,6 @@ struct ConversationView: View {
                             scroll.measure(item.id, frame: frame)
                             place(scroll.update())
                         }
-                        .onDisappear { scroll.forget(item.id) }
                         .padding(.top, item.spacing)
                         .id(item.id)
                 }
