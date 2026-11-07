@@ -2777,8 +2777,9 @@ exactly like the in-app Reply: prepend the requester's `@handle ` unless the rep
 with an @mention. A reply or choice goes to the app's outbox for the server that posted the
 notification, answering that notification's request, and the notification clears. The outbox
 delivers it, so the action never waits on the network, never retries itself and never posts a
-second notification. A failure waits in the channel as Not sent with Retry. Replying doesn't mark
-the channel read. Empty or whitespace-only replies send nothing.
+second notification. A failure waits in the channel as Not sent with Retry. Once the server
+accepts the reply, the outbox marks the channel read through it, as it does for every send and as
+replying from a Messages notification does. Empty or whitespace-only replies send nothing.
 
 Notifications withdraw themselves. Remove a channel's delivered request notification as soon as
 its `requestSequence` changes or clears, wherever it was answered. Remove a completion once
@@ -2792,7 +2793,8 @@ Settings toggles apply throughout.
 extension and routing are under Push and topic subscriptions, and their Lock Screen reply choices
 are under Suggested replies. A Lock Screen reply or choice is addressed like the Mac's and goes to
 the app's outbox for the server the alert came from, which the service extension records on the
-alert, answering that alert's request. Only that notification clears. While the outbox is sending,
+alert, answering that alert's request, and marks the channel read the same way once the server
+accepts it. Only that notification clears. While the outbox is sending,
 the app delegate holds background time, so the reply finishes after the action returns. One still
 sending when that time runs out goes out at the next launch.
 

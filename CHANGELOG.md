@@ -12,7 +12,7 @@
 ### Features
 
 - A request waiting for you can now be read aloud, from the channel list or the conversation, and it keeps reading if you lock your phone.
-- A reply from the Lock Screen now keeps sending after you put your phone away, and one that can't go out waits in its channel so you can send it again.
+- A reply from the Lock Screen now keeps sending after you put your phone away, marks its channel read once it's sent, and one that can't go out waits in its channel so you can send it again.
 
 ### Bugs/Polish
 
