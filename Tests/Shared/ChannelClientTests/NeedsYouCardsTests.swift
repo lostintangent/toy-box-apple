@@ -5,12 +5,10 @@ import Testing
 @testable import ChannelClient
 
 /// The phone list's Needs You cards, from the newest opening to a reply shrinking back into its
-/// row and its check settling, with a mock server and beats the test ends. See Needs You in the list in docs/spec.md.
+/// row and its check settling, with the waiting rule, the outbox and beats the test ends. See
+/// Needs You in the list in docs/spec.md.
 @Suite(.timeLimit(.minutes(1))) @MainActor
 struct NeedsYouCardsTests {
-    struct Posted: Decodable { var id: String; var content: String }
-    struct MessageEnvelope: Encodable { var version = 1; var message: ChannelMessage }
-
     let beats: CardBeats
     let checks: CardChecks
     let draft = ComposerDraft(imageIsReadable: { _ in false })
@@ -20,45 +18,44 @@ struct NeedsYouCardsTests {
         checks = CardChecks(animate: beats.animate, pause: beats.pause)
     }
 
-    @Test func aChoiceSendsAtOnceThenItsRowWearsTheCheckAsTheNextCardOpens() async throws {
-        let posts = Mutex<[(path: String, body: Posted)]>([])
-        let mock = MockTransport { request, _ in
-            let body = try JSONDecoder().decode(Posted.self, from: requestBody(request))
-            posts.withLock { $0.append((request.url?.path ?? "", body)) }
-            let message = ChannelMessage(id: body.id, sequence: 30, timestamp: "2026-11-07T10:01:00Z",
-                                         sender: .user, content: .text(body.content))
-            return try .json(MessageEnvelope(message: message), status: 201)
+    @Test func aChoiceClosesItsCardWithTheCheckOnceTheOutboxHasItAsTheNextCardOpens() async throws {
+        let server = try await CardServer.start(waiting: [("a", 12), ("b", 7)]) { post, number in
+            try CardServer.accepted(post, keepOpen: number == 1)
         }
-        let api = try mock.api()
-        let stores = (a: ChannelStore(id: "a", api: api, sendJournal: nil), b: ChannelStore(id: "b", api: api, sendJournal: nil))
+        defer { server.end() }
         var announcements: [String] = []
         let cards = cards { announcements.append($0) }
-        let (a, b, c) = (entry("a", 12), entry("b", 7), entry("c", 20))
-        #expect(cards.open(in: [a, b]) == a, "The newest request opens")
+        let waiting = server.requests.entries()
+        let (a, b) = (waiting[0], waiting[1])
+        #expect(waiting.map(\.channel.id) == ["a", "b"])
+        #expect(cards.open(in: waiting) == a, "The newest request opens")
         cards.open(b.id)
-        #expect(cards.open(in: [a, b]) == b)
-        #expect(cards.rows(in: [a, b]) == ["a": .question(a), "b": .card(b)], "The open card replaces its row's question")
-        #expect(cards.hiddenLines(in: [a, b], order: ["a", "x", "b", "y"]) == ["x", "b"],
+        #expect(cards.open(in: waiting) == b)
+        #expect(cards.rows(in: waiting) == ["a": .question(a), "b": .card(b)], "The open card replaces its row's question")
+        #expect(cards.hiddenLines(in: waiting, order: ["a", "x", "b", "y"]) == ["x", "b"],
                 "The open card's row and the row above it hide their lines")
         #expect(cards.reveals(b.id, after: a.id), "A card the person opens scrolls into view")
 
-        await cards.send("Near the entrance", to: b, on: stores.b)
-        let posted = posts.withLock { $0 }
-        #expect(posted.map(\.path) == ["/api/v1/channels/b/messages"])
-        #expect(posted.map(\.body.content) == ["Near the entrance"], "A choice goes at once, as written")
-        #expect(UUID(uuidString: posted[0].body.id) != nil)
+        await cards.send("Near the entrance", to: b, on: server.catalog.channel(id: "b"))
+        #expect(server.outbox.messages(in: "b").map(\.text) == ["Near the entrance"])
+        #expect(server.outbox.messages(in: "b").map(\.request) == [7], "A choice answers the card's request")
         #expect(cards.replying == nil && cards.phase == nil && cards.words.isEmpty,
-                "On confirmation the card shrinks straight back into its row")
+                "The card shrinks straight back into its row while the reply is still sending")
         #expect(checks.rows == ["b": .sent], "Its row wears the check")
-        #expect(cards.rows(in: [b, a]) == ["a": .card(a)], "The answered row is ordinary while the catalog catches up")
+        #expect(server.requests.entries() == [a], "Its request stops waiting as the outbox takes the reply")
         #expect(cards.open(in: [a]) == a && cards.reveals(a.id, after: b.id),
                 "The next card opens in the same motion, and scrolls into view")
-        #expect(cards.open(in: [c, a]) == c && !cards.reveals(c.id, after: a.id),
-                "A request that arrives opens without moving the list")
         #expect(announcements == ["Reply sent in b"])
 
-        await cards.send("Beside the desks", to: a, on: stores.a)
+        try await eventually(observing: server.mock) { server.mock.pendingResponseCount == 1 }
+        #expect(server.posts.map(\.content) == ["Near the entrance"], "A choice goes as written")
+        server.mock.finishPendingResponses()
+        try await eventually { server.outbox.messages(in: "b").isEmpty }
+        #expect(server.requests.entries() == [a], "A confirmed answer never reopens while the catalog catches up")
+
+        await cards.send("Beside the desks", to: a, on: server.catalog.channel(id: "a"))
         #expect(checks.rows == ["b": .sent, "a": .sent], "Answering the next card leaves the first check in place")
+        #expect(server.requests.entries().isEmpty && cards.open(in: []) == nil)
         try await beats.end(.seconds(2.35))
         try await eventually { checks["b"] == .settling }
         #expect(checks["a"] == .sent, "Each row settles on its own")
@@ -66,118 +63,179 @@ struct NeedsYouCardsTests {
         try await beats.end(.seconds(0.45))
         try await beats.end(.seconds(0.45))
         try await eventually { checks.rows.isEmpty }
-        #expect(cards.open(in: [b, a]) == nil && !cards.isWaiting(b),
-                "An answered request never reopens while the catalog catches up")
         #expect(beats.motions == [.open, .sent, .sent, .settle, .settle])
-        #expect(stores.a.sendAttempts.isEmpty && stores.b.sendAttempts.isEmpty)
+        try await eventually { server.outbox.messages(in: "a").isEmpty }
+        #expect(Set(server.posts.map(\.id)).count == 2)
     }
 
-    @Test(arguments: [false, true])
-    func aTypedReplyLeadsWithTheRequesterAndSendAgainRepeatsItsAttempt(rejected: Bool) async throws {
-        let posts = Mutex<[Posted]>([])
-        let mock = MockTransport { request, _ in
-            let body = try JSONDecoder().decode(Posted.self, from: requestBody(request))
-            posts.withLock { $0.append(body) }
-            if !rejected { throw URLError(.timedOut) }
-            return MockResponse(status: 422, body: Data(#"{"error":"Reply rejected"}"#.utf8))
-        }
-        let store = ChannelStore(id: "a", api: try mock.api(), sendJournal: nil)
-        var announcements: [String] = []
-        let cards = cards { announcements.append($0) }
-        let a = entry("a", 12)
-        cards.reply(to: a, on: store)
+    @Test func aTypedReplyLeadsWithTheRequesterAndShrinksBackIntoItsRowAsTheNextCardOpens() async throws {
+        let server = try await CardServer.start(waiting: [("a", 12), ("b", 7)])
+        defer { server.end() }
+        let cards = cards()
+        let waiting = server.requests.entries()
+        let (a, b) = (waiting[0], waiting[1])
+        cards.reply(to: a, on: server.catalog.channel(id: "a"))
         #expect(cards.isLifted && cards.phase == .composing)
         cards.words = "  "
         #expect(!cards.canSend)
         cards.words = "Beside the desks"
-        await cards.send()
-        let failure: ChannelSendPhase = rejected ? .notSent : .deliveryNotConfirmed
-        #expect(cards.phase == .failed(failure) && cards.isLifted)
-        await cards.send()
-        let posted = posts.withLock { $0 }
-        #expect(posted.map(\.content) == ["@lead Beside the desks", "@lead Beside the desks"],
-                "A typed reply leads with the requester's handle")
-        #expect(Set(posted.map(\.id)).count == 1, "Send Again reuses the reply's UUID")
-        #expect(announcements == [failure.label, failure.label])
-
-        cards.open(entry("b", 7).id)
-        #expect(cards.open(in: [entry("b", 7), a]) == a, "A lifted reply holds the list")
-        cards.cancel()
-        #expect(cards.replying == nil && !cards.isLifted && cards.isWaiting(a))
-        #expect(draft.text.isEmpty)
-
-        await cards.send("Near the entrance", to: a, on: store)
-        #expect(cards.phase == .failed(failure) && !cards.isLifted && cards.words == "Near the entrance")
-        #expect(cards.hasFailed && checks.rows.isEmpty, "A failure keeps its card, with no check")
-        await cards.send()
-        let chosen = posts.withLock { Array($0.dropFirst(2)) }
-        #expect(chosen.map(\.content) == ["Near the entrance", "Near the entrance"])
-        #expect(Set(chosen.map(\.id)).count == 1, "Send Again reuses the choice's UUID")
-        let b = entry("b", 7)
+        #expect(cards.canSend)
         cards.open(b.id)
-        #expect(cards.replying == nil && !cards.hasFailed && cards.open(in: [b, a]) == b,
-                "Opening another card closes a failed one")
-        #expect(beats.motions == [.open, .open, .open])
-        #expect(store.sendAttempts.map(\.id) == [posted[0].id, chosen[0].id],
-                "Failed replies wait in the outbox, so their choices never return")
-    }
+        #expect(cards.open(in: waiting) == a, "A lifted reply holds the list")
 
-    @Test func aSentTypedReplyShrinksBackIntoItsRowAsTheNextCardOpens() async throws {
-        let mock = MockTransport { request, _ in
-            let body = try JSONDecoder().decode(Posted.self, from: requestBody(request))
-            let message = ChannelMessage(id: body.id, sequence: 30, timestamp: "2026-11-07T10:01:00Z",
-                                         sender: .user, content: .text(body.content))
-            return try .json(MessageEnvelope(message: message), status: 201)
-        }
-        let store = ChannelStore(id: "a", api: try mock.api(), sendJournal: nil)
-        let cards = cards()
-        let (a, b) = (entry("a", 12), entry("b", 7))
-        cards.reply(to: a, on: store)
-        cards.words = "Beside the desks"
         let sending = Task { await cards.send() }
         try await eventually { cards.landing == a }
         #expect(!cards.isLifted && cards.replying == nil && checks["a"] == .sent,
                 "The lifted card lowers in the sent beat, onto its row wearing the check")
         #expect(cards.words == "Beside the desks", "The words fade with the card rather than blanking")
-        #expect(cards.open(in: [b, a]) == b, "The next card opens beneath it")
+        #expect(cards.open(in: server.requests.entries()) == b, "The next card opens beneath it")
         try await beats.end(.seconds(0.35))
         await sending.value
         #expect(cards.landing == nil && cards.words.isEmpty, "The card is gone once it has shrunk into its row")
         #expect(beats.motions == [.open, .sent])
+        try await eventually(observing: server.mock) { server.posts.count == 1 }
+        #expect(server.posts.map(\.content) == ["@lead Beside the desks"], "A typed reply leads with the requester's handle")
         try await beats.end(.seconds(2.35))
         try await beats.end(.seconds(0.45))
         try await eventually { checks.rows.isEmpty }
     }
 
+    @Test func aReplyThatEndsNotSentBringsItsRequestBackAsAWaitingRow() async throws {
+        let server = try await CardServer.start(waiting: [("a", 12), ("b", 7)]) { _, _ in
+            MockResponse(status: 422, body: Data(#"{"error":"Reply rejected"}"#.utf8))
+        }
+        defer { server.end() }
+        var announcements: [String] = []
+        let cards = cards { announcements.append($0) }
+        let waiting = server.requests.entries()
+        let (a, b) = (waiting[0], waiting[1])
+        let store = server.catalog.channel(id: "b")
+        cards.open(b.id)
+        await cards.send("Near the entrance", to: b, on: store)
+        #expect(server.requests.entries() == [a] && checks.rows == ["b": .sent])
+
+        try await eventually { store.sendAttempts.map(\.phase) == [.notSent] }
+        let returned = server.requests.entries()
+        #expect(returned == [a, b], "The request comes back where it was")
+        #expect(cards.rows(in: returned) == ["a": .card(a), "b": .question(b)],
+                "As a waiting row, so the open card stays and the list doesn't move")
+        #expect(cards.replying == nil && announcements == ["Reply sent in b"],
+                "The card says nothing more, since the reply waits in its channel with Retry")
+    }
+
     @Test(arguments: [false, true])
     func endingATypedReplyNeverPostsAndOnlyLeavingKeepsItsWords(leaves: Bool) async throws {
-        let mock = MockTransport { _, _ in
+        let server = try await CardServer.start(waiting: [("a", 12)]) { _, _ in
             Issue.record("Ending a reply must not post")
             return MockResponse(status: 500)
         }
-        let store = ChannelStore(id: "a", api: try mock.api(), sendJournal: nil)
+        defer { server.end() }
         draft.text = "An earlier draft"
         let cards = cards()
-        let a = entry("a", 12)
-        cards.reply(to: a, on: store)
+        let a = try #require(server.requests.entries().first)
+        cards.reply(to: a, on: server.catalog.channel(id: "a"))
         cards.words = "Beside the desks"
         if leaves { cards.leave() } else { cards.cancel() }
         #expect(cards.replying == nil && !cards.isLifted && cards.words.isEmpty)
         #expect(draft.text == (leaves ? "An earlier draft\n\nBeside the desks" : "An earlier draft"))
-        #expect(cards.open(in: [a]) == a, "The request still waits")
-        #expect(mock.requests.isEmpty)
-    }
-
-    /// A request the Lead asked in `channel`.
-    private func entry(_ channel: String, _ sequence: Int) -> ChannelWaitingRequests.Entry {
-        let message = ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-11-07T10:00:00Z",
-                                     sender: .agent("lead"), content: .text("Where should the library sit?"), request: true)
-        return .init(channel: Channel(id: channel, name: channel, model: .init(provider: "test", name: "test"), updatedAt: ""),
-                     sequence: sequence, request: .init(message: message, agents: [ChannelAgent(id: "lead", name: "Lead")]))
+        #expect(cards.open(in: server.requests.entries()) == a, "The request still waits")
+        #expect(server.outbox.messages(in: "a").isEmpty && server.posts.isEmpty)
     }
 
     private func cards(announce: @escaping @MainActor (String) -> Void = { _ in }) -> NeedsYouCards {
         let draft = draft
         return NeedsYouCards(checks: checks, draft: { _ in draft }, announce: announce, animate: beats.animate, pause: beats.pause)
+    }
+}
+
+/// A server for the cards' journeys: a catalog whose waiting channels' requests its history knows,
+/// the waiting rule over it, and an outbox in a scratch folder. Each post is logged, then answered.
+@MainActor final class CardServer {
+    struct Post: Equatable, Sendable {
+        var channel: String
+        var id: String
+        var content: String
+    }
+    private struct Body: Decodable { var id: String; var content: String }
+    private struct Envelope: Encodable { var version = 1; var message: ChannelMessage }
+    private final class Log: Sendable { let posts = Mutex<[Post]>([]) }
+
+    let mock: MockTransport
+    let catalog: ChannelCatalogStore
+    let outbox: ChannelOutbox
+    let requests: ChannelWaitingRequests
+    private let log: Log
+    private let folder: URL
+
+    var posts: [Post] { log.posts.withLock { $0 } }
+
+    private init(mock: MockTransport, catalog: ChannelCatalogStore, outbox: ChannelOutbox, log: Log, folder: URL) {
+        self.mock = mock
+        self.catalog = catalog
+        self.outbox = outbox
+        self.log = log
+        self.folder = folder
+        requests = ChannelWaitingRequests(catalog: catalog)
+    }
+
+    /// `waiting` is each waiting channel and its request's sequence, newest first, and `channels`
+    /// any others. `answer` takes each post and its number, and accepts it by default. The outbox
+    /// stamps each message `now`.
+    static func start(waiting: [(channel: String, sequence: Int)] = [], channels: [String] = [], now: Date = .now,
+                      answer: (@Sendable (Post, Int) throws -> MockResponse)? = nil) async throws -> CardServer {
+        var listed: [Channel] = []
+        var history: [String: ChannelMessage] = [:]
+        for (index, request) in waiting.enumerated() {
+            let time = String(format: "2026-11-07T10:%02d:00Z", 59 - index)
+            var channel = Channel(id: request.channel, name: request.channel, model: .init(provider: "test", name: "test"),
+                                  latestSequence: request.sequence, updatedAt: time)
+            channel.requestSequence = request.sequence
+            listed.append(channel)
+            // The Lead's ID is its channel's.
+            history[request.channel] = ChannelMessage(id: "m\(request.sequence)", sequence: request.sequence, timestamp: time,
+                                                      sender: .agent(request.channel),
+                                                      content: .text("Where should the library sit?"), request: true)
+        }
+        listed += channels.map {
+            Channel(id: $0, name: $0, model: .init(provider: "test", name: "test"), updatedAt: "2026-11-07T09:00:00Z")
+        }
+        let served = ChannelCatalog(lead: testLeadProfile, channels: listed)
+        let log = Log()
+        let mock = MockTransport { [history] request, _ in
+            let path = request.url?.path ?? ""
+            if path == "/api/v1/channels" { return try .json(served) }
+            let parts = path.split(separator: "/").map(String.init)
+            guard parts.count == 5, parts[4] == "messages" else { throw URLError(.unsupportedURL) }
+            guard request.httpMethod == "POST" else {
+                return try .json(ChannelHistoryPage(version: 1, revision: 1, messages: history[parts[3]].map { [$0] } ?? []))
+            }
+            let body = try JSONDecoder().decode(Body.self, from: requestBody(request))
+            let post = Post(channel: parts[3], id: body.id, content: body.content)
+            let number = log.posts.withLock { $0.append(post); return $0.count }
+            return try answer?(post, number) ?? accepted(post)
+        }
+        let catalog = ChannelCatalogStore(api: try mock.api())
+        await catalog.refresh()
+        let folder = FileManager.default.temporaryDirectory.appending(path: "tbm-cards-\(UUID())", directoryHint: .isDirectory)
+        let outbox = ChannelOutbox(folder: folder, retryWindow: 120, now: { now })
+        catalog.outbox = outbox
+        let server = CardServer(mock: mock, catalog: catalog, outbox: outbox, log: log, folder: folder)
+        server.requests.resolve()
+        try await eventually { server.requests.entries().allSatisfy { $0.request != nil } }
+        return server
+    }
+
+    /// The server's acceptance, which `keepOpen` holds until the test finishes it.
+    nonisolated static func accepted(_ post: Post, keepOpen: Bool = false) throws -> MockResponse {
+        let message = ChannelMessage(id: post.id, sequence: 90, timestamp: "2026-11-07T11:00:00Z",
+                                     sender: .user, content: .text(post.content))
+        var response = try MockResponse.json(Envelope(message: message), status: 201)
+        response.keepOpen = keepOpen
+        return response
+    }
+
+    func end() {
+        mock.finishPendingResponses()
+        try? FileManager.default.removeItem(at: folder)
     }
 }

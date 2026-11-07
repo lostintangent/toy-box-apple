@@ -1155,10 +1155,9 @@ disabled.
 **Send.** Tapping Send runs these steps in order:
 1. Listening stops and the waveform eases flat over 0.2 seconds. Only finalized words are sent,
    so Send waits for the final result. Cancel disables.
-2. The note goes out as one outbox attempt with its own UUID. If it hasn't confirmed after
-   300 ms, Send shows the composer's spinner.
-3. On confirmation, the recorder closes into the Sent beat in one `.smooth(duration: 0.35)`
-   transaction:
+2. The note goes to the outbox with its own UUID, and the card holds only while it's saved.
+3. Once the outbox has it, the recorder closes into the Sent beat in one
+   `.smooth(duration: 0.35)` transaction, while the note may still be sending:
    - The words, waveform and controls fade out over 0.15 seconds while the card shrinks back to
      the cell's frame, its top returning to the row if it rose. The rows it covered reappear
      as it shrinks.
@@ -1170,8 +1169,8 @@ disabled.
      circle fills the mark's 28 points, and its check is knocked out, so the surface beneath
      shows through. Nothing rings or pulses around it. `.sensoryFeedback(.success)` plays as it
      arrives.
-   - The counter gives way to the note's own time, the channel's new last activity in the row's
-     ordinary format, through the slot's swap. No word says Sent, because the check does.
+   - The counter gives way to the time the note was sent, in the row's ordinary format, through
+     the slot's swap. No word says Sent, because the check does.
    - The card's shadow and edge fade out as it lands, and its fill stays as a wash.
 4. As the card lands, its wash fades over 0.4 seconds with `.easeOut`, and the chevron and
    attention mark fade back. The row now looks ordinary except that it wears the check in
@@ -1184,13 +1183,8 @@ disabled.
 On the open channel's row, the selection band returns as the wash fades. The check stays green
 on it, since the glass selection keeps the row's standard ink.
 
-**Failure.** On a definite rejection, the recorder stays open with its words and the timer slot
-reads "Not sent". On a timeout or lost response it reads "Delivery not confirmed". Both use
-secondary ink, like a failed send in the conversation, never red. Send becomes Send Again, the
-same accent circle with `arrow.clockwise`, on the same UUID. Cancel closes the card and leaves
-the note in the channel's outbox, where the conversation offers Send Again on that UUID like any
-failed send, so a note that may have landed can't post twice. Leaving does the same. Nothing
-retries on its own.
+**Not sent.** The card never waits on the server or reports a failure. A note the outbox can't
+deliver waits in its channel as Not sent, with Retry, like any message.
 
 **Cancel and leaving.** Cancel discards the note without confirmation, since nothing was sent.
 The card shrinks back to the row with the open spring in reverse as the mic swaps back to the
@@ -1209,9 +1203,8 @@ so focus stays inside it while it's open and returns to the channel's row when i
 Opening moves focus to the words and announces "Listening". The words are one element whose
 value updates without announcing each word. Send reads "Send to Lead" and Cancel reads "Cancel".
 The Magic Tap sends and the escape gesture cancels. A send announces "Sent to Lead in
-[channel]", so the check is hidden from VoiceOver, and a failure announces once, like any send
-error. At accessibility text sizes the recorder keeps the stacked heading, and its words and
-controls grow with the text.
+[channel]", so the check is hidden from VoiceOver. At accessibility text sizes the recorder keeps
+the stacked heading, and its words and controls grow with the text.
 
 #### Needs You in the list
 
@@ -1249,31 +1242,32 @@ only once the card would run past the visible list, fading at whichever edge it 
 the choices and Reply always stay in view. The lines above and below the card hide, and it offers no
 Talk swipe.
 
-**Choices.** A choice sends at once as written, through the channel's outbox with its own UUID,
-as in the transcript. The card holds as it was while the reply sends, its choices still and
-ignoring taps, with the composer's spinner after 300 ms. On confirmation it runs the talk card's
-beats. In one `.smooth(duration: 0.35)` transaction the card shrinks straight back into its row
+**Choices.** A choice goes at once as written to the outbox with its own UUID, answering the
+card's request, as in the transcript. The card holds as it was only while the outbox saves it,
+its choices still and ignoring taps, then runs the talk card's beats while the reply may still be
+sending. In one `.smooth(duration: 0.35)` transaction the card shrinks straight back into its row
 as the next waiting request's card opens, and the row's mark becomes the talk card's done check
 through `.replace`, with `.sensoryFeedback(.success)`. Two seconds after the card lands, the check
 swaps back to the channel mark through the same `.replace`. No word says Sent and the reply's
 words don't show, because the check does. Answering the next card before then leaves the first
-check in place, and each row settles on its own. An answered request never reopens while the
-catalog catches up.
+check in place, and each row settles on its own. The waiting rule counts a request answered from
+the moment its reply is sending, so it never reopens while the reply sends or the catalog catches
+up.
 
 **Reply.** Reply lifts the card above the list, where it gains the recorder's base and shadow and
 every other row dims to 40% and ignores taps. A plain field takes the choices' place, focused at
 once with the prompt "Reply to [requester]", and grows to five lines. Cancel and Send are the
 talk card's controls. The card follows the recorder's Room rules within the area above the
 keyboard, so its controls always stay visible. The reply leads with the requester's `@handle`
-unless it starts with a mention. Send holds the lifted card while the reply sends, then on
-confirmation it shrinks from above the list straight into its row, its words fading with its base
+unless it starts with a mention. While the server is unavailable Send disables, as the choices
+do, and the words stay. Send holds the lifted card only while the outbox saves the reply, then it
+shrinks from above the list straight into its row, its words fading with its base
 and shadow, in the choices' one transaction as the next card opens, and its row wears the check,
 as a choice's does.
 
-**Failure.** A failed reply keeps its card with its words, "Not sent" or "Delivery not
-confirmed", and Send Again on the same UUID. Nothing retries on its own, and the choices never
-return, since the outbox holds the attempt. Cancel, or opening another card, closes the failed
-card and leaves the reply in the channel's outbox, where the conversation offers Send Again.
+**Not sent.** The card never waits on the server or reports a failure. A reply the outbox can't
+deliver waits in its channel as Not sent, with Retry, and its request comes back where it was in
+the list, without scrolling it.
 
 **Leaving.** Cancel discards a typed reply. Opening a channel, Search, Settings or a management
 sheet, backgrounding, or the channel going away ends it, and saves its words as that channel's
@@ -1283,7 +1277,7 @@ draft, after any draft already there.
 bounce, and the check keeps its 2-second hold. A waiting row's hint is "Shows the request", and the card's heading reads the channel's
 name with the hint "Opens the channel at this request". The lifted card is modal, and the escape
 gesture cancels. A sent reply announces "Reply sent in [channel]", so the check is hidden from
-VoiceOver, and a failure announces its label.
+VoiceOver.
 
 ### Transcript
 
@@ -1869,8 +1863,8 @@ The composer covers:
   `resolveChannelAudience`
 - Image attachments by paste, drag and file picker, sent inline as base64
 - Sending is unavailable while disconnected, with a visible stale state, but editing isn't. A
-  failed send stays on its row in the transcript with Edit and Send Again. The composer gets its
-  text back only through Edit, and it is never retried automatically
+  message the outbox can't deliver stays on its row in the transcript as Not sent, with Retry,
+  and the composer never takes its text back
 - Optimistic message that the committed echo replaces, drawn exactly as the echo (bubble, gap and
   day divider) so confirming changes nothing on screen. Only a send still going after 1 second
   shows a quiet "Sending"

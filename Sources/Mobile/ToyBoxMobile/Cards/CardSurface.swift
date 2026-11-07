@@ -202,19 +202,15 @@ private struct CardList<Card: View>: ViewModifier {
     }
 }
 
-/// A lifted card's Cancel and Send, with Send's progress, or its retry after a failure.
+/// A lifted card's Cancel and Send.
 struct CardControls: View {
     let canCancel: Bool
     let canSend: Bool
+    /// Keeps Send lit for the moment its message is saved, so the circle never flickers gray.
     let isSending: Bool
-    /// When the card's attempt began posting.
-    let postingSince: ContinuousClock.Instant?
-    let isFailed: Bool
-    /// Send's accessibility label before any failure.
     let sendLabel: String
     let cancel: () -> Void
     let send: () -> Void
-    @ViewState private var showsProgress = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -235,43 +231,19 @@ struct CardControls: View {
                 .buttonStyle(.plain)
                 .disabled(!canSend)
                 .keyboardShortcut(.return, modifiers: .command)
-                .accessibilityLabel(isFailed ? "Send Again" : sendLabel)
+                .accessibilityLabel(sendLabel)
         }
-        .cardProgress(since: postingSince, $showsProgress)
     }
 
     private var sendFace: some View {
         let active = canSend || isSending
-        return Group {
-            if showsProgress {
-                ProgressView().frame(width: 32, height: 32)
-            } else {
-                Image(systemName: isFailed ? "arrow.clockwise" : "arrow.up")
-                    .font(.system(size: 17, weight: .medium))
-                    .frame(width: 32, height: 32)
-                    .background(active ? Color.accentColor : Color(uiColor: .quaternaryLabel), in: Circle())
-                    .foregroundStyle(active ? .white : .secondary)
-            }
-        }
-        .frame(width: 44, height: 44)
-        .contentShape(Rectangle())
-    }
-}
-
-extension View {
-    /// Sets `showsProgress` once a card's attempt that began posting at `since` has gone 300 ms
-    /// without confirming, as `DelayedProgressView` waits, for a place that swaps its content for
-    /// the progress.
-    func cardProgress(since: ContinuousClock.Instant?, _ showsProgress: Binding<Bool>) -> some View {
-        task(id: since) {
-            showsProgress.wrappedValue = false
-            guard let since else { return }
-            let remaining = DelayedProgressView.delay - since.duration(to: .now)
-            if remaining > .zero {
-                do { try await Task.sleep(for: remaining) } catch { return }
-            }
-            showsProgress.wrappedValue = true
-        }
+        return Image(systemName: "arrow.up")
+            .font(.system(size: 17, weight: .medium))
+            .frame(width: 32, height: 32)
+            .background(active ? Color.accentColor : Color(uiColor: .quaternaryLabel), in: Circle())
+            .foregroundStyle(active ? .white : .secondary)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
     }
 }
 

@@ -17,7 +17,7 @@ extension NeedsYouCards {
 }
 
 /// The open card: the channel's heading, the whole question, then the choices and Reply, which
-/// hold while a choice sends. Lifted above the dimmed list, a typed reply's field and its Cancel
+/// hold while a choice is saved. Lifted above the dimmed list, a typed reply's field and its Cancel
 /// and Send take the choices' place. The question scrolls only once the card would run past
 /// `maxHeight`.
 struct NeedsYouCard: View {
@@ -127,10 +127,8 @@ struct NeedsYouCard: View {
     @ViewBuilder private var footer: some View {
         if isLifted {
             NeedsYouReplyField(cards: cards, prompt: "Reply to \(requester)")
-        } else if isReplying, !cards.isLifted, cards.hasFailed, let phase = cards.phase {
-            NeedsYouReplyStatus(cards: cards, phase: phase)
         } else {
-            // A choice holds the card as it was while it sends, as the talk card holds its note.
+            // A choice holds the card as it was while it's saved, as the talk card holds its note.
             let isSending = isReplying && cards.phase == .sending
             TranscriptRequestActions(spacing: 8, sequence: entry.sequence, choices: isSending ? entry.heldChoices : choices,
                                      replyHelp: "Reply to \(requester)",
@@ -142,14 +140,6 @@ struct NeedsYouCard: View {
                 // The actions hide a chosen reply themselves, so the held ones start afresh.
                 .id(isSending)
                 .allowsHitTesting(!isSending)
-                .overlay(alignment: .bottomTrailing) {
-                    if isSending {
-                        DelayedProgressView(since: cards.postingSince)
-                            .controlSize(.small)
-                            .frame(height: 28)
-                            .accessibilityLabel("Sending")
-                    }
-                }
         }
     }
 }
@@ -165,17 +155,15 @@ private struct InlineLabelStyle: LabelStyle {
     }
 }
 
-/// A typed reply's field where the choices were, then Cancel and Send, with Not Sent and Send
-/// Again after a failure.
+/// A typed reply's field where the choices were, then Cancel and Send. Send waits for a connection,
+/// as the choices do, and the words stay until it's back.
 struct NeedsYouReplyField: View {
     @Bindable var cards: NeedsYouCards
     let prompt: String
+    @Environment(AppModel.self) private var model
     @FocusState private var focused: Bool
 
-    private var failure: ChannelSendPhase? {
-        guard case .failed(let failure) = cards.phase else { return nil }
-        return failure
-    }
+    private var isConnected: Bool { model.catalog?.phase.failure == nil }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
@@ -186,60 +174,13 @@ struct NeedsYouReplyField: View {
                 .disabled(cards.phase != .composing)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityAction(.escape) { cards.cancel() }
-            if let failure {
-                Label(failure.label, systemImage: "exclamationmark.circle.fill")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.red)
-                    .labelStyle(.titleAndIcon)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            CardControls(canCancel: cards.phase != .sending, canSend: cards.canSend || failure != nil,
-                         isSending: cards.phase == .sending, postingSince: cards.postingSince,
-                         isFailed: failure != nil, sendLabel: "Send Reply", cancel: cards.cancel,
-                         send: { Task { await cards.send() } })
+            CardControls(canCancel: cards.phase != .sending, canSend: cards.canSend && isConnected,
+                         isSending: cards.phase == .sending, sendLabel: "Send Reply", cancel: cards.cancel,
+                         send: { if isConnected { Task { await cards.send() } } })
                 // The circles end where the card's content does.
                 .padding(.trailing, -6)
         }
         .task { focused = true }
-    }
-}
-
-/// A failed reply where the choices were: Not Sent with its words and Send Again, then Sending while
-/// it repeats.
-struct NeedsYouReplyStatus: View {
-    let cards: NeedsYouCards
-    let phase: NeedsYouCards.Phase
-    @ViewState private var showsProgress = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                switch phase {
-                case .failed(let failure):
-                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
-                    Text(failure.label)
-                case .sending, .composing:
-                    if showsProgress { ProgressView().controlSize(.mini) }
-                    Text("Sending")
-                }
-            }
-            .font(.footnote.weight(.semibold))
-            Text(cards.words)
-                .font(.footnote)
-                .foregroundStyle(ChannelInk.secondary)
-                .lineLimit(3)
-            if case .failed = phase {
-                Button("Send Again") { Task { await cards.send() } }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .font(.footnote)
-                    .tint(.primary)
-                    .padding(.top, 4)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cardProgress(since: cards.postingSince, $showsProgress)
-        .accessibilityElement(children: .combine)
     }
 }
 

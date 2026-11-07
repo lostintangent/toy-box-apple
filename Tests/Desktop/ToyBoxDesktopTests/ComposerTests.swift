@@ -790,24 +790,6 @@ struct ComposerTests {
         }
     }
 
-    @Test func sendFailureAnnouncementsUseFreshEventsForRepeatedSameMessageFailures() {
-        var announcements = ComposerFailureAnnouncements()
-        let uncertain = ComposerFailureFeedback(id: "first-failure-event",
-                                                message: "Delivery not confirmed.")
-        let changedError = ComposerFailureFeedback(id: uncertain.id, message: "A changed error.")
-        let retry = ComposerFailureFeedback(id: "retry-failure-event", message: uncertain.message)
-        let received = [
-            announcements.receive(uncertain, isEligible: false),
-            announcements.receive(uncertain, isEligible: true),
-            announcements.receive(uncertain, isEligible: true),
-            announcements.receive(changedError, isEligible: true),
-            announcements.receive(retry, isEligible: true),
-            announcements.receive(retry, isEligible: true),
-            announcements.receive(uncertain, isEligible: true),
-        ]
-        #expect(received == [false, true, false, false, true, false, false])
-    }
-
     @Test func trayVisibilityTracksArtifactsTasksAndPreview() {
         let artifact = ChannelArtifact(file: .init(kind: "machine", path: "/tmp/plan.md"), title: "Plan")
         #expect(!ComposerTray.isVisible(artifacts: [], tasks: [], preview: nil))

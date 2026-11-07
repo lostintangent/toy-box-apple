@@ -2,17 +2,13 @@ import AVFoundation
 import ChannelKit
 import Foundation
 import Observation
-import Synchronization
 import Testing
 @testable import ChannelClient
 
-/// Journeys through a talk note, from the row's swipe to the row settling, with scripted words, a
-/// mock server and beats the test ends. See Talk to the Lead in docs/spec.md.
+/// Journeys through a talk note, from the row's swipe to the row settling, with scripted words, the
+/// outbox and beats the test ends. See Talk to the Lead in docs/spec.md.
 @Suite(.timeLimit(.minutes(1))) @MainActor
 struct TalkRecorderTests {
-    struct Posted: Decodable { var id: String; var content: String }
-    struct MessageEnvelope: Encodable { var version = 1; var message: ChannelMessage }
-
     let recognizer = TalkTestRecognizer()
     let beats: CardBeats
     let checks: CardChecks
@@ -27,17 +23,12 @@ struct TalkRecorderTests {
     }
 
     @Test func aNoteSendsOnlyItsFinishedWordsOnceAndTalkingAgainFromTheCheckKeepsTheCard() async throws {
-        let posts = Mutex<[Posted]>([])
-        let mock = MockTransport { request, _ in
-            #expect(request.httpMethod == "POST")
-            #expect(request.url?.path == "/api/v1/channels/test/messages")
-            let body = try JSONDecoder().decode(Posted.self, from: requestBody(request))
-            posts.withLock { $0.append(body) }
-            let message = ChannelMessage(id: body.id, sequence: 42, timestamp: "2026-10-27T00:00:00Z",
-                                         sender: .user, content: .text(body.content))
-            return try .json(MessageEnvelope(message: message), status: 201)
+        let sentAt = Date(timeIntervalSince1970: 1_793_000_000)
+        let server = try await CardServer.start(channels: ["test"], now: sentAt) { post, number in
+            try CardServer.accepted(post, keepOpen: number == 1)
         }
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        defer { server.end() }
+        let store = server.catalog.channel(id: "test")
         draft.text = "My own draft"
         var announcements: [String] = []
         let recorder = try await start(on: store, order: ["a", "test", "b"]) { announcements.append($0) }
@@ -55,17 +46,19 @@ struct TalkRecorderTests {
         #expect(recorder.tentativeWords == " beside")
         recognizer.finalWords = [("beside the desks", true)]
         await recorder.send()
-        #expect(posts.withLock { $0.map(\.content) } == ["Put the library beside the desks"],
-                "Plain words reach the Lead with no mention or request answer")
-        #expect(recorder.phase == .sent && !recorder.isLifted && recorder.hidesTrailingColumn)
+        #expect(server.outbox.messages(in: "test").map(\.text) == ["Put the library beside the desks"],
+                "Plain words go to the outbox with no mention")
+        #expect(recorder.phase == .sent && !recorder.isLifted && recorder.hidesTrailingColumn,
+                "The card closes as soon as the outbox has the note, while it's still sending")
         #expect(beats.motions.last == .sent && recorder.hiddenLines.isEmpty,
                 "The lines return as the card starts shrinking, not once it closes")
         #expect(recorder.timeSlot == .noteTime)
-        #expect(recorder.sentAt == (try? Date("2026-10-27T00:00:00Z", strategy: .iso8601)),
-                "The row shows the server's time for the note")
+        #expect(recorder.sentAt == sentAt, "The row shows the time the note was sent")
         #expect(recorder.isChecked)
         #expect(announcements == ["Sent to Lead in Studio"])
         #expect(draft.text == "My own draft")
+        try await eventually(observing: server.mock) { server.mock.pendingResponseCount == 1 }
+        server.mock.finishPendingResponses()
 
         try await beats.end(.seconds(0.35))
         try await eventually { recorder.phase == .landed }
@@ -81,9 +74,6 @@ struct TalkRecorderTests {
         try await eventually { recorder.isListening }
         recognizer.send("And a lamp", isFinal: true)
         await recorder.send()
-        let sent = posts.withLock { $0 }
-        #expect(sent.map(\.content).last == "And a lamp")
-        #expect(Set(sent.map(\.id)).count == 2, "Each note is its own message")
         try await beats.end(.seconds(0.35))
         try await eventually { recorder.phase == .landed }
         try await beats.end(.seconds(2.35))
@@ -96,51 +86,37 @@ struct TalkRecorderTests {
         #expect(recorder.ordered(channels).map(\.id) == channels.map(\.id), "Settling lets the row go")
         #expect(beats.motions == [.open, .sent, .settle, .open, .sent, .settle, .settle])
         #expect(announcements.count == 2)
-        #expect(store.sendAttempts.isEmpty)
+        try await eventually { server.outbox.messages(in: "test").isEmpty }
+        #expect(server.posts.map(\.content) == ["Put the library beside the desks", "And a lamp"])
+        #expect(Set(server.posts.map(\.id)).count == 2, "Each note is its own message")
     }
 
-    @Test(arguments: [false, true])
-    func aFailedNoteStaysOpenAndSendAgainRepeatsItsAttempt(rejected: Bool) async throws {
-        let ids = Mutex<[String]>([])
-        let mock = MockTransport { request, _ in
-            ids.withLock { $0.append((try? JSONDecoder().decode(Posted.self, from: requestBody(request)))?.id ?? "") }
-            if !rejected { throw URLError(.timedOut) }
-            return MockResponse(status: 422, body: Data(#"{"error":"Reply rejected"}"#.utf8))
+    @Test func aNoteThatEndsNotSentWaitsInItsChannelWithRetry() async throws {
+        let server = try await CardServer.start(channels: ["test"]) { _, _ in
+            MockResponse(status: 422, body: Data(#"{"error":"Reply rejected"}"#.utf8))
         }
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        defer { server.end() }
+        let store = server.catalog.channel(id: "test")
         var announcements: [String] = []
         let recorder = try await start(on: store, order: ["test", "a"]) { announcements.append($0) }
         defer { recorder.deactivate() }
         recognizer.send("Keep a reading nook", isFinal: true)
         await recorder.send()
-        let failure: ChannelSendPhase = rejected ? .notSent : .deliveryNotConfirmed
-        #expect(recorder.phase == .failed(failure))
-        #expect(recorder.isLifted && recorder.canSend && recorder.timeSlot == .failed(failure))
-        #expect(recorder.hiddenLines == ["test", "a"], "The first row has no line above to hide")
-
-        await recorder.send()
-        #expect(recorder.phase == .failed(failure))
-        let posted = ids.withLock { $0 }
-        #expect(posted.count == 2 && Set(posted).count == 1, "Send Again reuses the note's UUID")
-        #expect(announcements == [failure.label, failure.label])
-
-        recorder.cancel()
-        #expect(recorder.phase == .cancelled && !recorder.isLifted)
-        #expect(recorder.hiddenLines.isEmpty, "Cancel brings the lines back as the card starts shrinking")
-        try await beats.end(.seconds(0.45))
-        try await eventually { recorder.phase == nil }
-        #expect(beats.motions == [.open, .open])
-        #expect(draft.text.isEmpty, "The failed note stays in the outbox, not the draft")
-        #expect(store.sendAttempts.map(\.id) == [posted[0]])
+        #expect(recorder.phase == .sent && recorder.isChecked && !recorder.isLifted)
+        try await eventually { store.sendAttempts.map(\.phase) == [.notSent] }
+        #expect(recorder.phase == .sent && announcements == ["Sent to Lead in Studio"],
+                "The card has closed, and the note waits in its channel with Retry")
+        #expect(draft.text.isEmpty, "The note stays in the outbox, not the draft")
     }
 
     @Test(arguments: [false, true])
     func endingANoteNeverPostsAndOnlyLeavingKeepsItsWords(leaves: Bool) async throws {
-        let mock = MockTransport { _, _ in
+        let server = try await CardServer.start(channels: ["test"]) { _, _ in
             Issue.record("Ending a note must not post")
             return MockResponse(status: 500)
         }
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        defer { server.end() }
+        let store = server.catalog.channel(id: "test")
         draft.text = "An earlier draft"
         let recorder = try await start(on: store)
         defer { recorder.deactivate() }
@@ -153,8 +129,7 @@ struct TalkRecorderTests {
         #expect(draft.text == kept)
         recognizer.send("Late words", isFinal: true)
         #expect(draft.text == kept)
-        #expect(mock.requests.isEmpty)
-        #expect(store.sendAttempts.isEmpty)
+        #expect(server.posts.isEmpty && server.outbox.messages(in: "test").isEmpty)
     }
 
     @Test func theCardStaysOnItsRowAndGrowsUpOnlyOnceItsBottomMeetsTheRooms() {
