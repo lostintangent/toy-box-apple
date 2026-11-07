@@ -64,6 +64,7 @@ struct NeedsYouCard: View {
     let open: () -> Void
     let choose: (String) -> Void
     let reply: () -> Void
+    @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var colorScheme
     @ViewState private var questionHeight: CGFloat?
     @ViewState private var chrome: CGFloat = 0
@@ -79,52 +80,48 @@ struct NeedsYouCard: View {
         HStack(alignment: .cardMark, spacing: 12) {
             ChannelMark(size: 28)
                 .alignmentGuide(.cardMark) { $0[VerticalAlignment.center] }
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 0) {
                 Button(action: open) { heading }
                     .buttonStyle(.plain)
                     .alignmentGuide(.cardMark) { $0[.bottom] + 4 }
                     .accessibilityLabel(channel.name)
                     .accessibilityHint("Opens the channel at this request")
-                HStack(alignment: .top, spacing: 8) {
-                    ScrollView {
-                        Text(entry.question)
-                            .font(.body)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { questionHeight = $0 }
-                    }
-                    .scrollBounceBehavior(.basedOnSize)
-                    .onScrollGeometryChange(for: Edge.Set.self) { geometry in
-                        let visible = geometry.visibleRect
-                        return Edge.Set().union(visible.minY > 1 ? .top : [])
-                            .union(visible.maxY < geometry.contentSize.height - 1 ? .bottom : [])
-                    } action: { hidden = $1 }
-                    // A question that runs on fades out at the edge it continues past.
-                    .mask {
-                        VStack(spacing: 0) {
-                            LinearGradient(colors: [.black.opacity(hidden.contains(.top) ? 0 : 1), .black],
-                                           startPoint: .top, endPoint: .bottom)
-                                .frame(height: lineHeight)
-                            Color.black
-                            LinearGradient(colors: [.black, .black.opacity(hidden.contains(.bottom) ? 0 : 1)],
-                                           startPoint: .top, endPoint: .bottom)
-                                .frame(height: lineHeight)
-                        }
-                    }
-                    .frame(height: shown)
-                    .accessibilityIdentifier("needs-you-question")
-                    // On the question's first line.
-                    Image(systemName: Channel.Attention.waiting.symbol)
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(Channel.Attention.waiting.color(in: colorScheme))
-                        .frame(height: lineHeight)
-                        .accessibilityHidden(true)
+                    .padding(.bottom, 8)
+                ScrollView {
+                    // The bubble's own body, so the question reads exactly as it does in the transcript.
+                    TranscriptBody(text: markdown, agents: entry.request?.agents ?? [],
+                                   baseURL: model.api?.baseURL, surface: .pendingAgent)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { questionHeight = $0 }
                 }
+                .scrollBounceBehavior(.basedOnSize)
+                .onScrollGeometryChange(for: Edge.Set.self) { geometry in
+                    let visible = geometry.visibleRect
+                    return Edge.Set().union(visible.minY > 1 ? .top : [])
+                        .union(visible.maxY < geometry.contentSize.height - 1 ? .bottom : [])
+                } action: { hidden = $1 }
+                // A question that runs on fades out at the edge it continues past.
+                .mask {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.black.opacity(hidden.contains(.top) ? 0 : 1), .black],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: lineHeight)
+                        Color.black
+                        LinearGradient(colors: [.black, .black.opacity(hidden.contains(.bottom) ? 0 : 1)],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: lineHeight)
+                    }
+                }
+                .frame(height: shown)
+                .accessibilityIdentifier("needs-you-question")
+                // The bubble's gap between its body and the actions.
+                .padding(.bottom, 10)
                 footer
             }
         }
-        .padding(.vertical, Self.margin)
-        .padding(.leading, Self.margin)
-        .padding(.trailing, Self.margin - reach)
+        // The card reaches `margin` past its row on each side, so its content keeps the row's edges
+        // and the time and chevron hold still as it opens and closes.
+        .padding(Self.margin)
         // Everything but the question, which is what the question gives way to.
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chrome = max($0 - (shown ?? 0), 0) }
         .background {
@@ -159,6 +156,13 @@ struct NeedsYouCard: View {
     }
 
     private var requester: String { entry.request?.requester?.name ?? "the request" }
+
+    /// The request's Markdown, or the plain question until its message is known or when it has
+    /// no words.
+    private var markdown: String {
+        guard let text = entry.request?.message.text, !text.isEmpty else { return entry.question }
+        return text
+    }
 
     @ViewBuilder private var footer: some View {
         if isLifted {

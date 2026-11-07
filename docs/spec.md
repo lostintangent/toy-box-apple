@@ -1227,14 +1227,18 @@ fling is still slowing, and once the user scrolls it, a card that grows later st
 
 **The card.** It's the talk card's surface in Needs You orange: 20-point continuous corners, the
 0.5-point edge and the wash, with no base, no shadow and no dimming, so the list stays fully
-usable around it. Its sides sit 12 points outside the row's content, as the recorder's do, except
-that a folded list ends at its rows, so there the content steps in instead. The mark centers
-between the heading and the question's first line. The heading keeps the row's name, time and
-folded chevron, and tapping it opens the channel at the request. The whole question follows in
-body text, with the attention mark on its first line, then the choices and Reply in the phone's
-layout under Suggested replies. The card grows to fit the whole question, which scrolls only once
-the card would run past the visible list, fading at whichever edge it continues past, so the
-choices and Reply always stay in view. The lines above and below the card hide, and it offers no
+usable around it. Its sides sit 12 points outside the row's content, as the recorder's do, so
+the mark, name, time and chevron stay exactly where the row draws them as the card opens and
+closes, and only the card grows around them. Everything inside, lifted or not, ends on the row's
+trailing edge, under the chevron. A folded list ends at its rows, so there the content steps in
+instead. The mark centers between the heading and the question's first line. The heading keeps
+the row's name, time and folded chevron, and tapping it opens the channel at the request. The
+whole request follows without an attention mark, in the transcript's own body, so its Markdown,
+mentions and mention ink read exactly as in its bubble. The choices and Reply follow at the
+bubble's 10-point gap, in the phone's layout under Suggested replies. The waiting row and the
+widget keep the one-line plain question. The card grows to fit the whole request, which scrolls
+only once the card would run past the visible list, fading at whichever edge it continues past, so
+the choices and Reply always stay in view. The lines above and below the card hide, and it offers no
 Talk swipe.
 
 **Choices.** A choice sends at once as written, through the channel's outbox with its own UUID,

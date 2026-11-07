@@ -1,5 +1,12 @@
 # Changelog
 
+## iPhone 0.1.23
+
+### Bugs/Polish
+
+- Opening a request in the channel list no longer shifts its time over, and the request reads cleaner, so it feels like the same row growing to show the question.
+- A request opened in the channel list now reads exactly as it does in the conversation, with its formatting, lists and code intact.
+
 ## iPhone 0.1.22
 
 ### Features
