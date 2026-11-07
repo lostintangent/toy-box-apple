@@ -18,6 +18,9 @@ struct ChannelSidebarRow: View {
     var question: String? = nil
     /// The done check, once this row's reply sends from its Needs You card.
     var check: CardChecks.Check? = nil
+    /// How far a Needs You card's time and chevron sit inside the row's, where a folded list leaves
+    /// the card no room past the row.
+    var cardInset: CGFloat = 0
     @Environment(\.backgroundProminence) private var prominence
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -34,12 +37,14 @@ struct ChannelSidebarRow: View {
                         VStack(alignment: .leading, spacing: 8) {
                             detail(yields: true)
                             if !working.isEmpty {
-                                AgentAvatarStack(agents: working, size: 20, limit: 3)
+                                AgentAvatarStack(agents: working, size: Self.faceSize, limit: 3)
                             }
                             attentionLabel.talkFades(talk)
                         }
                     } else {
-                        secondLine
+                        // Line 2 keeps the faces' height whatever it shows, so the name and time
+                        // never move and sit where a Needs You card's heading does.
+                        secondLine.frame(minHeight: hasSecondLine ? Self.faceSize : nil)
                     }
                 }
                 .talkLine(talk)
@@ -61,7 +66,11 @@ struct ChannelSidebarRow: View {
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 title.lineLimit(1).truncationMode(.tail)
+                // The time and chevron keep the card's place until its check settles. The talk
+                // card draws the row itself, so its check keeps the row's place.
                 Activity(channel: channel, now: now, isCollapsed: isCollapsed, talk: talk)
+                    .padding(.trailing, check == .sent && talk == nil ? cardInset : 0)
+                    .animation(CardMotion.settle.animation, value: check)
             }
         }
     }
@@ -70,6 +79,14 @@ struct ChannelSidebarRow: View {
         Text(channel.name)
             .font(.headline)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private static let faceSize: CGFloat = 20
+
+    /// Whether line 2 shows anything. A row with only its name centers it.
+    private var hasSecondLine: Bool {
+        question != nil || channel.directory?.isEmpty == false || channel.purposePreview != nil
+            || attention != nil || !working.isEmpty
     }
 
     private var secondLine: some View {
@@ -87,7 +104,7 @@ struct ChannelSidebarRow: View {
             detail(yields: detailYields)
             Spacer(minLength: 0)
             if faceLimit > 0 {
-                AgentAvatarStack(agents: working, size: 20, limit: faceLimit)
+                AgentAvatarStack(agents: working, size: Self.faceSize, limit: faceLimit)
                     .fixedSize()
             }
             attentionLabel.talkFades(talk).fixedSize()

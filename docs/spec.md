@@ -973,7 +973,9 @@ attention. The name and time line never moves:
 
 **Phone.** Attention shows icons only, retaining the Mac's spoken phrases from this table.
 At standard text sizes, keep the time on the name line for quiet and working rows alike, never
-vertically centered in a quiet row. Accessibility sizes use the stacked heading. Folded rows
+vertically centered in a quiet row. Line 2 keeps the faces' 20-point height whatever it shows, so
+the name and time line sits 12 points down on every row, where a Needs You card's heading sits. A
+row with only its name centers it. Accessibility sizes use the stacked heading. Folded rows
 hide the system navigation indicator and draw a small tertiary `chevron.forward` immediately
 after the time, aligned on the first baseline. The chevron becomes white when selected.
 Unfolded rows show no chevron, and the sidebar marks the open channel with the list's native
@@ -1239,8 +1241,10 @@ usable around it. Its sides sit 12 points outside the row's content, as the reco
 the mark, name, time and chevron stay exactly where the row draws them as the card opens and
 closes, and only the card grows around them. Everything inside, lifted or not, ends on the row's
 trailing edge, under the chevron. A folded list ends at its rows, so there the content steps in
-instead. The mark centers between the heading and the question's first line. The heading keeps
-the row's name, time and folded chevron, and tapping it opens the channel at the request. The
+instead. Once that card closes, its row keeps the card's time and chevron place until the check
+settles, then they slide out to the row's. The mark centers between the heading and the
+question's first line. The heading keeps the row's name, time and folded chevron, and tapping it
+opens the channel at the request. The
 whole request follows without an attention mark, in the transcript's own body, so its Markdown,
 mentions and mention ink read exactly as in its bubble. The choices and Reply follow at the
 bubble's 10-point gap, in the phone's layout under Suggested replies. The waiting row and the

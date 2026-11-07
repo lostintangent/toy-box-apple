@@ -15,6 +15,7 @@
 ### Bugs/Polish
 
 - After you send your own reply to a request in the channel list, the card settles straight back into its row, so it's clear where your answer went.
+- A channel's name and time now hold still as its request opens and closes in the channel list, and when its agents start or stop working, so the list never flickers.
 
 ## iPhone 0.1.23
 

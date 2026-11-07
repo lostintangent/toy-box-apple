@@ -1370,7 +1370,8 @@ struct ShellTests {
         title.loadViewIfNeeded()
         let titleHeight = title.sizeThatFits(in: CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)).height
         let workingHeight = max(72, titleHeight + 8 + 20 + 24)
-        #expect(height(working: [], attention: nil) == 72)
+        // A quiet row keeps the faces' line, so the row holds still as agents start and stop.
+        #expect(height(working: [], attention: nil) == workingHeight)
         #expect(height(working: agents, attention: nil) == workingHeight)
         #expect(height(working: agents, attention: .waiting) == workingHeight)
     }

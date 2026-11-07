@@ -45,6 +45,12 @@ struct ChannelSidebar: View {
         talk.ordered((model.catalog?.channels ?? []).filter { $0.matches(trimmedQuery) })
     }
 
+    /// How far a card reaches past its row's trailing side. A folded list ends where its rows do, so
+    /// the card's content steps in there instead.
+    private var reach: CGFloat {
+        min(max(listBounds.maxX - (cardRow?.maxX ?? listBounds.maxX), 0), NeedsYouCard.margin)
+    }
+
     private var initialLoading: Bool { model.catalog?.phase == .connecting }
 
     private var canCreate: Bool { model.canCreateChannel }
@@ -64,8 +70,6 @@ struct ChannelSidebar: View {
         let open = cards.open(in: waiting)
         let waitingRows = cards.rows(in: waiting)
         let ids = channels.map(\.id)
-        // A folded list ends where its rows do, so the card's content steps in there instead.
-        let reach = min(max(listBounds.maxX - (cardRow?.maxX ?? listBounds.maxX), 0), NeedsYouCard.margin)
         let hiddenLines = cards.hiddenLines(in: waiting, order: ids)
         // Opening a channel, Settings or Screens, a management flow or Search ends a card held over the list.
         let listContext: [AnyHashable?] = [model.selectedChannelID, model.cover, management.flow?.id,
@@ -87,7 +91,7 @@ struct ChannelSidebar: View {
                             // A card opens and shrinks from its row's top, inside the row and in the card's
                             // shape, which reaches past the row's sides. A card's row ends at the card's own
                             // edge, so its corners stay round as it shrinks.
-                            ZStack(alignment: .top) { rowContent(waitingRow, of: channel, now: now, reach: reach) }
+                            ZStack(alignment: .top) { rowContent(waitingRow, of: channel, now: now) }
                                 .clipShape(CardShape(overflow: NeedsYouCard.margin + (isCard ? reach : NeedsYouCard.margin),
                                                      animatesOverflow: false)
                                     .offset(x: -NeedsYouCard.margin))
@@ -161,8 +165,7 @@ struct ChannelSidebar: View {
     }
 
     /// A channel's row: the open card, a waiting row with its question, or an ordinary row.
-    @ViewBuilder private func rowContent(_ waitingRow: NeedsYouCards.Row?, of channel: Channel, now: Date,
-                                         reach: CGFloat) -> some View {
+    @ViewBuilder private func rowContent(_ waitingRow: NeedsYouCards.Row?, of channel: Channel, now: Date) -> some View {
         switch waitingRow {
         case .card(let entry):
             card(entry, in: channel, now: now, maxHeight: listBounds.height - 16)
@@ -269,7 +272,8 @@ struct ChannelSidebar: View {
             channel: presentation.channel(channel), agents: agents,
             working: presentation.working(channel, agents: agents),
             attention: presentation.attention(channel), now: now, isCollapsed: isCollapsed,
-            talk: talk.channelID == channel.id ? talk : nil, question: question, check: checks[channel.id]
+            talk: talk.channelID == channel.id ? talk : nil, question: question, check: checks[channel.id],
+            cardInset: NeedsYouCard.margin - reach
         )
     }
 
