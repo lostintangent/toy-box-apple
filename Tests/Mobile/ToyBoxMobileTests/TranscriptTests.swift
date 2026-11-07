@@ -135,6 +135,19 @@ struct TranscriptTests {
         #expect(scroll.distanceToEnd == 0)
     }
 
+    @Test func aPostureChangeKeepsOnlyTheFramesTheStackMeasuresAgain() {
+        let scroll = TranscriptScroll()
+        scroll.rows = (0..<10).map { .init(id: "r\($0)", order: $0) }
+        for index in 0..<10 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 466, height: 100)) }
+        scroll.metrics = .init(viewport: .init(width: 466, height: 600, topInset: 0, bottomInset: 0),
+                               origin: 400, documentEnd: 1000)
+
+        // Unfolding shortens every row, but only the ones the stack holds report again.
+        scroll.metrics?.viewport = .init(width: 571, height: 600, topInset: 0, bottomInset: 0)
+        for index in 5..<10 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 80, width: 571, height: 80)) }
+        #expect(scroll.layout?.frames.map(\.id) == (5..<10).map { "r\($0)" })
+    }
+
     @Test func aReaderAtRestIsNeverPulledBackToTheirAnchor() {
         let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()

@@ -31,6 +31,7 @@ final class TranscriptScroll {
     /// The reveal still waiting for native geometry to hold its row.
     var pendingReveal: (token: UUID, row: String)?
     private var frames: [String: CGRect] = [:]
+    private var column: CGFloat?
     private var lastLayout: Model.Layout?
 
     /// Adopts the transcript's current rows once. A reveal syncs before placing, because it can
@@ -49,8 +50,16 @@ final class TranscriptScroll {
     }
 
     /// A row keeps its frame after it scrolls away. The lazy stack caches it and calls onDisappear,
-    /// but its content frame is unchanged when it returns, so it would never report again.
-    func measure(_ id: String, frame: CGRect) { frames[id] = frame }
+    /// but its content frame is unchanged when it returns, so it would never report again. Frames
+    /// span the column instead of the row, so a new width means the stack re-laid out every row it
+    /// holds, and they all report again. Any frame left from the old width is stale.
+    func measure(_ id: String, frame: CGRect) {
+        if frame.width != column {
+            frames.removeAll()
+            column = frame.width
+        }
+        frames[id] = frame
+    }
 
     private var measured: [Model.RowFrame] {
         rows.compactMap { row in
@@ -256,7 +265,11 @@ struct ConversationView: View {
                         if expands { expanded.insert(item.id) } else { expanded.remove(item.id) }
                     }
                         .equatable()
-                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { frame in
+                        .onGeometryChange(for: CGRect.self) { proxy in
+                            var frame = proxy.frame(in: .named(Self.space))
+                            frame.size.width = proxy.bounds(of: .named(Self.space))?.width ?? frame.width
+                            return frame
+                        } action: { frame in
                             scroll.measure(item.id, frame: frame)
                             place(scroll.update())
                         }
