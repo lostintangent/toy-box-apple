@@ -262,7 +262,7 @@ struct ShellTests {
         }
     }
 
-    @Test func aCompactChannelWithoutAVerticalBarFiltersFromItsTitleMenuAndHasNoMoreButton() async throws {
+    @Test func aCompactChannelWithoutAVerticalBarOpensItsActionsFromATitleButtonAndHasNoMoreButton() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
                                  defaults: defaults, session: fixtureSession())
@@ -281,33 +281,48 @@ struct ShellTests {
                 for _ in 0..<20 {
                     host.view.setNeedsLayout()
                     host.view.layoutIfNeeded()
-                    if let screen = navigationScreens(in: host).first(where: { $0.navigationItem.titleMenuProvider != nil }) {
+                    if let screen = navigationScreens(in: host).first(where: { titleButton(in: $0.navigationItem) != nil }) {
                         return screen
                     }
                     await Task.yield()
                 }
                 return nil
             }
-            let screen = try #require(await channelScreen())
+            let screen = try #require(await channelScreen(),
+                                      "\(navigationScreens(in: host).map { barDescription($0.navigationItem) })")
             let item = screen.navigationItem
-            let menu = try #require(item.titleMenuProvider?([]))
-            let actions = menuActions(in: menu)
-            #expect(actions.map(\.title) == ["All Messages", "Your Messages", "Find in Conversation",
-                                             "Follow This Channel", "Open in Toy Box", "Edit Channel", "Delete Channel"],
-                    "\(actions.map(\.title))")
+            #expect(item.titleMenuProvider == nil, "The title is a button, so the system draws no chevron.")
+            #expect(item.title == "first", "The screen still names itself for Back and VoiceOver.")
+            // SwiftUI defers the menu's items until it opens, so only its presence is read here.
+            let title = try #require(titleButton(in: item))
+            #expect(title.menu != nil, "\(barDescription(item))")
             // This host keeps bar buttons out of the accessibility tree, so the bar is read from its navigation item.
             let barItems = (item.leadingItemGroups + item.trailingItemGroups).flatMap(\.barButtonItems)
                 + (item.leftBarButtonItems ?? []) + (item.rightBarButtonItems ?? [])
-            #expect(barItems.map(\.title) == ["Overview"])
+            #expect(barItems.filter { $0 !== title.item }.map(\.title) == ["Overview"], "\(barDescription(item))")
             #expect(item.additionalOverflowItems == nil)
             #expect(screen.navigationController?.isToolbarHidden == true)
             #expect(screen.toolbarItems?.isEmpty ?? true)
-            try #require(actions.first { $0.title == "Your Messages" }).performWithSender(nil, target: nil)
-            #expect(model.interaction(for: "first").messageView == .yours)
-            host.view.setNeedsLayout()
-            host.view.layoutIfNeeded()
-            #expect(item.subtitle == "Your Messages")
         }
+    }
+
+    /// The bar item that draws the channel's name, with the menu it opens.
+    private func titleButton(in item: UINavigationItem) -> (item: UIBarButtonItem, menu: UIMenu?)? {
+        for barItem in item.leadingItemGroups.flatMap(\.barButtonItems) + (item.leftBarButtonItems ?? []) {
+            if let menu = barItem.menu { return (barItem, menu) }
+            if let view = barItem.customView { return (barItem, buttonMenu(in: view)) }
+        }
+        return nil
+    }
+
+    private func buttonMenu(in view: UIView) -> UIMenu? {
+        if let button = view as? UIButton, let menu = button.menu { return menu }
+        return view.subviews.lazy.compactMap(buttonMenu).first
+    }
+
+    private func barDescription(_ item: UINavigationItem) -> String {
+        (item.leadingItemGroups + item.trailingItemGroups).flatMap(\.barButtonItems)
+            .map { "\($0.title ?? "custom view") menu: \($0.menu != nil)" }.joined(separator: ", ")
     }
 
     private func navigationScreens(in controller: UIViewController) -> [UIViewController] {

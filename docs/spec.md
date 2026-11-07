@@ -729,18 +729,26 @@ list is active, without replacing in-conversation Find. A catalog failure shows 
 useful error, Retry and reachable Settings at the bottom. Cached rows alone do not prove a live
 connection.
 
-**Phone channel toolbar.** The bar holds only Overview and Message View. Channel Actions is the
-channel name's native title menu (`toolbarTitleMenu`), with no ••• of the app's own, because Find,
-Follow, Edit and Delete aren't used often enough to need a bar button. The system may still add
-its own ••• when items run out of room. A compact top bar shows Overview. Regular width shows
+**Phone channel toolbar.** The bar holds only the channel's title, Overview and Message View. Like
+the Mac's, the title is a floating glass button: the channel name in a `.topBarLeading` toolbar
+`Menu` with its indicator hidden, so it sits where the system title did, wears the bar's shared
+glass and shows no chevron. The whole capsule opens Channel Actions, with no ••• of the app's own,
+because Find, Follow, Edit and Delete aren't used often enough to need a bar button.
+`.navigationTitle` still names the screen for Back and VoiceOver, and `.toolbar(removing: .title)`
+keeps the system from drawing it twice. The bar gives a leading item its whole ideal width and moves
+it to its own ••• when that doesn't fit, so the name's width is capped by the screen's width less the
+bar's margins, the capsule's insets and room for the bar's buttons, which the bar keeps even when
+they stand in a vertical bar, and a long name truncates inside the capsule. The conversation's top
+scroll edge is `.soft`, so rows blur under the title and bar buttons with no bar or hairline. A
+compact top bar shows Overview. Regular width shows
 Message View, then Overview. Tasks has no bar button because Overview already holds them. Where the
 system stands bar items in a vertical bar (`toolbarVerticalEdge` non-nil, as on the folded Duo),
 and in regular width, Message View stays its own filter item. A compact scene with no vertical bar
 has no room for it: a `.bottomBar` item would sit under the composer. There the same All Messages /
-Your Messages picker leads the title menu in a Message View section, and Your Messages adds the
-subtitle "Your Messages" under the channel name. All Messages shows no subtitle. iOS 27.0 has no
-vertical-bar API, so it always takes the compact no-bar path. Open readers keep their own titles,
-without the menu.
+Your Messages picker leads the title menu in a Message View section, and Your Messages adds a
+second line, "Your Messages", under the channel name inside the capsule. All Messages shows no
+second line. iOS 27.0 has no vertical-bar API, so it always takes the compact no-bar path. Open
+readers keep their own system titles, without the button.
 
 **Phone Welcome.** With no working server the phone shows Welcome, not a titled form. Its
 first Form row, with a clear background and no horizontal insets, holds the large bold heading

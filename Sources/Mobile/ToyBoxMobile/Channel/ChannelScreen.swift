@@ -16,6 +16,7 @@ struct ChannelScreen: View {
     @Environment(\.usesVerticalToolbar) private var usesVerticalToolbar
     @ViewState private var keyboardIsVisible = false
     @ViewState private var permissionTipIsAvailable = false
+    @ViewState private var width: CGFloat = 0
     private let permissionTip = NotificationPermissionTip()
 
     private var reader: ChannelReaderVisibility {
@@ -50,6 +51,16 @@ struct ChannelScreen: View {
     /// title instead.
     private var messageViewIsInActions: Bool { sizeClass == .compact && !usesVerticalToolbar }
 
+    /// The widest the title's text can be. The bar gives a leading item its whole ideal width and
+    /// moves it to the overflow menu when that doesn't fit, so a long name truncates first. Besides
+    /// the margins and the capsule's insets, the bar keeps room for its buttons, even when they stand
+    /// in the vertical bar: Back and Overview, or the sidebar toggle, Message View and Overview.
+    private var titleMaxWidth: CGFloat? {
+        guard width > 0 else { return nil }
+        let buttons: CGFloat = sizeClass == .compact ? 2 : 3
+        return max(width - 80 - buttons * (44 + 8), 60)
+    }
+
     var body: some View {
         ZStack {
             conversation
@@ -75,17 +86,12 @@ struct ChannelScreen: View {
                     .padding(.vertical, 8)
                 }
             }
-            .navigationTitle(store.details?.name ?? model.catalog?.channels.first { $0.id == store.id }?.name ?? "")
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            // Names the screen for Back and VoiceOver, while the title button draws it. Readers keep
+            // their own titles.
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .background {
-                // A title menu with empty content still draws its chevron, so readers omit the modifier.
-                if !reader.requested {
-                    Color.clear.toolbarTitleMenu { channelActions }
-                    if messageViewIsInActions && interaction.messageView == .yours {
-                        Color.clear.navigationSubtitle("Your Messages")
-                    }
-                }
-            }
+            .toolbar(removing: reader.requested ? nil : .title)
             .task(id: model.notifications.tipsAvailable) {
                 guard model.notifications.tipsAvailable else { return }
                 for await available in permissionTip.shouldDisplayUpdates {
@@ -126,6 +132,10 @@ struct ChannelScreen: View {
             }
     }
 
+    private var title: String {
+        store.details?.name ?? model.catalog?.channels.first { $0.id == store.id }?.name ?? ""
+    }
+
     @ViewBuilder
     private var conversation: some View {
         Group {
@@ -135,6 +145,8 @@ struct ChannelScreen: View {
                 }
             } else {
                 ConversationView(store: store)
+                    // Like the Mac's, rows pass softly under the floating title and bar buttons.
+                    .scrollEdgeEffectStyle(.soft, for: .top)
                     .safeAreaBar(edge: .bottom, spacing: 0) {
                         if !interaction.isFinding {
                             ComposerSurface(session: model.composerSession(for: store))
@@ -148,6 +160,13 @@ struct ChannelScreen: View {
 
     @ToolbarContentBuilder
     private var conversationToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            ChannelTitleMenu(title: title,
+                             subtitle: messageViewIsInActions && interaction.messageView == .yours ? "Your Messages" : nil,
+                             maxWidth: titleMaxWidth) {
+                channelActions
+            }
+        }
         if sizeClass == .compact {
             ToolbarItem(placement: .primaryAction) {
                 overviewButton
@@ -224,6 +243,38 @@ struct ChannelScreen: View {
             interaction.isInspectorPresented.toggle()
         }
         .disabled(store.phase == .deleted)
+    }
+}
+
+/// The channel's name as a floating glass button in the title's place, like the Mac's, which opens
+/// Channel Actions. The system title menu would add a chevron and its own bar.
+private struct ChannelTitleMenu<Content: View>: View {
+    let title: String
+    let subtitle: String?
+    let maxWidth: CGFloat?
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        Menu {
+            content
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .lineLimit(1)
+            .frame(maxWidth: maxWidth, alignment: .leading)
+        }
+        .menuIndicator(.hidden)
+        .accessibilityLabel(title)
+        .accessibilityValue(subtitle ?? "")
+        .accessibilityHint("Shows channel actions")
     }
 }
 
