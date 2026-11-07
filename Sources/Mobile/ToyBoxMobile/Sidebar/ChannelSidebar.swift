@@ -90,8 +90,8 @@ struct ChannelSidebar: View {
         .listStyle(.plain)
         // The scroll view spans the side safe areas, so a swiped row would slide under the folded
         // Duo's rail. Clipping sideways keeps it in the content area while rows still scroll under
-        // the title and bottom bar.
-        .mask { Rectangle().ignoresSafeArea(edges: .vertical) }
+        // the title and bottom bar. The unfolded sidebar stays unclipped.
+        .mask { Rectangle().ignoresSafeArea(edges: isCollapsed ? .vertical : .all) }
         .overlay {
             emptyState
         }
