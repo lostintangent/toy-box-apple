@@ -349,7 +349,10 @@ struct ConversationView: View {
         .onChange(of: find.isPresented, initial: true) { interaction.isFinding = find.isPresented }
         .overlay(alignment: .top) {
             if store.isLoaded, let message = store.phase.message {
-                TranscriptReconnecting(message: message)
+                // It has no Retry, since the channel is already reconnecting.
+                ReconnectingNotice(subtitle: "Messages may be out of date", failure: message)
+                    .padding(.top, 8)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
             } else if landsOnReveal {
                 // The paging row is hidden with the rows, so its progress shows here instead, without
                 // the accessory's delay, since it follows Connecting's spinner.
@@ -856,30 +859,6 @@ private struct TranscriptWorkingNow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// Floating glass notice for a cached channel whose stream dropped. Content and anchor stay put.
-/// It has no Retry, since the channel is already reconnecting on its own.
-private struct TranscriptReconnecting: View {
-    let message: String
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Reconnecting to server").font(.footnote.weight(.semibold))
-                Text("Messages may be out of date").font(.caption).foregroundStyle(TranscriptInk.secondary)
-            }
-        }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 44)
-        .glassEffect(.regular, in: .capsule)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint(message)
-        .padding(.top, 8)
-        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
     }
 }
 

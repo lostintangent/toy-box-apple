@@ -1,6 +1,8 @@
 import SwiftUI
 import ToyBoxUI
 
+/// The catalog's failure at the bottom of the list. Kept rows show the reconnecting pill, which
+/// retries when tapped. Otherwise it's the heading, the readable error, Retry and Settings.
 struct ChannelSidebarFailure: View {
     let footer: SidebarFooter
     let error: String?
@@ -10,7 +12,10 @@ struct ChannelSidebarFailure: View {
     var showsSettingsButton = true
 
     var body: some View {
-        if let heading = footer.heading, let error {
+        if footer.isReconnecting, let heading = footer.heading, let error {
+            ReconnectingNotice(subtitle: heading, failure: error, retry: retry)
+                .padding(.vertical, 8)
+        } else if let heading = footer.heading, let error {
             VStack(alignment: .leading, spacing: 4) {
                 Label(heading, systemImage: "wifi.exclamationmark")
                     .font(.footnote.weight(.semibold))
