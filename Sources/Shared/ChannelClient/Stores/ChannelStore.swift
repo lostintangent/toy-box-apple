@@ -147,8 +147,9 @@ public final class ChannelStore {
     @ObservationIgnored private var readWrite: Task<Void, Never>?
     @ObservationIgnored private var pendingRead = 0
     @ObservationIgnored private var acknowledgedRead = 0
-    /// Bookmark changes `state` doesn't show yet, by sequence. A written one waits for its echo.
-    @ObservationIgnored private var bookmarkChanges: [Int: BookmarkChange] = [:]
+    /// Bookmark changes the server hasn't answered yet, by sequence. `bookmarks` shows them over
+    /// `state`, so an older list from the stream can't hide one.
+    @ObservationIgnored private var bookmarkChanges: [Int: Bool] = [:]
     @ObservationIgnored private var bookmarkWrites: Task<Void, Never>?
     @ObservationIgnored private let reconnectPolicy: ReconnectPolicy
 
@@ -414,10 +415,11 @@ public final class ChannelStore {
         }
     }
 
-    /// Shows the change at once, then writes it. The stream's echo confirms it, and a failed write
-    /// undoes it and reports `bookmarkFailure`. Bookmarking is idempotent, so a write makes one attempt
-    /// and changing it again is the retry. Writes run in order, skipping any a later change to the
-    /// same message replaced, so the server ends where the user's last change left it.
+    /// Shows the change at once, then writes it into `state` when the server answers, so its echo
+    /// changes nothing. A failed write leaves `state` as it was and reports `bookmarkFailure`.
+    /// Bookmarking is idempotent, so a write makes one attempt and changing it again is the retry.
+    /// Writes run in order, each sending its message's latest change, so the server ends where the
+    /// user's last change left it.
     public func setBookmarked(_ bookmarked: Bool, sequence: Int) async {
         guard state?.bookmarks != nil else { return }
         guard phase.isConnected else {
@@ -426,13 +428,12 @@ public final class ChannelStore {
             return
         }
         bookmarkFailure = nil
-        let change = BookmarkChange(bookmarked: bookmarked)
-        bookmarkChanges[sequence] = change
+        bookmarkChanges[sequence] = bookmarked
         syncBookmarks()
         let previous = bookmarkWrites
         let write = Task { [weak self] in
             await previous?.value
-            await self?.writeBookmark(sequence: sequence, change: change.id)
+            await self?.writeBookmark(sequence)
         }
         bookmarkWrites = write
         await write.value
@@ -442,38 +443,27 @@ public final class ChannelStore {
         bookmarkFailure = nil
     }
 
-    private func writeBookmark(sequence: Int, change changeID: UUID) async {
-        guard let change = bookmarkChanges[sequence], change.id == changeID else { return }
+    private func writeBookmark(_ sequence: Int) async {
+        // An earlier write already sent this message's latest change.
+        guard let bookmarked = bookmarkChanges[sequence] else { return }
         do {
-            try await api.bookmark(channelId: id, sequence: sequence, bookmarked: change.bookmarked)
-            guard bookmarkChanges[sequence]?.id == changeID else { return }
-            // The echo can arrive before the response does.
-            if state?.bookmarks?.contains(sequence) == change.bookmarked { bookmarkChanges[sequence] = nil }
-            else { bookmarkChanges[sequence]?.isWritten = true }
+            try await api.bookmark(channelId: id, sequence: sequence, bookmarked: bookmarked)
+            state?.setBookmarked(bookmarked, sequence: sequence)
         } catch {
-            guard bookmarkChanges[sequence]?.id == changeID else { return }
-            bookmarkChanges[sequence] = nil
-            bookmarkFailure = .init(sequence: sequence, isRemoval: !change.bookmarked, error: error.localizedDescription)
+            // A later change to the message is still to be written, and reports its own failure.
+            if bookmarkChanges[sequence] == bookmarked {
+                bookmarkFailure = .init(sequence: sequence, isRemoval: !bookmarked, error: error.localizedDescription)
+            }
         }
+        if bookmarkChanges[sequence] == bookmarked { bookmarkChanges[sequence] = nil }
         syncBookmarks()
     }
 
-    /// A newer bookmark list includes every write the server answered before sending it.
-    private func settleWrittenBookmarks() {
-        bookmarkChanges = bookmarkChanges.filter { !$0.value.isWritten }
-    }
-
     private func syncBookmarks() {
-        guard var shown = state?.bookmarks else {
-            bookmarks = nil
-            bookmarkList = []
-            return
-        }
-        for (sequence, change) in bookmarkChanges where shown.contains(sequence) != change.bookmarked {
-            if change.bookmarked { shown.append(sequence) } else { shown.removeAll { $0 == sequence } }
-        }
-        bookmarks = shown.sorted()
-        bookmarkList = ChannelBookmark.list(shown, in: messages)
+        var shown = state
+        for (sequence, bookmarked) in bookmarkChanges { shown?.setBookmarked(bookmarked, sequence: sequence) }
+        bookmarks = shown?.bookmarks
+        bookmarkList = ChannelBookmark.list(shown?.bookmarks ?? [], in: messages)
     }
 
     func apply(_ event: ChannelObservationEvent) throws -> Bool {
@@ -486,7 +476,6 @@ public final class ChannelStore {
         }
         if event.type == "snapshot", let snapshot = event.state {
             heldReplay = nil
-            settleWrittenBookmarks()
             state = snapshot
             outbox?.received(snapshot.messages, in: id, on: api.baseURL)
             historyGeneration = UUID()
@@ -500,9 +489,6 @@ public final class ChannelStore {
             var events = heldReplay ?? []
             events.append(event)
             heldReplay = nil
-            if events.contains(where: { $0.type == "bookmarks" && ($0.revision ?? 0) > previous.revision }) {
-                settleWrittenBookmarks()
-            }
             state = events.reduce(previous) { $0.applying($1) }
             outbox?.received(events.lazy.filter { $0.revision != nil }.compactMap(\.message), in: id, on: api.baseURL)
         } else { throw ChannelAPIError.invalidEvent("pre-snapshot \(event.type)") }
@@ -560,12 +546,6 @@ public final class ChannelStore {
         public let sequence: Int
         public let isRemoval: Bool
         public let error: String
-    }
-
-    private struct BookmarkChange {
-        let bookmarked: Bool
-        let id = UUID()
-        var isWritten = false
     }
 }
 

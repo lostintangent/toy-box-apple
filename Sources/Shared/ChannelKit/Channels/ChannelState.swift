@@ -32,4 +32,11 @@ public struct ChannelState: Codable, Equatable, Sendable {
         self.presence = presence
         self.bookmarks = bookmarks
     }
+
+    /// Bookmarks or unbookmarks a message as the server does, keeping the list in order without
+    /// repeats. A server without bookmarks keeps none.
+    public mutating func setBookmarked(_ bookmarked: Bool, sequence: Int) {
+        guard let current = bookmarks, current.contains(sequence) != bookmarked else { return }
+        bookmarks = bookmarked ? (current + [sequence]).sorted() : current.filter { $0 != sequence }
+    }
 }
