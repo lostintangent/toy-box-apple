@@ -13,7 +13,7 @@ Reference sources (read-only):
 - Contract fixtures: `Tests/Shared/ChannelKitTests/Fixtures`. The demo servers read the same
   `channel-snapshot.json`.
 
-Signing, notarization, in-place updates and TestFlight are in [releases.md](releases.md).
+Signing, notarization, in-place updates and TestFlight are in the [release skill](../.agents/skills/release/references/distribution.md).
 
 ## Success criteria
 

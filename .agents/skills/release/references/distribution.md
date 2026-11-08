@@ -1,8 +1,8 @@
-# Releases
+# Distribution
 
 This document covers how Toy Box for Apple is signed, packaged, updated and distributed. The Mac
 app ships from tagged GitHub releases and updates itself in place with Sparkle. The iPhone app
-ships through TestFlight on its own tags. Product behavior lives in the [spec](spec.md).
+ships through TestFlight on its own tags. Product behavior lives in the [spec](../../../../docs/spec.md).
 
 ## Mac releases
 
@@ -135,14 +135,15 @@ Mirrored filenames across platforms are intentional, with no ambiguous duplicate
 `scripts/demo-server/` serves sample channels for either app's development, screenshots and
 write tests without touching real channels. Its `channels/` helpers supply the sample content
 and push routes. Common commands live in `scripts/shared/`, with helpers in `lib/`.
-[scripts/README.md](../scripts/README.md) lists every package command, its file, purpose and operator.
+[scripts/README.md](../../../../scripts/README.md) lists every package command, its file, purpose and operator.
 Platform folders never import each other. CI calls release-only helpers by path rather than exposing
 unused package commands.
 
 There are no script tests. CI keeps `bun check` and
 `bun run lint:workflows`. Any change to bundle or release tooling requires both real release
 dry runs to pass. Bun 1.4.4 is pinned in the package metadata and CI, and setup-bun is commit-pinned
-on both runner platforms. Scripts use TypeScript, Bun Shell and native file and XML APIs.
+on both runner platforms. Every workflow action is pinned to a full commit hash with a readable version
+comment, and Dependabot checks them weekly. Scripts use TypeScript, Bun Shell and native file and XML APIs.
 The sole `.sh` helper uses Bash's silent `read -rs` for the
 user-only credential prompt. Native Swift helpers handle Security-framework identity export and
 AppKit icon rendering.

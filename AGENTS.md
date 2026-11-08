@@ -4,27 +4,30 @@ Native SwiftUI clients for Toy Box Channels: a Mac app and an iPhone companion, 
 shared core in Swift 6.4 and SwiftPM, with no Xcode project. Both target the 27 releases on Apple
 Silicon and talk to Toy Box's public `/api/v1` HTTP and SSE routes.
 
-This file is how we work together, following a change from the user's request to its release. It
+This file is how we work together, following a change from the user's request to its hand-off. It
 applies our [Coding Agent Culture](https://gist.github.com/lostintangent/fe01cdf38ff1a370fcb08711a698ecfa)
 to this project and wins where they differ. [docs/spec.md](docs/spec.md) is what we build, the
 source of truth for parity, protocol and design.
+
+It holds only what every member needs on every task. Work that one role does, or that comes up only
+sometimes, lives where it loads when you need it:
 
 | Read | Before |
 | --- | --- |
 | [docs/spec.md](docs/spec.md) | Changing behavior, protocol or design. Read its Design section, and your surface's section under Surfaces, before changing any view |
 | [docs/development.md](docs/development.md) | Opt-in tests, benchmarks, the simulator, drive scripts, validation builds or bundle contents |
 | [scripts/README.md](scripts/README.md) | Running or changing a command |
-| [docs/releases.md](docs/releases.md) | Changing signing, updates, TestFlight or release tooling |
-| [docs/quarantined-tests.md](docs/quarantined-tests.md) | Touching a quarantined test |
+| [docs/quarantined-tests.md](docs/quarantined-tests.md) | Quarantining a test, or touching a quarantined one |
+| The [release](.agents/skills/release/SKILL.md) skill | Merging, release notes, shipping, or changing signing, updates, TestFlight or release tooling |
 | `~/Desktop/toy-box` | Checking the server or web pane. It's a read-only reference, so never modify it |
 
 ## The team
 
 - **The user** sets direction, picks between designs, approves every release and runs the checks
   that need a real phone or a signing key.
-- **Lead** frames each change, writes it into the spec, gives each task one owner, reviews and
-  merges every change and ships. Lead writes no product code, so review stays independent, and
-  only Lead asks the user for decisions.
+- **Lead** frames each change, writes it into the spec, gives each task one owner, then reviews,
+  merges and ships. Lead writes no product code, so review stays independent, and only Lead asks
+  the user for decisions.
 - **Designer** owns how both apps look and behave, mocks up options and reviews what's built
   against the spec's Design section.
 - **Owners** each own one part of both apps: Core the shared foundation, and Shell, Transcript,
@@ -65,25 +68,21 @@ their module names, and Swift imports by module.
 | `ToyBoxDesktop`, `ToyBoxMobile` | Each app and its native platform integration, with AppKit or UIKit where SwiftUI falls short |
 | `ToyBoxControlIntents`, `ToyBoxMobileIntegrations` | What each app shares with its extensions, which live under `Extensions` |
 
-Views never reimplement reducer, audience, task, attention or transcript-grouping rules. Ask
-Core for a domain or store change instead of working around it in a view.
+Both apps share one implementation of every rule. Views never reimplement reducer, audience,
+task, attention or transcript-grouping rules, and the sidebar's rows and footer, channel search,
+transcript Markdown, composer drafts and browser URLs are already shared, so look in ChannelKit,
+ChannelClient and ToyBoxUI first. If what you need is missing, ask Core to add it there.
 
-### Seams between surfaces
+Surfaces meet at these seams:
 
-| Seam | Lives in | Contract |
-| --- | --- | --- |
-| `AppModel` | Each app, environment | Server URL, `ChannelCatalogStore` and its `ChannelAPI` |
-| `ChannelStore` | ChannelClient, passed in | One per channel, shared by every window that shows it |
-| `ChannelInteraction` | ToyBoxUI, environment, one per channel window | Cross-surface intents: Reply, Focus Composer, Reveal message, Jump to Latest, the Message View filter and inspector visibility. Any owner may add a narrowly scoped intent and announce it in the channel |
-| `ManagementPresenter` | ToyBoxUI, environment, one per window | `present(_:)` opens any management flow. Overview implements the flows, and every other surface only calls `present` |
-| Identity and color | ToyBoxUI | `AgentAvatarView`, `AgentAvatarStack`, `ChannelMark`, `ChannelTaskColors`, `ChannelColors`, `Channel.Attention`'s `symbol` and `color(in:)`, and `TranscriptSurface` keep the Mac's identity and colors. Typography, navigation and layout stay platform-native |
-| `TranscriptMarkdown` | ToyBoxUI | Portable Markdown, mention styling and find decorations. Hosts inject text scale, resolved mention ink and Copy Code, and keep bubble geometry, font preferences, system colors and the clipboard. `TranscriptMentionContrast` takes composited sRGB backgrounds. Landing, reveal, viewport coordinates and accessible message and divider labels live beside the renderer. Portable assertions run in `ToyBoxUITests`, and native selection, window, system-color and rendering ones in `ToyBoxDesktopTests` |
-| `ComposerDraft`, `ComposerImage` | ChannelClient | Each app supplies its image-readability check: lazy `NSImage` validation on Mac, `UIImage` on iPhone. Persistence keys stay unchanged |
-| `ChannelConnections` | ChannelClient | The spec's Connections invariants: one notice and one verb, Retry, per scope. Views change on `phase.isUnavailable`, never a timer, and actions wait for `phase.isConnected`. Refresh means only the channel list, and background work never lights the footer spinner |
-| `SidebarFooter` | ToyBoxUI | Turns the catalog phase into the shared footer and names its server |
-| `ChannelSidebarPresentation` | ChannelClient | Takes the catalog and the host's `openChannelIDs`. Its `channel`, `status`, `agents`, `working` and `catalogAgents` methods keep the Mac's live-versus-catalog rules and granular observation |
-| `channel.matches(_:)` | ChannelKit | Matches name, purpose and directory. Callers keep their own query normalization and ordering |
-| `ChannelAPI.channelURL(channelID:files:)` | ChannelClient | Builds browser routes, preserving deployment prefixes |
+| Seam | Contract |
+| --- | --- |
+| `AppModel` | Each app's environment: the server URL, `ChannelCatalogStore` and its `ChannelAPI` |
+| `ChannelStore` | One per channel, passed in and shared by every window that shows it |
+| `ChannelInteraction` | One per channel window, for what one surface asks of another, like Reply, Reveal or Jump to Latest. Any owner may add a narrow intent and announce it in the channel |
+| `ManagementPresenter` | One per window. Every surface calls `present(_:)`, and Overview implements the flows |
+| `ChannelConnections` | Views change on `phase.isUnavailable`, never a timer, and actions wait for `phase.isConnected` |
+| Identity and color | The avatars, `ChannelMark`, `ChannelColors`, `ChannelTaskColors`, `TranscriptSurface` and `Channel.Attention`'s symbol and color keep the Mac's identity on both apps. Typography, navigation and layout stay platform-native |
 
 ## 1. Frame the change
 
@@ -92,8 +91,8 @@ Core for a domain or store change instead of working around it in a view.
   The spec holds current rules, never history.
 - **Choose the simplest design that meets it.** Use what Apple's platforms ship, in its idiomatic
   form, and build your own only for behavior Toy Box needs and the platform lacks. Add no cache,
-  retry, abstraction or option until a measurement or a second case asks for one, and keep to
-  what the user asked.
+  retry, abstraction or option until a measurement or a second case asks for one.
+- **Keep to what was asked.** Post anything else you notice as a follow-up instead of doing it.
 
 ## 2. Show it first
 
@@ -112,8 +111,8 @@ Core for a domain or store change instead of working around it in a view.
 - **Never touch real data.** Tests that write use the [demo servers](#commands). Read the live
   server on 3100 freely, but never post or mutate there without the Lead's approval of a specific
   scratch channel, and leave its process running.
-- **Fix the cause, not the symptom.** Never paper over a bug with correction loops, retries,
-  timers or extra layout passes.
+- **When a fix needs a fix, stop.** Find the cause, or post what you know. Never stack correction
+  loops, retries, timers or extra layout passes on a symptom.
 - **Leave credentials to the user.** Agents never create accounts, profiles or secrets, accept
   agreements, read keys or passwords, or run real credential setup.
 
@@ -123,17 +122,17 @@ Core for a domain or store change instead of working around it in a view.
   `@State` macro, so `@ViewState` aliases `SwiftUI.State` once in `ToyBoxUI/Shared`.
 - **Declare environment values with an `EnvironmentKey`,** not `@Entry`, in code that builds for
   the Mac. Command Line Tools lack the SwiftUIMacros plugin.
-- **Put rules on their nouns.** Write members such as `channel.attention`, `agent.handle` and
+- **Put rules on their nouns.** Write members such as `channel.attention` and
   `state.applying(event)`, not free functions. Name a type for the thing itself, nesting a part
-  under its owner (`Channel.Attention`, `ChannelTask.Timing`), and avoid Manager, Helper, Support,
-  Context and Projection.
+  under its owner (`Channel.Attention`), and avoid Manager, Helper, Support, Context and
+  Projection.
 - **Keep a feature's rules out of the app targets.** Put them in a UI-free ChannelClient model
   with its animation, waits and announcements passed in, like `TalkRecorder`, and prove them with
   Mac tests. `simulator --build-only` checks the phone compiles, and the simulator is only for
   what you need to see.
-- **Adapt to the phone's scene.** Mobile views use SwiftUI's safe areas, layout margins, size
-  classes and adaptive navigation. Never hard-code a safe-area inset, device size or Duo fold
-  width. Mockup canvas measurements are not implementation constants.
+- **Adapt to the phone's scene** with SwiftUI's safe areas, layout margins, size classes and
+  adaptive navigation. Never hard-code a safe-area inset, device size or Duo fold width, and never
+  copy a mockup's canvas measurements into code.
 
 ### Client rules
 
@@ -169,27 +168,22 @@ Use Bun 1.4.4: run `bun install --frozen-lockfile`, then the root `package.json`
   only, and the phone with Xcode's toolchain through SwiftPM. Use the `bun run` commands, never
   `xcodebuild`, `xcresulttool` or `devicectl`, and never download simulator runtimes.
 - **The simulator and the benchmark run one at a time** on this Mac. Their commands wait for each
-  other, so never boot another simulator, run `simctl` by hand or poll. Warn the user before
-  `bun run benchmark key`, which takes focus for about 45 seconds.
-- **Changes to bundle or release tooling need both real release dry runs.** There are no script
-  tests.
+  other, so never boot another simulator, run `simctl` by hand or poll.
 
 ## 4. Prove it
 
-- **Done means demonstrated,** in the fastest way that still proves the change: a focused test
-  run, a screenshot or a short recording.
-- **Scale validation to the change.** A symbol, constant or spacing change needs a build, the
-  touched suite and one capture of the result, not a light/dark and size matrix. Save full passes
-  for behavior, layout or concurrency changes, and leave the rest to the release build.
+- **Done means demonstrated, scaled to the change.** A symbol, constant or spacing change needs a
+  build, the touched suite and one capture of the result. Behavior, layout and concurrency changes
+  get a full pass, and the release build covers the rest.
 - **Validate in Dark at the default text size,** which is how the user runs both apps. Add Light
   only when a change touches color values, materials or contrast, and larger sizes only when it's
-  about text sizing. Both appearances and every size must still work, so never hard-code a color
-  or size that would break them.
-- **Test each promise once,** at the lowest layer that can prove it, and watch a new test fail
-  before it passes.
+  about text sizing. Never hard-code a color or size that would break the others.
+- **A change made for speed proves it against main** with its benchmark before it merges.
+- **Test each promise once,** at the lowest layer that proves it, so shared code is tested in its
+  own module and only native behavior in an app's tests.
 - **Some test machinery is deliberate.** SwiftPM can't host XCUITest, so the phone's DEBUG-only
-  drive scripts, and the Mac's snapshot states and benchmarks, stand in for UI and performance
-  tests. Release phone builds carry no driver. Add to them only for a check nothing else can make.
+  drive scripts and the Mac's snapshot states and benchmarks stand in for UI and performance
+  tests. Add to them only for a check nothing else can make.
 
 ### The running app
 
@@ -205,67 +199,31 @@ Use Bun 1.4.4: run `bun install --frozen-lockfile`, then the root `package.json`
 
 ### Test reliability
 
-- **Quarantine an unexplained failure the same day.** A test that fails on main without an
-  identified code cause moves behind an explicit opt-in. Don't leave it in the merge gate while
-  rerunning CI or patching timing races in place. Record the failed run, test case and
-  diagnostics in [docs/quarantined-tests.md](docs/quarantined-tests.md), with an owner and a
-  follow-up task. Quarantine changes gating, not responsibility for the failure.
-- **Restore it only with its cause and deterministic coverage.** Never loosen assertions or add
-  retries to turn an unexplained failure green. Then delete its entry.
-- **CI protects decisions with deterministic tests** over inputs such as measured frames. Native
-  window tests in CI assert settled end states, never per-frame timing. Frame-timing and
-  WindowServer-event checks stay opt-in and run locally before changes to their behavior.
-- **Test gates and hooks suspend,** never block a cooperative worker. CI runs ChannelClient with
-  `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1` to enforce this.
+- **CI asserts settled end states** over deterministic inputs such as measured frames, never
+  per-frame timing. Frame-timing and WindowServer checks stay opt-in and run locally.
 - **Client tests wait with `eventually`,** through Observation and the mock's own request,
-  held-response and stop signals, never polling or an elapsed-time assertion. Their suites have a
-  one-minute Swift Testing hang limit.
-- **A wait for a signal that might never come needs its own deadline.** Swift Testing's time
-  limit doesn't end it, so one hung wait stalls the whole suite.
+  held-response and stop signals, never polling or elapsed time. A wait for a signal that might
+  never come needs its own deadline, because Swift Testing's time limit won't end it.
+- **Test gates and hooks suspend,** never block a cooperative worker. CI enforces it with
+  `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`.
+- **Quarantine an unexplained failure the same day,** as
+  [docs/quarantined-tests.md](docs/quarantined-tests.md) describes, instead of rerunning CI until
+  it passes.
 - **Never run synthetic CPU burners on the shared Mac.** They starve every agent's builds and the
-  simulator. Judge load-sensitive failures from CI or ordinary full runs.
+  simulator, so judge load-sensitive failures from CI or ordinary full runs.
 
-## 5. Hand off and merge
+## 5. Hand off
 
 - **Hand off with your proof.** Say what you verified, what you didn't, and what still needs a
   real device, server or signing key. Attach channel images from your session `files/` folder,
   never `/tmp`, because posts keep their original paths.
-- **Lead reviews every change** against its outcome and the spec, merges it into `main` with
-  `git merge --no-ff` once main's CI is green, and adds its [release note](#release-notes).
-
-## 6. Release
-
-- **Tags need the user's approval.** `vX.Y.Z` ships the Mac to GitHub Releases, and
-  `mobile-vX.Y.Z` ships the phone to TestFlight. A manual workflow run on `main` is a dry run.
-  Signing, notarization, updates and TestFlight are in [docs/releases.md](docs/releases.md).
-- **Workflow actions stay pinned** to full commit hashes with readable version comments.
-  Dependabot checks them weekly.
-- **Never alter the user's installed validation bundle** or microphone permission state to test a
-  release.
-
-### Release notes
-
-- **They're written at merge time.** The merge that lands a user-facing change adds its bullet to
-  that platform's next unreleased `## Mac X.Y.Z` or `## iPhone X.Y.Z` entry in `CHANGELOG.md`,
-  under `### Features` or `### Bugs/Polish`, creating the entry if the newest one has shipped. A
-  release is then only a tag.
-- **Each bullet leads with what the user gains, in plain words.** Name the moment they'll notice
-  it and why it matters, never how it works. If a reader who never saw the code couldn't say why
-  they'd care, rewrite it.
-
-  | Not | But |
-  | --- | --- |
-  | Quick Send, menu bar replies and notification replies now finish the moment you send, and a message that can't go out waits in its channel. | Sending from Quick Send, the menu bar or a notification is now instant, and if your connection drops or your server is asleep, Toy Box sends your message as soon as it can, so nothing you send gets lost. |
-  | A request waiting for you can now be read aloud, from the channel list or the conversation. | A request waiting for you can now be read aloud, so you can hear it while you do something else, even with your phone locked. |
-
-- **Leave out internals and mechanics.** No internal names such as the outbox, and no placement,
-  glyphs, colors, counts or gestures unless they're the point.
-- **Write one bullet per gain,** folding changes that serve the same one together. Each
-  platform's notes stand on their own, never compared to the web or the other app.
-- **The Lead rereads every unreleased bullet** against these rules before asking for a tag.
+- **Lead reviews, merges and ships** every change with the release skill. Owners never merge to
+  `main` or push tags.
 
 ## Keeping this current
 
 When the user corrects how we work, the rule changes here the same day, at the stage where it
-applies, replacing what it supersedes. The channel purpose says what we're building and each
-member's role says what they're accountable for, so neither restates these rules.
+applies, replacing what it supersedes. A rule belongs here only if every member needs it and we'd
+otherwise relearn it, and anything one role does, or that comes up only sometimes, goes in a skill
+under `.agents/skills/` or a doc in the Read table. The channel purpose and member roles never
+restate these rules.

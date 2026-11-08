@@ -1,10 +1,13 @@
 # Quarantined tests
 
-Each test here is out of the merge gate behind an opt-in, under AGENTS.md's
-[Test reliability](../AGENTS.md#test-reliability) rules. An entry names its opt-in and owner, and
-records the failed run, the diagnosis so far and what restoring the test needs. A passing rerun doesn't
-restore one. Delete the entry when its test returns to the gate, since git history keeps
-closed incidents.
+A test that fails on main without an identified code cause moves behind an explicit opt-in the
+same day, rather than staying in the merge gate while CI reruns or timing races get patched in
+place. Its entry here names the opt-in and an owner, and records the failed run, the diagnosis so
+far and a follow-up task. Quarantine changes gating, not responsibility for the failure.
+
+A test returns to the gate only with its cause found and deterministic coverage, never by loosening
+assertions or adding retries, and a passing rerun doesn't restore one. Delete its entry then, since
+git history keeps closed incidents.
 
 ## Image-strip wheel input
 
