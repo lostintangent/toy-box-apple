@@ -4,8 +4,8 @@ import Observation
 
 /// Which requests are waiting, newest first, and the message behind each, so the menu bar, Dock,
 /// notifications and both widgets agree. A channel's own store supplies its request when it has
-/// it. Otherwise its history is looked up once for everyone who asks, and the message is
-/// remembered until the next request.
+/// it, and the channel list otherwise. On a server whose list leaves requests out, its history is
+/// looked up once for everyone who asks, and the message is remembered until the next request.
 @MainActor @Observable
 public final class ChannelWaitingRequests {
     public struct Entry: Equatable, Identifiable, Sendable {
@@ -66,9 +66,9 @@ public final class ChannelWaitingRequests {
         resolve(openChannelIDs: openChannelIDs)
     }
 
-    /// A request's message from its channel's store, otherwise its history, joining a lookup that's
-    /// already under way. Throws when the history can't be read. A cancelled caller stops waiting at
-    /// once, and the lookup carries on for anyone else.
+    /// A request's message from its channel's store or the channel list, otherwise its history,
+    /// joining a lookup that's already under way. Throws when the history can't be read. A cancelled
+    /// caller stops waiting at once, and the lookup carries on for anyone else.
     public func message(channelID: String, sequence: Int) async throws -> ChannelRequestMessage? {
         if let known = known(channelID, sequence) { return known }
         return try await lookup(channelID: channelID, sequence: sequence).message()
@@ -104,10 +104,14 @@ public final class ChannelWaitingRequests {
         return found
     }
 
-    /// Reads the roster only for a live request, so roster changes don't invalidate a remembered one.
+    /// Reads agents only for a live or listed request, so roster changes don't invalidate a remembered one.
     private func known(_ channelID: String, _ sequence: Int) -> ChannelRequestMessage? {
         let store = catalog.existingChannel(id: channelID)
         if let live = store?.request, live.sequence == sequence { return .init(message: live, agents: store?.roster ?? []) }
+        if let listed = catalog.channels.first(where: { $0.id == channelID })?.request, listed.sequence == sequence {
+            let agents = ChannelSidebarPresentation(catalog: catalog, openChannelIDs: []).catalogAgents(channelID: channelID)
+            return .init(message: listed, agents: agents)
+        }
         return remembered[channelID].flatMap { $0.message.sequence == sequence ? $0 : nil }
     }
 

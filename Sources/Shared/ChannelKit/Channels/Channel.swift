@@ -13,12 +13,15 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
     public var seenThrough: Int
     public var completedSequence: Int?
     public var requestSequence: Int?
+    /// The waiting request's message, without reactions, as the channel list carries it. A
+    /// channel's snapshot keeps its request beside the channel instead, and older servers leave it out.
+    public var request: ChannelMessage?
     public var updatedAt: String
 
     public init(id: String, name: String, purpose: String? = nil, directory: String? = nil,
                 model: ModelConfiguration, tasks: [ChannelTask] = [], preview: ChannelPreview? = nil,
                 latestSequence: Int = 0, seenThrough: Int = 0, completedSequence: Int? = nil,
-                requestSequence: Int? = nil, updatedAt: String) {
+                requestSequence: Int? = nil, request: ChannelMessage? = nil, updatedAt: String) {
         self.id = id
         self.name = name
         self.purpose = purpose
@@ -30,12 +33,13 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
         self.seenThrough = seenThrough
         self.completedSequence = completedSequence
         self.requestSequence = requestSequence
+        self.request = request
         self.updatedAt = updatedAt
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, purpose, directory, model, tasks, preview, previewUrl, latestSequence, seenThrough,
-             completedSequence, requestSequence, updatedAt
+             completedSequence, requestSequence, request, updatedAt
     }
 
     /// The channel list leaves out `tasks`, which only a channel's snapshot carries, so they decode as
@@ -53,6 +57,7 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
                   seenThrough: try values.decode(Int.self, forKey: .seenThrough),
                   completedSequence: try values.decodeIfPresent(Int.self, forKey: .completedSequence),
                   requestSequence: try values.decodeIfPresent(Int.self, forKey: .requestSequence),
+                  request: try values.decodeIfPresent(ChannelMessage.self, forKey: .request),
                   updatedAt: try values.decode(String.self, forKey: .updatedAt))
         previewUrl = try values.decodeIfPresent(String.self, forKey: .previewUrl)
     }

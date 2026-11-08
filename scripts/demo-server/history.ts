@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { createHistoryFixture, historyChannelID, historyMessageCount, historyPageSize, writeHistoryPage }
     from "./channels/history-channel.ts";
-import { createCatalogRoute } from "./channels/catalog-stream.ts";
+import { catalogEntry, createCatalogRoute } from "./channels/catalog-stream.ts";
 import { createDemoServer, loadDemoFixture } from "./channels/demo-server.ts";
 import { type Snapshot } from "./channels/types.ts";
 
@@ -14,8 +14,8 @@ const channelID = historyChannelID;
 
 const demo = createDemoServer(snapshot, now, history);
 const catalog = createCatalogRoute(() => {
-    const { lead: { name, role, avatar }, channel, members } = demo.snapshot();
-    return { version: 1, lead: { name, role, avatar }, channels: [channel], members };
+    const { lead: { name, role, avatar }, channel, request, members } = demo.snapshot();
+    return { version: 1, lead: { name, role, avatar }, channels: [catalogEntry(channel, request)], members };
 });
 demo.onChange(catalog.publish);
 const handlers = demo.server.listeners("request");

@@ -34,9 +34,11 @@ struct ChannelCatalogTests {
         #expect(throws: (any Error).self) { try event(#"{"type":"channel.deleted"}"#) }
     }
 
-    /// The channel list stops sending each channel's tasks, which only its snapshot needs.
-    @Test func channelsWithoutTasksStillDecode() throws {
-        let entry = #"{"id":"c","name":"C","model":{"provider":"p","name":"m"},"latestSequence":4,"seenThrough":2,"requestSequence":4,"updatedAt":"2026-10-01T00:00:00Z"}"#
+    /// The channel list leaves out each channel's tasks, which only its snapshot needs, and carries its
+    /// waiting request without reactions.
+    @Test func entriesDecodeWithoutTasksAndWithTheirRequest() throws {
+        let request = #"{"id":"m4","sequence":4,"timestamp":"2026-10-01T00:00:00Z","sender":{"type":"agent","agentId":"c"},"content":"Ship it?","request":true,"replies":["Yes","Not yet"]}"#
+        let entry = #"{"id":"c","name":"C","model":{"provider":"p","name":"m"},"latestSequence":4,"seenThrough":2,"requestSequence":4,"updatedAt":"2026-10-01T00:00:00Z","revision":3,"request":\#(request)}"#
         let catalog = try JSONDecoder().decode(ChannelCatalog.self, from: Data("""
             {"version":1,"channels":[\(entry)],"members":[],
              "lead":{"name":"Lead","role":"Coordinates.","avatar":{"mark":"M4 12H20","color":"#123456"}}}
@@ -45,6 +47,8 @@ struct ChannelCatalogTests {
         expected.latestSequence = 4
         expected.seenThrough = 2
         expected.requestSequence = 4
+        expected.request = ChannelMessage(id: "m4", sequence: 4, timestamp: "2026-10-01T00:00:00Z", sender: .agent("c"),
+                                          content: .text("Ship it?"), request: true, replies: ["Yes", "Not yet"])
         #expect(catalog.channels == [expected])
         #expect(try event(#"{"type":"channel.upserted","channel":\#(entry)}"#) == .channelUpserted(expected))
     }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
-import { createCatalogRoute } from "./channels/catalog-stream.ts";
+import { catalogEntry, createCatalogRoute } from "./channels/catalog-stream.ts";
 import { createDemoServer, type DemoServer } from "./channels/demo-server.ts";
 import { type Snapshot } from "./channels/types.ts";
 import { createDemoPushRoutes } from "./channels/push-routes.ts";
@@ -9,8 +9,8 @@ import { writeHistoryPage } from "./channels/history-channel.ts";
 export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snapshot" | "onChange">) {
     const push = createDemoPushRoutes();
     const catalog = createCatalogRoute(() => {
-        const { lead: { name, role, avatar }, channel, members } = demo.snapshot();
-        return { version: 1, lead: { name, role, avatar }, channels: [channel], members };
+        const { lead: { name, role, avatar }, channel, request, members } = demo.snapshot();
+        return { version: 1, lead: { name, role, avatar }, channels: [catalogEntry(channel, request)], members };
     });
     demo.onChange(catalog.publish);
     const handlers = demo.server.listeners("request");
