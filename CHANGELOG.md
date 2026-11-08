@@ -5,25 +5,26 @@
 ### Features
 
 - A request waiting for you can now be read aloud, so you can hear it while you do something else.
-- Sending a message from anywhere, including Quick Send, the menu bar and notifications, is now done the moment you press Send. Toy Box keeps trying on its own through a dropped connection or while your server is out of reach, and never posts twice.
+- Sending from Quick Send, the menu bar or a notification is now instant, and if your connection drops or your server is asleep, Toy Box sends your message as soon as it can, so nothing you send gets lost.
 
 ### Bugs/Polish
 
-- A message that can't be sent now waits in its channel with Retry, and you can delete it if you no longer need it.
-- A reply from a notification now marks its channel read once it's sent.
+- If a message can't be sent, it now stays in its channel so you can retry it or delete it.
+- Replying to a notification now marks that channel read, so it doesn't stay unread after you've answered.
 
 ## iPhone 0.1.24
 
 ### Features
 
 - A request waiting for you can now be read aloud, from the channel list or the conversation, and it keeps reading if you lock your phone.
-- Sending a message from anywhere, including the Lock Screen and the share sheet, is now done the moment you press Send. Toy Box keeps trying on its own through a dropped connection or while your server is out of reach, and never posts twice.
+- Replying from the Lock Screen or the channel list is now instant, and if your connection drops or your server is asleep, Toy Box sends your message as soon as it can, so nothing you send gets lost.
 
 ### Bugs/Polish
 
-- A message that can't be sent now waits in its channel with Retry, and you can delete it if you no longer need it.
-- A reply from the Lock Screen now marks its channel read once it's sent.
-- A reply you type in the channel list now waits for a connection, like the suggested replies, so your words stay put while you're offline.
+- If a message can't be sent, it now stays in its channel so you can retry it or delete it.
+- Replying from the Lock Screen now marks that channel read, so it doesn't stay unread after you've answered.
+- Sharing to a channel while your server is asleep no longer leaves the share sheet waiting, and Toy Box sends it once the server is back.
+- A reply you type in the channel list while you're offline now stays put until you're back, instead of failing.
 - After you send your own reply to a request in the channel list, the card settles straight back into its row, so it's clear where your answer went.
 - A channel's name and time now hold still as its request opens and closes in the channel list, and when its agents start or stop working, so the list never flickers.
 
