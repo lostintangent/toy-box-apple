@@ -130,22 +130,23 @@ struct ChannelAttachmentTests {
             try await ChannelAttachmentCache.shared.file(for: .init(base64: "not valid base64!"), api: api)
         }
     }
+}
 
-    private func encodedImage(width: Int, height: Int, type: UTType, orientation: Int = 1) throws -> String {
-        var generator = SystemRandomNumberGenerator()
-        let count = width * height * 4
-        let words = (0..<((count + 7) / 8)).map { _ in generator.next() }
-        let data = words.withUnsafeBytes { Data($0.prefix(count)) }
-        let provider = try #require(CGDataProvider(data: data as CFData))
-        let image = try #require(CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
-                                         bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                         bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
-                                         provider: provider, decode: nil, shouldInterpolate: false,
-                                         intent: .defaultIntent))
-        let encoded = NSMutableData()
-        let destination = try #require(CGImageDestinationCreateWithData(encoded, type.identifier as CFString, 1, nil))
-        CGImageDestinationAddImage(destination, image, [kCGImagePropertyOrientation: orientation] as CFDictionary)
-        #expect(CGImageDestinationFinalize(destination))
-        return (encoded as Data).base64EncodedString()
-    }
+/// An image of random pixels, so no two tests share a cache entry.
+func encodedImage(width: Int, height: Int, type: UTType, orientation: Int = 1) throws -> String {
+    var generator = SystemRandomNumberGenerator()
+    let count = width * height * 4
+    let words = (0..<((count + 7) / 8)).map { _ in generator.next() }
+    let data = words.withUnsafeBytes { Data($0.prefix(count)) }
+    let provider = try #require(CGDataProvider(data: data as CFData))
+    let image = try #require(CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                                     bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                     bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                                     provider: provider, decode: nil, shouldInterpolate: false,
+                                     intent: .defaultIntent))
+    let encoded = NSMutableData()
+    let destination = try #require(CGImageDestinationCreateWithData(encoded, type.identifier as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, image, [kCGImagePropertyOrientation: orientation] as CFDictionary)
+    #expect(CGImageDestinationFinalize(destination))
+    return (encoded as Data).base64EncodedString()
 }

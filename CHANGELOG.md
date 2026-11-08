@@ -10,6 +10,7 @@
 - Ready for an upcoming Toy Box update that makes the channel list lighter to download.
 - Notifications and the Needs You widget show a waiting request's question sooner and use less data, since it now comes with the channel list.
 - While the channel list reconnects, a quieter notice now says your channels may be out of date, and tapping it tries again right away.
+- An image you send now stays on screen when Toy Box confirms it, instead of briefly blanking while it downloads again.
 
 ## Mac 0.1.28
 
@@ -18,6 +19,7 @@
 - Ready for an upcoming Toy Box update that makes the channel list lighter to download.
 - Notifications and the menu bar show a waiting request's question sooner and use less data, since it now comes with the channel list.
 - A finished task list's notification now simply says all tasks are completed, since it marks the whole list being done rather than one task.
+- An image you send now stays on screen when Toy Box confirms it, instead of briefly blanking while it downloads again.
 
 ## iPhone 0.1.25
 

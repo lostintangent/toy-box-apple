@@ -49,6 +49,20 @@ public actor ChannelAttachmentCache {
         destination(for: attachment, api: api).flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
     }
 
+    /// Files what a sent message's rows already loaded under the links the server gave it, so its
+    /// rows draw at once instead of downloading again. The server keeps attachments in the order
+    /// they were sent, and filing them twice changes nothing.
+    static func handOff(_ sent: [ChannelAttachment], to echoed: [ChannelAttachment], api: ChannelAPI) {
+        for (sent, echoed) in zip(sent, echoed) {
+            guard let file = cachedFile(for: sent, api: api),
+                  let destination = destination(for: echoed, api: api) else { continue }
+            try? FileManager.default.linkItem(at: file, to: destination)
+            if let image = ChannelThumbnails.remembered(for: sent, api: api) {
+                ChannelThumbnails.remember(image, for: echoed, api: api)
+            }
+        }
+    }
+
     public func file(for attachment: ChannelAttachment, api: ChannelAPI, reload: Bool = false) async throws -> URL {
         let remote = attachment.url.flatMap(api.resourceURL)
         guard let destination = Self.destination(for: attachment, api: api) else {

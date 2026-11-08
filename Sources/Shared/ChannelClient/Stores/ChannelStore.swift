@@ -477,7 +477,7 @@ public final class ChannelStore {
         if event.type == "snapshot", let snapshot = event.state {
             heldReplay = nil
             state = snapshot
-            outbox?.received(snapshot.messages, in: id, on: api.baseURL)
+            outbox?.received(snapshot.messages, in: id, api: api)
             historyGeneration = UUID()
             acknowledgedRead = snapshot.channel.seenThrough
             hasOlderMessages = (snapshot.messages.first?.sequence ?? 1) > 1
@@ -490,7 +490,7 @@ public final class ChannelStore {
             events.append(event)
             heldReplay = nil
             state = events.reduce(previous) { $0.applying($1) }
-            outbox?.received(events.lazy.filter { $0.revision != nil }.compactMap(\.message), in: id, on: api.baseURL)
+            outbox?.received(events.lazy.filter { $0.revision != nil }.compactMap(\.message), in: id, api: api)
         } else { throw ChannelAPIError.invalidEvent("pre-snapshot \(event.type)") }
         if event.type == "snapshot" || event.type == "resumed" {
             if !capturedUnread, let state {

@@ -199,7 +199,10 @@ keep `reconcileManagementWrite`.
   message the POST returns, and after a 409 the message arrives through its stream. The outbox
   then marks the channel read through the message, since the user's own message never leaves a
   channel unread. Every list treats it as read from the moment the server has it, without waiting
-  for that round trip, so a row never flashes unread for the user's own message.
+  for that round trip, so a row never flashes unread for the user's own message. The first of
+  these to bring the message back also files each image its row already loaded under the link the
+  server gave it, pairing them in the order sent, so the server's row draws at once without a
+  download. Filing it again changes nothing.
 - **When delivery fails:**
 
   | What happened | For example | The outbox |
@@ -344,7 +347,8 @@ acknowledges its registration. Restored Activities survive that wait and replay 
 Allow notifications off unsubscribes only the two notification topics, retaining Follow and the address.
 The demo stores all state in memory and never contacts APNs.
 The demo exposes canonical read-only history pages for the app, and its catalog lists
-each channel's request as the server's does.
+each channel's request as the server's does. It keeps a sent message's images as served files,
+named and returned in the order sent as the server does.
 
 `ChannelPushPayload` carries `kind`, `channelID`, positive `sequence`, `registrationID` and an
 optional requester's `handle` beside the system `aps` envelope. Its kinds and categories are
