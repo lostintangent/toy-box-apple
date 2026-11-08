@@ -1,13 +1,14 @@
 ---
 name: release
-description: Merge a reviewed change into main with its release note, ship a Mac or iPhone version, or change how they're signed, packaged and distributed. Use when merging a member's branch, writing or reviewing CHANGELOG.md bullets, tagging a release, checking a release run, or changing signing, in-app updates, TestFlight, bundling or release workflows.
+description: Merge a reviewed change into main with its release note, ship a Mac or iPhone version, or change how they're signed, packaged and distributed. Use when merging a member's branch, writing or reviewing CHANGELOG.md bullets, tagging a release, checking a release run, or changing toolchains, signing, in-app updates, TestFlight, bundling or release workflows.
 ---
 
 # Release
 
-Lead merges every change and ships every version. Core owns the tooling, and
+Lead merges every change and ships every version. Core owns the tooling.
 [references/distribution.md](references/distribution.md) explains signing, notarization, in-app
-updates, TestFlight and recovery. Read it before changing any of them.
+updates, TestFlight and recovery, and [references/bundles.md](references/bundles.md) what each
+build needs and each bundle contains. Read them before changing any of these.
 
 ## Merge a change
 

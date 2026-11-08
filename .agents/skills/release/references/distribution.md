@@ -150,6 +150,12 @@ AppKit icon rendering.
 
 ## iPhone TestFlight
 
+Before the first signed build, the **user** confirms an active Apple Developer team, accepts
+pending agreements, registers the explicit App ID `dev.toybox.mobile` and creates its App Store
+Connect app. TestFlight also needs an Apple Distribution certificate, App Store Connect profiles,
+required metadata, privacy and export-compliance answers and tester access, plus beta review for
+external testers.
+
 `bun run testflight` is independent of the Mac release. It builds optimized arm64 with
 the selected Xcode 27+ iPhoneOS SDK through SwiftPM, without an Xcode project or Simulator.
 `--version X.Y.Z` / `MOBILE_VERSION` sets the marketing version. `--build-number N` / `BUILD_NUMBER`

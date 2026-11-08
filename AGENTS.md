@@ -15,10 +15,10 @@ sometimes, lives where it loads when you need it:
 | Read | Before |
 | --- | --- |
 | [docs/spec.md](docs/spec.md) | Changing behavior, protocol or design. Read its Design section, and your surface's section under Surfaces, before changing any view |
-| [docs/development.md](docs/development.md) | Opt-in tests, benchmarks, the simulator, drive scripts, validation builds or bundle contents |
+| The [validate](.agents/skills/validate/SKILL.md) skill | Proving a change in the running Mac app or the simulator, or running a benchmark or an opt-in suite |
 | [scripts/README.md](scripts/README.md) | Running or changing a command |
 | [docs/quarantined-tests.md](docs/quarantined-tests.md) | Quarantining a test, or touching a quarantined one |
-| The [release](.agents/skills/release/SKILL.md) skill | Merging, release notes, shipping, or changing signing, updates, TestFlight or release tooling |
+| The [release](.agents/skills/release/SKILL.md) skill | Merging, release notes, shipping, or changing toolchains, bundles, signing, updates or TestFlight |
 | `~/Desktop/toy-box` | Checking the server or web pane. It's a read-only reference, so never modify it |
 
 ## The team
@@ -187,15 +187,14 @@ Use Bun 1.4.4: run `bun install --frozen-lockfile`, then the root `package.json`
 
 ### The running app
 
-- **Mac:** use Computer Use only on `dev.toybox.desktop.test` ("Toy Box Test"), which
-  `bun run validate` builds optimized and launches against the demo. The user's
-  `dev.toybox.desktop` permits reads, never clicks. Confirm `studio-demo` before acting, never act
-  in a window listing live channels, and `kill <pid>` your instance when you finish.
-  `bun run snapshot` is layout evidence only, so verify materials, selection and scroll-edge
-  effects in a real window.
-- **iPhone:** capture with `bun run simulator --screenshot` or a drive script under the lease.
-  Check on a real phone only through TestFlight, never a direct install, so development never
-  replaces the user's app or its data.
+The validate skill says how to capture and drive either app. These limits always hold:
+
+- **Mac:** use Computer Use only on `dev.toybox.desktop.test` ("Toy Box Test"), from
+  `bun run validate`. The user's `dev.toybox.desktop` permits reads, never clicks. Confirm
+  `studio-demo` before acting, never act in a window listing live channels, and `kill <pid>` your
+  instance when you finish.
+- **iPhone:** use the shared simulator under its lease. Check on a real phone only through
+  TestFlight, never a direct install, so development never replaces the user's app or its data.
 
 ### Test reliability
 
