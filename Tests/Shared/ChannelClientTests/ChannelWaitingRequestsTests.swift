@@ -34,15 +34,14 @@ struct ChannelWaitingRequestsTests {
         state.request = newer
         _ = try catalog.channel(id: "test").apply(.init(type: "snapshot", state: state))
 
-        let requests = ChannelWaitingRequests(catalog: catalog)
-        let open = requests.entries(openChannelIDs: ["test"])
+        let open = catalog.waitingRequests(openChannelIDs: ["test"])
         // One without its message sorts by its channel's last activity.
         #expect(open.map(\.channel.id) == ["a", "b", "test"])
         #expect(open.map(\.request?.quote) == ["Ship it?", nil, "Where should it sit?"])
         #expect(open.map(\.request?.requester?.name) == ["Lead", nil, "Lead"])
         #expect(open.map { $0.request?.message.suggestedReplies } == [["Yes", "Not yet"], nil, ["Near the entrance", "By the window"]])
         #expect(open[0].requestedAt == (try? Date("2026-10-22T11:00:00Z", strategy: .iso8601)))
-        #expect(requests.entries().last?.request?.quote == "Still there?")
+        #expect(catalog.waitingRequests().last?.request?.quote == "Still there?")
         #expect(transport.requests.compactMap(\.url?.path).allSatisfy { !$0.hasSuffix("/messages") })
         #expect(catalog.existingChannel(id: "a") == nil, "Reading a request never opens its channel")
     }

@@ -462,23 +462,22 @@ struct ChannelOutboxTests {
         let mock = Self.transport(served) { number, _ in number == 1 ? Self.failure(422) : try .json(["version": 1]) }
         let outbox = outbox(folder, clock: clock)
         let catalog = try await catalog(mock, outbox: outbox)
-        let requests = ChannelWaitingRequests(catalog: catalog)
-        #expect(requests.entries().map(\.sequence) == [5])
+        #expect(catalog.waitingRequests().map(\.sequence) == [5])
 
         let id = await outbox.send("Yes", to: "test", on: catalog.api.baseURL)
         #expect(outbox.message(id)?.request == 5)
         #expect(outbox.answers(5, in: "test"))
         #expect(!outbox.answers(5, in: "other"))
-        #expect(requests.entries().isEmpty)
+        #expect(catalog.waitingRequests().isEmpty)
 
         try await eventually { outbox.message(id)?.state == .notSent }
         #expect(!outbox.answers(5, in: "test"))
-        #expect(requests.entries().map(\.sequence) == [5])
+        #expect(catalog.waitingRequests().map(\.sequence) == [5])
 
         outbox.sendAgain(id)
         try await eventually { outbox.message(id) == nil }
         #expect(outbox.answers(5, in: "test"))
-        #expect(requests.entries().isEmpty)
+        #expect(catalog.waitingRequests().isEmpty)
 
         // A catalog from before the reply still lists the request, so it stays answered.
         await catalog.refresh()
@@ -486,7 +485,7 @@ struct ChannelOutboxTests {
         served.catalog.withLock { $0 = Self.catalog([Self.channel(request: 7)]) }
         await catalog.refresh()
         #expect(!outbox.answers(5, in: "test"))
-        #expect(requests.entries().map(\.sequence) == [7])
+        #expect(catalog.waitingRequests().map(\.sequence) == [7])
     }
 
     @Test func anotherServersMessageWaitsForItsCatalog() async throws {

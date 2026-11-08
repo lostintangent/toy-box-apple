@@ -18,8 +18,8 @@ public struct TranscriptRequestChoices: Equatable, Sendable {
 
     /// A channel's own choices: none while the outbox holds any answer to the request, Sending or Not
     /// sent, since a Not sent answer sits right below with Retry. Elsewhere a Not sent answer brings
-    /// the request back, through `ChannelWaitingRequests`. A committed answer makes the transcript's
-    /// request acknowledged instead.
+    /// the request back, through the catalog's `waitingRequests`. A committed answer makes the
+    /// transcript's request acknowledged instead.
     @MainActor
     public init?(request: ChannelMessage?, store: ChannelStore, isConnected: Bool) {
         guard let request, !store.sending.contains(where: { $0.request == request.sequence }) else { return nil }
@@ -40,7 +40,7 @@ public struct TranscriptRequestChoices: Equatable, Sendable {
     }
 }
 
-extension ChannelWaitingRequests.Entry {
+extension ChannelCatalogStore.WaitingRequest {
     /// The choices a Needs You card offers.
     public func choices(isConnected: Bool) -> TranscriptRequestChoices? {
         TranscriptRequestChoices(sequence: sequence, labels: request?.message.suggestedReplies ?? [],

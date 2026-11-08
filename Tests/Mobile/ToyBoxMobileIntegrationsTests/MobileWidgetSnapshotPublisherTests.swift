@@ -113,13 +113,13 @@ struct MobileWidgetSnapshotPublisherTests {
         let snapshot = Self.snapshot(now: .now)
         try first.publish(snapshot)
         let restored = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
-        try restored.update(requests: nil, serverURL: snapshot.serverURL)
+        try restored.update(catalog: nil, serverURL: snapshot.serverURL)
         let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
         let cached = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
         #expect(cached.isOffline)
         #expect(cached.isAvailable)
         #expect(cached.requests == snapshot.requests)
-        try restored.update(requests: nil, serverURL: "https://other.test")
+        try restored.update(catalog: nil, serverURL: "https://other.test")
         let switched = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
         #expect(switched.serverURL == "https://other.test")
         #expect(!switched.isAvailable)
@@ -137,7 +137,7 @@ struct MobileWidgetSnapshotPublisherTests {
         try publisher.publish(snapshot, now: now)
         #expect(reloads == 1)
 
-        try publisher.update(requests: nil, serverURL: snapshot.serverURL)
+        try publisher.update(catalog: nil, serverURL: snapshot.serverURL)
         let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
         let cached = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
         #expect(cached.isOffline)
@@ -148,7 +148,7 @@ struct MobileWidgetSnapshotPublisherTests {
         let fileNumber = try #require(
             FileManager.default.attributesOfItem(atPath: file.path)[.systemFileNumber] as? NSNumber)
 
-        try publisher.update(requests: nil, serverURL: snapshot.serverURL)
+        try publisher.update(catalog: nil, serverURL: snapshot.serverURL)
         let repeated = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
         #expect(repeated == cached)
         #expect(reloads == 2)

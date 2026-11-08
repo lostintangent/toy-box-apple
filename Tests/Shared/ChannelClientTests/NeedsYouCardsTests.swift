@@ -25,7 +25,7 @@ struct NeedsYouCardsTests {
         defer { server.end() }
         var announcements: [String] = []
         let cards = cards { announcements.append($0) }
-        let waiting = server.requests.entries()
+        let waiting = server.catalog.waitingRequests()
         let (a, b) = (waiting[0], waiting[1])
         #expect(waiting.map(\.channel.id) == ["a", "b"])
         #expect(cards.open(in: waiting) == a, "The newest request opens")
@@ -42,7 +42,7 @@ struct NeedsYouCardsTests {
         #expect(cards.replying == nil && cards.phase == nil && cards.words.isEmpty,
                 "The card shrinks straight back into its row while the reply is still sending")
         #expect(checks.rows == ["b": .sent], "Its row wears the check")
-        #expect(server.requests.entries() == [a], "Its request stops waiting as the outbox takes the reply")
+        #expect(server.catalog.waitingRequests() == [a], "Its request stops waiting as the outbox takes the reply")
         #expect(cards.open(in: [a]) == a && cards.reveals(a.id, after: b.id),
                 "The next card opens in the same motion, and scrolls into view")
         #expect(announcements == ["Reply sent in b"])
@@ -51,11 +51,12 @@ struct NeedsYouCardsTests {
         #expect(server.posts.map(\.content) == ["Near the entrance"], "A choice goes as written")
         server.mock.finishPendingResponses()
         try await eventually { server.outbox.messages(in: "b").isEmpty }
-        #expect(server.requests.entries() == [a], "A confirmed answer never reopens while the catalog catches up")
+        #expect(server.catalog.waitingRequests() == [a],
+                "A confirmed answer never reopens while the catalog catches up")
 
         await cards.send("Beside the desks", to: a, on: server.catalog.channel(id: "a"))
         #expect(checks.rows == ["b": .sent, "a": .sent], "Answering the next card leaves the first check in place")
-        #expect(server.requests.entries().isEmpty && cards.open(in: []) == nil)
+        #expect(server.catalog.waitingRequests().isEmpty && cards.open(in: []) == nil)
         try await beats.end(.seconds(2.35))
         try await eventually { checks["b"] == .settling }
         #expect(checks["a"] == .sent, "Each row settles on its own")
@@ -72,7 +73,7 @@ struct NeedsYouCardsTests {
         let server = try await CardServer.start(waiting: [("a", 12), ("b", 7)])
         defer { server.end() }
         let cards = cards()
-        let known = server.requests.entries()
+        let known = server.catalog.waitingRequests()
         var arriving = known
         arriving[0].request = nil
         #expect(cards.open(in: arriving) == known[1], "The newest request waits for its words")
@@ -84,7 +85,7 @@ struct NeedsYouCardsTests {
         let server = try await CardServer.start(waiting: [("a", 12), ("b", 7)])
         defer { server.end() }
         let cards = cards()
-        let waiting = server.requests.entries()
+        let waiting = server.catalog.waitingRequests()
         let (a, b) = (waiting[0], waiting[1])
         cards.reply(to: a, on: server.catalog.channel(id: "a"))
         #expect(cards.isLifted && cards.phase == .composing)
@@ -100,7 +101,7 @@ struct NeedsYouCardsTests {
         #expect(!cards.isLifted && cards.replying == nil && checks["a"] == .sent,
                 "The lifted card lowers in the sent beat, onto its row wearing the check")
         #expect(cards.words == "Beside the desks", "The words fade with the card rather than blanking")
-        #expect(cards.open(in: server.requests.entries()) == b, "The next card opens beneath it")
+        #expect(cards.open(in: server.catalog.waitingRequests()) == b, "The next card opens beneath it")
         try await beats.end(.seconds(0.35))
         await sending.value
         #expect(cards.landing == nil && cards.words.isEmpty, "The card is gone once it has shrunk into its row")
@@ -119,15 +120,15 @@ struct NeedsYouCardsTests {
         defer { server.end() }
         var announcements: [String] = []
         let cards = cards { announcements.append($0) }
-        let waiting = server.requests.entries()
+        let waiting = server.catalog.waitingRequests()
         let (a, b) = (waiting[0], waiting[1])
         let store = server.catalog.channel(id: "b")
         cards.open(b.id)
         await cards.send("Near the entrance", to: b, on: store)
-        #expect(server.requests.entries() == [a] && checks.rows == ["b": .sent])
+        #expect(server.catalog.waitingRequests() == [a] && checks.rows == ["b": .sent])
 
         try await eventually { store.sending.map(\.state) == [.notSent] }
-        let returned = server.requests.entries()
+        let returned = server.catalog.waitingRequests()
         #expect(returned == [a, b], "The request comes back where it was")
         #expect(cards.rows(in: returned) == ["a": .card(a), "b": .question(b)],
                 "As a waiting row, so the open card stays and the list doesn't move")
@@ -144,13 +145,13 @@ struct NeedsYouCardsTests {
         defer { server.end() }
         draft.text = "An earlier draft"
         let cards = cards()
-        let a = try #require(server.requests.entries().first)
+        let a = try #require(server.catalog.waitingRequests().first)
         cards.reply(to: a, on: server.catalog.channel(id: "a"))
         cards.words = "Beside the desks"
         if leaves { cards.leave() } else { cards.cancel() }
         #expect(cards.replying == nil && !cards.isLifted && cards.words.isEmpty)
         #expect(draft.text == (leaves ? "An earlier draft\n\nBeside the desks" : "An earlier draft"))
-        #expect(cards.open(in: server.requests.entries()) == a, "The request still waits")
+        #expect(cards.open(in: server.catalog.waitingRequests()) == a, "The request still waits")
         #expect(server.outbox.messages(in: "a").isEmpty && server.posts.isEmpty)
     }
 
@@ -175,7 +176,6 @@ struct NeedsYouCardsTests {
     let mock: MockTransport
     let catalog: ChannelCatalogStore
     let outbox: ChannelOutbox
-    let requests: ChannelWaitingRequests
     private let log: Log
     private let folder: URL
 
@@ -187,7 +187,6 @@ struct NeedsYouCardsTests {
         self.outbox = outbox
         self.log = log
         self.folder = folder
-        requests = ChannelWaitingRequests(catalog: catalog)
     }
 
     /// `waiting` is each waiting channel and its request's sequence, newest first, and `channels`

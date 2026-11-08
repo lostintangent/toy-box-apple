@@ -17,8 +17,6 @@ final class AppModel {
     /// Every message the user sends until its server confirms it, in the shared container so the
     /// share extension's sends join it. The current catalog delivers it.
     let outbox: ChannelOutbox
-    /// The waiting requests the channel list and the Needs You widget share.
-    private(set) var waitingRequests: ChannelWaitingRequests?
     private(set) var configurationError: String?
     private(set) var isActive = false
     private(set) var selectedStore: ChannelStore?
@@ -176,7 +174,6 @@ final class AppModel {
         serverIdentity = identity
         catalog = ChannelCatalogStore(api: api)
         catalog?.outbox = outbox
-        waitingRequests = catalog.map(ChannelWaitingRequests.init)
         notifications.configure(api: api)
         configurationError = nil
         navigationNotice = nil
@@ -319,7 +316,7 @@ final class AppModel {
             notifications.updateBadge(catalog.channels.filter { $0.attention == .waiting }.count)
             shareHistory?.prune(serverURL: catalog.api.baseURL.absoluteString, keeping: Set(catalog.channels.map(\.id)))
         }
-        do { try widgetPublisher?.update(requests: waitingRequests, serverURL: serverURL) }
+        do { try widgetPublisher?.update(catalog: catalog, serverURL: serverURL) }
         catch { integrationLogger.error("Could not update the Needs You widget: \(error.localizedDescription)") }
     }
 

@@ -25,7 +25,7 @@ struct NeedsYouCard: View {
     static let margin: CGFloat = 12
 
     let channel: Channel
-    let entry: ChannelWaitingRequests.Entry
+    let entry: ChannelCatalogStore.WaitingRequest
     let cards: NeedsYouCards
     let choices: TranscriptRequestChoices?
     let now: Date
@@ -199,7 +199,7 @@ extension View {
     func needsYouList<Card: View, Row: View>(
         _ cards: NeedsYouCards, card: CGRect?, channelIDs: [String], bounds: Binding<CGRect>,
         endsWhenChanging context: [AnyHashable?],
-        @ViewBuilder lifted: @escaping (_ entry: ChannelWaitingRequests.Entry, _ maxHeight: CGFloat) -> Card,
+        @ViewBuilder lifted: @escaping (_ entry: ChannelCatalogStore.WaitingRequest, _ maxHeight: CGFloat) -> Card,
         @ViewBuilder row: @escaping (_ channelID: String) -> Row
     ) -> some View {
         modifier(NeedsYouList(cards: cards, card: card, channelIDs: channelIDs, bounds: bounds, context: context,
@@ -213,7 +213,7 @@ private struct NeedsYouList<Card: View, Row: View>: ViewModifier {
     let channelIDs: [String]
     @Binding var bounds: CGRect
     let context: [AnyHashable?]
-    let lifted: (ChannelWaitingRequests.Entry, CGFloat) -> Card
+    let lifted: (ChannelCatalogStore.WaitingRequest, CGFloat) -> Card
     let row: (String) -> Row
     /// The lifted card's row, kept while the card shrinks back into it.
     @ViewState private var cardRow: CGRect?
@@ -246,7 +246,7 @@ private struct NeedsYouList<Card: View, Row: View>: ViewModifier {
 
     /// The lifted card, or, once it sends, its row with the check, which the card's shape clips as
     /// it shrinks onto the list's own. The base and shadow sit outside the clip and fade as it lands.
-    private func landing(_ entry: ChannelWaitingRequests.Entry, maxHeight: CGFloat) -> some View {
+    private func landing(_ entry: ChannelCatalogStore.WaitingRequest, maxHeight: CGFloat) -> some View {
         ZStack(alignment: .top) {
             if cards.isLifted {
                 lifted(entry, maxHeight)
