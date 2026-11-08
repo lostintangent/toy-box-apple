@@ -459,6 +459,8 @@ struct ChannelOutboxTests {
         let catalog = try await catalog(mock, outbox: app)
         try await eventually(observing: mock) { served.postedIDs == [shared, waiting, shared].map(\.uuidString) }
         try await eventually { app.messages(in: "test").isEmpty }
+        let posts = mock.requests.filter { $0.httpMethod == "POST" && $0.url?.lastPathComponent == "messages" }
+        #expect(posts.map(\.timeoutInterval) == [10, 60, 60], "Only the share's attempt gives up early")
         withExtendedLifetime(catalog) {}
     }
 }

@@ -223,7 +223,9 @@ keep `reconcileManagementWrite`.
   still Sending when that time ends resumes when the app next launches or comes back. The share
   extension's outbox is made with `sendsOnce`, since the extension ends before it could retry. It
   leaves the folder's other messages to the app, and its `send` makes one attempt and marks the
-  channel read before it returns. Whatever that attempt leaves Sending, the app sends. ChannelClient
+  channel read before it returns. The attempt gives up after 10 seconds without hearing from the
+  server, so a sleeping server never holds the sheet for long. Whatever that attempt leaves Sending,
+  the app sends. ChannelClient
   makes no `UIApplication` call.
 
 ## Protocol

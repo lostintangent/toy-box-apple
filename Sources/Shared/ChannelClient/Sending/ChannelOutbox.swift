@@ -278,10 +278,11 @@ public final class ChannelOutbox {
     }
 
     /// The share extension's one attempt, which returns once its outcome is saved and its channel
-    /// marked read.
+    /// marked read. It gives up after 10 seconds without hearing from the server, so a sleeping
+    /// server leaves the message to the app instead of keeping the sheet on Sending for a minute.
     private func attempt(_ message: Message) async {
         guard let catalog else { return }
-        switch await post(message, api: catalog.api) {
+        switch await post(message, api: catalog.api, timeout: 10) {
         case .accepted(let sent): await confirm(message.id, merging: sent)?.value
         case .rejected: stop(message.id)
         case .unreachable, .trouble: break
@@ -289,11 +290,12 @@ public final class ChannelOutbox {
         await writes?.value
     }
 
-    private func post(_ message: Message, api: ChannelAPI) async -> Outcome {
+    private func post(_ message: Message, api: ChannelAPI, timeout: TimeInterval? = nil) async -> Outcome {
         let isLive = catalog?.isLive ?? false
         do {
-            let request = try api.messageRequest(channelId: message.channelID, id: message.id.uuidString,
+            var request = try api.messageRequest(channelId: message.channelID, id: message.id.uuidString,
                                                  content: message.text, attachments: message.attachments)
+            if let timeout { request.timeoutInterval = timeout }
             let (data, response) = try await api.session.data(for: request)
             guard let response = response as? HTTPURLResponse else { return .trouble }
             let outcome = Outcome(response, data: data, isLive: isLive)
