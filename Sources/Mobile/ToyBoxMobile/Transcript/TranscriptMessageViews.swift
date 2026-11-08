@@ -151,7 +151,8 @@ struct TranscriptUserMessage: View {
                 if let attachments = message.attachments, !attachments.isEmpty {
                     TranscriptAttachments(attachments: attachments, api: channel.api, alignment: .trailing,
                                           source: .init(messageID: message.id, sender: "You",
-                                                        timestamp: message.timestamp))
+                                                        timestamp: message.timestamp),
+                                          delete: deleteNotSent)
                 }
                 TranscriptReactions(message: message, agents: channel.agents, statusReactions: statusReactions)
             }

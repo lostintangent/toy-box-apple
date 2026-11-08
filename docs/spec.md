@@ -2067,8 +2067,8 @@ send's audience without reconnection.
 Submitting creates one optimistic row, which shows "Sending" only while the send is still going
 after 1 second. A committed echo replaces it by UUID. When a send fails, the row keeps its text
 and attachments, its bubble's accent wash turns red, like the orange of a waiting request, and a
-Retry button sits below it. Delete sits in the bubble's menu. VoiceOver reads the message as "Not
-sent". Retry keeps the original UUID, so a 409 cannot deliver it twice. Do not clear a newer
+Retry button sits below it. Delete sits in the bubble's menu and each attachment's, so a message
+with only images can be deleted too, without a wash. VoiceOver reads the message as "Not sent". Retry keeps the original UUID, so a 409 cannot deliver it twice. Do not clear a newer
 draft when an older send eventually succeeds.
 
 The tray is a compact 34-point header inside the floating composer: a 28-point row of controls
