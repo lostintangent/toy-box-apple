@@ -247,7 +247,8 @@ struct TranscriptUserMessage: View {
                 }
                 if let attachments = message.attachments, !attachments.isEmpty {
                     TranscriptAttachments(attachments: attachments, api: api, alignment: .trailing,
-                                          source: TranscriptImageSource(message: message, agents: agents))
+                                          source: TranscriptImageSource(message: message, agents: agents),
+                                          delete: deleteNotSent)
                 }
                 TranscriptReactions(message: message, agents: agents, statusReactions: statusReactions)
             }

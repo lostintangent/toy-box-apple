@@ -16,6 +16,8 @@ struct TranscriptAttachments: View {
     var alignment: UnitPoint = .leading
     /// The message the image viewer pages through when one of these images opens.
     var source: TranscriptImageSource?
+    /// Set only on a message that didn't send, so one with only images can still be deleted.
+    var delete: (() -> Void)?
     @Environment(ImageViewer.self) private var viewer: ImageViewer?
     @ViewState private var thumbnailFrames = ImageViewerThumbnailFrames()
 
@@ -33,7 +35,8 @@ struct TranscriptAttachments: View {
                                          TranscriptAttachmentViewing(source: source, images: images,
                                                                      imageIndex: imageIndex, frames: thumbnailFrames)
                                      }
-                                 })
+                                 },
+                                 delete: delete)
         }
     }
 
@@ -61,6 +64,7 @@ private struct TranscriptAttachment: View {
     /// An image's filename, or its position when it has none.
     var imageName: String?
     var viewing: TranscriptAttachmentViewing?
+    var delete: (() -> Void)?
     @ViewState private var localURL: URL?
     @ViewState private var thumbnail: CGImage?
     @ViewState private var error: String?
@@ -161,6 +165,10 @@ private struct TranscriptAttachment: View {
             Button("Quick Look") { previewURL = localURL }.disabled(localURL == nil)
             if let address = attachment.url, let url = api.resourceURL(address) {
                 Link("Open in Browser", destination: url)
+            }
+            if let delete {
+                Divider()
+                Button("Delete", systemImage: "trash", role: .destructive, action: delete)
             }
         }
     }
