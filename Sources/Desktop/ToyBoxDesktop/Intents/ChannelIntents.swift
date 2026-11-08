@@ -23,7 +23,8 @@ final class ChannelIntents {
         /// Saves a message to the app's outbox, which shows it in its channel and delivers it.
         var send: @MainActor (Outgoing) async -> Void
         var open: @MainActor (String) -> Void
-        var requests: @MainActor () async throws -> [WaitingRequestEntry] = { [] }
+        /// The requests waiting for you once the catalog has loaded, nil and throwing as `channels` does.
+        var requests: @MainActor () throws -> [WaitingRequestEntry]? = { [] }
         /// Whether a channel's request is still waiting for you, by the app's waiting rule.
         var isWaiting: @MainActor (_ channelID: String, _ request: Int) -> Bool = { _, _ in true }
         var revealRequest: @MainActor (String, Int) -> Void = { _, _ in }
@@ -123,12 +124,8 @@ final class ChannelIntents {
     /// that they stay through a lost connection, so Siri can still save a message to send.
     func channels() async throws -> [Channel] {
         guard host.api() != nil else { throw ChannelIntentError.noServer }
-        let deadline = ContinuousClock.now + connectionTimeout
-        while true {
-            if let channels = try host.channels() { return channels }
-            guard ContinuousClock.now < deadline else { throw ChannelIntentError.unreachable }
-            try await Task.sleep(for: .milliseconds(50))
-        }
+        if let channels = try await Self.first(within: connectionTimeout, host.channels) { return channels }
+        throw ChannelIntentError.unreachable
     }
 
     func entities() async throws -> [ChannelEntity] {
@@ -181,23 +178,14 @@ final class ChannelIntents {
 
     func waitingRequests() async throws -> [WaitingRequestEntity] {
         guard host.api() != nil else { throw ChannelIntentError.noServer }
-        return try await host.requests().map { entry in
+        return try await requests().map { entry in
             requestSpotlight?.entity(entry) ?? WaitingRequestEntity(entry, thumbnail: RequestSpotlight.renderAvatar(entry.agent))
         }
     }
 
-    static func resolveWaitingRequests(
-        timeout: Duration = .seconds(10),
-        snapshot: () throws -> (server: String, hasLoaded: Bool, waiting: [MenuBarStatus.Item])
-    ) async throws -> [WaitingRequestEntry] {
-        let deadline = ContinuousClock.now + timeout
-        while true {
-            let current = try snapshot()
-            if current.hasLoaded || ContinuousClock.now >= deadline {
-                return current.waiting.compactMap { WaitingRequestEntry(item: $0, serverURL: current.server) }
-            }
-            try await Task.sleep(for: .milliseconds(50))
-        }
+    /// The requests waiting for you once the catalog has loaded, or none if it hasn't by the deadline.
+    private func requests() async throws -> [WaitingRequestEntry] {
+        try await Self.first(within: connectionTimeout, host.requests) ?? []
     }
 
     func reindexRequests(_ ids: [String]?) async {
@@ -206,7 +194,7 @@ final class ChannelIntents {
 
     func openRequest(_ request: WaitingRequestEntry) async throws {
         try requireServer(request)
-        guard try await host.requests().contains(where: { $0.id == request.id }) else {
+        guard try await requests().contains(where: { $0.id == request.id }) else {
             throw ChannelIntentError.requestNotWaiting
         }
         try requireServer(request)
@@ -242,7 +230,7 @@ final class ChannelIntents {
     /// The request as the app has it now, still waiting and asked by the same agent, whose current
     /// name the reply mentions.
     private func requireWaiting(_ request: WaitingRequestEntry) async throws -> WaitingRequestEntry {
-        guard let current = try await host.requests().first(where: { $0.id == request.id }),
+        guard let current = try await requests().first(where: { $0.id == request.id }),
               current.agent.id == request.agent.id else {
             throw ChannelIntentError.requestNotWaiting
         }
@@ -334,13 +322,31 @@ final class ChannelIntents {
         guard let store = host.store(channelID) else { throw ChannelIntentError.noServer }
         host.hold(store)
         defer { host.release(store) }
-        let deadline = ContinuousClock.now + connectionTimeout
-        while !store.phase.isConnected || store.state == nil {
+        let state = try await Self.first(within: connectionTimeout) {
             if store.phase == .deleted { throw ChannelIntentError.channelNotFound }
-            guard ContinuousClock.now < deadline else { throw ChannelIntentError.unreachable }
-            try await Task.sleep(for: .milliseconds(50))
+            return store.phase.isConnected ? store.state : nil
         }
+        guard state != nil else { throw ChannelIntentError.unreachable }
         return try await body(store)
+    }
+
+    /// What `read` gives once it isn't nil, read again whenever something it reads changes, or nil at
+    /// the deadline. It throws what `read` throws.
+    private static func first<T: Sendable>(within timeout: Duration,
+                                           _ read: @escaping @MainActor () throws -> T?) async throws -> T? {
+        if let value = try read() { return value }
+        return try await withThrowingTaskGroup(of: T?.self) { group in
+            group.addTask {
+                for try await value in Observations(read) { if let value { return value } }
+                throw CancellationError()
+            }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                return nil
+            }
+            defer { group.cancelAll() }
+            return try await group.next() ?? nil
+        }
     }
 }
 
@@ -348,14 +354,15 @@ extension ChannelIntents {
     /// The app's intents, which share its catalog, stores and outbox with its windows, so a send
     /// appears in its channel at once and a failed one waits there for Send Again.
     convenience init(model: AppModel) {
+        let channels: @MainActor () throws -> [Channel]? = {
+            guard let catalog = model.catalog else { throw ChannelIntentError.noServer }
+            if catalog.isLoaded { return catalog.channels }
+            if catalog.phase.failure != nil { throw ChannelIntentError.unreachable }
+            return nil
+        }
         self.init(host: Host(
             api: { model.api },
-            channels: {
-                guard let catalog = model.catalog else { throw ChannelIntentError.noServer }
-                if catalog.isLoaded { return catalog.channels }
-                if catalog.phase.failure != nil { throw ChannelIntentError.unreachable }
-                return nil
-            },
+            channels: channels,
             store: { model.catalog?.channel(id: $0) },
             hold: { model.hold($0) },
             release: { model.release($0) },
@@ -369,11 +376,8 @@ extension ChannelIntents {
                 if model.activeChannelID == nil { model.openChannelWindow?(id) }
             },
             requests: {
-                try await Self.resolveWaitingRequests {
-                    guard let catalog = model.catalog else { throw ChannelIntentError.noServer }
-                    guard catalog.isLoaded || catalog.phase.failure == nil else { throw ChannelIntentError.unreachable }
-                    return (model.serverURL, catalog.isLoaded, model.menuBarStatus.waiting)
-                }
+                guard try channels() != nil else { return nil }
+                return model.menuBarStatus.waiting.compactMap { .init(item: $0, serverURL: model.serverURL) }
             },
             isWaiting: { channelID, request in
                 model.menuBarStatus.waiting.contains { $0.id == channelID && $0.sequence == request }
