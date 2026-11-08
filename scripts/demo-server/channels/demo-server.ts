@@ -158,7 +158,8 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
       try {
         for await (const chunk of request) {
           length += chunk.length;
-          if (length > 65536) { json(response, 413, { error: 'Message is too large.' }); return; }
+          // Ten images at the composer's 1.5 MB each, as base64.
+          if (length > 32 << 20) { json(response, 413, { error: 'Message is too large.' }); return; }
           chunks.push(chunk);
         }
         if (request.headers['content-type']?.split(';')[0]?.trim() !== 'application/json') {
@@ -182,10 +183,14 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
           json(response, 200, { version: 1, seenThrough: snapshot.channel.seenThrough });
           return;
         }
+        const uploads = body?.attachments ?? [];
         if (!body || typeof body !== 'object' || Array.isArray(body)
             || Object.keys(body).some((key) => !['id', 'content', 'attachments'].includes(key))
             || typeof body.id !== 'string' || !body.id.trim() || body.id.length > 255
-            || typeof body.content !== 'string' || !body.content.trim() || body.content.length > 12000) {
+            || typeof body.content !== 'string' || body.content.length > 12000
+            || !Array.isArray(uploads) || !uploads.every((upload: Snapshot) => typeof upload?.base64 === 'string'
+              && typeof upload.mimeType === 'string' && /^image\/[a-z0-9.+-]+$/.test(upload.mimeType))
+            || (!body.content.trim() && !uploads.length)) {
           json(response, 400, { error: 'Expected a user message with id and content.' }); return;
         }
         if (messageIds.has(body.id)) {
@@ -193,7 +198,19 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
         }
         const timestamp = new Date().toISOString();
         const sequence = snapshot.channel.latestSequence + 1;
-        const message = { id: body.id, content: body.content.trim(), sender: { type: 'user' }, sequence, timestamp };
+        // Like the server, each upload becomes a file named by its type, echoed in the order sent.
+        const taken = new Set<string>();
+        const attachments = uploads.map(({ mimeType, base64 }: Snapshot) => {
+          const extension = mimeType.slice('image/'.length).split('+')[0];
+          let name = `image.${extension}`;
+          for (let suffix = 2; taken.has(name); suffix++) name = `image-${suffix}.${extension}`;
+          taken.add(name);
+          const url = `/api/serve/attachments/${encodeURIComponent(body.id)}/${name}`;
+          resources.set(url, { type: mimeType, content: Buffer.from(base64, 'base64') });
+          return { name, url, mimeType };
+        });
+        const message = { id: body.id, content: body.content.trim(), sender: { type: 'user' }, sequence, timestamp,
+          ...(attachments.length ? { attachments } : {}) };
         messageIds.add(message.id);
         snapshot.messages.push(message);
         snapshot.messages = snapshot.messages.slice(-100);

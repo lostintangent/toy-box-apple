@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import Synchronization
 import Testing
+import UniformTypeIdentifiers
 @testable import ChannelClient
 
 /// A clock the test moves. Each sleep waits until `advance` passes its deadline.
@@ -344,6 +345,53 @@ struct ChannelOutboxTests {
         try await eventually(observing: mock) { !outbox.isDelivering && served.reads.withLock { $0 } == [1] }
         clock.advance(by: 60)
         #expect(served.postedIDs == [id.uuidString])
+    }
+
+    @Test(arguments: [false, true])
+    func aSentImageKeepsWhatItsRowLoadedUnderTheLinkTheServerGivesIt(streamFirst: Bool) async throws {
+        let folder = Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let served = Served(Self.catalog())
+        // A link no earlier run has cached.
+        let echoed = ChannelAttachment(name: "image.png", url: "/api/serve/attachments/\(UUID())/image.png",
+                                       mimeType: "image/png")
+        let echo = { @Sendable (id: String) in
+            var message = Self.userMessage(id: id, sequence: 1, text: "")
+            message.attachments = [echoed]
+            return message
+        }
+        let mock = Self.transport(served) { _, request in
+            struct Body: Decodable { var id: String }
+            let id = try JSONDecoder().decode(Body.self, from: requestBody(request)).id
+            var response = try MockResponse.json(SentResponse(message: echo(id)), status: 201)
+            response.keepOpen = streamFirst
+            return response
+        }
+        defer { mock.finishPendingResponses() }
+        let outbox = outbox(folder, clock: TestClock())
+        let catalog = try await catalog(mock, outbox: outbox)
+        let sent = ChannelAttachment(name: "Photo.png", mimeType: "image/png",
+                                     base64: try encodedImage(width: 2, height: 2, type: .png))
+        // The Sending row has drawn it.
+        let loaded = try await ChannelThumbnails.load(for: sent, api: catalog.api, scale: 2)
+
+        let id = await outbox.send("", attachments: [sent], to: "test", on: catalog.api.baseURL)
+        if streamFirst {
+            try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/channels/test/messages") == 1 }
+            served.channel.withLock { $0 = testState(revision: 1, messages: [echo(id.uuidString)]) }
+            let store = catalog.channel(id: "test")
+            store.connect()
+            try await eventually { outbox.message(id) == nil }
+            store.disconnect()
+        } else {
+            try await eventually { outbox.message(id) == nil }
+        }
+        _ = try #require(ChannelAttachmentCache.cachedFile(for: echoed, api: catalog.api))
+        // The server's row draws this in its first frame, and its load neither downloads nor decodes.
+        #expect(ChannelThumbnails.remembered(for: echoed, api: catalog.api) === loaded.image)
+        let row = try await ChannelThumbnails.load(for: echoed, api: catalog.api, scale: 2)
+        #expect(row.image === loaded.image)
+        #expect(FileManager.default.contentsEqual(atPath: row.file.path, andPath: loaded.file.path))
     }
 
     @Test func eachChannelSendsInOrderWithoutHoldingUpAnother() async throws {

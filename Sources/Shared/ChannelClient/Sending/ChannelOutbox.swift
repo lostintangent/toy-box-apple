@@ -211,12 +211,15 @@ public final class ChannelOutbox {
 
     /// A channel's snapshot or replay arrived with these messages, so any of ours among them, Sending
     /// or Not sent, is confirmed.
-    func received(_ messages: some Sequence<ChannelMessage>, in channelID: String, on server: URL) {
-        let key = Self.key(server)
+    func received(_ messages: some Sequence<ChannelMessage>, in channelID: String, api: ChannelAPI) {
+        let key = Self.key(api.baseURL)
         guard queue.contains(where: { $0.server == key && $0.channelID == channelID }) else { return }
-        let ids = Set(messages.lazy.filter { $0.sender == .user }.compactMap { UUID(uuidString: $0.id) })
-        let echoed = queue.filter { $0.server == key && $0.channelID == channelID && ids.contains($0.id) }
-        for message in echoed { confirm(message.id) }
+        for echo in messages where echo.sender == .user {
+            guard let message = UUID(uuidString: echo.id).flatMap({ self.message($0) }),
+                  message.server == key, message.channelID == channelID else { continue }
+            ChannelAttachmentCache.handOff(message.attachments, to: echo.attachments ?? [], api: api)
+            confirm(message.id)
+        }
     }
 
     // MARK: Delivery
@@ -325,7 +328,10 @@ public final class ChannelOutbox {
         var read: Task<Void, Never>?
         if message.server == server, let catalog {
             let store = catalog.existingChannel(id: message.channelID)
-            if let sent { store?.mergeSent(sent) }
+            if let sent {
+                ChannelAttachmentCache.handOff(message.attachments, to: sent.attachments ?? [], api: catalog.api)
+                store?.mergeSent(sent)
+            }
             // The user's own message never leaves its channel unread. A 409 brings no sequence, so it
             // marks nothing unless the open channel already has the message.
             if let through = sent?.sequence ?? store?.sequence(ofSent: id) {
