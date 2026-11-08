@@ -168,10 +168,7 @@ struct MenuBarInbox: View {
                         .id("reply-\(item.id)")
                     }
                 } else if request.canReply {
-                    if let choices = request.choices(
-                        attempts: model.catalog?.existingChannel(id: item.id)?.sendAttempts ?? [],
-                        isConnected: model.catalog?.phase.failure == nil
-                    ) {
+                    if let choices = request.choices(isConnected: model.catalog?.phase.failure == nil) {
                         self.choices(item, choices)
                     }
                     Button {
