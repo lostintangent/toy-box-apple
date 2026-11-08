@@ -657,6 +657,7 @@ private struct TalkRow: ViewModifier {
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 if offersTalk {
                     Button("Talk", systemImage: "mic.fill", action: start)
+                        .labelStyle(.iconOnly)
                         .tint(.accentColor)
                         .accessibilityLabel("Talk to Lead")
                 }

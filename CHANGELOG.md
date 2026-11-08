@@ -5,6 +5,7 @@
 ### Bugs/Polish
 
 - On the folded iPhone, a request in the channel list no longer shows cut off on its right side when it arrives just as you open a channel.
+- Swiping a channel in the list now shows just the Talk and Delete icons, without titles underneath, for a cleaner look.
 
 ## iPhone 0.1.25
 
