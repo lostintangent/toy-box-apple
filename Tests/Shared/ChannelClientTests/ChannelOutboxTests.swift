@@ -279,8 +279,9 @@ struct ChannelOutboxTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let clock = TestClock()
         let served = Served(Self.catalog())
+        // A 409, for an ID another channel has, refuses like any other 4xx.
         let mock = Self.transport(served) { number, _ in
-            number <= 2 ? Self.failure(422) : try .json(["version": 1])
+            number <= 2 ? Self.failure(number == 1 ? 409 : 422) : try .json(["version": 1])
         }
         let outbox = outbox(folder, clock: clock)
         let catalog = try await catalog(mock, outbox: outbox)
@@ -301,27 +302,6 @@ struct ChannelOutboxTests {
         #expect(served.postedIDs == [retried, deleted, retried].map(\.uuidString))
         await outbox.settled()
         #expect(Self.files(folder).isEmpty)
-    }
-
-    @Test func aLostAnswerThenAConflictConfirmsWithoutASecondCopy() async throws {
-        let folder = Self.folder()
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let clock = TestClock()
-        let served = Served(Self.catalog())
-        let mock = Self.transport(served) { number, _ in
-            if number == 1 { throw URLError(.timedOut) }
-            return Self.failure(409)
-        }
-        let outbox = outbox(folder, clock: clock)
-        let catalog = try await catalog(mock, outbox: outbox)
-
-        let id = await outbox.send("Hello", to: "test", on: catalog.api.baseURL)
-        try await eventually { !clock.sleepers.isEmpty }
-        clock.advance(by: try #require(clock.nextDelay))
-        try await eventually { outbox.message(id) == nil }
-        #expect(served.postedIDs == [id.uuidString, id.uuidString])
-        #expect(!outbox.isDelivering)
-        #expect(served.reads.withLock { $0 }.isEmpty)
     }
 
     @Test func theChannelsSnapshotConfirmsAMessageItAlreadyHasWithoutPostingAgain() async throws {

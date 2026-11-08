@@ -332,8 +332,7 @@ public final class ChannelOutbox {
                 ChannelAttachmentCache.handOff(message.attachments, to: sent.attachments ?? [], api: catalog.api)
                 store?.mergeSent(sent)
             }
-            // The user's own message never leaves its channel unread. A 409 brings no sequence, so it
-            // marks nothing unless the open channel already has the message.
+            // The user's own message never leaves its channel unread.
             if let through = sent?.sequence ?? store?.sequence(ofSent: id) {
                 catalog.read(message.channelID, through: through)
                 read = markRead(message.channelID, through: through, api: catalog.api)
@@ -469,7 +468,7 @@ extension ChannelOutbox {
 
     /// What one attempt's answer means for the message.
     enum Outcome: Equatable, Sendable {
-        /// A 2xx, with the message when it decodes, or a 409 for an ID the server already has.
+        /// A 2xx, with the message when it decodes. A repeated ID returns the stored message.
         case accepted(ChannelMessage?)
         /// Toy Box can't reach the server, so the message waits for a reconnect, however long.
         case unreachable
@@ -490,7 +489,6 @@ extension ChannelOutbox {
         init(_ response: HTTPURLResponse, data: Data, isLive: Bool) {
             switch response.statusCode {
             case 200..<300: self = .accepted(ChannelAPI.sentMessage(in: data))
-            case 409: self = .accepted(nil)
             case let status where Self.gatewayStatuses.contains(status): self = isLive ? .trouble : .unreachable
             case 408, 429, 500...: self = .trouble
             case 400..<500: self = .rejected

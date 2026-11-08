@@ -5,17 +5,6 @@ import Testing
 
 @Suite(.timeLimit(.minutes(1)))
 struct TransportTests {
-    @Test func messageConflictIsNeverRetried() async throws {
-        let mock = MockTransport { _, _ in
-            MockResponse(status: 409, body: Data(#"{"error":"Message ID already exists."}"#.utf8))
-        }
-        let api = try mock.api()
-        await #expect(throws: ChannelAPIError.duplicateMessage) {
-            try await api.post(channelId: "test", id: "fixed", content: "Hello")
-        }
-        #expect(mock.requests.count == 1)
-    }
-
     @Test(arguments: [false, true], [false, true])
     func postedImagesCarryTheServerMimeTypeAndBase64Shape(imageOnly: Bool, named: Bool) async throws {
         let base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
