@@ -58,6 +58,13 @@ public final class ChannelOutbox {
     /// the message back.
     @ObservationIgnored private var removed: Set<UUID> = []
     @ObservationIgnored private var reads = 0
+    @ObservationIgnored private let uploads: (any Uploads)?
+    @ObservationIgnored private let handsOff: Bool
+    /// Messages iOS is uploading, so a second hand-off skips them.
+    @ObservationIgnored private var uploading: Set<UUID> = []
+    /// What the app delegate runs once a session iOS woke it for has reported every upload, by session.
+    @ObservationIgnored private var completions: [String: () -> Void] = [:]
+    @ObservationIgnored private var listening: Task<Void, Never>?
     @ObservationIgnored private var writes: Task<Void, Never>?
     @ObservationIgnored private var scanning: Task<Void, Never>?
     @ObservationIgnored private let retryWindow: TimeInterval
@@ -68,20 +75,28 @@ public final class ChannelOutbox {
     /// The Mac's folder, beside its drafts. The phone passes one in its shared app group instead.
     public static var defaultFolder: URL { .savedWriting().appending(path: "Sending", directoryHint: .isDirectory) }
 
-    public convenience init(folder: URL = ChannelOutbox.defaultFolder) {
-        self.init(folder: folder, retryWindow: 120)
+    /// `background` hands sends to iOS on the phone. See `handOff()`.
+    public convenience init(folder: URL = ChannelOutbox.defaultFolder, background: Background? = nil) {
+        self.init(folder: folder, retryWindow: 120,
+                  uploads: background.map { BackgroundUploads($0, folder: folder) },
+                  handsOff: background?.handsOff ?? false)
     }
 
     /// `now` and `sleep` time retries. Tests pass a clock they move instead of waiting.
     init(folder: URL, retryWindow: TimeInterval, reconnectPolicy: ReconnectPolicy = .init(),
          now: @escaping () -> Date = { .now },
-         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
+         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },
+         uploads: (any Uploads)? = nil, handsOff: Bool = false) {
         self.folder = folder
         self.retryWindow = retryWindow
         self.reconnectPolicy = reconnectPolicy
         self.now = now
         self.sleep = sleep
-        scan()
+        self.uploads = uploads
+        self.handsOff = handsOff
+        // An outbox that hands off sends only its own messages, and leaves the rest to the app.
+        if handsOff { isLoaded = true } else { scan() }
+        if let uploads { listen(to: uploads) }
     }
 
     // MARK: Sending
@@ -93,6 +108,13 @@ public final class ChannelOutbox {
     @discardableResult
     public func send(_ text: String, images: [ComposerImage] = [], to channelID: String, on server: URL,
                      answering request: Int? = nil, id: UUID = UUID()) async -> UUID {
+        await send(text, attachments: images.map(\.attachment), to: channelID, on: server, answering: request, id: id)
+    }
+
+    /// Sends attachments already encoded, as the share sheet's are.
+    @discardableResult
+    public func send(_ text: String, attachments: [ChannelAttachment], to channelID: String, on server: URL,
+                     answering request: Int? = nil, id: UUID = UUID()) async -> UUID {
         if let existing = queue.first(where: { $0.id == id }) {
             if existing.state != .sending { sendAgain(id) }
             return id
@@ -100,13 +122,15 @@ public final class ChannelOutbox {
         let destination = Destination(server: Self.key(server), channelID: channelID)
         let message = Message(id: id, server: destination.server, channelID: channelID,
                               text: text.trimmingCharacters(in: .whitespacesAndNewlines),
-                              attachments: images.map(\.attachment),
+                              attachments: attachments,
                               request: request ?? waitingRequest(at: destination), sentAt: now(), state: .sending)
         removed.remove(id)
         queue.append(message)
         // The row shows at once, and delivery starts once the message is saved.
         await save(message).value
         changed()
+        // The extension ends right after, so its upload must have started.
+        if handsOff { await writes?.value }
         return id
     }
 
@@ -227,6 +251,68 @@ public final class ChannelOutbox {
         for message in echoed { confirm(message.id) }
     }
 
+    // MARK: Handing off to iOS
+
+    /// Hands each channel's next message to iOS as a background upload, for the phone's app delegate
+    /// when its background time is about to end. iOS finishes it even if Toy Box stops running, and
+    /// its answer comes back through the same confirmation. The outbox keeps trying as well, since the
+    /// server ignores whichever arrives second, and only the next message goes, so a channel's
+    /// messages still arrive in order.
+    public func handOff() {
+        guard let uploads, let catalog, let server else { return }
+        var channels = Set<String>()
+        for message in queue where message.server == server && message.state == .sending {
+            guard channels.insert(message.channelID).inserted, !uploading.contains(message.id) else { continue }
+            let request: URLRequest
+            do {
+                request = try catalog.api.messageRequest(channelId: message.channelID, id: message.id.uuidString,
+                                                         content: message.text, attachments: message.attachments)
+            } catch { continue }
+            uploading.insert(message.id)
+            let id = message.id
+            write { uploads.start(request, id: id) }
+        }
+    }
+
+    /// iOS relaunched or woke the app with finished uploads, from its own session or the share
+    /// extension's. `completion` runs once they're applied. False for a session that isn't the outbox's.
+    @discardableResult
+    public func handleEvents(forBackgroundSession session: String, completion: @escaping () -> Void) -> Bool {
+        guard let uploads, session.hasPrefix(uploads.session) else { return false }
+        completions[session] = completion
+        // Reads the share extension's messages before its uploads report.
+        reload()
+        uploads.open(session)
+        return true
+    }
+
+    private func listen(to uploads: any Uploads) {
+        listening = Task { [weak self] in
+            for await upload in uploads.events { await self?.apply(upload) }
+        }
+    }
+
+    private func apply(_ upload: Upload) async {
+        switch upload {
+        case .finished(let id, let response, let data, let error):
+            await scanning?.value
+            uploading.remove(id)
+            guard let message = message(id) else { return }
+            let outcome = if let error { Outcome(error) }
+                else if let response { Outcome(response, data: data, isLive: catalog?.isLive ?? false, now: now()) }
+                else { Outcome.trouble(retryAfter: nil) }
+            switch outcome {
+            case .accepted(let sent): confirm(id, merging: sent)
+            case .rejected where message.state == .sending: stop(id)
+            // Still Sending, so the outbox keeps trying while Toy Box runs, or at its next launch.
+            default: Self.logger.info("A background upload didn't confirm a message")
+            }
+        case .delivered(let session):
+            await settled()
+            completions.removeValue(forKey: session)?()
+        }
+    }
+
     // MARK: Delivery
 
     private struct Line {
@@ -247,6 +333,7 @@ public final class ChannelOutbox {
             || server.map { server in queue.contains { $0.server == server && $0.state == .sending } } ?? false
         if isDelivering != delivering { isDelivering = delivering }
         guard isLoaded, let catalog, let server else { return }
+        if handsOff { return handOff() }
         let api = catalog.api
         let channels = Set(queue.lazy.filter { $0.server == server && $0.state == .sending }.map(\.channelID))
         for channelID in channels where lines[channelID] == nil {

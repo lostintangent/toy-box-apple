@@ -513,4 +513,152 @@ struct ChannelOutboxTests {
         #expect(store.sendAttempts.isEmpty)
         #expect(served.posted.count == 2)
     }
+
+    // MARK: Handing off to iOS
+
+    /// Uploads the test finishes itself, in place of iOS.
+    final class Uploads: ChannelOutbox.Uploads {
+        let session: String
+        let events: AsyncStream<ChannelOutbox.Upload>
+        private let continuation: AsyncStream<ChannelOutbox.Upload>.Continuation
+        private let started = Mutex<[URLRequest]>([])
+        let opened = Mutex<[String]>([])
+
+        init(session: String = "test.outbox") {
+            self.session = session
+            (events, continuation) = AsyncStream.makeStream()
+        }
+
+        /// The message IDs started, in order.
+        var startedIDs: [String] {
+            started.withLock { $0 }.compactMap { request in
+                struct Body: Decodable { var id: String }
+                return try? JSONDecoder().decode(Body.self, from: request.httpBody ?? Data()).id
+            }
+        }
+
+        var startedPaths: [String] { started.withLock { $0 }.compactMap { $0.url?.path } }
+
+        func start(_ request: URLRequest, id: UUID) { started.withLock { $0.append(request) } }
+
+        func open(_ session: String) { opened.withLock { $0.append(session) } }
+
+        func finish(_ id: UUID, status: Int, body: some Encodable = ["version": 1]) throws {
+            let response = HTTPURLResponse(url: URL(string: "http://example.test")!, statusCode: status,
+                                           httpVersion: nil, headerFields: nil)
+            continuation.yield(.finished(id, response, try JSONEncoder().encode(body), nil))
+        }
+
+        func fail(_ id: UUID, _ error: URLError.Code) {
+            continuation.yield(.finished(id, nil, Data(), URLError(error)))
+        }
+
+        func deliver(_ session: String) { continuation.yield(.delivered(session: session)) }
+    }
+
+    /// Whether the app delegate's completion ran.
+    @MainActor @Observable final class Completion {
+        var ran = false
+    }
+
+    func outbox(_ folder: URL, clock: TestClock, uploads: Uploads, handsOff: Bool = false) -> ChannelOutbox {
+        ChannelOutbox(folder: folder, retryWindow: 120, now: { clock.now }, sleep: { try await clock.sleep($0) },
+                      uploads: uploads, handsOff: handsOff)
+    }
+
+    @Test func aHandOffGivesIOSEachChannelsNextMessageOnceAndItsAnswerConfirmsIt() async throws {
+        let folder = Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let clock = TestClock()
+        let served = Served(Self.catalog([Self.channel(), Self.channel("other")]))
+        let mock = Self.transport(served) { _, _ in throw URLError(.cannotConnectToHost) }
+        let uploads = Uploads()
+        let outbox = outbox(folder, clock: clock, uploads: uploads)
+        let catalog = try await catalog(mock, outbox: outbox)
+        let server = catalog.api.baseURL
+
+        let first = await outbox.send("First", to: "test", on: server)
+        let second = await outbox.send("Second", to: "test", on: server)
+        let other = await outbox.send("Other", to: "other", on: server)
+        await outbox.send("Elsewhere", to: "test", on: URL(string: "https://elsewhere.test")!)
+        outbox.handOff()
+        outbox.handOff()
+        await outbox.settled()
+        #expect(uploads.startedIDs == [first.uuidString, other.uuidString])
+        #expect(uploads.startedPaths == ["/api/v1/channels/test/messages", "/api/v1/channels/other/messages"])
+
+        try uploads.finish(first, status: 201, body: SentResponse(message: Self.userMessage(id: first.uuidString, sequence: 9)))
+        try await eventually { outbox.messages(in: "test").map(\.id) == [second] }
+        try await eventually(observing: mock) { served.reads.withLock { $0 } == [9] }
+        outbox.handOff()
+        await outbox.settled()
+        #expect(uploads.startedIDs == [first.uuidString, other.uuidString, second.uuidString])
+    }
+
+    @Test func aBackgroundUploadsRefusalOrTroubleFollowsTheOutboxsRules() async throws {
+        let folder = Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let clock = TestClock()
+        let served = Served(Self.catalog([Self.channel(), Self.channel("other")]))
+        let mock = Self.transport(served) { _, _ in throw URLError(.cannotConnectToHost) }
+        let uploads = Uploads()
+        let outbox = outbox(folder, clock: clock, uploads: uploads)
+        let catalog = try await catalog(mock, outbox: outbox)
+
+        let refused = await outbox.send("Refused", to: "test", on: catalog.api.baseURL)
+        let troubled = await outbox.send("Troubled", to: "other", on: catalog.api.baseURL)
+        outbox.handOff()
+        await outbox.settled()
+        let completion = Completion()
+        #expect(!outbox.handleEvents(forBackgroundSession: "dev.example.other") {})
+        #expect(outbox.handleEvents(forBackgroundSession: "test.outbox") { completion.ran = true })
+        try uploads.finish(refused, status: 422, body: ["error": "No."])
+        try uploads.finish(troubled, status: 500, body: ["error": "Busy."])
+        uploads.deliver("test.outbox")
+        try await eventually { completion.ran }
+        #expect(outbox.message(refused)?.state == .notSent)
+        #expect(outbox.message(troubled)?.state == .sending)
+        #expect(uploads.opened.withLock { $0 } == ["test.outbox"])
+
+        // Trouble leaves it Sending, so the next hand-off gives it to iOS again.
+        outbox.handOff()
+        await outbox.settled()
+        #expect(uploads.startedIDs == [refused.uuidString, troubled.uuidString, troubled.uuidString])
+    }
+
+    @Test func theShareExtensionHandsOffEachSendBeforeItReturnsAndTheAppTakesItsAnswer() async throws {
+        let folder = Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let clock = TestClock()
+        let served = Served(Self.catalog())
+        let mock = Self.transport(served) { _, _ in throw URLError(.cannotConnectToHost) }
+
+        let earlier = outbox(folder, clock: clock)
+        let waiting = await earlier.send("From the app", to: "test", on: try mock.api().baseURL)
+        await earlier.settled()
+
+        let shareUploads = Uploads(session: "test.outbox.share")
+        let share = outbox(folder, clock: clock, uploads: shareUploads, handsOff: true)
+        let shareCatalog = try await catalog(mock, outbox: share)
+        let shared = await share.send("A link", to: "test", on: shareCatalog.api.baseURL)
+        #expect(shareUploads.startedIDs == [shared.uuidString])
+        #expect(share.message(waiting) == nil)
+        #expect(served.posted.isEmpty)
+        #expect(Self.files(folder).contains(shared.uuidString + ".json"))
+
+        // iOS wakes the app with the extension's upload, which it hasn't read yet.
+        let appUploads = Uploads()
+        let app = outbox(folder, clock: clock, uploads: appUploads)
+        let catalog = try await catalog(mock, outbox: app)
+        let completion = Completion()
+        #expect(app.handleEvents(forBackgroundSession: "test.outbox.share") { completion.ran = true })
+        try appUploads.finish(shared, status: 409, body: ["error": "Already sent."])
+        appUploads.deliver("test.outbox.share")
+        try await eventually { completion.ran }
+        #expect(app.message(shared) == nil)
+        #expect(app.message(waiting)?.state == .sending)
+        #expect(appUploads.opened.withLock { $0 } == ["test.outbox.share"])
+        #expect(Self.files(folder) == [waiting.uuidString + ".json"])
+        withExtendedLifetime(catalog) {}
+    }
 }

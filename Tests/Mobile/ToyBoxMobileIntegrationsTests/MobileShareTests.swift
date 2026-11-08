@@ -152,91 +152,30 @@ struct MobileShareTests {
 
     // MARK: Session
 
-    @Test func sendAgainRepeatsTheSameLockedAttemptAndThenRemembersTheChannel() async throws {
-        let fixture = try ShareHTTPFixture(posts: [.fail(.networkConnectionLost), .accept])
+    @Test func aSendGoesToTheOutboxSoTheSheetIsDoneAtOnceAndRemembersTheChannel() async throws {
+        let fixture = try ShareHTTPFixture()
         let donor = FakeDonor()
-        let (session, directory) = try await Self.session(fixture, donor: donor)
+        let (session, outbox, directory) = try await Self.session(fixture, donor: donor)
         defer { try? FileManager.default.removeItem(at: directory) }
         session.choose(Self.studio)
         session.note = "Look"
 
         await session.send()
-        #expect(session.phase == .unconfirmed)
-        #expect(session.canSend)
-        session.note = "Changed"
-
-        await session.send()
         #expect(session.phase == .sent)
         #expect(!session.canSend)
-        let posts = fixture.posts
-        #expect(posts.count == 2)
-        #expect(Set(posts.map(\.id)).count == 1)
-        #expect(posts.allSatisfy { $0.content == "Look\n\nhttps://example.com/story" })
-        #expect(session.notice == nil)
+        session.choose(Self.channel("design", "Design"))
+        #expect(session.target?.id == "studio")
         let history = try MobileShareHistory(directory: directory, donor: donor.donor)
         #expect(history.recentChannelIDs == ["studio"])
         #expect(donor.donated.count == 1)
-    }
 
-    @Test func anOfflineSendSaysSoAndKeepsItsAttempt() async throws {
-        let fixture = try ShareHTTPFixture(posts: [.fail(.notConnectedToInternet), .accept])
-        let (session, directory) = try await Self.session(fixture)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        session.choose(Self.studio)
-
-        await session.send()
-        #expect(session.phase == .offline)
-        #expect(session.isLocked)
-        session.choose(Self.channel("other", "Other"))
-        #expect(session.target?.id == "studio")
-        await session.send()
-        #expect(session.phase == .sent)
-        #expect(Set(fixture.posts.map(\.id)).count == 1)
-    }
-
-    @Test func aRefusalUnlocksTheMessageAndTheNextSendIsANewAttempt() async throws {
-        let fixture = try ShareHTTPFixture(posts: [.status(422, "Attachments are limited to 10."), .accept])
-        let (session, directory) = try await Self.session(fixture)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        session.choose(Self.studio)
-
-        await session.send()
-        #expect(session.phase == .composing)
-        #expect(session.notice == "Attachments are limited to 10.")
-        session.note = "Edited"
-        #expect(session.note == "Edited")
-        await session.send()
-        #expect(session.phase == .sent)
-        let posts = fixture.posts
-        #expect(posts.count == 2)
-        #expect(posts.first?.id != posts.last?.id)
-        #expect(posts.last?.content == "Edited\n\nhttps://example.com/story")
-    }
-
-    @Test func aDeletedChannelAsksForAnotherOne() async throws {
-        let fixture = try ShareHTTPFixture(posts: [.status(404, "Channel not found."), .accept])
-        let (session, directory) = try await Self.session(fixture)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        session.choose(Self.studio)
-        let catalogReads = fixture.catalogReads
-
-        await session.send()
-        #expect(session.phase == .composing)
-        #expect(session.target == nil)
-        #expect(session.notice == "Studio no longer exists. Choose another channel.")
-        #expect(fixture.catalogReads == catalogReads + 1)
-        #expect(!session.canSend)
-
-        session.choose(Self.channel("design", "Design"))
-        #expect(session.notice == nil)
-        await session.send()
-        #expect(session.phase == .sent)
-        #expect(fixture.posts.map(\.channel) == ["studio", "design"])
-        #expect(fixture.posts.first?.id != fixture.posts.last?.id)
+        try await Self.delivered(outbox)
+        #expect(fixture.posts.map(\.content) == ["Look\n\nhttps://example.com/story"])
+        #expect(fixture.reads == ["studio"])
     }
 
     @Test func aSuggestionOpensItsChannelOnlyWhileTheServerStillListsIt() async throws {
-        let fixture = try ShareHTTPFixture(posts: [])
+        let fixture = try ShareHTTPFixture()
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let history = try MobileShareHistory(directory: directory, donor: FakeDonor().donor)
@@ -295,17 +234,29 @@ struct MobileShareTests {
         return (try MobileShareHistory(directory: directory, donor: donor.donor), directory)
     }
 
-    /// A session with the saved server, its channels loaded and a web page to share.
-    private static func session(_ fixture: ShareHTTPFixture,
-                                donor: FakeDonor = FakeDonor()) async throws -> (MobileShareSession, URL) {
+    /// A session with the saved server, its channels loaded and a web page to share. Its outbox
+    /// delivers in process, where the share extension's hands off to iOS.
+    private static func session(_ fixture: ShareHTTPFixture, donor: FakeDonor = FakeDonor())
+        async throws -> (MobileShareSession, ChannelOutbox, URL) {
         let (history, directory) = try history(donor)
         await history.select(serverURL: fixture.serverURL).value
-        let session = MobileShareSession(history: history, intent: nil, session: fixture.session)
+        let outbox = ChannelOutbox(folder: directory.appending(path: "Sending", directoryHint: .isDirectory))
+        let session = MobileShareSession(history: history, intent: nil, session: fixture.session, outbox: outbox)
         let page = try #require(URL(string: "https://example.com/story"))
         await session.start([NSItemProvider(object: page as NSURL)], title: "Story")
         #expect(session.content?.link?.url == page)
         #expect(session.catalog?.isLoaded == true)
-        return (session, directory)
+        return (session, outbox, directory)
+    }
+
+    /// Returns once the outbox has nothing left to deliver, including marking its messages read.
+    private static func delivered(_ outbox: ChannelOutbox) async throws {
+        let changes = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        defer { changes.continuation.finish() }
+        var iterator = changes.stream.makeAsyncIterator()
+        while withObservationTracking({ outbox.isDelivering }, onChange: { changes.continuation.yield() }) {
+            guard await iterator.next() != nil else { throw CancellationError() }
+        }
     }
 
     private static func intent(_ target: MobileShareTarget, name: String) -> INSendMessageIntent {
@@ -359,17 +310,11 @@ private final class FakeDonor {
     }
 }
 
-/// One fake server per test: the catalog lists Studio and Design, and each message post takes the
-/// next scripted outcome.
+/// One fake server per test: the catalog lists Studio and Design, and it accepts every message and
+/// read mark.
 private final class ShareHTTPFixture: Sendable {
-    enum Outcome: Sendable {
-        case accept
-        case status(Int, String)
-        case fail(URLError.Code)
-    }
-
     struct Post: Sendable { var channel: String; var id: String; var content: String }
-    private struct State { var outcomes: [Outcome]; var posts: [Post] = []; var catalogReads = 0 }
+    private struct State { var posts: [Post] = []; var reads: [String] = [] }
     private final class Storage: Sendable {
         let value: Mutex<State>
         init(_ state: State) { value = Mutex(state) }
@@ -382,9 +327,10 @@ private final class ShareHTTPFixture: Sendable {
     private let host: String
     private let state: Storage
     var posts: [Post] { state.value.withLock { $0.posts } }
-    var catalogReads: Int { state.value.withLock { $0.catalogReads } }
+    /// The channels marked read, in order.
+    var reads: [String] { state.value.withLock { $0.reads } }
 
-    init(posts outcomes: [Outcome]) throws {
+    init() throws {
         host = "\(UUID().uuidString.lowercased()).share.test"
         serverURL = "http://\(host)"
         let catalog = try JSONEncoder().encode(ChannelCatalog(
@@ -395,7 +341,7 @@ private final class ShareHTTPFixture: Sendable {
                              updatedAt: "2026-10-31T05:00:00Z")],
             members: [.init(id: "builder", name: "Builder", channelId: "studio", role: "Builds",
                             avatar: .init(mark: "M4 4L20 20", color: "#ff8800"))]))
-        let state = Storage(State(outcomes: outcomes))
+        let state = Storage(State())
         self.state = state
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ShareHTTPProtocol.self]
@@ -404,31 +350,22 @@ private final class ShareHTTPFixture: Sendable {
             handlers[host] = { request in
                 let url = try #require(request.url)
                 if request.httpMethod == "GET", url.path == "/api/v1/channels" {
-                    state.value.withLock { $0.catalogReads += 1 }
                     return .success((200, catalog))
                 }
                 let parts = url.pathComponents
+                if request.httpMethod == "POST", parts.count == 6, parts.last == "read" {
+                    state.value.withLock { $0.reads.append(parts[4]) }
+                    return .success((200, Data(#"{"version":1,"seenThrough":16}"#.utf8)))
+                }
                 guard request.httpMethod == "POST", parts.count == 6, parts.last == "messages" else {
                     Issue.record("Unexpected share request: \(request.httpMethod ?? "") \(url.path)")
                     return .success((500, Data()))
                 }
                 let body = try JSONDecoder().decode(PostBody.self, from: try #require(ShareHTTPProtocol.body(of: request)))
-                let outcome = state.value.withLock { state -> Outcome? in
-                    state.posts.append(Post(channel: parts[4], id: body.id, content: body.content))
-                    return state.outcomes.isEmpty ? nil : state.outcomes.removeFirst()
-                }
-                switch outcome {
-                case .accept:
-                    let message = ChannelMessage(id: body.id, sequence: 16, timestamp: "2026-10-31T05:00:00Z",
-                                                 sender: .user, content: .text(body.content))
-                    return .success((201, try JSONEncoder().encode(Accepted(message: message))))
-                case .status(let status, let error):
-                    return .success((status, try JSONEncoder().encode(["error": error])))
-                case .fail(let code): return .failure(URLError(code))
-                case nil:
-                    Issue.record("Unscripted post")
-                    return .success((500, Data()))
-                }
+                state.value.withLock { $0.posts.append(Post(channel: parts[4], id: body.id, content: body.content)) }
+                let message = ChannelMessage(id: body.id, sequence: 16, timestamp: "2026-10-31T05:00:00Z",
+                                             sender: .user, content: .text(body.content))
+                return .success((201, try JSONEncoder().encode(Accepted(message: message))))
             }
         }
     }
