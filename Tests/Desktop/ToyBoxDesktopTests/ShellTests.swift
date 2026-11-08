@@ -1146,13 +1146,6 @@ struct NotificationTests {
             == ChannelNotification.Content.bodyLimit)
     }
 
-    @Test func completionNamesASingleTask() {
-        #expect(ChannelNotification.Content(completion: [.init(id: "1", title: "Ship the door")]).body
-            == "Completed \u{201C}Ship the door\u{201D}")
-        #expect(ChannelNotification.Content(completion: [.init(id: "1", title: "A"), .init(id: "2", title: "B")]).body
-            == "All 2 tasks completed")
-    }
-
     @Test func repliesAreAddressedLikeTheInAppReply() {
         #expect(ChannelNotification.Reply("  Ship it  ", to: "ada-lovelace")?.content == "@ada-lovelace Ship it")
         #expect(ChannelNotification.Reply("@lead Ship it", to: "ada-lovelace")?.content == "@lead Ship it")

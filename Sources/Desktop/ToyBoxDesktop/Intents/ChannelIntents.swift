@@ -193,7 +193,7 @@ final class ChannelIntents {
         let deadline = ContinuousClock.now + timeout
         while true {
             let current = try snapshot()
-            if (current.hasLoaded && current.waiting.allSatisfy({ $0.quote != nil })) || ContinuousClock.now >= deadline {
+            if current.hasLoaded || ContinuousClock.now >= deadline {
                 return current.waiting.compactMap { WaitingRequestEntry(item: $0, serverURL: current.server) }
             }
             try await Task.sleep(for: .milliseconds(50))

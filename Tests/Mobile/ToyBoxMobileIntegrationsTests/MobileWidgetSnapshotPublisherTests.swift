@@ -24,7 +24,7 @@ struct MobileWidgetSnapshotPublisherTests {
         #expect(Set(row.keys) == ["channelID", "channelName", "sequence", "quote", "requestedAt"])
         #expect(!waiting.isOffline)
         #expect(waiting.updatedAt == now)
-        #expect(fixture.paths == ["/api/v1/channels", "/api/v1/channels/studio/messages"])
+        #expect(fixture.paths == ["/api/v1/channels"])
         #expect(Set(try FileManager.default.contentsOfDirectory(atPath: directory.path))
             == [MobilePushRegistrationStore.fileName, NeedsYouSnapshot.fileName])
 
@@ -39,8 +39,7 @@ struct MobileWidgetSnapshotPublisherTests {
         #expect(fixture.paths.last == "/api/v1/channels")
     }
 
-    @Test(arguments: ["/api/v1/channels", "/api/v1/channels/studio/messages"])
-    @MainActor func aFailedRefreshPreservesTheSavedRequestAndItsObservationTime(failingPath: String) async throws {
+    @Test @MainActor func aFailedRefreshPreservesTheSavedRequestAndItsObservationTime() async throws {
         let fixture = try WidgetHTTPFixture(catalog: Self.catalog(waiting: true))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -49,7 +48,7 @@ struct MobileWidgetSnapshotPublisherTests {
         saved.serverURL = fixture.serverURL
         let original = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         try original.publish(saved, now: saved.updatedAt)
-        fixture.fail(failingPath)
+        fixture.fail("/api/v1/channels")
         let relaunched = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         let offline = try #require(try await relaunched.refresh(
             session: fixture.session, now: saved.updatedAt.addingTimeInterval(60)))
@@ -107,20 +106,20 @@ struct MobileWidgetSnapshotPublisherTests {
         #expect(refreshed.isStale(at: refreshed.updatedAt.addingTimeInterval(30 * 60)))
     }
 
-    @Test @MainActor func anOfflineRelaunchKeepsOnlyTheSelectedServersCachedRequest() async throws {
+    @Test @MainActor func anOfflineRelaunchKeepsOnlyTheSelectedServersCachedRequest() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
         let first = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         let snapshot = Self.snapshot(now: .now)
         try first.publish(snapshot)
         let restored = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
-        try await restored.update(requests: nil, serverURL: snapshot.serverURL)
+        try restored.update(requests: nil, serverURL: snapshot.serverURL)
         let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
         let cached = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
         #expect(cached.isOffline)
         #expect(cached.isAvailable)
         #expect(cached.requests == snapshot.requests)
-        try await restored.update(requests: nil, serverURL: "https://other.test")
+        try restored.update(requests: nil, serverURL: "https://other.test")
         let switched = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
         #expect(switched.serverURL == "https://other.test")
         #expect(!switched.isAvailable)
@@ -128,7 +127,7 @@ struct MobileWidgetSnapshotPublisherTests {
         #expect(switched.requests.isEmpty)
     }
 
-    @Test @MainActor func offlineUpdatesKeepTheCachedObservationTimeWithoutAHeartbeatRewrite() async throws {
+    @Test @MainActor func offlineUpdatesKeepTheCachedObservationTimeWithoutAHeartbeatRewrite() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
         var reloads = 0
@@ -138,7 +137,7 @@ struct MobileWidgetSnapshotPublisherTests {
         try publisher.publish(snapshot, now: now)
         #expect(reloads == 1)
 
-        try await publisher.update(requests: nil, serverURL: snapshot.serverURL)
+        try publisher.update(requests: nil, serverURL: snapshot.serverURL)
         let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
         let cached = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
         #expect(cached.isOffline)
@@ -149,7 +148,7 @@ struct MobileWidgetSnapshotPublisherTests {
         let fileNumber = try #require(
             FileManager.default.attributesOfItem(atPath: file.path)[.systemFileNumber] as? NSNumber)
 
-        try await publisher.update(requests: nil, serverURL: snapshot.serverURL)
+        try publisher.update(requests: nil, serverURL: snapshot.serverURL)
         let repeated = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
         #expect(repeated == cached)
         #expect(reloads == 2)
@@ -165,18 +164,20 @@ struct MobileWidgetSnapshotPublisherTests {
     }
 
     private static func catalog(waiting: Bool) -> ChannelCatalog {
-        .init(lead: .init(name: "Server Lead", role: "Coordinates",
-                         avatar: .init(mark: "M4 12L12 4L20 12", color: "#327785")),
-              channels: [.init(id: "studio", name: "Studio", model: .init(provider: "copilot", name: "model"),
-                               latestSequence: 15, requestSequence: waiting ? 15 : nil,
-                               updatedAt: "2026-10-27T07:30:00Z")])
+        let question = ChannelMessage(
+            id: "question", sequence: 15, timestamp: "2026-10-27T07:30:00Z",
+            sender: .agent("studio"), content: .text("**Ready to ship?**"), request: true)
+        return .init(lead: .init(name: "Server Lead", role: "Coordinates",
+                                avatar: .init(mark: "M4 12L12 4L20 12", color: "#327785")),
+                     channels: [.init(id: "studio", name: "Studio", model: .init(provider: "copilot", name: "model"),
+                                      latestSequence: 15, requestSequence: waiting ? 15 : nil,
+                                      request: waiting ? question : nil, updatedAt: "2026-10-27T07:30:00Z")])
     }
 }
 
 private final class WidgetHTTPFixture: Sendable {
     struct Response: Sendable { var status: Int; var data: Data }
     struct State: Sendable { var responses: [String: Response]; var paths: [String] = [] }
-    struct History: Encodable { var version = 1; var revision = 1; var messages: [ChannelMessage] }
     private final class Storage: Sendable {
         let value: Mutex<State>
         init(_ state: State) { value = Mutex(state) }
@@ -191,13 +192,8 @@ private final class WidgetHTTPFixture: Sendable {
     init(catalog: ChannelCatalog, beforeResponse: @escaping @Sendable (URLRequest) throws -> Void = { _ in }) throws {
         host = "\(UUID().uuidString.lowercased()).widget.test"
         serverURL = "http://\(host)"
-        let question = ChannelMessage(
-            id: "question", sequence: 15, timestamp: "2026-10-27T07:30:00Z",
-            sender: .agent("studio"), content: .text("**Ready to ship?**"))
         let state = Storage(State(responses: [
             "/api/v1/channels": .init(status: 200, data: try JSONEncoder().encode(catalog)),
-            "/api/v1/channels/studio/messages": .init(
-                status: 200, data: try JSONEncoder().encode(History(messages: [question]))),
         ]))
         self.state = state
         let configuration = URLSessionConfiguration.ephemeral
@@ -208,7 +204,6 @@ private final class WidgetHTTPFixture: Sendable {
                 try beforeResponse(request)
                 let url = try #require(request.url)
                 #expect(request.httpMethod == "GET")
-                if url.path.hasSuffix("/messages") { #expect(url.query == "before=16") }
                 return state.value.withLock {
                     $0.paths.append(url.path)
                     guard let response = $0.responses[url.path] else {

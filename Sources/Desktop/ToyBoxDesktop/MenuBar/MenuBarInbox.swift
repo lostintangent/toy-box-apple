@@ -146,8 +146,6 @@ struct MenuBarInbox: View {
                 } else {
                     Text("Request preview unavailable")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
-                    Button("Retry") { model.retryMenuBarRequest(channelID: item.id) }
-                        .controlSize(.small)
                 }
                 if let notice = request.state.notice {
                     Label(notice, systemImage: request.state.symbol)

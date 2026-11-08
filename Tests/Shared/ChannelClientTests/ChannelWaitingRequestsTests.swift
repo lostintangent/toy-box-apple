@@ -1,145 +1,49 @@
 import ChannelKit
 import Foundation
-import Synchronization
 import Testing
 @testable import ChannelClient
 
 @MainActor
 @Suite("Waiting requests", .timeLimit(.minutes(1)))
-final class ChannelWaitingRequestsTests {
-    private let lookups = Mutex([String: Int]())
-    private var transport: MockTransport?
-
-    private func listed(_ id: String, request: Int?, updated: String = "08:00") -> Channel {
-        Channel(id: id, name: id, model: .init(provider: "test", name: "test"), requestSequence: request,
-                updatedAt: "2026-10-22T\(updated):00Z")
+struct ChannelWaitingRequestsTests {
+    private func listed(_ id: String, request: ChannelMessage?, sequence: Int? = nil, updated: String = "08:00") -> Channel {
+        Channel(id: id, name: id, model: .init(provider: "test", name: "test"),
+                requestSequence: sequence ?? request?.sequence, request: request, updatedAt: "2026-10-22T\(updated):00Z")
     }
 
-    private nonisolated func asked(_ sequence: Int, in channel: String, _ text: String, at time: String) -> ChannelMessage {
+    private func asked(_ sequence: Int, in channel: String, _ text: String, at time: String,
+                       replies: [String]? = nil) -> ChannelMessage {
         .init(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-22T\(time):00Z", sender: .agent(channel),
-              content: .text(text), request: true)
+              content: .text(text), request: true, replies: replies)
     }
 
-    /// A loaded catalog whose histories answer from `pages`, failing while it returns nil. A held
-    /// first lookup waits for the transport to finish it.
-    private func catalog(_ channels: [Channel], loaded: ChannelMessage, live: Bool, holdingFirstLookup: Bool = false,
-                         pages: @escaping @Sendable (String, Int) -> [ChannelMessage]?) async throws -> ChannelCatalogStore {
-        let transport = MockTransport { [self] request, _ in
-            let path = request.url?.pathComponents ?? []
-            guard path.last == "messages" else { return try .json(ChannelCatalog(lead: testLeadProfile, channels: channels)) }
-            let channel = path[path.count - 2]
-            let attempt = lookups.withLock { $0[channel, default: 0] += 1; return $0[channel] ?? 0 }
-            guard let messages = pages(channel, attempt) else { return MockResponse(status: 503) }
-            var page = try MockResponse.json(ChannelHistoryPage(version: 1, revision: 1, messages: messages))
-            page.keepOpen = holdingFirstLookup && attempt == 1
-            return page
-        }
-        self.transport = transport
+    @Test func requestsComeFromTheListOrAnOpenChannelNewestFirstWithoutReadingHistory() async throws {
+        let list = ChannelCatalog(lead: testLeadProfile, channels: [
+            listed("test", request: asked(5, in: "test", "Still there?", at: "07:00")),
+            listed("a", request: asked(12, in: "a", "Ship it?", at: "11:00", replies: ["Yes", "Not yet"])),
+            listed("b", request: nil, sequence: 9, updated: "10:00"),
+            listed("c", request: nil),
+        ])
+        let transport = MockTransport { _, _ in try .json(list) }
         let catalog = ChannelCatalogStore(api: try transport.api())
         await catalog.refresh()
-        var state = testState(revision: 1, messages: [loaded])
-        state.channel.requestSequence = loaded.sequence
-        state.request = live ? loaded : nil
+        // The open channel's own stream has a newer request than the list does.
+        let newer = asked(7, in: "test", "Where should it sit?", at: "09:00", replies: ["Near the entrance", "By the window"])
+        var state = testState(revision: 1, messages: [newer])
+        state.channel.requestSequence = newer.sequence
+        state.request = newer
         _ = try catalog.channel(id: "test").apply(.init(type: "snapshot", state: state))
-        return catalog
-    }
-
-    @Test func waitingChannelsAreNewestRequestFirstFromTheirStoreOrOneLookup() async throws {
-        let catalog = try await catalog([listed("test", request: 7), listed("a", request: 12, updated: "06:00"),
-                                         listed("b", request: 5, updated: "10:00"), listed("c", request: nil)],
-                                        loaded: asked(7, in: "test", "Pick one?", at: "09:00"), live: true) { channel, _ in
-            channel == "a" ? [self.asked(12, in: "a", "Ship it?", at: "11:00")] : nil
-        }
-        let requests = ChannelWaitingRequests(catalog: catalog)
-        // Until its message is known, a request sorts by its channel's last activity.
-        #expect(requests.entries().map(\.channel.id) == ["b", "test", "a"])
-        #expect(requests.entries()[1].request?.quote == "Pick one?")
-
-        requests.resolve()
-        requests.resolve()
-        try await eventually { requests.entries().first?.request != nil }
-        #expect(requests.entries().map(\.channel.id) == ["a", "b", "test"])
-        #expect(requests.entries()[0].request?.quote == "Ship it?")
-        #expect(requests.entries()[0].request?.requester?.name == "Lead")
-        #expect(requests.entries()[0].requestedAt == (try? Date("2026-10-22T11:00:00Z", strategy: .iso8601)))
-        #expect(lookups.withLock { $0 } == ["a": 1, "b": 1])
-        #expect(catalog.existingChannel(id: "a") == nil, "Looking a request up never opens its channel")
-    }
-
-    @Test func aListedRequestNeedsNoLookupAndOneAnOlderServerLeavesOutIsLookedUp() async throws {
-        var shipping = listed("a", request: 12)
-        shipping.request = asked(12, in: "a", "Ship it?", at: "11:00")
-        let catalog = try await catalog([listed("test", request: 7), shipping, listed("b", request: 5)],
-                                        loaded: asked(7, in: "test", "Pick one?", at: "09:00"), live: true) { channel, _ in
-            channel == "b" ? [self.asked(5, in: "b", "Still there?", at: "10:00")] : nil
-        }
-        let requests = ChannelWaitingRequests(catalog: catalog)
-        let entry = try #require(requests.entries().first { $0.channel.id == "a" })
-        #expect(entry.request?.quote == "Ship it?")
-        #expect(entry.request?.requester?.name == "Lead")
-        #expect(try await requests.message(channelID: "a", sequence: 12)?.quote == "Ship it?")
-
-        requests.resolve()
-        try await eventually { requests.entries().allSatisfy { $0.request != nil } }
-        let transport = try #require(transport)
-        #expect(transport.requests.compactMap(\.url?.path).filter { $0.hasSuffix("/messages") }
-                == ["/api/v1/channels/b/messages"])
-    }
-
-    @Test func aLoadedChannelAnswersFirstAndAFailedLookupThrowsUntilARetry() async throws {
-        let catalog = try await catalog([listed("test", request: 7), listed("b", request: 5)],
-                                        loaded: asked(7, in: "test", "Loaded?", at: "08:00"), live: false) { _, attempt in
-            attempt == 1 ? nil : [self.asked(5, in: "b", "Again?", at: "09:00")]
-        }
-        let requests = ChannelWaitingRequests(catalog: catalog)
-        #expect(try await requests.message(channelID: "test", sequence: 7)?.quote == "Loaded?")
-        #expect(try await requests.message(channelID: "test", sequence: .max) == nil)
-        await #expect(throws: ChannelAPIError.self) { try await requests.message(channelID: "b", sequence: 5) }
-        #expect(try await requests.message(channelID: "b", sequence: 5)?.quote == "Again?")
-        #expect(try await requests.message(channelID: "b", sequence: 5)?.quote == "Again?")
-        #expect(lookups.withLock { $0 } == ["b": 2])
-
-        requests.retry(channelID: "b")
-        #expect(requests.entries().first { $0.channel.id == "b" }?.request == nil)
-        try await eventually { requests.entries().first { $0.channel.id == "b" }?.request != nil }
-        #expect(lookups.withLock { $0 } == ["b": 3])
-    }
-
-    @Test func everyoneAskingForARequestSharesOneLookupAndACancelledCallerStopsWaiting() async throws {
-        let catalog = try await catalog([listed("test", request: 7), listed("a", request: 12)],
-                                        loaded: asked(7, in: "test", "Pick one?", at: "09:00"), live: true,
-                                        holdingFirstLookup: true) { _, _ in [self.asked(12, in: "a", "Ship it?", at: "11:00")] }
-        let transport = try #require(transport)
-        let requests = ChannelWaitingRequests(catalog: catalog)
-        requests.resolve()
-        let abandoned = Task { try await requests.message(channelID: "a", sequence: 12) }
-        try await eventually(observing: transport) { transport.pendingCount(for: "/api/v1/channels/a/messages") == 1 }
-
-        abandoned.cancel()
-        await #expect(throws: CancellationError.self) { try await abandoned.value }
-        #expect(transport.pendingCount(for: "/api/v1/channels/a/messages") == 1, "The lookup carries on for the rest")
-
-        let finish = Task { transport.finishPendingResponses() }
-        #expect(try await requests.message(channelID: "a", sequence: 12)?.quote == "Ship it?")
-        #expect(await finish.value == 1)
-        #expect(lookups.withLock { $0 } == ["a": 1])
-    }
-
-    @Test func repliesReachTheStoreAndTheWaitingEntryFromBothSources() async throws {
-        let replies = ["Near the entrance", "Beside the team desks"]
-        var loaded = asked(7, in: "test", "Where should it sit?", at: "09:00")
-        loaded.replies = replies
-        var looked = asked(12, in: "a", "Ship it?", at: "11:00")
-        looked.replies = ["Yes", "Not yet"]
-        let answer = looked
-        let catalog = try await catalog([listed("test", request: 7), listed("a", request: 12, updated: "06:00")],
-                                        loaded: loaded, live: true) { _, _ in [answer] }
-        #expect(catalog.existingChannel(id: "test")?.request?.suggestedReplies == replies)
 
         let requests = ChannelWaitingRequests(catalog: catalog)
-        requests.resolve()
-        try await eventually { requests.entries().first { $0.channel.id == "a" }?.request != nil }
-        #expect(requests.entries().first { $0.channel.id == "test" }?.request?.message.suggestedReplies == replies)
-        #expect(requests.entries().first { $0.channel.id == "a" }?.request?.message.suggestedReplies == ["Yes", "Not yet"])
+        let open = requests.entries(openChannelIDs: ["test"])
+        // One without its message sorts by its channel's last activity.
+        #expect(open.map(\.channel.id) == ["a", "b", "test"])
+        #expect(open.map(\.request?.quote) == ["Ship it?", nil, "Where should it sit?"])
+        #expect(open.map(\.request?.requester?.name) == ["Lead", nil, "Lead"])
+        #expect(open.map { $0.request?.message.suggestedReplies } == [["Yes", "Not yet"], nil, ["Near the entrance", "By the window"]])
+        #expect(open[0].requestedAt == (try? Date("2026-10-22T11:00:00Z", strategy: .iso8601)))
+        #expect(requests.entries().last?.request?.quote == "Still there?")
+        #expect(transport.requests.compactMap(\.url?.path).allSatisfy { !$0.hasSuffix("/messages") })
+        #expect(catalog.existingChannel(id: "a") == nil, "Reading a request never opens its channel")
     }
 }

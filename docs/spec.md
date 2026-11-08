@@ -233,7 +233,7 @@ keep `reconcileManagementWrite`.
 
 | Request | Use |
 | --- | --- |
-| `GET /api/v1/channels` | Catalog `{version, channels, members, lead, working}` for the sidebar. `lead` is the profile every channel's lead shares, under the channel's ID, and is always present. `working` lists running agent IDs. Each channel may leave out `tasks`, which only a channel's snapshot needs, and carries `request`, its waiting message without reactions, or `null`, whose sequence is always `requestSequence`. Older servers leave `request` out. With `Accept: text/event-stream` it streams: `snapshot` with the catalog, then `working`, `channel.upserted`, `channel.deleted`, `channel.member.upserted` and `channel.member.deleted`, with a keepalive every 5 seconds. There's no cursor, so every reconnect starts with a fresh `snapshot` |
+| `GET /api/v1/channels` | Catalog `{version, channels, members, lead, working}` for the sidebar. `lead` is the profile every channel's lead shares, under the channel's ID, and is always present. `working` lists running agent IDs. Each channel may leave out `tasks`, which only a channel's snapshot needs, and carries `request`, its waiting message without reactions, or `null`, whose sequence is always `requestSequence`. With `Accept: text/event-stream` it streams: `snapshot` with the catalog, then `working`, `channel.upserted`, `channel.deleted`, `channel.member.upserted` and `channel.member.deleted`, with a keepalive every 5 seconds. There's no cursor, so every reconnect starts with a fresh `snapshot` |
 | `GET /api/v1/channels/:id` (SSE) | `snapshot`, then live events. With `after`: replay, then `resumed` with full presence. The store holds the replay and publishes it with `resumed` as one change, so a reopened channel never redraws what it missed event by event. A drop mid-replay publishes nothing, and the retry asks again after the published revision. `presence` is sparse and merges. `deleted` is terminal |
 | `GET /api/v1/channels/:id/messages?before=N` | Older page of up to 100 messages `{version, revision, messages}` |
 | `POST /api/v1/channels/:id/messages` | `{id, content, attachments?}` with a client UUID. 201 returns the message. 409 means a duplicate. Never auto-retry |
@@ -343,7 +343,7 @@ acknowledges its registration. Restored Activities survive that wait and replay 
 204, independently of alert preferences.
 Allow notifications off unsubscribes only the two notification topics, retaining Follow and the address.
 The demo stores all state in memory and never contacts APNs.
-The demo exposes canonical read-only history pages for the app and widget, and its catalog lists
+The demo exposes canonical read-only history pages for the app, and its catalog lists
 each channel's request as the server's does.
 
 `ChannelPushPayload` carries `kind`, `channelID`, positive `sequence`, `registrationID` and an
@@ -2806,7 +2806,7 @@ opening the window.
 | --- | --- | --- |
 | Title | Channel name | Channel name |
 | Subtitle | None | None |
-| Body | The request's plain text (see below) | One top-level task: "Completed “[title]”". Otherwise "All [n] tasks completed" |
+| Body | The request's plain text (see below) | "All tasks completed" |
 | Hidden previews placeholder | "Waiting for your reply" | "Tasks completed" |
 | Category and actions | `request`, with Reply | `completion`, with no actions |
 | Sound | Default | Default |
@@ -2817,12 +2817,9 @@ The request body is the message as a reader sees it, flattened to plain text. Dr
 mentions the transcript omits. Links become their text, code keeps its contents, list items keep
 a "• " prefix, and paragraphs keep one line break. Cut at a word boundary to 400 characters with
 "…" and let the system clamp the display. A request with only attachments says "Sent an image",
-"Sent 3 images" or "Sent a file". Get the text from an open channel's state, otherwise from the
-catalog's `request`, and from `history(channelId:before: requestSequence + 1)` only on a server
-whose catalog leaves it out. Wait at most 3 seconds for it. On failure or
-timeout, deliver anyway with the body "Your team is waiting for your reply." and no subtitle.
-Never delay the notification more than those 3 seconds, and never deliver a second one when the
-text arrives late. Agent avatars as the notification image need Communication Notifications and
+"Sent 3 images" or "Sent a file". Get the text from the catalog's `request`, and deliver at once
+without waiting for anything. Without it, the body is "Your team is waiting for your reply." with
+no subtitle. Agent avatars as the notification image need Communication Notifications and
 are out of scope.
 
 Reply is a `UNTextInputNotificationAction`: title "Reply", button "Send", placeholder "Reply". It
@@ -2900,8 +2897,8 @@ request sequence. A new empty reply visibly seeds the requester's canonical @han
 
 Waiting comes from ChannelClient's `ChannelWaitingRequests`, shared by the menu bar, Dock,
 notifications and both platforms' widgets. It lists the sidebar's waiting channels newest request
-first and quotes each from the channel's store, otherwise from the catalog's `request`. On a server
-whose catalog leaves it out, one history lookup stands in, remembered until the next request.
+first and quotes each from the catalog's `request`, or an open channel's store, whose own stream
+can deliver a request first. Nothing reads history to find one.
 Working must come from the one function the sidebar row uses (live
 presence for an open channel, otherwise the catalog's `working`), so the menu bar, the sidebar
 and the Dock can never disagree. Render identities with `AgentAvatarView`. Opening the inbox does

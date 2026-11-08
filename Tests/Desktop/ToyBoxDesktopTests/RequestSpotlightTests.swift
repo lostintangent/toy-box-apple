@@ -27,27 +27,22 @@ struct RequestSpotlightTests {
         #expect(WaitingRequestQuery.matching("missing", in: [entity]).isEmpty)
     }
 
-    @Test func resolvedAgentlessRequestsDoNotDelayHealthyResults() async throws {
+    @Test func requestsWithoutARequesterOrWordsDoNotDelayHealthyResults() async throws {
         let healthy = item()
         var removedRequester = item(sequence: 9)
         removedRequester.agent = nil
+        var unquoted = item(sequence: 11)
+        unquoted.quote = nil
         var polls = 0
         let resolved = try await ChannelIntents.resolveWaitingRequests {
             polls += 1
-            return ("https://server.test", true, [healthy, removedRequester])
+            return ("https://server.test", true, [healthy, removedRequester, unquoted])
         }
         let expectedID = try entry().id
         #expect(polls == 1 && resolved.map(\.id) == [expectedID])
     }
 
-    @Test func aFailedHistoryLookupReturnsTheHealthySubsetAtTheDeadline() async throws {
-        let healthy = item()
-        var unresolved = item(sequence: 9)
-        unresolved.quote = nil
-        let resolved = try await ChannelIntents.resolveWaitingRequests(timeout: .zero) {
-            ("https://server.test", true, [healthy, unresolved])
-        }
-        #expect(resolved.map(\.id) == [try entry().id])
+    @Test func anUnreachableServerThrows() async throws {
         await #expect(throws: ChannelIntentError.unreachable) {
             try await ChannelIntents.resolveWaitingRequests(timeout: .zero) {
                 throw ChannelIntentError.unreachable

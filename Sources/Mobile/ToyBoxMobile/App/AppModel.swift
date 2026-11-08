@@ -60,8 +60,6 @@ final class AppModel {
     @ObservationIgnored private var resumeCatalogBaseline: Date?
     @ObservationIgnored private var widgetPublisher: MobileWidgetSnapshotPublisher?
     @ObservationIgnored private var shareHistory: MobileShareHistory?
-    @ObservationIgnored private var widgetUpdate: Task<Void, Never>?
-    @ObservationIgnored private var widgetUpdateRequested = false
     @ObservationIgnored private var badgeRefresh: Date?
     @ObservationIgnored private let integrationLogger = Logger(subsystem: "dev.toybox.mobile", category: "Integrations")
 
@@ -161,8 +159,6 @@ final class AppModel {
         }
         integrationsGeneration = UUID()
         badgeRefresh = nil
-        widgetUpdate?.cancel()
-        widgetUpdate = nil
         cancelNavigation()
         catalog?.stopPolling()
         catalog?.outbox = nil
@@ -323,28 +319,8 @@ final class AppModel {
             notifications.updateBadge(catalog.channels.filter { $0.attention == .waiting }.count)
             shareHistory?.prune(serverURL: catalog.api.baseURL.absoluteString, keeping: Set(catalog.channels.map(\.id)))
         }
-        waitingRequests?.resolve(openChannelIDs: openChannelIDs)
-        updateWidget(generation: generation)
-    }
-
-    private func updateWidget(generation: UUID) {
-        guard widgetPublisher != nil else { return }
-        widgetUpdateRequested = true
-        guard widgetUpdate == nil else { return }
-        widgetUpdate = Task { [weak self] in
-            guard let self, generation == integrationsGeneration, !Task.isCancelled else { return }
-            repeat {
-                widgetUpdateRequested = false
-                do {
-                    try await widgetPublisher?.update(requests: waitingRequests, serverURL: serverURL)
-                } catch {
-                    if Task.isCancelled || error is CancellationError
-                        || (error as? URLError)?.code == .cancelled { break }
-                    integrationLogger.error("Could not update the Needs You widget: \(error.localizedDescription)")
-                }
-            } while widgetUpdateRequested && generation == integrationsGeneration && !Task.isCancelled
-            if generation == integrationsGeneration { widgetUpdate = nil }
-        }
+        do { try widgetPublisher?.update(requests: waitingRequests, serverURL: serverURL) }
+        catch { integrationLogger.error("Could not update the Needs You widget: \(error.localizedDescription)") }
     }
 
     func beginHandoffNavigation() -> UUID {

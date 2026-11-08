@@ -162,12 +162,9 @@ struct QuickSendView: View {
                     ? "The requester is no longer available. Open the channel to review this request."
                     : "The original request is being checked before you reply."))
                     .foregroundStyle(.secondary)
-                HStack {
-                    Button("Retry") { model.retryMenuBarRequest(channelID: target.channelID) }
-                    Button("Open Channel") {
-                        model.quickSend.dismiss()
-                        model.activate(channelID: target.channelID, sequence: target.sequence)
-                    }
+                Button("Open Channel") {
+                    model.quickSend.dismiss()
+                    model.activate(channelID: target.channelID, sequence: target.sequence)
                 }
             } else if model.catalog?.isLoaded == true, channels.isEmpty {
                 Text("No channels yet").font(.system(size: 15, weight: .semibold))

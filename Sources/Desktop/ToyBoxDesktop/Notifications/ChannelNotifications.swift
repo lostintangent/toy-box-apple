@@ -7,8 +7,6 @@ import UserNotifications
 @MainActor @Observable
 final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     nonisolated static let replyAction = ChannelNotificationCategory.reply
-    /// How long a request waits for its text before it's delivered without it.
-    static let contentDeadline: Duration = .seconds(3)
 
     struct Activation: Equatable {
         var channel: ChannelNotification.Activation
@@ -18,8 +16,8 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     private(set) var authorization: UNAuthorizationStatus = .notDetermined
     private(set) var error: String?
     @ObservationIgnored var onActivate: ((Activation) -> Void)?
-    /// Finds a request's message, from an open channel's state or else its history.
-    @ObservationIgnored var resolveRequest: ((Channel, Int) async -> ChannelRequestMessage?)?
+    /// Finds a request's message in the channel list.
+    @ObservationIgnored var resolveRequest: ((Channel, Int) -> ChannelRequestMessage?)?
     /// Saves a reply to the outbox, which delivers it to its server now or once that's current again.
     @ObservationIgnored var send: ((NotificationReply) async -> Void)?
     @ObservationIgnored private var policy = Policy()
@@ -93,15 +91,15 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func deliver(_ event: Event, serverURL: String) {
+        let request = event.kind == .request ? resolveRequest?(event.channel, event.sequence) : nil
         Task {
-            let request = event.kind == .request ? await resolve(event) : nil
             if let labels = request?.message.suggestedReplies, !labels.isEmpty {
                 await replyCategories.publish(adding: ReplyCategories.category(labels: labels))
             }
             await add(UNNotificationRequest(
                 identifier: "\(serverURL):\(event.channel.id):\(event.kind.rawValue):\(event.sequence)",
                 content: Self.content(for: event, serverURL: serverURL, request: request), trigger: nil))
-            // A request answered while its text was on the way is withdrawn as soon as it lands.
+            // A request answered while it was being added is withdrawn as soon as it lands.
             withdrawStale(force: true)
         }
     }
@@ -131,22 +129,10 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
                 content.body = ChannelNotification.Content.waitingBody
             }
         case .completion:
-            content.body = ChannelNotification.Content(completion: event.channel.tasks).body
+            content.body = ChannelNotification.Content.completionBody
         }
         content.userInfo = info
         return content
-    }
-
-    /// Never waits longer than the deadline, and never delivers twice when the text arrives late.
-    private func resolve(_ event: Event) async -> ChannelRequestMessage? {
-        guard let resolveRequest else { return nil }
-        let work = Task { await resolveRequest(event.channel, event.sequence) }
-        let deadline = Task {
-            try? await Task.sleep(for: Self.contentDeadline, tolerance: .zero)
-            work.cancel()
-        }
-        defer { deadline.cancel() }
-        return await work.value
     }
 
     private func add(_ request: UNNotificationRequest) async {
