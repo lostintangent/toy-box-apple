@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import type { Subprocess } from "bun";
 import { checkTestCompletion, CommandFailure, command, machineLock, main, scratchPath, text } from "../shared/lib/index.ts";
 import { buildMobile, mobileEnvironment } from "./bundle/index.ts";
-import { prepareMobileSimulator } from "./dogfood/boot.ts";
+import { prepareMobileSimulator, shutDownMobileSimulator } from "./dogfood/boot.ts";
 
 export const mobileTestProducts = [
     "ChannelClientTests", "ToyBoxUITests",
@@ -120,9 +120,7 @@ if (import.meta.main) await main(async () => {
                 if (skipped) console.log(`  ${skipped} existing opt-in tests skipped.`);
             }
         } finally {
-            if (simulator.bootedHere) {
-                await command(["xcrun", "simctl", "shutdown", simulator.udid], { env: mobileEnvironment });
-            }
+            if (simulator.bootedHere) await shutDownMobileSimulator(simulator.udid);
         }
     } finally { unlock(); }
 });

@@ -5,6 +5,12 @@ type DeviceType = { identifier: string; productFamily: string };
 type Runtime = { identifier: string; version: string; isAvailable: boolean; supportedDeviceTypes: DeviceType[] };
 type Simulator = { udid: string; name: string; state: string; isAvailable: boolean; deviceTypeIdentifier: string };
 
+async function simulators() {
+    const { devices }: { devices: Record<string, Simulator[]> } = JSON.parse(
+        await text(["xcrun", "simctl", "list", "devices", "-j"], { env: mobileEnvironment }));
+    return devices;
+}
+
 export async function prepareMobileSimulator(duo: boolean, ifAvailable = false) {
     const { runtimes }: { runtimes: Runtime[] } = JSON.parse(
         await text(["xcrun", "simctl", "list", "runtimes", "-j"], { env: mobileEnvironment }));
@@ -15,8 +21,7 @@ export async function prepareMobileSimulator(duo: boolean, ifAvailable = false) 
         console.log("Skipping iOS tests: this runner has no installed iOS 27+ Simulator runtime.");
         return undefined;
     }
-    const { devices }: { devices: Record<string, Simulator[]> } = JSON.parse(
-        await text(["xcrun", "simctl", "list", "devices", "-j"], { env: mobileEnvironment }));
+    const devices = await simulators();
     const requested = process.env.MOBILE_SIMULATOR;
     let simulator: Simulator | undefined;
     if (requested) {
@@ -46,4 +51,14 @@ export async function prepareMobileSimulator(duo: boolean, ifAvailable = false) 
     if (bootedHere) await command(["xcrun", "simctl", "boot", simulator.udid], { env: mobileEnvironment });
     await command(["xcrun", "simctl", "bootstatus", simulator.udid, "-b"], { env: mobileEnvironment, quiet: true });
     return { udid: simulator.udid, bootedHere };
+}
+
+/** Shuts the simulator down. One that's already off, which a crash can cause, is noted instead of failing, so
+ * the error from the run it cut short is the one that's reported. */
+export async function shutDownMobileSimulator(udid: string) {
+    if (Object.values(await simulators()).flat().find(device => device.udid === udid)?.state === "Shutdown") {
+        console.error("The simulator had already shut down.");
+        return;
+    }
+    await command(["xcrun", "simctl", "shutdown", udid], { env: mobileEnvironment });
 }
