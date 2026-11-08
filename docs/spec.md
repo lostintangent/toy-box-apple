@@ -2891,7 +2891,8 @@ fixed footer, with 16-point content insets.
 An open inbox preserves its original request order and appends newly waiting channels. A reply
 or choice turns its row Replied the moment the outbox saves it, and the editor folds away. Its
 delivery shows in the channel, never in the inbox. Answered and Replied rows stay in place until
-the next opening. A newer request never silently
+the next opening, when a Not sent answer brings its request back with its choices. A newer request
+never silently
 replaces the original quote. If an expanded request is answered or replaced, keep its editable
 draft, disable sending and show the corresponding explanation with Open Channel. Reply drafts
 are separate from main-window and Quick Send drafts, keyed by normalized server URL, channel and

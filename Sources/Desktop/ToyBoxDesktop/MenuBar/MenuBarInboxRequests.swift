@@ -67,11 +67,12 @@ struct MenuBarInboxRequests: Equatable {
         var canReply: Bool { state == .waiting && item.quote != nil && item.agent != nil && item.sequence != nil }
         var canChoose: Bool { state == .waiting && !item.replies.isEmpty }
 
-        /// The choices this row still offers. The outbox takes a choice off the row for good, as the
-        /// transcript does, and they disable while the catalog can't connect, as every Send does.
-        func choices(attempts: [ChannelSendAttempt], isConnected: Bool) -> TranscriptRequestChoices? {
+        /// The choices this row still offers. Choosing one makes the row Replied, and a request the
+        /// outbox answers leaves the waiting list until a Not sent answer brings it back with its
+        /// choices. They disable while the catalog can't connect, as every Send does.
+        func choices(isConnected: Bool) -> TranscriptRequestChoices? {
             guard canChoose, let sequence = item.sequence else { return nil }
-            return TranscriptRequestChoices(sequence: sequence, labels: item.replies, attempts: attempts,
+            return TranscriptRequestChoices(sequence: sequence, labels: item.replies, attempts: [],
                                             isConnected: isConnected)
         }
     }

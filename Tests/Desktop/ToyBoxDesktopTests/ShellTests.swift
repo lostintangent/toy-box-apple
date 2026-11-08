@@ -1425,7 +1425,7 @@ struct MenuBarExtraTests {
         #expect(!inbox.requests[0].canReply)
         inbox.record("one", .replied)
         #expect(!inbox.requests[0].canChoose)
-        #expect(inbox.requests[0].choices(attempts: [], isConnected: true) == nil)
+        #expect(inbox.requests[0].choices(isConnected: true) == nil)
         #expect(inbox.requests[0].state.notice == "Replied")
     }
 
@@ -1436,29 +1436,12 @@ struct MenuBarExtraTests {
         #expect(!inbox.requests[0].canChoose)
     }
 
-    @Test func aChoiceInTheOutboxLeavesTheRowForGood() {
-        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?",
-                                      replies: ["Yes", "No"])
-        let request = MenuBarInboxRequests(status: .init(waiting: [item])).requests[0]
-        func attempt(_ content: String, phase: ChannelSendPhase) -> ChannelSendAttempt {
-            ChannelSendAttempt(id: UUID().uuidString, content: content, attachments: [],
-                               timestamp: "2026-10-25T12:00:00Z", phase: phase)
-        }
-        func labels(_ attempts: [ChannelSendAttempt]) -> [String]? {
-            request.choices(attempts: attempts, isConnected: true)?.labels
-        }
-        #expect(labels([]) == ["Yes", "No"])
-        #expect(labels([attempt("Maybe", phase: .confirmed)]) == ["Yes", "No"])
-        #expect(labels([attempt("Yes", phase: .notSent)]) == nil)
-        #expect(labels([attempt("No", phase: .confirmed)]) == nil)
-    }
-
     @Test func choicesDisableWhileTheCatalogCannotConnect() throws {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?",
                                       replies: ["Yes", "No"])
         let request = MenuBarInboxRequests(status: .init(waiting: [item])).requests[0]
-        #expect(try #require(request.choices(attempts: [], isConnected: true)).canSend)
-        let offline = try #require(request.choices(attempts: [], isConnected: false))
+        #expect(try #require(request.choices(isConnected: true)).canSend)
+        let offline = try #require(request.choices(isConnected: false))
         #expect(offline.labels == ["Yes", "No"] && !offline.canSend)
     }
 
