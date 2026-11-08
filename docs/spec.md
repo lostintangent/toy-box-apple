@@ -398,7 +398,7 @@ drop shadows. Use an 8-point spacing rhythm, with 4-point adjustments inside com
 | --- | --- |
 | Conversation background | `textBackgroundColor`, opaque in both appearances |
 | Agent message surface | Neutral tonal fill over the conversation, approximately 4.5% primary ink in light and 7% in dark. A pending request swaps it for a warm orange wash. Borders only under Increase Contrast |
-| Your message surface | Accent at 9% over the conversation, with normal label text. On the phone's pure black Dark canvas, the wash sits over the agent bubble's 7% neutral lift so the bubble stands off black as clearly. Under Increase Contrast, the same 1-point `primary` edge at 50% as agent bubbles |
+| Your message surface | Accent at 9% over the conversation, with normal label text. On the phone's pure black Dark canvas, the wash sits over the agent bubble's 7% neutral lift so the bubble stands off black as clearly. Under Increase Contrast, the same 1-point `primary` edge at 50% as agent bubbles. A message that didn't send swaps the accent for a red wash at the request wash's strength, over the neutral fill in dark, with a red edge under Increase Contrast |
 | Navigation and inspector | System sidebar and inspector materials, no manual blur stacking |
 | Floating controls and popovers | Native toolbar, popover and control materials |
 | Text | `labelColor`, `secondaryLabelColor`, `tertiaryLabelColor` by hierarchy |
@@ -1344,7 +1344,7 @@ only according to the canonical helper. In-body mentions are selectable, semibol
 agent's identity ink, with no background, and keep the accessible agent name. Derive the ink from
 the avatar color. Mix it toward black in light appearance and white in dark, in 5% steps, until
 it reaches 4.5:1 against the composited surface it sits on: the agent fill, the user's
-accent-tinted bubble or the pending orange wash. Under Increase Contrast the target is 7:1. Keep the seven-color, five-surface contrast regression
+accent-tinted bubble, the pending orange wash or the Not sent red wash. Under Increase Contrast the target is 7:1. Keep the seven-color, six-surface contrast regression
 with these targets.
 Everyone and Lead follow the same rule with the accent and the lead's color. Weight carries the
 cue for color-blind readers. Unknown mentions remain literal, not a false agent chip.
@@ -2016,12 +2016,11 @@ only for a deleted channel, with its draft recovery. A stale snapshot must never
 send's audience without reconnection.
 
 Submitting creates one optimistic row, which shows "Sending" only while the send is still going
-after 1 second. A committed echo replaces it by UUID. On a definite rejection, mark the row
-"Not sent" and keep its text and attachments on the row for Edit. On timeout or lost response,
-say "Delivery not confirmed" rather than falsely claiming failure. Expose Edit and explicit Send
-Again, never an automatic retry. Keep the original UUID when verifying or explicitly repeating
-that attempted send so a 409 cannot deliver it twice. Do not clear a newer draft when an older
-send eventually succeeds.
+after 1 second. A committed echo replaces it by UUID. When a send fails, the row keeps its text
+and attachments, its bubble's accent wash turns red, like the orange of a waiting request, and a
+Retry button sits below it. Delete sits in the bubble's menu. VoiceOver reads the message as "Not
+sent". Retry keeps the original UUID, so a 409 cannot deliver it twice. Do not clear a newer
+draft when an older send eventually succeeds.
 
 The tray is a compact 34-point header inside the floating composer: a 28-point row of controls
 with 3 points above and below. Lead with Bookmarks when the channel has any (see Bookmarks), then

@@ -602,7 +602,7 @@ struct TranscriptTests {
                     UIColor(color).resolvedColor(with: traits).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
                     return TranscriptRGB(red: red, green: green, blue: blue, alpha: alpha)
                 }
-                for surface in [TranscriptSurface.agent, .pendingAgent, .user] {
+                for surface in [TranscriptSurface.agent, .pendingAgent, .user, .notSentUser] {
                     let ink = rgb(TranscriptMentionInk(surface: surface, isDark: dark, isContrastIncreased: increased)
                         .color(for: pale))
                     let background = surface.fills(isDark: dark, canvasIsBlack: true)

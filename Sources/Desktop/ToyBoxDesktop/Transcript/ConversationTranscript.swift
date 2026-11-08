@@ -23,7 +23,6 @@ struct ConversationTranscript: View {
     @ViewState var pagingAnchor: PagingAnchor?
     @ViewState private var highlightedSequence: Int?
     @ViewState private var revealError: String?
-    @ViewState private var sendActionError: String?
     @ViewState var isRevealing = false
     @ViewState private var lastMarkedRead = 0
     @ViewState private var expandedMessageIds: Set<String> = []
@@ -307,7 +306,7 @@ struct ConversationTranscript: View {
         let findHighlights = find.highlights
         let bookmarks = store.bookmarks.map(Set.init)
         let catchUp = interaction.messageView == .all ? catchUp : nil
-        let requestChoices = TranscriptRequestChoices(request: store.request, attempts: store.sendAttempts,
+        let requestChoices = TranscriptRequestChoices(request: store.request, store: store,
                                                       isConnected: store.phase.isConnected)
         return LazyVStack(alignment: .leading, spacing: 0) {
             historyHeader
@@ -381,31 +380,24 @@ struct ConversationTranscript: View {
         }
     }
 
+    /// A failed send adds only its red wash and Retry, with Delete in the bubble's menu.
     private func sendAttempt(_ attempt: ChannelSendAttempt, statusReactions: [ChannelReaction]) -> some View {
         VStack(alignment: .trailing, spacing: 6) {
             TranscriptDeliveryLabel(phase: attempt.phase, slowAfter: slowSendDelay) { label in
                 TranscriptUserMessage(message: attempt.message, agents: store.roster, api: store.api,
-                                      deliveryLabel: label, statusReactions: statusReactions)
-            }
-            if let error = attempt.error {
-                Text(error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                                      deliveryLabel: label, statusReactions: statusReactions,
+                                      deleteNotSent: attempt.canRetry ? {
+                                          Task { try? await store.discardSendAttempt(id: attempt.id) }
+                                      } : nil)
             }
             if attempt.canRetry {
-                HStack(spacing: 12) {
-                    Button("Edit") { interaction.editSendAttempt(id: attempt.id) }
-                        .help("Restore this message to the composer without losing a newer draft.")
-                    Button("Send Again") {
-                        Task {
-                            do {
-                                try await store.retrySend(id: attempt.id)
-                                interaction.jumpToLatest()
-                            }
-                            catch { sendActionError = error.localizedDescription }
-                        }
+                Button("Retry") {
+                    Task {
+                        if (try? await store.retrySend(id: attempt.id)) != nil { interaction.jumpToLatest() }
                     }
-                    .disabled(!store.phase.isConnected || store.isSending)
-                    .help("Send again with the original message ID. Never retried automatically.")
                 }
+                .disabled(!store.phase.isConnected || store.isSending)
+                .help("Send this message again")
                 .font(.caption)
             }
         }
@@ -447,19 +439,13 @@ struct ConversationTranscript: View {
         let presence = store.phase.isUnavailable ? [:] : store.presence
         let hasWorkingAgents = store.roster.contains { presence[$0.id]?.state == "working" }
         let rises: AnyTransition = reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4))
-        let hasNotices = revealError != nil || sendActionError != nil || store.readError != nil
+        let hasNotices = revealError != nil || store.readError != nil
         return VStack(alignment: .leading, spacing: 8) {
             if let error = revealError {
                 TranscriptNotice {
                     Label(error, systemImage: "exclamationmark.triangle")
                 } action: {
                     Button("Dismiss") { revealError = nil }
-                }
-                .transition(rises)
-            }
-            if let error = sendActionError {
-                TranscriptNotice { Text(error) } action: {
-                    Button("Dismiss") { sendActionError = nil }
                 }
                 .transition(rises)
             }

@@ -8,6 +8,10 @@
 - Quick Send, menu bar replies, notification replies and Siri now finish the moment you send, and a message that can't go out waits in its channel so you can send it again.
 - A message you send from a channel now keeps going in the background, and one that can't go out waits in the conversation so you can send it again.
 
+### Bugs/Polish
+
+- A message that didn't send is now tinted red with just a Retry button, and you can delete it from its menu if you no longer need it.
+
 ## iPhone 0.1.24
 
 ### Features
@@ -20,6 +24,7 @@
 
 - A reply you type in the channel list now waits for a connection, like the suggested replies, so your words stay put while you're offline.
 - After you send your own reply to a request in the channel list, the card settles straight back into its row, so it's clear where your answer went.
+- A message that didn't send is now tinted red with just a Retry button, and you can delete it from its menu if you no longer need it.
 
 ## iPhone 0.1.23
 
