@@ -203,8 +203,8 @@ keep `reconcileManagementWrite`.
 
   | What happened | For example | The outbox |
   | --- | --- | --- |
-  | Toy Box can't reach the server | Offline, can't find or connect to the host, a lost connection, or 502, 503, 504 or 530 while the catalog isn't connected, as when the Mac behind Tailscale Serve or Cloudflare Tunnel sleeps | Waits for the catalog to recover, the network to return, the app to come back or a channel stream to connect, with the reconnect backoff as a fallback, then sends again. It never gives up, even across launches |
-  | The server has trouble | A timeout, 408, 429, any other 5xx, or a gateway error while the catalog is connected | Retries after 1, 2, 4, 8, 15 and 30 seconds, then every minute, honoring `Retry-After`, for 2 minutes, then stops. Becoming unreachable meanwhile waits as above and starts the 2 minutes over |
+  | Toy Box can't reach the server | Offline, can't find or connect to the host, a lost connection, or a timeout or 502, 503, 504 or 530 while the catalog isn't connected, as when a phone's signal is weak or the Mac behind Tailscale Serve or Cloudflare Tunnel sleeps | Waits for the catalog to recover, the network to return, the app to come back or a channel stream to connect, with the reconnect backoff as a fallback, then sends again. It never gives up, even across launches |
+  | The server has trouble | 408, 429, any other 5xx, or a timeout or gateway error while the catalog is connected | Retries after 1, 2, 4, 8, 15 and 30 seconds, then every minute, honoring `Retry-After`, for 2 minutes, then stops. Becoming unreachable meanwhile waits as above and starts the 2 minutes over |
   | The server says no | Any other 4xx | Stops at once. A deleted channel's messages leave with it |
 
 - **Not sent is the one failed state.** A message the outbox stops trying shows Not sent on its

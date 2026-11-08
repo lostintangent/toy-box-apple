@@ -283,8 +283,7 @@ struct ChannelOutboxTests {
 
         let id = await outbox.send("Hello", to: "test", on: catalog.api.baseURL)
         try await eventually { !clock.sleepers.isEmpty }
-        #expect(clock.nextDelay == 1)
-        clock.advance(by: 1)
+        clock.advance(by: try #require(clock.nextDelay))
         try await eventually { outbox.message(id) == nil }
         #expect(served.postedIDs == [id.uuidString, id.uuidString])
         #expect(!outbox.isDelivering)
@@ -346,13 +345,18 @@ struct ChannelOutboxTests {
         #expect(served.posted.filter { $0.channel == "test" }.map(\.content) == ["First", "First", "Second"])
     }
 
-    @Test(arguments: [false, true])
-    func aGatewayErrorWaitsForTheServerUnlessTheCatalogIsLive(isLive: Bool) async throws {
+    /// A cellular timeout or a sleeping Mac's gateway waits however long it takes, but a connected
+    /// server that does either is in trouble.
+    @Test(arguments: [false, true], [false, true])
+    func aGatewayErrorOrTimeoutWaitsForTheServerUnlessTheCatalogIsLive(isLive: Bool, timesOut: Bool) async throws {
         let folder = Self.folder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let clock = TestClock()
         let served = Served(Self.catalog())
-        let mock = Self.transport(served, streamsCatalog: isLive) { _, _ in Self.failure(502) }
+        let mock = Self.transport(served, streamsCatalog: isLive) { _, _ in
+            if timesOut { throw URLError(.timedOut) }
+            return Self.failure(502)
+        }
         let outbox = outbox(folder, clock: clock)
         let catalog = ChannelCatalogStore(api: try mock.api())
         if isLive {

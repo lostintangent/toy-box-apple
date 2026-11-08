@@ -303,7 +303,7 @@ public final class ChannelOutbox {
             await scanning?.value
             uploading.remove(id)
             guard let message = message(id) else { return }
-            let outcome = if let error { Outcome(error) }
+            let outcome = if let error { Outcome(error, isLive: catalog?.isLive ?? false) }
                 else if let response { Outcome(response, data: data, isLive: catalog?.isLive ?? false, now: now()) }
                 else { Outcome.trouble(retryAfter: nil) }
             switch outcome {
@@ -425,7 +425,7 @@ public final class ChannelOutbox {
             return outcome
         } catch {
             Self.logger.info("Sending failed: \(error.localizedDescription)")
-            return Outcome(error)
+            return Outcome(error, isLive: catalog?.isLive ?? false)
         }
     }
 
@@ -637,8 +637,10 @@ extension ChannelOutbox {
             }
         }
 
-        init(_ error: any Error) {
-            if let error = error as? URLError, Self.unreachableErrors.contains(error.code) {
+        /// A timeout is a weak signal, like a gateway error, unless the catalog is connected.
+        init(_ error: any Error, isLive: Bool) {
+            guard let error = error as? URLError else { self = .trouble(retryAfter: nil); return }
+            if Self.unreachableErrors.contains(error.code) || error.code == .timedOut && !isLive {
                 self = .unreachable
             } else {
                 self = .trouble(retryAfter: nil)
