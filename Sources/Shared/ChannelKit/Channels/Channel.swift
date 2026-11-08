@@ -33,6 +33,30 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
         self.updatedAt = updatedAt
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case id, name, purpose, directory, model, tasks, preview, previewUrl, latestSequence, seenThrough,
+             completedSequence, requestSequence, updatedAt
+    }
+
+    /// The channel list leaves out `tasks`, which only a channel's snapshot carries, so they decode as
+    /// empty when missing.
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try values.decode(String.self, forKey: .id),
+                  name: try values.decode(String.self, forKey: .name),
+                  purpose: try values.decodeIfPresent(String.self, forKey: .purpose),
+                  directory: try values.decodeIfPresent(String.self, forKey: .directory),
+                  model: try values.decode(ModelConfiguration.self, forKey: .model),
+                  tasks: try values.decodeIfPresent([ChannelTask].self, forKey: .tasks) ?? [],
+                  preview: try values.decodeIfPresent(ChannelPreview.self, forKey: .preview),
+                  latestSequence: try values.decode(Int.self, forKey: .latestSequence),
+                  seenThrough: try values.decode(Int.self, forKey: .seenThrough),
+                  completedSequence: try values.decodeIfPresent(Int.self, forKey: .completedSequence),
+                  requestSequence: try values.decodeIfPresent(Int.self, forKey: .requestSequence),
+                  updatedAt: try values.decode(String.self, forKey: .updatedAt))
+        previewUrl = try values.decodeIfPresent(String.self, forKey: .previewUrl)
+    }
+
     public var resolvedPreview: ChannelPreview? {
         preview ?? previewUrl.map { ChannelPreview(kind: "url", url: $0) }
     }

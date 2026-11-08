@@ -7,6 +7,13 @@
 - On the folded iPhone, a request in the channel list no longer shows cut off on its right side when it arrives just as you open a channel.
 - Swiping a channel in the list now shows just the Talk and Delete icons, without titles underneath, for a cleaner look.
 - Closing Find now lowers the keyboard right away, instead of a moment after the message box comes back.
+- Ready for an upcoming Toy Box update that makes the channel list lighter to download.
+
+## Mac 0.1.28
+
+### Bugs/Polish
+
+- Ready for an upcoming Toy Box update that makes the channel list lighter to download.
 
 ## iPhone 0.1.25
 
