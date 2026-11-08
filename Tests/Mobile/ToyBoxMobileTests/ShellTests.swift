@@ -1772,7 +1772,6 @@ struct ShellTests {
         draft.text = "A draft to keep\nwith its original spacing."
         let bytes = try #require(draftImage().pngData())
         draft.append(.init(name: "Original image.png", mimeType: "image/png", data: bytes))
-        draft.associateSend(id: "unconfirmed-attempt")
         let revision = draft.revision
         let providers = DraftPasteboard.itemProviders(for: draft)
         #expect(providers.count == 2)
@@ -1782,7 +1781,6 @@ struct ShellTests {
         let image = try await copiedData(from: providers[1], type: .png)
         #expect(image == bytes)
         #expect(draft.revision == revision)
-        #expect(draft.sendAttemptID == "unconfirmed-attempt")
         #expect(draft.images.first?.data == bytes)
     }
 
@@ -1840,7 +1838,7 @@ struct ShellTests {
                                    url: "/api/serve/launch/plan.md")
         let page = ChannelArtifact(file: .init(kind: "machine", path: "page.html"), title: "Page",
                                    url: "/api/serve/launch/page.html")
-        let store = ChannelStore(id: "launch", api: try ChannelAPI(serverURL: "https://fixture.example"), sendJournal: nil)
+        let store = ChannelStore(id: "launch", api: try ChannelAPI(serverURL: "https://fixture.example"))
         session.configure(api: store.api, channelID: "launch", artifacts: [plan, page])
         let channel = Channel(id: "launch", name: "Launch", model: .init(provider: "test", name: "test"),
                               updatedAt: "2026-11-05T12:00:00Z")
@@ -1946,7 +1944,7 @@ struct ShellTests {
     }
 
     private func siriStore(_ channel: Channel, messages: [ChannelMessage], request: ChannelMessage?) throws -> ChannelStore {
-        let store = ChannelStore(id: channel.id, api: try ChannelAPI(serverURL: "https://fixture.example"), sendJournal: nil)
+        let store = ChannelStore(id: channel.id, api: try ChannelAPI(serverURL: "https://fixture.example"))
         _ = try store.apply(.init(type: "snapshot", state: ChannelState(
             revision: 1, channel: channel,
             lead: .lead(id: "lead", profile: .init(name: "Lead", role: "Coordinator",

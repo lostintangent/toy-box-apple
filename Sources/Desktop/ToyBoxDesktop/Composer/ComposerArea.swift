@@ -161,14 +161,8 @@ private struct ChannelComposer: View {
 
     private var explainsDeletion: Bool { store.phase == .deleted }
 
-    private var isSubmitting: Bool { session.isSubmitting }
-
     private var canSend: Bool {
         session.canSend(hasAdditionalContent: dictation.hasWords)
-    }
-
-    private var associatedAttempt: ChannelSendAttempt? {
-        session.attempt
     }
 
     private var placeholder: String {
@@ -218,10 +212,6 @@ private struct ChannelComposer: View {
         .onChange(of: draft.revision) { _, revision in
             registerDraft()
             dictation.draftChanged(to: revision)
-        }
-        .onChange(of: session.isConfirmed) { _, _ in session.reconcile() }
-        .onChange(of: associatedAttempt?.id) { old, new in
-            if old == nil, new != nil, isSubmitting { interaction.jumpToLatest() }
         }
         .task(id: snapshot?.requestedState) {
             switch snapshot?.requestedState {
@@ -518,7 +508,6 @@ private struct ChannelComposer: View {
     /// Points the window's interaction and dictation at the draft being composed.
     private func adoptDraft() {
         registerDraft()
-        session.reconcile()
         dictation.draftRevision = { [draft] in draft.revision }
     }
 

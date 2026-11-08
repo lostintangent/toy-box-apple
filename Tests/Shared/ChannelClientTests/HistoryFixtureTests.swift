@@ -19,7 +19,7 @@ struct HistoryFixtureTests {
         }
         let catalog = try await api.catalog()
         #expect(catalog.channels.map(\.id) == ["history-demo"])
-        let store = ChannelStore(id: "history-demo", api: api, sendJournal: nil)
+        let store = ChannelStore(id: "history-demo", api: api)
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.isConnected }
@@ -80,7 +80,7 @@ struct HistoryFixtureTests {
         guard ["127.0.0.1", "localhost"].contains(api.baseURL.host ?? ""), api.baseURL.port == 3211 else {
             throw ChannelAPIError.invalidServerURL
         }
-        let store = ChannelStore(id: "history-demo", api: api, sendJournal: nil)
+        let store = ChannelStore(id: "history-demo", api: api)
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.isConnected }

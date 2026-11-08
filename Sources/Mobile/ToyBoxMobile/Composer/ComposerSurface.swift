@@ -123,9 +123,6 @@ struct ComposerSurface: View {
             guard let reply = interaction.replyRequest else { return }
             session.reply(to: reply.agent)
         }
-        .onChange(of: composer.isConfirmed) { _, confirmed in
-            if confirmed { composer.reconcile(); interaction.jumpToLatest() }
-        }
         .onChange(of: draft.revision) { _, revision in
             registerDraft()
             dictation.draftChanged(to: revision)
@@ -137,7 +134,6 @@ struct ComposerSurface: View {
             if phase != .active { dictation.deactivate() }
         }
         .onAppear {
-            composer.reconcile()
             registerDraft()
         }
         .onDisappear {

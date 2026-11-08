@@ -29,7 +29,7 @@ struct ConnectionGraceTests {
     @Test func aDropThatRecoversWithinTheGraceNeverShowsStale() async throws {
         let mock = droppingTransport()
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(initialDelay: 0.01, grace: 60), sendJournal: nil)
+                                 reconnectPolicy: .init(initialDelay: 0.01, grace: 60))
         store.connect()
         defer { store.disconnect() }
         try await eventually(observing: mock) { mock.requests.count == 3 && mock.pendingResponseCount == 1 }
@@ -45,7 +45,7 @@ struct ConnectionGraceTests {
     @Test func aDropStillFailingAfterTheGraceShowsItsFailure() async throws {
         let mock = droppingTransport()
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(initialDelay: 0.01, grace: 0.05), sendJournal: nil)
+                                 reconnectPolicy: .init(initialDelay: 0.01, grace: 0.05))
         store.connect()
         defer { store.disconnect() }
         try await eventually(observing: mock) {
@@ -62,7 +62,7 @@ struct ConnectionGraceTests {
     @Test func aHungConnectShowsItAfterTheGraceAndRetryKeepsIt() async throws {
         let mock = MockTransport { _, _ in try .stream([]) }
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(grace: 0.05), sendJournal: nil)
+                                 reconnectPolicy: .init(grace: 0.05))
         store.connect()
         defer { store.disconnect() }
         #expect(store.phase == .connecting)
@@ -106,7 +106,7 @@ struct ConnectionGraceTests {
     @Test func aSnapshotStillArrivingStaysConnectingUntilAGracePassesInSilence() async throws {
         let mock = MockTransport { _, _ in try .stream([]) }
         let timer = GraceTimer()
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil, sleep: { _ in await timer.wait() })
+        let store = ChannelStore(id: "test", api: try mock.api(), sleep: { _ in await timer.wait() })
         store.connect()
         defer { store.disconnect() }
         try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
@@ -133,7 +133,7 @@ struct ConnectionGraceTests {
     @Test func idleTimeNeverCountsTowardTheGrace() async throws {
         let mock = MockTransport { _, _ in try .stream([]) }
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(grace: 0.05), sendJournal: nil)
+                                 reconnectPolicy: .init(grace: 0.05))
         store.connect()
         store.disconnect()
         // Away for several graces, as when the phone is in the background.

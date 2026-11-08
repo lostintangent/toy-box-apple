@@ -63,9 +63,9 @@ Signing, notarization, in-place updates and TestFlight are in [releases.md](rele
   server's catalog stream from launch, so each change arrives as it happens, in the background
   too, where requests still reach the Dock badge and notifications.
   Neither waits for the main thread to start a request. The catalog opens its stream at once, and
-  connecting starts a channel's stream and the outbox read together. Events are read off the
-  main actor and queued for it as each one decodes, after the restored outbox, so a snapshot that
-  arrives while the first window is being built applies in the main thread's next turn.
+  connecting starts a channel's stream. Events are read off the main actor and queued for it as
+  each one decodes, so a snapshot that arrives while the first window is being built applies in
+  the main thread's next turn.
   The first window connects its channel only once it appears. Connecting earlier gains nothing,
   because that snapshot already arrives while the window is built, and a channel loaded before the
   window holds the window back until its whole transcript renders, about 470 ms later on the launch
@@ -877,7 +877,7 @@ navigation keeps list focus until explicitly moving into the conversation.
 | Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without connecting, the transcript's floating pill says "Reconnecting to server" over "Messages may be out of date" (see Reconnecting notice), the channel's only outage notice. It has no Retry, because the channel keeps trying and tries again at once when the network comes back or moves, the app becomes active again or the catalog recovers (see Connections). The notice stays until the channel connects. A reconnect that goes live sooner shows nothing. Until then agent status, working presence and every connection notice stay as they were while live. Disable delivery and management actions, not editing. Time away from the app never counts toward the three seconds |
 | Disconnected without any state | `wifi.exclamationmark`, "Can't connect to Toy Box", server host, readable failure, Retry and Settings |
 | Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar), after the catalog's stream has failed for about three seconds or at once for a refresh the user asked for. Never replace them with "No channels". When it recovers, every channel waiting out a backoff retries at once |
-| Failed send | Inline error above composer and explicit status on optimistic row, preserved text/attachments, no automatic retry |
+| Failed send | The message stays on its row in the transcript as Not sent, with its text and attachments, Retry and Delete, after the outbox's own retries (see [Sending](#sending)) |
 | Channel deleted | Stop observation, dismiss its inspector, show "This channel was deleted". Back to Channels and Copy Draft if nonempty. Never silently discard a draft or redirect to another channel |
 | Invalid URL or authorization failure | Show the actual category and server, Settings/Retry as appropriate. No fabricated successful connection |
 | Failed image/artifact/history | Localized error at that surface with Retry. Keep the rest of the channel usable |
@@ -3711,9 +3711,6 @@ real AppKit/SwiftUI behavior over a custom imitation, and preserve it through al
 - Settings and composer errors use primary text with a red symbol. Overview, transcript and
   sidebar use the same Shared completion palette.
 - Request announcements keep their baseline, deduplication and background and snapshot suppression.
-  Every failed explicit send, including a retry with the same delivery UUID and phase, emits a fresh
-  store-owned failure ID. Composer consumes that ID directly and deduplicates across windows.
-  Journal restoration is quiet, and confirmation or discard clear resolved failures.
 - The missing-profile fallback initial uses primary ink on its cyan field. Rendered regressions keep
   the 4.5:1 floor for missing and invalid-mark profiles in both appearances. Supplied marks retain
   contrasting black or white ink.

@@ -861,10 +861,12 @@ struct ComposerTests {
         #expect(target.input.text.isEmpty)
     }
 
-    @Test func sendWaitsForFinalWordsBeforeCreatingItsOnlyAttempt() async throws {
+    @Test func sendWaitsForFinalWordsBeforeSendingThem() async throws {
         let recognizer = MobileTestRecognizer()
         recognizer.finalWords = [("Final words.", true)]
-        let (session, target) = try dictatingSession(recognizer, allowsFinalizedPost: true)
+        let outbox = ChannelOutbox(folder: scratchFolder())
+        defer { try? FileManager.default.removeItem(at: outbox.folder) }
+        let (session, target) = try dictatingSession(recognizer, outbox: outbox)
         defer { session.dictation.deactivate() }
         await session.dictation.refreshLanguageSupport()
         session.dictation.toggleRecheckingInput()
@@ -872,20 +874,20 @@ struct ComposerTests {
         recognizer.send("Uncertain words", isFinal: false)
         #expect(session.draft.text.isEmpty)
         #expect(session.canSend)
-        #expect(await !session.send(), "The fixture rejects the finalized POST with 422")
+        #expect(await session.send())
         #expect(session.draft.text.isEmpty)
-        #expect(session.store.sendAttempts.count == 1)
-        #expect(session.store.sendAttempts.first?.phase == .notSent)
-        #expect(session.draft.sendAttemptID == nil)
-        #expect(session.composer.error == nil)
+        #expect(outbox.queue.map(\.text) == ["Final words."], "It sends the finalized words, never the tentative display")
         #expect(!session.dictation.isSessionActive)
         #expect(!session.isFinalizingDictation)
+        withExtendedLifetime(target) {}
     }
 
     @Test func unconfirmedDictationKeepsWordsWithoutPostingAndBlocksDuplicateSubmission() async throws {
         let recognizer = MobileTestRecognizer()
         recognizer.stalls = true
-        let (session, target) = try dictatingSession(recognizer)
+        let outbox = ChannelOutbox(folder: scratchFolder())
+        defer { try? FileManager.default.removeItem(at: outbox.folder) }
+        let (session, target) = try dictatingSession(recognizer, outbox: outbox)
         defer { session.dictation.deactivate() }
         await session.dictation.refreshLanguageSupport()
         session.dictation.toggleRecheckingInput()
@@ -900,8 +902,7 @@ struct ComposerTests {
         #expect(await !send.value)
         #expect(session.draft.text == "Keep these words")
         #expect(target.input.text == session.draft.text)
-        #expect(session.store.sendAttempts.isEmpty)
-        #expect(session.draft.sendAttemptID == nil)
+        #expect(outbox.queue.isEmpty)
         #expect(session.dictation.notice == .unsent(revision: session.draft.revision))
         #expect(!session.isFinalizingDictation)
     }
@@ -927,18 +928,14 @@ struct ComposerTests {
         recognizer.send("Late result", isFinal: true)
         #expect(session.draft.text == "Stay in this draft")
         #expect(target.input.text == session.draft.text)
-        #expect(session.store.sendAttempts.isEmpty)
     }
 
     private func dictatingSession(
-        _ recognizer: MobileTestRecognizer, probe: MobileDictationProbe = .init(),
-        allowsFinalizedPost: Bool = false
+        _ recognizer: MobileTestRecognizer, probe: MobileDictationProbe = .init(), outbox: ChannelOutbox? = nil
     ) throws -> (ComposerSession, MobileDictationTarget) {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [MobileDictationProtocol.self]
-        let host = allowsFinalizedPost ? "finalized-dictation.test" : "no-dictation-post.test"
-        let api = try ChannelAPI(serverURL: "https://\(host)", session: URLSession(configuration: configuration))
-        let store = ChannelStore(id: "test", api: api, sendJournal: nil)
+        // Without a catalog the outbox only saves, so nothing here posts.
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "https://dictation.test"))
+        store.outbox = outbox
         _ = try store.apply(.init(type: "snapshot", state: .init(
             revision: 1,
             channel: .init(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
@@ -983,6 +980,10 @@ struct ComposerTests {
         )
         system.refreshNotifications = []
         return system
+    }
+
+    private func scratchFolder() -> URL {
+        FileManager.default.temporaryDirectory.appending(path: "tbm-dictation-\(UUID())", directoryHint: .isDirectory)
     }
 
     @Test func aFailedRequestRevealRetainsItsQuestionThroughRetryUntilSettledSuccess() {
@@ -1112,54 +1113,6 @@ struct ComposerTests {
             isCancelled = true
             finishContinuation?.resume(throwing: CancellationError())
             finishContinuation = nil
-        }
-    }
-
-    private final class MobileDictationProtocol: URLProtocol, @unchecked Sendable {
-        override class func canInit(with request: URLRequest) -> Bool { true }
-        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-        override func startLoading() {
-            do {
-                #expect(request.url?.host == "finalized-dictation.test", "Unconfirmed dictation must not post")
-                #expect(request.httpMethod == "POST")
-                let payload = try JSONDecoder().decode(Payload.self, from: body())
-                #expect(payload.content == "Final words.", "The POST contains finalized words, never the tentative display")
-                #expect(UUID(uuidString: payload.id) != nil)
-                let url = try #require(request.url)
-                let response = try #require(HTTPURLResponse(
-                    url: url, statusCode: 422, httpVersion: nil,
-                    headerFields: ["Content-Type": "application/json"]
-                ))
-                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-                client?.urlProtocol(self, didLoad: Data(#"{"error":"Rejected after finalization"}"#.utf8))
-                client?.urlProtocolDidFinishLoading(self)
-            } catch {
-                Issue.record(error)
-                client?.urlProtocol(self, didFailWithError: error)
-            }
-        }
-
-        override func stopLoading() {}
-
-        private func body() throws -> Data {
-            if let body = request.httpBody { return body }
-            let stream = try #require(request.httpBodyStream)
-            stream.open()
-            defer { stream.close() }
-            var data = Data()
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while true {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                guard count >= 0 else { throw stream.streamError ?? ChannelAPIError.invalidResponse }
-                if count == 0 { return data }
-                data.append(contentsOf: buffer.prefix(count))
-            }
-        }
-
-        private struct Payload: Decodable {
-            let id: String
-            let content: String
         }
     }
 

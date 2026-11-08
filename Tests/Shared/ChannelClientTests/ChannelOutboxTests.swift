@@ -432,28 +432,6 @@ struct ChannelOutboxTests {
         #expect(Self.files(folder).isEmpty)
     }
 
-    @Test func theStoreShowsTheOutboxsRowsAndRoutesRetryAndDelete() async throws {
-        let folder = Self.folder()
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let clock = TestClock()
-        let served = Served(Self.catalog())
-        let mock = Self.transport(served) { _, _ in Self.failure(422) }
-        let outbox = outbox(folder, clock: clock)
-        let catalog = try await catalog(mock, outbox: outbox)
-        let store = catalog.channel(id: "test")
-
-        let id = await outbox.send("Hello", to: "test", on: catalog.api.baseURL)
-        #expect(store.sendAttempts.map(\.id) == [id.uuidString])
-        #expect(store.sendAttempts.first?.phase == .sending)
-        try await eventually { store.sendAttempts.first?.phase == .notSent }
-        try await store.retrySend(id: id.uuidString)
-        #expect(outbox.message(id)?.state == .sending)
-        try await eventually { outbox.message(id)?.state == .notSent }
-        try await store.discardSendAttempt(id: id.uuidString)
-        #expect(store.sendAttempts.isEmpty)
-        #expect(served.posted.count == 2)
-    }
-
     // MARK: The share extension
 
     @Test func theShareExtensionMakesOneAttemptAndLeavesTheRestToTheApp() async throws {

@@ -212,7 +212,7 @@ struct ManagementTests {
     @Test func inlineCreationReturnsTheMemberWithoutDismissingAnUnrelatedSheet() async throws {
         let fixture = try ManagementRecoveryFixture(memberStatus: 201)
         defer { fixture.close() }
-        let store = ChannelStore(id: "channel", api: fixture.api, sendJournal: nil)
+        let store = ChannelStore(id: "channel", api: fixture.api)
         let channel = Channel(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"),
                               updatedAt: "2026-10-25T12:00:00Z")
         _ = try store.apply(.init(type: "snapshot", state: .init(
@@ -243,7 +243,7 @@ struct ManagementTests {
         let name = " lead "
         let fixture = try ManagementRecoveryFixture()
         defer { fixture.close() }
-        let store = ChannelStore(id: "channel", api: fixture.api, sendJournal: nil)
+        let store = ChannelStore(id: "channel", api: fixture.api)
         let channel = Channel(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"),
                               updatedAt: "2026-10-25T12:00:00Z")
         _ = try store.apply(.init(type: "snapshot", state: .init(
@@ -262,7 +262,7 @@ struct ManagementTests {
     @Test func uncertainInlineCreationChecksStateWithoutReplayingTheWrite() async throws {
         let fixture = try ManagementRecoveryFixture(catalogStatus: 500)
         defer { fixture.close() }
-        let store = ChannelStore(id: "channel", api: fixture.api, sendJournal: nil)
+        let store = ChannelStore(id: "channel", api: fixture.api)
         let channel = Channel(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"),
                               updatedAt: "2026-10-25T12:00:00Z")
         _ = try store.apply(.init(type: "snapshot", state: .init(

@@ -72,8 +72,7 @@ struct MenuBarInboxRequests: Equatable {
         /// choices. They disable while the catalog can't connect, as every Send does.
         func choices(isConnected: Bool) -> TranscriptRequestChoices? {
             guard canChoose, let sequence = item.sequence else { return nil }
-            return TranscriptRequestChoices(sequence: sequence, labels: item.replies, attempts: [],
-                                            isConnected: isConnected)
+            return TranscriptRequestChoices(sequence: sequence, labels: item.replies, isConnected: isConnected)
         }
     }
 }

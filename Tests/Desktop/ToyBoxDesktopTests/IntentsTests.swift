@@ -675,8 +675,6 @@ private final class FakeSpotlightIndex {
 @MainActor
 private final class TestHost {
     let api: ChannelAPI?
-    let journal = ChannelSendJournal(directory: FileManager.default.temporaryDirectory
-        .appending(path: "IntentsTests-\(UUID().uuidString)", directoryHint: .isDirectory))
     private var stores: [String: ChannelStore] = [:]
     private(set) var holds: [String: Int] = [:]
     private(set) var held: [String] = []
@@ -745,7 +743,7 @@ private final class TestHost {
     func store(_ id: String) -> ChannelStore? {
         guard let api else { return nil }
         if let store = stores[id] { return store }
-        let store = ChannelStore(id: id, api: api, sendJournal: journal)
+        let store = ChannelStore(id: id, api: api)
         stores[id] = store
         return store
     }

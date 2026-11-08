@@ -111,23 +111,10 @@ public final class ChannelStore {
     public private(set) var unreadAfter: Int?
     public private(set) var isLoadingOlder = false
     public private(set) var hasOlderMessages = true
-    public private(set) var isSending = false
     public private(set) var historyError: String?
     public private(set) var readError: String?
     /// The latest bookmark change that failed and was undone, until the next change or a dismissal.
     public private(set) var bookmarkFailure: BookmarkFailure?
-    /// What the store itself is sending, until every entry point sends through `outbox`.
-    private(set) var legacyAttempts: [ChannelSendAttempt] = []
-    /// The rows the transcript shows below the messages: the store's own attempts, then the outbox's.
-    public var sendAttempts: [ChannelSendAttempt] {
-        let sending = outbox?.messages(in: id).map(\.attempt) ?? []
-        return sending.isEmpty ? legacyAttempts : legacyAttempts + sending
-    }
-    public private(set) var lastSendFailure: ChannelSendFailure?
-    public private(set) var attemptPersistenceError: String?
-    public private(set) var optimisticMessageIds: Set<String> = []
-    /// Called with the channel's ID after the server accepts each send, retries included.
-    @ObservationIgnored public var onSendConfirmed: (@MainActor (String) -> Void)?
     /// The app's outbox, which delivers every message sent through it. Set by the catalog store.
     @ObservationIgnored public internal(set) weak var outbox: ChannelOutbox?
     /// The messages the outbox still holds for this channel, Sending or Not sent, which the
@@ -164,18 +151,13 @@ public final class ChannelStore {
     @ObservationIgnored private var bookmarkChanges: [Int: BookmarkChange] = [:]
     @ObservationIgnored private var bookmarkWrites: Task<Void, Never>?
     @ObservationIgnored private let reconnectPolicy: ReconnectPolicy
-    @ObservationIgnored private let sendJournal: ChannelSendJournal?
-    @ObservationIgnored private var attemptsRestored = false
-    @ObservationIgnored private var persistenceTask: Task<Void, any Error>?
 
     /// `sleep` waits out each grace. Tests pass one they end instead of waiting.
     public init(id: String, api: ChannelAPI, reconnectPolicy: ReconnectPolicy = .init(),
-                sendJournal: ChannelSendJournal? = .shared,
                 sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
         self.id = id
         self.api = api
         self.reconnectPolicy = reconnectPolicy
-        self.sendJournal = sendJournal
         self.sleep = sleep
     }
 
@@ -184,7 +166,7 @@ public final class ChannelStore {
         grace?.cancel()
     }
 
-    /// Starts the stream and the outbox restore at once, then keeps retrying until `disconnect()`.
+    /// Starts the stream, then keeps retrying until `disconnect()`.
     /// Events are read off the main actor and each one is queued for it as soon as it decodes.
     /// Iterating the stream from the main actor would hop off and back even for a buffered event,
     /// which at launch held the first snapshot until after the window's first render.
@@ -197,20 +179,16 @@ public final class ChannelStore {
         }
         // Retry keeps a failure on screen until the stream connects.
         if phase.message == nil { startGrace(token: token) }
-        let restore = attemptsRestored ? nil : restoreSendAttemptsConcurrently()
         var first: AsyncThrowingStream<ChannelObservationEvent, any Error>? = openStream()
         observation = Task.detached(priority: Task.currentPriority) { [weak self] in
             // Reading a stream opens its request, so only this loop ever connects, and each stream
             // lives only inside `do`, so leaving it for any reason closes the request.
-            var restoring = restore
             var next = first.take()
             var attempt = 0
             while true {
                 do {
                     guard let events = next.take() else { return }
                     for try await event in events {
-                        // Events reconcile restored send attempts, so the first waits for the restore.
-                        await restoring.take()?.value
                         guard try await self?.receive(event, token: token) == true else { return }
                         if event.type == "snapshot" || event.type == "resumed" { attempt = 0 }
                     }
@@ -369,7 +347,7 @@ public final class ChannelStore {
 
     public func loadOlder() async {
         guard !isLoadingOlder, hasOlderMessages, let state,
-              let first = state.messages.filter({ !optimisticMessageIds.contains($0.id) }).first else { return }
+              let first = state.messages.first else { return }
         if first.sequence <= 1 { hasOlderMessages = false; return }
         let historyToken = historyGeneration
         isLoadingOlder = true
@@ -405,305 +383,6 @@ public final class ChannelStore {
             if !isLoadingOlder && state?.messages.first?.sequence == before { return nil }
         }
         return nil
-    }
-
-    /// `onRecorded` runs once the outbox has saved the attempt, before the request starts.
-    @discardableResult
-    public func post(id suppliedId: String? = nil, content: String,
-                     attachments: [ChannelAttachment] = [],
-                     onRecorded: (@MainActor () -> Void)? = nil) async throws -> ChannelSendResult {
-        try await post(id: suppliedId, content: content, attachments: attachments,
-                       requiresConnection: true, onRecorded: onRecorded)
-    }
-
-    /// Persists before sending once, without starting or waiting for the channel's stream.
-    @discardableResult
-    public func postInBackground(id: String, content: String,
-                                 attachments: [ChannelAttachment] = []) async throws -> ChannelSendResult {
-        let result: ChannelSendResult
-        do {
-            result = try await post(id: id, content: content, attachments: attachments, requiresConnection: false)
-        } catch {
-            if legacyAttempts.contains(where: { $0.id == id && $0.canRetry }) {
-                try await persistSendAttempts()
-            }
-            throw error
-        }
-        if let persistenceTask {
-            do { try await persistenceTask.value }
-            catch { attemptPersistenceError = error.localizedDescription }
-        }
-        return result
-    }
-
-    /// The phase a failed background send leaves its attempt in, which Send Again repeats under the
-    /// same UUID.
-    package func failedPhase(ofSend id: String) -> ChannelSendPhase {
-        legacyAttempts.first { $0.id == id }?.phase == .deliveryNotConfirmed ? .deliveryNotConfirmed : .notSent
-    }
-
-    private func post(id suppliedId: String?, content: String, attachments: [ChannelAttachment],
-                      requiresConnection: Bool,
-                      onRecorded: (@MainActor () -> Void)? = nil) async throws -> ChannelSendResult {
-        try await restoreSendAttempts()
-        guard !requiresConnection || (phase.isConnected && state != nil) else {
-            throw ChannelAPIError.disconnected
-        }
-        if !requiresConnection, phase == .deleted {
-            throw ChannelAPIError.http(status: 404, message: "Channel not found.")
-        }
-        let busyError = ChannelAPIError.invalidMessage("A message is already being sent.")
-        guard !isSending || !requiresConnection else { throw busyError }
-        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || !attachments.isEmpty else {
-            throw ChannelAPIError.invalidMessage("A message or attachment is required.")
-        }
-        let id = suppliedId ?? UUID().uuidString
-        guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, id.utf16.count <= 255 else {
-            throw ChannelAPIError.invalidMessage("A send attempt requires a valid message ID.")
-        }
-        if let existing = legacyAttempts.first(where: { $0.id == id }) {
-            guard existing.content == trimmed, existing.attachments == attachments else {
-                throw ChannelAPIError.invalidMessage("The attempted message changed. Send it as a new message.")
-            }
-            if existing.phase == .confirmed { return .alreadyAccepted(id: id) }
-            guard !isSending else { throw busyError }
-            return try await retrySend(id: id, requiresConnection: requiresConnection, onRecorded: onRecorded)
-        }
-        if let committed = state?.messages.first(where: { $0.id == id }) {
-            guard committed.sender == .user, committed.content == .text(trimmed),
-                  (committed.attachments ?? []) == attachments else {
-                throw ChannelAPIError.invalidMessage("The message ID already belongs to different content. Send it as a new message.")
-            }
-            return .committed(committed)
-        }
-        let attempt = ChannelSendAttempt(id: id, content: trimmed, attachments: attachments,
-                                         timestamp: Date.now.ISO8601Format(.init(includingFractionalSeconds: true)),
-                                         phase: .sending)
-        legacyAttempts.append(attempt)
-        optimisticMessageIds.insert(id)
-        if isSending {
-            recordSendFailure(id: id, phase: .notSent, error: busyError.localizedDescription)
-            throw busyError
-        }
-        return try await deliver(attempt, requiresConnection: requiresConnection, onRecorded: onRecorded)
-    }
-
-    @discardableResult
-    public func retrySend(id: String) async throws -> ChannelSendResult {
-        if let sending = outboxMessage(id) {
-            outbox?.sendAgain(sending.id)
-            return .alreadyAccepted(id: id)
-        }
-        return try await retrySend(id: id, requiresConnection: true)
-    }
-
-    /// One of this channel's messages in the outbox, by the ID its row shows.
-    private func outboxMessage(_ id: String) -> ChannelOutbox.Message? {
-        guard let outbox, let uuid = UUID(uuidString: id) else { return nil }
-        return outbox.messages(in: self.id).first { $0.id == uuid }
-    }
-
-    private func retrySend(id: String, requiresConnection: Bool,
-                           onRecorded: (@MainActor () -> Void)? = nil) async throws -> ChannelSendResult {
-        try await restoreSendAttempts()
-        guard !requiresConnection || phase.isConnected else { throw ChannelAPIError.disconnected }
-        guard !isSending else { throw ChannelAPIError.invalidMessage("A message is already being sent.") }
-        guard let attempt = legacyAttempts.first(where: { $0.id == id }), attempt.canRetry else {
-            throw ChannelAPIError.invalidMessage("This send attempt cannot be repeated.")
-        }
-        updateAttempt(id: id, phase: .sending, error: nil)
-        return try await deliver(attempt, requiresConnection: requiresConnection, onRecorded: onRecorded)
-    }
-
-    public func discardSendAttempt(id: String) async throws {
-        if let sending = outboxMessage(id) {
-            guard sending.state != .sending else {
-                throw ChannelAPIError.invalidMessage("An in-flight send cannot be removed.")
-            }
-            outbox?.withdraw(sending.id)
-            return
-        }
-        guard let attempt = legacyAttempts.first(where: { $0.id == id }), attempt.phase != .sending else {
-            throw ChannelAPIError.invalidMessage("An in-flight send cannot be removed.")
-        }
-        let failure = lastSendFailure
-        legacyAttempts.removeAll { $0.id == id }
-        optimisticMessageIds.remove(id)
-        do {
-            try await persistSendAttempts()
-            if failure?.messageId == id, lastSendFailure?.id == failure?.id { lastSendFailure = nil }
-        }
-        catch {
-            if !legacyAttempts.contains(where: { $0.id == id }),
-               state?.messages.contains(where: { $0.id == id }) != true {
-                legacyAttempts.append(attempt)
-                legacyAttempts.sort { $0.timestamp < $1.timestamp }
-                optimisticMessageIds.insert(id)
-            }
-            throw error
-        }
-    }
-
-    private func deliver(_ attempt: ChannelSendAttempt, requiresConnection: Bool,
-                         onRecorded: (@MainActor () -> Void)?) async throws -> ChannelSendResult {
-        let result = try await transmit(attempt, requiresConnection: requiresConnection, onRecorded: onRecorded)
-        onSendConfirmed?(id)
-        return result
-    }
-
-    private func transmit(_ attempt: ChannelSendAttempt, requiresConnection: Bool,
-                          onRecorded: (@MainActor () -> Void)?) async throws -> ChannelSendResult {
-        isSending = true
-        lastSendFailure = nil
-        defer { isSending = false }
-        do {
-            try await persistSendAttempts()
-        } catch {
-            recordSendFailure(id: attempt.id, phase: .notSent, error: error.localizedDescription)
-            throw error
-        }
-        onRecorded?()
-        if let committed = state?.messages.first(where: { $0.id == attempt.id }) {
-            reconcileSend(id: attempt.id)
-            return .committed(committed)
-        }
-        guard (!requiresConnection || phase.isConnected), phase != .deleted else {
-            let error: ChannelAPIError = !requiresConnection && phase == .deleted
-                ? .http(status: 404, message: "Channel not found.") : .disconnected
-            recordSendFailure(id: attempt.id, phase: .notSent, error: error.localizedDescription)
-            saveAttemptsInBackground()
-            throw error
-        }
-        do {
-            let message = try await api.post(channelId: id, id: attempt.id, content: attempt.content,
-                                             attachments: attempt.attachments)
-            if var current = state, phase != .deleted {
-                current.messages.removeAll { $0.id == attempt.id }
-                current.messages = current.messages.merging([message])
-                state = current
-            }
-            reconcileSend(id: attempt.id)
-            return .committed(message)
-        } catch ChannelAPIError.duplicateMessage {
-            if let message = state?.messages.first(where: { $0.id == attempt.id }) {
-                reconcileSend(id: attempt.id)
-                return .committed(message)
-            }
-            updateAttempt(id: attempt.id, phase: .confirmed, error: nil)
-            saveAttemptsInBackground()
-            if requiresConnection { reconnect() }
-            return .alreadyAccepted(id: attempt.id)
-        } catch {
-            if let message = state?.messages.first(where: { $0.id == attempt.id }) {
-                reconcileSend(id: attempt.id)
-                return .committed(message)
-            }
-            let definiteRejection: Bool
-            if case ChannelAPIError.http(let status, _) = error {
-                definiteRejection = (400..<500).contains(status) && status != 408
-            } else if case ChannelAPIError.invalidMessage = error { definiteRejection = true }
-            else { definiteRejection = false }
-            recordSendFailure(id: attempt.id, phase: definiteRejection ? .notSent : .deliveryNotConfirmed,
-                              error: error.localizedDescription)
-            saveAttemptsInBackground()
-            throw error
-        }
-    }
-
-    private func recordSendFailure(id: String, phase: ChannelSendPhase, error: String) {
-        updateAttempt(id: id, phase: phase, error: error)
-        lastSendFailure = .init(id: UUID().uuidString, messageId: id, phase: phase, error: error)
-    }
-
-    private func updateAttempt(id: String, phase: ChannelSendPhase, error: String?) {
-        guard let index = legacyAttempts.firstIndex(where: { $0.id == id }) else { return }
-        legacyAttempts[index].phase = phase
-        legacyAttempts[index].error = error
-    }
-
-    private func reconcileSend(id: String) {
-        if lastSendFailure?.messageId == id { lastSendFailure = nil }
-        guard legacyAttempts.contains(where: { $0.id == id }) else { return }
-        legacyAttempts.removeAll { $0.id == id }
-        optimisticMessageIds.remove(id)
-        saveAttemptsInBackground()
-    }
-
-    private func restoreSendAttempts() async throws {
-        guard !attemptsRestored else { return }
-        try await restoreSendAttempts(from: loadSendAttempts())
-    }
-
-    private func restoreSendAttemptsConcurrently() -> Task<Void, Never> {
-        let load = loadSendAttempts()
-        return Task { [weak self] in try? await self?.restoreSendAttempts(from: load) }
-    }
-
-    /// Reads the journal off the main actor, so a finished read restores without another hop.
-    private func loadSendAttempts() -> Task<[ChannelSendAttempt], any Error> {
-        let journal = sendJournal
-        let server = api.baseURL
-        let id = id
-        return Task.detached(priority: Task.currentPriority) {
-            try await journal?.load(server: server, channelId: id) ?? []
-        }
-    }
-
-    private func restoreSendAttempts(from load: Task<[ChannelSendAttempt], any Error>) async throws {
-        guard !attemptsRestored else { return }
-        do {
-            let restored = try await load.value
-            guard !attemptsRestored else { return }
-            legacyAttempts = restored.map { attempt in
-                var next = attempt
-                if next.phase == .sending {
-                    next.phase = .deliveryNotConfirmed
-                    next.error = "The app closed before delivery was confirmed."
-                }
-                return next
-            }
-            optimisticMessageIds = Set(legacyAttempts.map(\.id))
-            attemptsRestored = true
-            attemptPersistenceError = nil
-        } catch {
-            attemptPersistenceError = error.localizedDescription
-            throw error
-        }
-    }
-
-    private func persistSendAttempts() async throws {
-        do {
-            try await enqueuePersistence().value
-            attemptPersistenceError = nil
-        } catch {
-            attemptPersistenceError = error.localizedDescription
-            throw error
-        }
-    }
-
-    private func saveAttemptsInBackground() {
-        let save = enqueuePersistence()
-        Task { [weak self] in
-            do {
-                try await save.value
-                self?.attemptPersistenceError = nil
-            } catch { self?.attemptPersistenceError = error.localizedDescription }
-        }
-    }
-
-    private func enqueuePersistence() -> Task<Void, any Error> {
-        let attempts = legacyAttempts
-        let journal = sendJournal
-        let server = api.baseURL
-        let channelId = id
-        let predecessor = persistenceTask
-        let task = Task<Void, any Error> {
-            if let predecessor { _ = await predecessor.result }
-            try await journal?.save(attempts, server: server, channelId: channelId)
-        }
-        persistenceTask = task
-        return task
     }
 
     /// Returns once the read through `sequence`, and any later read raised meanwhile, is written or a
@@ -812,10 +491,6 @@ public final class ChannelStore {
             outbox?.received(snapshot.messages, in: id, on: api.baseURL)
             historyGeneration = UUID()
             acknowledgedRead = snapshot.channel.seenThrough
-            for attempt in legacyAttempts where attempt.phase == .confirmed
-                || snapshot.messages.contains(where: { $0.id == attempt.id }) {
-                reconcileSend(id: attempt.id)
-            }
             hasOlderMessages = (snapshot.messages.first?.sequence ?? 1) > 1
         } else if event.type != "resumed", heldReplay != nil {
             heldReplay?.append(event)
@@ -829,18 +504,12 @@ public final class ChannelStore {
                 settleWrittenBookmarks()
             }
             state = events.reduce(previous) { $0.applying($1) }
-            for event in events {
-                if let message = event.message, event.revision != nil { reconcileSend(id: message.id) }
-            }
             outbox?.received(events.lazy.filter { $0.revision != nil }.compactMap(\.message), in: id, on: api.baseURL)
         } else { throw ChannelAPIError.invalidEvent("pre-snapshot \(event.type)") }
         if event.type == "snapshot" || event.type == "resumed" {
             if !capturedUnread, let state {
                 unreadAfter = state.channel.unreadAfter
                 capturedUnread = true
-            }
-            if event.type == "resumed" {
-                for attempt in legacyAttempts where attempt.phase == .confirmed { reconcileSend(id: attempt.id) }
             }
             stopGrace()
             phase = .connected
@@ -923,7 +592,7 @@ public final class ChannelCatalogStore {
     @ObservationIgnored private var pathWatch: Task<Void, Never>?
     @ObservationIgnored private let networkPath: NetworkPathSource
     @ObservationIgnored private var detailStores: [String: ChannelStore] = [:]
-    /// Passed to every channel's store, so one place hears each send the server accepts.
+    /// Called with the channel's ID after the server accepts each send, retries included.
     @ObservationIgnored public var onSendConfirmed: (@MainActor (String) -> Void)?
     /// The app's outbox. Setting it makes this catalog's server the one it delivers to.
     @ObservationIgnored public var outbox: ChannelOutbox? {
@@ -982,7 +651,6 @@ public final class ChannelCatalogStore {
     public func channel(id: String) -> ChannelStore {
         if let existing = detailStores[id] { return existing }
         let store = ChannelStore(id: id, api: api, reconnectPolicy: reconnectPolicy)
-        store.onSendConfirmed = { [weak self] in self?.onSendConfirmed?($0) }
         store.outbox = outbox
         detailStores[id] = store
         return store

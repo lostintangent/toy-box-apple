@@ -1669,7 +1669,7 @@ struct SiriOnScreenTests {
         let api = try ChannelAPI(serverURL: "https://fixture.example")
         let request = ChannelMessage(id: "m2", sequence: 2, timestamp: "2026-11-05T12:01:00Z", sender: .agent("lead"),
                                      content: .text("Ship it?"), request: true)
-        let store = ChannelStore(id: "launch", api: api, sendJournal: nil)
+        let store = ChannelStore(id: "launch", api: api)
         _ = try store.apply(.init(type: "snapshot", state: ChannelState(
             revision: 1, channel: launch, lead: .lead(id: "lead", profile: Self.lead), members: [],
             messages: [ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-11-05T12:00:00Z", sender: .user,
@@ -1714,7 +1714,7 @@ struct SiriOnScreenTests {
                                    url: "/api/serve/launch/plan.md")
         let page = ChannelArtifact(file: .init(kind: "machine", path: "page.html"), title: "Page",
                                    url: "/api/serve/launch/page.html")
-        let store = ChannelStore(id: "launch", api: try ChannelAPI(serverURL: "https://fixture.example"), sendJournal: nil)
+        let store = ChannelStore(id: "launch", api: try ChannelAPI(serverURL: "https://fixture.example"))
         session.configure(api: store.api, channelID: "launch", artifacts: [plan, page])
         let context = intents(api: nil) { .artifact(session, in: store) }
         let planID = ArtifactEntity.id(channelID: "launch", artifactID: plan.id)

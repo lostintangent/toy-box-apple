@@ -1301,8 +1301,7 @@ struct TranscriptTests {
     @MainActor
     @Test func aRowRedrawsWhenItsBookmarksBecomeChangeable() throws {
         let lead = ChannelAgent.lead(id: "lead")
-        let store = ChannelStore(id: "bookmarks", api: try ChannelAPI(serverURL: "https://bookmarks.invalid"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "bookmarks", api: try ChannelAPI(serverURL: "https://bookmarks.invalid"))
         let message = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-10-22T10:00:00Z",
                                      sender: .agent("lead"), content: .text("Hello"))
         let row = try #require(TranscriptRowBuilder().rows([message], lead: lead, members: []).last)
@@ -2604,8 +2603,7 @@ private final class TranscriptHarness {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [TranscriptServerProtocol.self]
         let session = URLSession(configuration: configuration)
-        let store = ChannelStore(id: "harness", api: try ChannelAPI(serverURL: "https://\(host)", session: session),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "harness", api: try ChannelAPI(serverURL: "https://\(host)", session: session))
         let outbox = ChannelOutbox(folder: FileManager.default.temporaryDirectory
             .appending(path: "tbm-transcript-outbox-\(UUID())", directoryHint: .isDirectory), retryWindow: 120)
         let catalog = ChannelCatalogStore(api: store.api)
@@ -3013,8 +3011,7 @@ private final class HoveredMessage {
     init(id: String) async throws {
         pointer.location = { .zero }
         let lead = ChannelAgent.lead(id: "lead")
-        let store = ChannelStore(id: "selection", api: try ChannelAPI(serverURL: "https://selection.invalid"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "selection", api: try ChannelAPI(serverURL: "https://selection.invalid"))
         let message = ChannelMessage(id: id, sequence: 1, timestamp: "2026-10-22T10:00:00Z", sender: .agent("lead"),
                                      content: .text(String(repeating: "A paragraph long enough to wrap. ", count: 6)
                                          + "\n\nA second paragraph."))

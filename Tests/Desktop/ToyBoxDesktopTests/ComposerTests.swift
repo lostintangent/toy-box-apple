@@ -49,12 +49,13 @@ struct ComposerTests {
 
     @Test func auxiliaryRepliesSeedOnceAndKeepStaleRequestsUnsent() async throws {
         try await withDraft { draft, url in
-            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
-                                     sendJournal: nil)
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"))
             let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
                                   requestSequence: 8, updatedAt: "2026-10-24T00:00:00Z")
             let initial = ChannelState(revision: 1, channel: channel, lead: .lead(id: "lead"))
             _ = try store.apply(.init(type: "snapshot", state: initial))
+            let outbox = ChannelOutbox(folder: url.deletingLastPathComponent().appending(path: "Sending"))
+            store.outbox = outbox
             let session = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8),
                                                    requester: .init(id: "ada", name: "Ada Lovelace"), draft: draft)
             #expect(draft.text == "@ada-lovelace ")
@@ -81,8 +82,7 @@ struct ComposerTests {
             #expect(!session.canSend())
             await session.send()
             #expect(draft.text == "Keep this reply")
-            #expect(draft.sendAttemptID == nil)
-            #expect(store.sendAttempts.isEmpty)
+            #expect(outbox.queue.isEmpty)
             #expect(session.error?.contains("request changed") == true)
             #expect(store.state?.channel.seenThrough == 0)
         }
@@ -90,8 +90,7 @@ struct ComposerTests {
 
     @Test func auxiliaryEligibilityStopsObservingAfterItsFirstBlocker() throws {
         let draft = ComposerDraft()
-        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"))
         let session = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8), draft: draft)
         let offlineChanges = Mutex(0)
         let offline = withObservationTracking { session.canSend() } onChange: {
@@ -131,10 +130,9 @@ struct ComposerTests {
             let staged = ComposerDraft(fileURL: incomingURL)
             #expect(staged.text == "Selected text\nhttps://example.com\n\nAnother selection")
             #expect(staged.images.count == 1)
-            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString), sendJournal: nil)
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString))
             let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
-            let otherStore = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "https://other.example"),
-                                          sendJournal: nil)
+            let otherStore = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "https://other.example"))
             let otherSession = AuxiliaryComposerSession(store: otherStore, scope: .quickSend, draft: draft)
             #expect(!inbox.apply(to: otherSession))
             #expect(draft.text == "Keep this draft")
@@ -147,8 +145,6 @@ struct ComposerTests {
             let revision = draft.revision
             #expect(!inbox.apply(to: session))
             #expect(draft.revision == revision)
-            #expect(store.sendAttempts.isEmpty)
-            #expect(draft.sendAttemptID == nil)
             #expect(ComposerDraft(fileURL: url).text == draft.text)
             #expect(!ComposerDraft(fileURL: incomingURL).hasContent)
             inbox.receive(.init(images: [.init(name: "Corrupt.png", mimeType: "image/png", data: Data([1, 2, 3]))]))
@@ -163,7 +159,7 @@ struct ComposerTests {
         try await withDraft { draft, url in
             let server = try #require(URL(string: "http://localhost:3210"))
             let inbox = QuickSendPrefillInbox(serverURL: server, draft: ComposerDraft())
-            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString), sendJournal: nil)
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString))
             let outbox = ChannelOutbox(folder: url.deletingLastPathComponent().appending(path: "Sending"))
             store.outbox = outbox
             let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft, isConnected: { true })
@@ -176,7 +172,6 @@ struct ComposerTests {
             session.beginPresentation()
             #expect(inbox.apply(to: session))
             #expect(draft.text == "Shared content")
-            #expect(draft.sendAttemptID == nil)
             withExtendedLifetime(outbox) {}
         }
     }
@@ -191,7 +186,7 @@ struct ComposerTests {
             try sampleImage().data.write(to: imageURL)
             try Data("Private file contents".utf8).write(to: fileURL)
             draft.text = "Keep this draft"
-            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: serverAddress), sendJournal: nil)
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: serverAddress))
             let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
             inbox.receive(.init(text: "Shared text", fileURLs: [imageURL, fileURL]))
             #expect(inbox.draft.isLoadingImages)
@@ -208,7 +203,6 @@ struct ComposerTests {
                 #expect(draft.error?.contains("Only images can be attached") == true)
             }
             #expect(!draft.text.contains("Private file contents"))
-            #expect(store.sendAttempts.isEmpty)
         }
     }
 
@@ -228,8 +222,7 @@ struct ComposerTests {
 
     @Test func aWidgetReplyKeepsTheInboxDraftAndNeverRetargetsAChangedRequest() async throws {
         try await withDraft { draft, _ in
-            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
-                                     sendJournal: nil)
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"))
             var channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
                                   requestSequence: 12, updatedAt: "2026-10-24T22:00:00Z")
             _ = try store.apply(.init(type: "snapshot", state: .init(revision: 1, channel: channel,
@@ -251,8 +244,6 @@ struct ComposerTests {
             #expect(reopened.requestChanged)
             #expect(!reopened.canSend())
             await reopened.send()
-            #expect(store.sendAttempts.isEmpty)
-            #expect(draft.sendAttemptID == nil)
             #expect(store.state?.channel.seenThrough == 0)
             #expect(draft.text == "@ada-lovelace My existing inbox reply")
         }
@@ -358,8 +349,7 @@ struct ComposerTests {
 
     @Test func auxiliarySendSavesToTheOutboxOnlyWhileTheCatalogIsConnected() async throws {
         try await withDraft { draft, url in
-            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
-                                     sendJournal: nil)
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"))
             let outbox = ChannelOutbox(folder: url.deletingLastPathComponent().appending(path: "Sending"))
             store.outbox = outbox
             let catalogConnected = Mutex(false)
@@ -388,7 +378,6 @@ struct ComposerTests {
             #expect(saved.attachments.count == 1)
             #expect(saved.state == .sending)
             #expect(!draft.hasContent)
-            #expect(draft.sendAttemptID == nil)
 
             draft.text = "A new draft"
             #expect(!session.canSend(), "A saved send waits until the editor is presented again")
@@ -445,7 +434,7 @@ struct ComposerTests {
         let inbox = QuickSendPrefillInbox(serverURL: server, draft: draft)
         inbox.receive(.init(text: "Shared content"))
         let target = ComposerDraft()
-        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString))
         let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: target)
         #expect(inbox.apply(to: session))
         #expect(target.text == "Keep this text\n\nShared content")
@@ -742,7 +731,7 @@ struct ComposerTests {
         let server = try #require(URL(string: "http://localhost:3210"))
         let inbox = QuickSendPrefillInbox(serverURL: server, draft: ComposerDraft())
         inbox.receive(.init(text: "Shared selection"))
-        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString))
         let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
         session.prepareForExternalEdit = { coordinator.leaveDocument() }
         #expect(inbox.apply(to: session))
@@ -763,8 +752,7 @@ struct ComposerTests {
     }
 
     @Test func replyPlacesTheCaretAfterTheHandleWhereverTheCaretWas() throws {
-        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"))
         let agent = ChannelAgent(id: "ada", name: "Ada Lovelace")
         for caret in [2, "Hi there".utf16.count] {
             let draft = ComposerDraft()
@@ -828,7 +816,7 @@ struct ComposerTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [NoContentProtocol.self]
         let api = try ChannelAPI(serverURL: "http://bookmarks.test", session: URLSession(configuration: configuration))
-        let store = ChannelStore(id: "test", api: api, sendJournal: nil)
+        let store = ChannelStore(id: "test", api: api)
         let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
                               updatedAt: "2026-10-24T00:00:00Z")
         let messages = (1...3).map { sequence in

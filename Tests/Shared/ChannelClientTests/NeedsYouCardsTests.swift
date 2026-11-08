@@ -114,7 +114,7 @@ struct NeedsYouCardsTests {
         await cards.send("Near the entrance", to: b, on: store)
         #expect(server.requests.entries() == [a] && checks.rows == ["b": .sent])
 
-        try await eventually { store.sendAttempts.map(\.phase) == [.notSent] }
+        try await eventually { store.sending.map(\.state) == [.notSent] }
         let returned = server.requests.entries()
         #expect(returned == [a, b], "The request comes back where it was")
         #expect(cards.rows(in: returned) == ["a": .card(a), "b": .question(b)],

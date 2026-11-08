@@ -103,7 +103,7 @@ struct TalkRecorderTests {
         recognizer.send("Keep a reading nook", isFinal: true)
         await recorder.send()
         #expect(recorder.phase == .sent && recorder.isChecked && !recorder.isLifted)
-        try await eventually { store.sendAttempts.map(\.phase) == [.notSent] }
+        try await eventually { store.sending.map(\.state) == [.notSent] }
         #expect(recorder.phase == .sent && announcements == ["Sent to Lead in Studio"],
                 "The card has closed, and the note waits in its channel with Retry")
         #expect(draft.text.isEmpty, "The note stays in the outbox, not the draft")

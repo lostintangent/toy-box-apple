@@ -73,15 +73,8 @@ final class AuxiliaryComposerSession {
             return
         }
         error = nil
-        guard let result = await composer.submit() else {
-            error = composer.error.map { "Not sent. \($0)" }
-            return
-        }
-        let id = switch result {
-        case .committed(let message): message.id
-        case .alreadyAccepted(let id): id
-        }
-        confirmation = .init(id: id, opensChannel: opensChannel)
+        guard let id = await composer.submit() else { return }
+        confirmation = .init(id: id.uuidString, opensChannel: opensChannel)
     }
 
     func takeConfirmationPresentation() -> Confirmation? {

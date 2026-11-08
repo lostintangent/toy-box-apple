@@ -330,7 +330,7 @@ struct QuickSendView: View {
     private func trackDraft() {
         guard model.quickSend.replyTarget == nil, let selectedID, let session else { return }
         history?.trackDraft(channelID: selectedID, name: session.store.details?.name,
-                            hasContent: session.draft.hasContent || session.draft.sendAttemptID != nil)
+                            hasContent: session.draft.hasContent)
     }
 
     private func endPresentation() {

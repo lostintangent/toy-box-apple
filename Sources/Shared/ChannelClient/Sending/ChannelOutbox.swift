@@ -496,11 +496,3 @@ extension ChannelOutbox {
         }
     }
 }
-
-extension ChannelOutbox.Message {
-    /// The row the store's `sendAttempts` shows, until every view reads the outbox.
-    var attempt: ChannelSendAttempt {
-        .init(id: id.uuidString, content: text, attachments: attachments, timestamp: message.timestamp,
-              phase: state == .sending ? .sending : .notSent)
-    }
-}
