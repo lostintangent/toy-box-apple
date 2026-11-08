@@ -20,7 +20,7 @@
 import http from "node:http";
 import { createHistoryFixture, historyChannelID, writeHistoryPage } from "./channels/history-channel.ts";
 import { createScrollFixture, scrollChannelID, writeScrollImage } from "./channels/scroll.ts";
-import { createCatalogRoute } from "./channels/catalog-stream.ts";
+import { catalogEntry, createCatalogRoute } from "./channels/catalog-stream.ts";
 import { createDemoServer, loadDemoFixture, type DemoServer } from "./channels/demo-server.ts";
 import { type Agent, type Message, type Response, type Snapshot, type Status } from "./channels/types.ts";
 
@@ -51,7 +51,8 @@ const catalog = createCatalogRoute(() => {
     const snapshots = Object.values(demos).map(demo => demo.snapshot());
     const { name, role, avatar } = snapshots[0].lead;
     return {
-        version: 1, lead: { name, role, avatar }, channels: snapshots.map(snapshot => snapshot.channel),
+        version: 1, lead: { name, role, avatar },
+        channels: snapshots.map(({ channel, request }) => catalogEntry(channel, request)),
         members: snapshots.flatMap(snapshot => snapshot.members),
     };
 });

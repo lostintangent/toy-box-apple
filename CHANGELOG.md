@@ -8,12 +8,14 @@
 - Swiping a channel in the list now shows just the Talk and Delete icons, without titles underneath, for a cleaner look.
 - Closing Find now lowers the keyboard right away, instead of a moment after the message box comes back.
 - Ready for an upcoming Toy Box update that makes the channel list lighter to download.
+- Notifications and the Needs You widget show a waiting request's question sooner and use less data, since it now comes with the channel list.
 
 ## Mac 0.1.28
 
 ### Bugs/Polish
 
 - Ready for an upcoming Toy Box update that makes the channel list lighter to download.
+- Notifications and the menu bar show a waiting request's question sooner and use less data, since it now comes with the channel list.
 
 ## iPhone 0.1.25
 

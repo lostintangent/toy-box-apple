@@ -66,6 +66,26 @@ final class ChannelWaitingRequestsTests {
         #expect(catalog.existingChannel(id: "a") == nil, "Looking a request up never opens its channel")
     }
 
+    @Test func aListedRequestNeedsNoLookupAndOneAnOlderServerLeavesOutIsLookedUp() async throws {
+        var shipping = listed("a", request: 12)
+        shipping.request = asked(12, in: "a", "Ship it?", at: "11:00")
+        let catalog = try await catalog([listed("test", request: 7), shipping, listed("b", request: 5)],
+                                        loaded: asked(7, in: "test", "Pick one?", at: "09:00"), live: true) { channel, _ in
+            channel == "b" ? [self.asked(5, in: "b", "Still there?", at: "10:00")] : nil
+        }
+        let requests = ChannelWaitingRequests(catalog: catalog)
+        let entry = try #require(requests.entries().first { $0.channel.id == "a" })
+        #expect(entry.request?.quote == "Ship it?")
+        #expect(entry.request?.requester?.name == "Lead")
+        #expect(try await requests.message(channelID: "a", sequence: 12)?.quote == "Ship it?")
+
+        requests.resolve()
+        try await eventually { requests.entries().allSatisfy { $0.request != nil } }
+        let transport = try #require(transport)
+        #expect(transport.requests.compactMap(\.url?.path).filter { $0.hasSuffix("/messages") }
+                == ["/api/v1/channels/b/messages"])
+    }
+
     @Test func aLoadedChannelAnswersFirstAndAFailedLookupThrowsUntilARetry() async throws {
         let catalog = try await catalog([listed("test", request: 7), listed("b", request: 5)],
                                         loaded: asked(7, in: "test", "Loaded?", at: "08:00"), live: false) { _, attempt in
