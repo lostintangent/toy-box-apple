@@ -581,17 +581,15 @@ struct ChannelOutboxTests {
         let second = await outbox.send("Second", to: "test", on: server)
         let other = await outbox.send("Other", to: "other", on: server)
         await outbox.send("Elsewhere", to: "test", on: URL(string: "https://elsewhere.test")!)
-        outbox.handOff()
-        outbox.handOff()
-        await outbox.settled()
+        await outbox.handOff()
+        await outbox.handOff()
         #expect(uploads.startedIDs == [first.uuidString, other.uuidString])
         #expect(uploads.startedPaths == ["/api/v1/channels/test/messages", "/api/v1/channels/other/messages"])
 
         try uploads.finish(first, status: 201, body: SentResponse(message: Self.userMessage(id: first.uuidString, sequence: 9)))
         try await eventually { outbox.messages(in: "test").map(\.id) == [second] }
         try await eventually(observing: mock) { served.reads.withLock { $0 } == [9] }
-        outbox.handOff()
-        await outbox.settled()
+        await outbox.handOff()
         #expect(uploads.startedIDs == [first.uuidString, other.uuidString, second.uuidString])
     }
 
@@ -607,8 +605,7 @@ struct ChannelOutboxTests {
 
         let refused = await outbox.send("Refused", to: "test", on: catalog.api.baseURL)
         let troubled = await outbox.send("Troubled", to: "other", on: catalog.api.baseURL)
-        outbox.handOff()
-        await outbox.settled()
+        await outbox.handOff()
         let completion = Completion()
         #expect(!outbox.handleEvents(forBackgroundSession: "dev.example.other") {})
         #expect(outbox.handleEvents(forBackgroundSession: "test.outbox") { completion.ran = true })
@@ -621,8 +618,7 @@ struct ChannelOutboxTests {
         #expect(uploads.opened.withLock { $0 } == ["test.outbox"])
 
         // Trouble leaves it Sending, so the next hand-off gives it to iOS again.
-        outbox.handOff()
-        await outbox.settled()
+        await outbox.handOff()
         #expect(uploads.startedIDs == [refused.uuidString, troubled.uuidString, troubled.uuidString])
     }
 

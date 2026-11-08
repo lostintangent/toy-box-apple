@@ -257,8 +257,13 @@ public final class ChannelOutbox {
     /// when its background time is about to end. iOS finishes it even if Toy Box stops running, and
     /// its answer comes back through the same confirmation. The outbox keeps trying as well, since the
     /// server ignores whichever arrives second, and only the next message goes, so a channel's
-    /// messages still arrive in order.
-    public func handOff() {
+    /// messages still arrive in order. Returns once iOS has every upload, so background time can end.
+    public func handOff() async {
+        startUploads()
+        await writes?.value
+    }
+
+    private func startUploads() {
         guard let uploads, let catalog, let server else { return }
         var channels = Set<String>()
         for message in queue where message.server == server && message.state == .sending {
@@ -333,7 +338,7 @@ public final class ChannelOutbox {
             || server.map { server in queue.contains { $0.server == server && $0.state == .sending } } ?? false
         if isDelivering != delivering { isDelivering = delivering }
         guard isLoaded, let catalog, let server else { return }
-        if handsOff { return handOff() }
+        if handsOff { return startUploads() }
         let api = catalog.api
         let channels = Set(queue.lazy.filter { $0.server == server && $0.state == .sending }.map(\.channelID))
         for channelID in channels where lines[channelID] == nil {
