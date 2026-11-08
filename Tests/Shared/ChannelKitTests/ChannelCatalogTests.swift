@@ -34,6 +34,21 @@ struct ChannelCatalogTests {
         #expect(throws: (any Error).self) { try event(#"{"type":"channel.deleted"}"#) }
     }
 
+    /// The channel list stops sending each channel's tasks, which only its snapshot needs.
+    @Test func channelsWithoutTasksStillDecode() throws {
+        let entry = #"{"id":"c","name":"C","model":{"provider":"p","name":"m"},"latestSequence":4,"seenThrough":2,"requestSequence":4,"updatedAt":"2026-10-01T00:00:00Z"}"#
+        let catalog = try JSONDecoder().decode(ChannelCatalog.self, from: Data("""
+            {"version":1,"channels":[\(entry)],"members":[],
+             "lead":{"name":"Lead","role":"Coordinates.","avatar":{"mark":"M4 12H20","color":"#123456"}}}
+            """.utf8))
+        var expected = channel("c", updatedAt: "2026-10-01T00:00:00Z", name: "C")
+        expected.latestSequence = 4
+        expected.seenThrough = 2
+        expected.requestSequence = 4
+        #expect(catalog.channels == [expected])
+        #expect(try event(#"{"type":"channel.upserted","channel":\#(entry)}"#) == .channelUpserted(expected))
+    }
+
     @Test func upsertsKeepTheJSONRoutesOrder() {
         var catalog = ChannelCatalog(lead: lead, channels: [
             channel("b", updatedAt: "2026-10-03T00:00:00Z"),
