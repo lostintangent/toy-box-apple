@@ -96,11 +96,7 @@ Signing, notarization, in-place updates and TestFlight are in [releases.md](rele
   still need the active scene. Nothing on screen changes because the scene went inactive or a
   channel is reconnecting quietly: sidebar working agents and the notification tip stay until the
   channel is stale or deleted.
-- **Background sends:** `ChannelStore.postInBackground(id:content:)` accepts a caller-owned UUID
-  without opening or waiting for SSE. It restores the same outbox, durably records the attempt
-  before its one HTTP request, and retains rejection or uncertain-delivery classification before
-  returning a failure. Explicit retries reuse that UUID. Normal `post` and `retrySend` still
-  require a live channel. A duplicate acceptance never starts a stream for a background send.
+- **Sending:** every message goes through one outbox, as [Sending](#sending) describes.
 - **Wire rules:**
   - Decode leniently, so unknown system message kinds and fields degrade to a generic row instead
     of failing the stream.
@@ -135,8 +131,8 @@ Connection. Three invariants hold:
 Send, management and read marking wait for `isConnected`. A read write belongs to the store, so
 cancelling the reader that started it neither interrupts it nor reports an error. A later read
 joins that write, which sends the newest position before it finishes. Notices, agent status and working
-presence change on `isUnavailable` (failed or deleted), never on a view timer. Send attempts, Send
-Again and `reconcileManagementWrite` are delivery, not connection, and a handed-off channel that
+presence change on `isUnavailable` (failed or deleted), never on a view timer. The outbox, Retry
+and `reconcileManagementWrite` are delivery, not connection, and a handed-off channel that
 couldn't be opened is Handoff's `missing`.
 
 - **Channel stream:** `connect()` starts the stream and keeps retrying until `disconnect()`, and
@@ -176,6 +172,60 @@ couldn't be opened is Handoff's `missing`.
   `connected` with the channel count, or `failed`. `isConnecting` drives the button.
 - **Holders:** `ChannelConnections` counts who holds each store through `hold` and `release`. The
   last release lingers as State describes, and `disconnectAll` serves a server change.
+
+### Sending
+
+Every message the user sends goes through one `ChannelOutbox` (ChannelClient), from a composer,
+a card, a choice, a notification, Siri, Quick Send or the share sheet. Each app makes one at
+launch, and the catalog store for the current server delivers that server's messages, whether or
+not their channel is open. So every entry point just calls `send` and moves on. None waits on the
+network, retries or reports a delivery failure itself. Management writes aren't messages, so they
+keep `reconcileManagementWrite`.
+
+- **Saved before it returns.** `send` shows the message in its channel at once as Sending, saves
+  it as its own file and returns. It never throws, and if saving fails the message still sends
+  from memory. The Mac keeps the files in Application Support and the phone in its app group, so
+  the share extension writes to the app's outbox. Messages still Sending resume at the next
+  launch.
+- **Offline still disables Send.** A surface that knows it's offline keeps Send disabled, as
+  [Connections](#connections) describes. Only the Lock Screen, Siri and the share sheet send
+  without checking, since they can't know first.
+- **In order, under one ID.** Each message records its server and channel, so a reply to another
+  server's notification waits for that server. A channel's messages go one at a time, oldest
+  first, and every attempt reuses the caller's UUID, so the server never posts one twice.
+  Channels deliver independently.
+- **The server's answer confirms it.** A 2xx, a 409 for an ID the server already has, or the
+  message arriving in a snapshot or replay takes it out of the outbox. An open channel merges the
+  message the POST returns, and after a 409 it resumes from its last revision to show it. The
+  outbox then marks the channel read through the message, since the user's own message never
+  leaves a channel unread.
+- **When delivery fails:**
+
+  | What happened | For example | The outbox |
+  | --- | --- | --- |
+  | Toy Box can't reach the server | Offline, can't find or connect to the host, a lost connection, or 502, 503, 504 or 530 while the catalog isn't connected, as when the Mac behind Tailscale Serve or Cloudflare Tunnel sleeps | Waits for the catalog to recover, the network to return, the app to come back or a channel stream to connect, with the reconnect backoff as a fallback, then sends again. It never gives up, even across launches |
+  | The server has trouble | A timeout, 408, 429, any other 5xx, or a gateway error while the catalog is connected | Retries after 1, 2, 4, 8, 15 and 30 seconds, then every minute, honoring `Retry-After`, for 2 minutes, then stops. Becoming unreachable meanwhile waits as above and starts the 2 minutes over |
+  | The server says no | Any other 4xx | Stops at once. A deleted channel's messages leave with it |
+
+- **Not sent is the one failed state.** A message the outbox stops trying shows Not sent on its
+  row in the transcript, with Retry and Delete, and nowhere else. Retry puts it back in line under
+  the same ID, and Delete withdraws it. It steps out of line so the channel's later messages
+  continue, and it stays Not sent across launches.
+- **The waiting rule.** `ChannelWaitingRequests` decides what's waiting for the transcript's
+  choices, Needs You, the menu bar, the Dock, widgets and notifications. Each message records the
+  request its caller answered, or the one waiting in its channel when it was sent, so a newer
+  request is never hidden. While the answer is Sending its request counts as answered, and once
+  it's confirmed the request stays answered until the catalog stops listing it. A Not sent answer
+  stops counting, so the request comes back. In the channel the choices stay hidden while any
+  answer to the request is in the outbox, since its row sits just below.
+- **The phone finishes sends in the background.** While `isDelivering` is true, the app delegate
+  holds background time, so a Lock Screen reply finishes after its action returns. When that time
+  is about to end, `await handOff()` gives iOS each channel's next Sending message as a background
+  upload, which finishes even if Toy Box stops running. The share extension hands off each send
+  before `send` returns, so its sheet closes at once. When iOS wakes the app with the results,
+  `handleEvents(forBackgroundSession:completion:)` applies them by the same rules. The outbox keeps
+  trying while it runs as well, since the server ignores whichever copy arrives second.
+  ChannelClient makes no `UIApplication` call.
 
 ## Protocol
 
@@ -3003,8 +3053,8 @@ sheet for up to ten images or one web link. Anything else, or an image it can't 
 the app group's share history and never connects anywhere else. With none saved, it says "Open
 Toy Box to connect first".
 
-The app saves that server whenever it connects and records each channel the server confirms a
-send to, from the app or the extension. That history keeps the 20 most recent channels for that
+The app saves that server whenever it connects and records each channel the user sends to, from
+the app once the server confirms it or from the extension. That history keeps the 20 most recent channels for that
 server and mirrors them as `INSendMessageIntent` donations, so the share sheet suggests them with the channel
 mark. Each donation is grouped by its server and channel, and changing servers or the catalog
 dropping a channel deletes its suggestion. A suggestion opens straight to its composer. Anything
@@ -3021,20 +3071,16 @@ the server's limits, because iOS ends a share extension near 120 MB. Ten 24-mega
 the request about three times over, so the byte limit keeps ten images' request under 20 MB.
 
 The header stays centered on the sheet in every state. Close and the trailing control are both
-36-point circles: Send (arrow up), progress, Sent (checkmark) or Send Again (`arrow.clockwise`,
-labeled "Send Again"). The channel button keeps 68 points clear of each edge, Close's measured 56
+36-point circles: Send (arrow up), progress or Sent (checkmark). The channel button keeps 68 points clear of each edge, Close's measured 56
 to 60 points plus 8, so a long name truncates instead of running under them. The header's text
 stops growing at the Large text size, with the Large Content Viewer above it.
 
-The first Send makes one attempt with its own UUID through `ChannelStore.postInBackground`, without
-a channel connection. Sending shows a progress indicator, and Sent shows a checkmark for 0.7 s
-before the sheet closes. While an attempt is in flight or unresolved, the composer is dimmed to
-50% and locked, as is the channel button. A lost connection says "You're offline." over "Nothing
-was sent." and anything else unconfirmed says "Toy Box didn't confirm this." over "Sending again
-can't post it twice." Both keep the attempt, so Send Again reuses its UUID. A refusal shows the server's
-message alone and unlocks, and the next Send is a new attempt. A deleted channel says
-"<name> no longer exists. Choose another channel." and returns to the list. Close is disabled
-while sending. Swiping down with a note asks "Discard Note" or "Keep Editing".
+Send saves the message to the app's outbox, which hands it to iOS before it returns, as
+[Sending](#sending) describes, so it never waits on the server, even offline. Sending shows a
+progress indicator while it saves, and Sent shows a checkmark for 0.7 s before the sheet closes.
+From Send on, the composer is dimmed to 50% and locked, as is the channel button, and Close is
+disabled. The message shows in its channel in the app as Sending, and a failure waits there as
+Not sent. Swiping down with a note asks "Discard Note" or "Keep Editing".
 
 ### Catch-up summaries
 

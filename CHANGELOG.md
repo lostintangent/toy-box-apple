@@ -6,6 +6,10 @@
 
 - A request waiting for you can now be read aloud, so you can hear it while you do something else.
 
+### Bugs/Polish
+
+- A message you send now keeps trying on its own through a dropped connection, or while the Mac running your server sleeps, and it never posts twice.
+
 ## iPhone 0.1.24
 
 ### Features
@@ -15,6 +19,8 @@
 ### Bugs/Polish
 
 - After you send your own reply to a request in the channel list, the card settles straight back into its row, so it's clear where your answer went.
+- A message you send now keeps trying on its own through a dropped connection, or while the Mac running your server sleeps, and it never posts twice.
+- Sharing to a channel now closes the share sheet right away, and the message finishes sending in the background, even if you don't open Toy Box.
 
 ## iPhone 0.1.23
 
