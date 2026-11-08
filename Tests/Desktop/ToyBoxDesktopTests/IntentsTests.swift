@@ -619,7 +619,7 @@ extension IntentsTests {
 
         /// Run alone against a fresh private demo, before any other fixture replies.
         @Test(.enabled(if: demoURL != nil))
-        func spotlightReplyConfirmsAndAnswersTheOriginalRequestWithoutOpeningOrMarkingRead() async throws {
+        func spotlightReplyConfirmsAndAnswersTheOriginalRequestWithoutOpening() async throws {
             let host = try await TestHost.demo()
             let api = try #require(host.api)
             let context = host.context
@@ -643,10 +643,9 @@ extension IntentsTests {
             var stream = api.observe(channelId: before.channel.id).makeAsyncIterator()
             let after = try #require(try await stream.next()?.state)
             #expect(after.channel.requestSequence == nil)
-            #expect(after.channel.seenThrough == before.channel.seenThrough)
             #expect(after.messages.filter { $0.text.hasSuffix(text) }.map(\.text) == ["@\(agent.handle) \(text)"])
             #expect(host.opened.isEmpty)
-            print("Spotlight request reply: confirmed \(agent.name) in \(before.channel.name), one POST, no read write")
+            print("Spotlight request reply: confirmed \(agent.name) in \(before.channel.name), one POST")
         }
     }
 }

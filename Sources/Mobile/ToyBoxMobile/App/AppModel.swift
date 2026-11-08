@@ -73,7 +73,7 @@ final class AppModel {
         self.following = following ?? ChannelFollowController()
         self.defaults = defaults
         self.session = session
-        outbox = ChannelOutbox(folder: Self.outboxFolder)
+        outbox = .mobile()
         self.notifications.onRegistrationCreated = { [weak self] registration in
             guard let self, self.notifications.currentRegistration == registration,
                   self.serverURL == registration.serverURL else { return }
@@ -140,13 +140,6 @@ final class AppModel {
     var openChannelIDs: Set<String> {
         let visible = isActive ? visibleChannelID : nil
         return Set(visible.map { [$0] } ?? [])
-    }
-
-    /// The shared container, where the share extension saves its sends too. Without it, sends still
-    /// go out from the app's own folder.
-    private static var outboxFolder: URL {
-        (try? MobileSharedContainer.url().appending(path: "Sending", directoryHint: .isDirectory))
-            ?? ChannelOutbox.defaultFolder
     }
 
     func hold(_ store: ChannelStore) {

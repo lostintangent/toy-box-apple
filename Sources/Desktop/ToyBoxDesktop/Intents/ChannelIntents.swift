@@ -7,8 +7,8 @@ import Foundation
 
 /// What Siri and Shortcuts use from the running app: its server, its loaded catalog, the channel
 /// stores its windows share, its outbox, and the route a notification takes to open a channel.
-/// Intents name channels from the loaded catalog, save what they send to the outbox, and never mark
-/// anything read.
+/// Intents name channels from the loaded catalog and save what they send to the outbox. Reading
+/// never marks anything read.
 @MainActor
 final class ChannelIntents {
     struct Host {

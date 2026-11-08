@@ -14,7 +14,7 @@ struct QuickSendPrefill: Identifiable, Sendable {
     }
 }
 
-/// Incoming content is durable before a channel is chosen and never edits an immutable send.
+/// Incoming content is durable before a channel is chosen and never edits a send while it saves.
 @MainActor @Observable
 final class QuickSendPrefillInbox {
     let serverURL: URL

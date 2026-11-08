@@ -2826,10 +2826,8 @@ sends in the background without activating the app or opening a window. The text
 exactly like the in-app Reply: prepend the requester's `@handle ` unless the reply already starts
 with an @mention. A reply or choice goes to the app's outbox for the server that posted the
 notification, answering that notification's request, and the notification clears. The outbox
-delivers it, so the action never waits on the network, never retries itself and never posts a
-second notification. A failure waits in the channel as Not sent with Retry. Once the server
-accepts the reply, the outbox marks the channel read through it, as it does for every send and as
-replying from a Messages notification does. Empty or whitespace-only replies send nothing.
+delivers it and marks the channel read, as Sending describes, so the action never waits on the
+network or posts a second notification. Empty or whitespace-only replies send nothing.
 
 Notifications withdraw themselves. Remove a channel's delivered request notification as soon as
 its `requestSequence` changes or clears, wherever it was answered. Remove a completion once
@@ -2843,10 +2841,8 @@ Settings toggles apply throughout.
 extension and routing are under Push and topic subscriptions, and their Lock Screen reply choices
 are under Suggested replies. A Lock Screen reply or choice is addressed like the Mac's and goes to
 the app's outbox for the server the alert came from, which the service extension records on the
-alert, answering that alert's request, and marks the channel read the same way once the server
-accepts it. Only that notification clears. While the outbox is sending,
-the app delegate holds background time, so the reply finishes after the action returns. One still
-sending when that time runs out goes out at the next launch.
+alert, answering that alert's request. Only that notification clears. The reply finishes in the
+background and marks the channel read, as Sending describes.
 
 ### Menu bar extra
 
@@ -3013,13 +3009,13 @@ permission, and snapshot and benchmark launches never register or present these 
 **Send to Toy Box.** The explicit Services action, system Share action and Dock file drops open
 the same Quick Send panel, not another editor. They prefill content for review, never send,
 answer a request or mark messages read automatically. Shared text and URLs append after a blank
-line to the selected draft. Images append to its existing attachments. Neither replaces text,
-images or an unresolved send's message UUID. The Services command accepts an explicitly supplied
+line to the selected draft. Images append to its existing attachments. Neither replaces text or
+images. The Services command accepts an explicitly supplied
 selection of text, URLs, images or file URLs. The document declaration has `LSHandlerRank` None,
 so Toy Box never claims to be a default file handler. Services never read or clear the general
 clipboard.
 
-While no channel is selected or the current send is immutable, incoming content is saved in a
+While no channel is selected or a send is saving, incoming content is saved in a
 separate server-scoped staging draft. Append it to the target only when that draft is editable.
 Multiple invocations preserve all incoming content rather than replacing an earlier payload,
 and consumption happens once so reopening the panel cannot duplicate it. Consumption clears only
@@ -3286,9 +3282,8 @@ they've left. It returns no dialog, so the card redraws as Replied.
 
 Send Message trims the text and refuses an empty one before asking anything. It confirms with
 `requestConfirmation(actionName: .send)` and "Send “[text]” to [channel]?", then saves the message
-to the app's outbox, which shows it in the channel at once and delivers it once the server can take
-it. It never waits on the network, so it never reports a delivery failure. A message the server
-refuses waits in the channel as Not sent with Retry. Siri finds channels in the app's channel list,
+to the app's outbox. It never waits on the network, so delivery and failure show only in the
+channel, as Sending describes. Siri finds channels in the app's channel list,
 waiting for its first load when the app has just launched. Other errors: "Toy Box isn't connected to a
 server. Choose one in Settings.", "Can't connect to your Toy Box server. Check that it's running,
 then try again." and "That channel isn't on your Toy Box server anymore." Errors about the server
@@ -3392,9 +3387,8 @@ in the channel. It never automatically sends or answers it.
 "Reply to [Request] with [Message]". It asks for missing text, confirms the message, requester and
 channel, then revalidates that the original request is still waiting on the current server.
 An answered, replaced or unavailable request explains the change without posting to a newer one.
-Use the in-app Reply's canonical mention and one caller-owned UUID/outbox attempt, without
-opening a window. Empty text posts nothing. Rejection and uncertain-delivery handling preserve
-the submitted text through Send Message's intent send path.
+It sends through Send Message's path with the in-app Reply's canonical mention, without opening a
+window. Empty text sends nothing.
 
 Remove indexed requests when answered, replaced, deleted or after a server switch. Follow
 `ChannelSpotlight`'s production and server-override gating for indexing and cleanup. Background
