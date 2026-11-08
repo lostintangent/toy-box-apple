@@ -1122,7 +1122,8 @@ request, never changes attention and has nothing to do with Needs You. Every not
 Lead, so the recorder shows no avatar or recipient.
 
 **Swipe.** `.swipeActions(edge: .leading, allowsFullSwipe: true)` holds one button, Talk, with
-`mic.fill` and `.tint(.accentColor)`. Delete keeps the trailing edge. A short swipe reveals Talk,
+`mic.fill` and `.tint(.accentColor)`. Delete keeps the trailing edge. Both show only their icons,
+keeping Talk to Lead and Delete as their accessibility labels. A short swipe reveals Talk,
 and tapping it starts listening. A full swipe starts listening at once, with the system's
 full-swipe haptic. Talk is absent when dictation doesn't support the user's language. While a
 recorder is open, no other row offers swipe actions. Unfolded, the sidebar's rows work the same

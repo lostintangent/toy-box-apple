@@ -116,6 +116,7 @@ struct ChannelSidebar: View {
                                         } label: {
                                             Label("Delete", systemImage: "trash")
                                         }
+                                        .labelStyle(.iconOnly)
                                         .disabled(!model.canManageChannels)
                                     }
                                 }
