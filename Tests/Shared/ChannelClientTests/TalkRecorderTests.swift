@@ -78,7 +78,8 @@ struct TalkRecorderTests {
         try await eventually { recorder.phase == .landed }
         try await beats.end(.seconds(2.35))
         try await eventually { checks["test"] == .settling }
-        #expect(recorder.timeSlot == nil && !recorder.isChecked)
+        #expect(recorder.timeSlot == .noteTime && !recorder.isChecked,
+                "The note's time stays through the settle, since the row's own time reads the same")
         #expect(recorder.ordered(channels).map(\.id) == ["a", "test", "b", "new", "newer"])
         try await beats.end(.seconds(0.45))
         try await eventually { recorder.phase == nil }

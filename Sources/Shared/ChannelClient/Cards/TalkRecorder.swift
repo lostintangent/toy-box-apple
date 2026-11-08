@@ -35,7 +35,7 @@ package final class TalkRecorder: DictationTextTarget {
     /// The voice level, newest first, sampled about 12 times a second while listening.
     package private(set) var levels: [Double] = []
     package private(set) var listeningSince: Date?
-    /// When the note was sent, which the row shows as its time until it settles.
+    /// When the note was sent, which the row shows as its time until the card hands back.
     package private(set) var sentAt: Date?
     /// The list's order when the note began, held until the row settles so the sent note's
     /// activity can't move its row mid-beat.
@@ -91,11 +91,12 @@ package final class TalkRecorder: DictationTextTarget {
         return checks[channelID] == .sent
     }
 
-    /// What the row's time slot shows in place of the time, until the row's check settles.
+    /// What the row's time slot shows in place of the time. The note's time stays through the
+    /// settle, since the row's own time reads the same, so the card hands back without a swap.
     package var timeSlot: TimeSlot? {
         switch phase {
         case .recording, .sending: isOffline ? .offline : .counter
-        case .sent, .landed: isChecked ? .noteTime : nil
+        case .sent, .landed: .noteTime
         case .cancelled, nil: nil
         }
     }

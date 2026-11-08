@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.25
+
+### Bugs/Polish
+
+- Finishing a voice note in the channel list no longer makes that channel's time flicker, so the list stays calm as your note goes out.
+
 ## Mac 0.1.26
 
 ### Features

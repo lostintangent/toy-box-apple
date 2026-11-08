@@ -374,8 +374,6 @@ private struct TalkTime: View {
             let seconds = Int(recorder.elapsed(at: context.date))
             Text(Duration.seconds(seconds).formatted(.time(pattern: .minuteSecond)))
                 .monospacedDigit()
-                .contentTransition(.numericText())
-                .animation(.default, value: seconds)
         }
     }
 }
