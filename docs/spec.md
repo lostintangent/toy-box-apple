@@ -1621,7 +1621,7 @@ inspector, not this row.
 
 A request may offer two to four suggested replies. ChannelKit reads them through `ChannelMessage.suggestedReplies`, which returns trimmed, non-empty labels of at most 80 UTF-16 units, and only on a `request: true` message. A malformed list reads as no choices, so the request still shows with Reply.
 
-**Instant send.** A tap sends the label as the user's reply at once, through the same optimistic send as Reply, with a caller-owned UUID kept in the outbox until the server confirms it. Choices leave when the user answers. A failed send stays in the outbox with Send Again, and the choices do not return. Reading a request never answers it, and choices never send in the background.
+**Instant send.** A tap sends the label as the user's reply at once, through the same optimistic send as Reply, with a caller-owned UUID kept in the outbox until the server confirms it. Choices leave when the user answers. A failed send stays in the transcript as Not sent with Retry, and the choices do not return. Reading a request never answers it, and choices never send in the background.
 
 **Where choices appear.** Choices appear on the transcript's pending request, the Mac menu bar inbox, the Mac notification banner, the phone transcript, the phone list's Needs You card and the phone Lock Screen notification. They do not appear on sidebar or menu badges (counts only), the composer's Input needed state (it opens the question, and choices stay in the transcript), the Dock menu, Spotlight, the morning digest, Control Center, Quick Send or the Siri snippet. Menu items cannot hold buttons, so those surfaces keep Reply or open the channel.
 

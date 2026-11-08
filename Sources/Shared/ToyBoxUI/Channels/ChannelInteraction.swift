@@ -19,7 +19,6 @@ public final class ChannelInteraction {
     public private(set) var pendingComposerFocusRequest: UUID?
     public var hasDraft = false
     public var copyDraft: (() -> Void)?
-    public private(set) var editSendAttemptRequest: (id: String, token: UUID)?
 
     /// The transcript consumes this to scroll to, page toward and briefly highlight a message.
     public private(set) var revealRequest: (sequence: Int, token: UUID)?
@@ -51,7 +50,6 @@ public final class ChannelInteraction {
     public func consumeComposerFocusRequest(_ token: UUID) {
         if pendingComposerFocusRequest == token { pendingComposerFocusRequest = nil }
     }
-    public func editSendAttempt(id: String) { editSendAttemptRequest = (id, UUID()) }
     @discardableResult
     public func reveal(sequence: Int) -> UUID {
         revealRequestToken = UUID()
