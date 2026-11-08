@@ -32,10 +32,10 @@ public final class MobileWidgetSnapshotPublisher {
         }
     }
 
-    /// Publishes the app's waiting requests, which the channel list shares, so both agree.
-    public func update(requests: ChannelWaitingRequests?, serverURL: String) throws {
+    /// Publishes the waiting requests the app's channel list shows, so both agree.
+    public func update(catalog: ChannelCatalogStore?, serverURL: String) throws {
         generation = UUID()
-        guard let requests, case let catalog = requests.catalog, catalog.api.baseURL.absoluteString == serverURL,
+        guard let catalog, catalog.api.baseURL.absoluteString == serverURL,
               catalog.isLoaded, catalog.phase.message == nil else {
             var snapshot = previous?.serverURL == serverURL ? previous : nil
             if snapshot != nil { snapshot?.isOffline = true }
@@ -45,7 +45,7 @@ public final class MobileWidgetSnapshotPublisher {
             ))
             return
         }
-        try publish(snapshot(of: requests, serverURL: serverURL))
+        try publish(snapshot(of: catalog, serverURL: serverURL))
     }
 
     public func refresh(session: URLSession = .shared, now: Date = .now) async throws -> NeedsYouSnapshot? {
@@ -92,12 +92,12 @@ public final class MobileWidgetSnapshotPublisher {
         await catalog.refresh()
         try Task.checkCancellation()
         if let failure = catalog.phase.failure { throw failure }
-        return try snapshot(of: ChannelWaitingRequests(catalog: catalog), serverURL: serverURL)
+        return try snapshot(of: catalog, serverURL: serverURL)
     }
 
-    private func snapshot(of requests: ChannelWaitingRequests, serverURL: String) throws -> NeedsYouSnapshot {
-        guard requests.catalog.state != nil else { throw ChannelAPIError.invalidResponse }
-        let waiting = requests.entries()
+    private func snapshot(of catalog: ChannelCatalogStore, serverURL: String) throws -> NeedsYouSnapshot {
+        guard catalog.state != nil else { throw ChannelAPIError.invalidResponse }
+        let waiting = catalog.waitingRequests()
         for entry in waiting {
             guard entry.sequence < Int.max, ChannelWaitingRequest.Identity(
                 serverURL: serverURL, channelID: entry.channel.id, sequence: entry.sequence

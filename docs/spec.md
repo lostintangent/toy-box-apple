@@ -215,7 +215,7 @@ keep `reconcileManagementWrite`.
   row in the transcript, with Retry and Delete, and nowhere else. Retry puts it back in line under
   the same ID, and Delete withdraws it. It steps out of line so the channel's later messages
   continue, and it stays Not sent across launches.
-- **The waiting rule.** `ChannelWaitingRequests` decides what's waiting for the transcript's
+- **The waiting rule.** The catalog's `waitingRequests` decides what's waiting for the transcript's
   choices, Needs You, the menu bar, the Dock, widgets and notifications. Each message records the
   request its caller answered, or the one waiting in its channel when it was sent, so a newer
   request is never hidden. While the answer is Sending its request counts as answered, and once
@@ -420,7 +420,7 @@ opening anything. Stale Activity taps omit the sequence and open only the channe
 The phone stores the selected server's registration in `group.dev.toybox.mobile`. Selecting a
 different server generates a new UUID, including when returning to an earlier server. Equivalent
 URL spelling preserves the UUID. `MobileWidgetSnapshotPublisher.update(catalog:serverURL:)` writes
-the Mac's `NeedsYouSnapshot` schema and filename from the same `ChannelWaitingRequests`, without
+the Mac's `NeedsYouSnapshot` schema and filename from the catalog's `waitingRequests`, without
 SSE or channel stores, and reloads `ToyBoxNeedsYou`. It keeps a same-server offline cache, drops it
 on a server change, and shares the Mac's 30-minute freshness and `NeedsYouSnapshot.replacing`.
 Offline-only writes keep the cached observation time, never heartbeat, and write and reload only
@@ -1273,8 +1273,8 @@ the stacked heading, and its words and controls grow with the text.
 #### Needs You in the list
 
 Phone only. A channel waiting for the user shows its request in the list, and the user can answer
-it there without opening the channel. The list and the Needs You widget read one
-`ChannelWaitingRequests`, so they agree on which requests wait, newest first, and on each one's
+it there without opening the channel. The list and the Needs You widget read the catalog's
+`waitingRequests`, so they agree on which requests wait, newest first, and on each one's
 words. `NeedsYouCards` in ChannelClient holds the cards' rules, and the views only draw them.
 
 **Waiting rows.** A waiting channel's row shows its question in one line of primary text in place
@@ -2902,7 +2902,7 @@ draft, disable sending and show the corresponding explanation with Open Channel.
 are separate from main-window and Quick Send drafts, keyed by normalized server URL, channel and
 request sequence. A new empty reply visibly seeds the requester's canonical @handle.
 
-Waiting comes from ChannelClient's `ChannelWaitingRequests`, shared by the menu bar, Dock,
+Waiting comes from the catalog's `waitingRequests` in ChannelClient, shared by the menu bar, Dock,
 notifications and both platforms' widgets. It lists the sidebar's waiting channels newest request
 first and quotes each from the catalog's `request`, or an open channel's store, whose own stream
 can deliver a request first. Nothing reads history to find one.

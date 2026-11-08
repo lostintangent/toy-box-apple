@@ -38,8 +38,6 @@ final class AppModel {
     let menuBar = MenuBarPresence()
     var navigationRequest: ChannelNavigationRequest?
     var newChannelRequest: UUID?
-    /// The waiting requests the menu bar, Dock, widget and notifications share.
-    private(set) var waitingRequests: ChannelWaitingRequests?
     @ObservationIgnored var openChannelWindow: ((String) -> Void)?
     @ObservationIgnored var openMainWindow: (() -> Void)?
     @ObservationIgnored private var unhideObserver: NSObjectProtocol?
@@ -92,7 +90,7 @@ final class AppModel {
             await self?.outbox.send(reply.content, to: reply.channelID, on: reply.server, answering: reply.request)
         }
         notifications.resolveRequest = { [weak self] channel, sequence in
-            self?.waitingRequests?.entries().first { $0.channel.id == channel.id && $0.sequence == sequence }?.request
+            self?.catalog?.waitingRequests().first { $0.channel.id == channel.id && $0.sequence == sequence }?.request
         }
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
             applicationObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) {
@@ -164,7 +162,6 @@ final class AppModel {
             let catalog = ChannelCatalogStore(api: api)
             catalog.outbox = outbox
             self.catalog = catalog
-            waitingRequests = ChannelWaitingRequests(catalog: catalog)
             isRefreshingCatalog = false
             configurationError = nil
             notifications.reset()
@@ -315,11 +312,11 @@ final class AppModel {
     var menuBarStatus: MenuBarStatus {
         let unreachable = configurationError != nil || catalog?.phase.message != nil
             ? SidebarFooter.server(serverURL) : nil
-        guard let catalog, let waitingRequests, catalog.state != nil else {
+        guard let catalog, catalog.state != nil else {
             return MenuBarStatus(unreachableHost: unreachable)
         }
         let presentation = sidebarPresentation
-        return MenuBarStatus(requests: waitingRequests.entries(openChannelIDs: openChannelIDs), catalog.channels.map {
+        return MenuBarStatus(requests: catalog.waitingRequests(openChannelIDs: openChannelIDs), catalog.channels.map {
             .init(channel: presentation.channel($0), working: presentation.working($0, agents: presentation.agents($0)))
         }, unreachableHost: unreachable)
     }

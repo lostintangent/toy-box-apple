@@ -1268,7 +1268,9 @@ struct MenuBarExtraTests {
               agents: [lead, ada, nova])
     }
 
-    private func waiting(_ channel: Channel, _ request: ChannelRequestMessage? = nil) -> ChannelWaitingRequests.Entry {
+    private func waiting(
+        _ channel: Channel, _ request: ChannelRequestMessage? = nil
+    ) -> ChannelCatalogStore.WaitingRequest {
         .init(channel: channel, sequence: channel.requestSequence ?? 0, request: request)
     }
 
