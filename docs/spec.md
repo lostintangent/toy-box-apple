@@ -198,7 +198,8 @@ keep `reconcileManagementWrite`.
   message arriving in a snapshot or replay takes it out of the outbox. An open channel merges the
   message the POST returns, and after a 409 the message arrives through its stream. The outbox
   then marks the channel read through the message, since the user's own message never leaves a
-  channel unread.
+  channel unread. Every list treats it as read from the moment the server has it, without waiting
+  for that round trip, so a row never flashes unread for the user's own message.
 - **When delivery fails:**
 
   | What happened | For example | The outbox |
@@ -1269,8 +1270,9 @@ words. `NeedsYouCards` in ChannelClient holds the cards' rules, and the views on
 
 **Waiting rows.** A waiting channel's row shows its question in one line of primary text in place
 of its folder or purpose, up to three lines at accessibility sizes, and keeps its attention mark.
-Until the request's message is known, it reads "Needs your reply". Tapping a waiting row opens its
-card rather than the channel. Unfolded, the channel the detail column shows stays an ordinary row.
+A channel becomes a waiting row only once its request's message is known, so a card always opens
+with its words. Until then it stays an ordinary row with its waiting mark. Tapping a waiting row
+opens its card rather than the channel. Unfolded, the channel the detail column shows stays an ordinary row.
 
 **One open card.** The newest waiting request's row is open as a card, and only one is open at a
 time. Tapping another waiting row opens its card as the other closes, in one
