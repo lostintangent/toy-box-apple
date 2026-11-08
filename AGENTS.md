@@ -226,11 +226,14 @@ every build its own scratch path, so parallel builds never share `.build`.
 - **Release notes are written at merge time.** The merge that lands a user-facing change adds its
   bullet to that platform's next unreleased `## Mac X.Y.Z` or `## iPhone X.Y.Z` entry in
   `CHANGELOG.md`, creating the entry if the newest one has shipped. A release is then only a tag.
-- **Each bullet says what the user gains, in plain words,** under `### Features` or
+- **Each bullet leads with what the user gains, in plain words,** under `### Features` or
   `### Bugs/Polish`: "The task list can now be filtered to only in-progress items, which makes it
-  easier to track progress." Leave out mechanics such as placement, glyphs, colors, counts and
-  gestures unless they're the point. Each platform's notes stand on their own, never compared to
-  the web or the other app.
+  easier to track progress." Name the moment they'll notice it and why it matters, never how it
+  works. Leave out internal names such as the outbox, and mechanics such as placement, glyphs,
+  colors, counts and gestures unless they're the point. If a reader who never saw the code
+  couldn't say why they'd care, rewrite it. Write one bullet per gain, folding changes that serve
+  the same one together. Each platform's notes stand on their own, never compared to the web or
+  the other app. The Lead rereads every unreleased bullet against this before asking for a tag.
 - **Workflow actions stay pinned** to full commit hashes with readable version comments.
   Dependabot checks them weekly.
 - **Never alter the user's installed validation bundle** or microphone permission state to test a
