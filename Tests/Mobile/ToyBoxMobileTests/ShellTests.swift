@@ -1329,26 +1329,36 @@ struct ShellTests {
 
     #if DEBUG
     @Test(arguments: [true, false], [false, true])
-    func catalogFailuresKeepTheirHeadingErrorRetryAndUnfoldedSettings(
+    func keptRowsShowTheReconnectingPillAndOtherFailuresKeepTheirErrorRetryAndUnfoldedSettings(
         isLoaded: Bool, showsSettings: Bool
     ) throws {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
         let footer = SidebarFooter(phase: .failed(URLError(.timedOut)), isLoaded: isLoaded)
+        var retries = 0
         let host = UIHostingController(rootView: ChannelSidebarFailure(
             footer: footer, error: "The server is unavailable.", canRetry: true,
-            retry: {}, openSettings: {}, showsSettingsButton: showsSettings
+            retry: { retries += 1 }, openSettings: {}, showsSettingsButton: showsSettings
         ))
         window.rootViewController = host
         window.isHidden = false
         defer { window.isHidden = true }
         host.view.frame = window.bounds
         host.view.layoutIfNeeded()
-        let labels = MobileAutomationTree(windows: [window]).elements.map(\.label)
-        #expect(labels.contains(try #require(footer.heading)), "\(labels)")
-        #expect(labels.contains("The server is unavailable."), "\(labels)")
-        #expect(labels.contains("Retry"), "\(labels)")
-        #expect(labels.contains("Settings") == showsSettings, "\(labels)")
+        let elements = MobileAutomationTree(windows: [window]).elements
+        let labels = elements.map(\.label)
         #expect(!labels.contains("Server connection") && !labels.contains("Server Settings"), "\(labels)")
+        if isLoaded {
+            let pill = try #require(elements.first { $0.label.contains("Reconnecting to server") }, "\(labels)")
+            #expect(pill.label.contains("Channels may be out of date") && pill.traits.contains(.button))
+            #expect(pill.object.accessibilityHint == "The server is unavailable.")
+            #expect(!labels.contains("Retry") && !labels.contains("Settings"), "\(labels)")
+            #expect(pill.activate() && retries == 1)
+        } else {
+            #expect(labels.contains(try #require(footer.heading)), "\(labels)")
+            #expect(labels.contains("The server is unavailable."), "\(labels)")
+            #expect(labels.contains("Retry"), "\(labels)")
+            #expect(labels.contains("Settings") == showsSettings, "\(labels)")
+        }
     }
     #endif
 

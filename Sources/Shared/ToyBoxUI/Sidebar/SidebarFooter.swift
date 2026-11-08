@@ -12,6 +12,9 @@ public struct SidebarFooter: Equatable {
     public let verb: String
     public let accessibilityValue: String
 
+    /// The rows stay while the catalog reconnects on its own.
+    public var isReconnecting: Bool { dot == .orange }
+
     /// A nil phase is a server address the app can't use, so there is no catalog to ask.
     public init(phase: ChannelCatalogPhase?, isLoaded: Bool) {
         switch phase {

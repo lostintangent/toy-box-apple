@@ -778,8 +778,11 @@ The phone list has no healthy or connecting connection dot, server label or busy
 Settings owns server identity and connection details. The list has pull to refresh, and search
 uses the shared name/purpose/directory filtering. Pull to refresh holds its spinner until the
 finger lifts, so a fast fetch never ends it mid-pull. Command-F focuses channel search when the
-list is active, without replacing in-conversation Find. A catalog failure shows its heading,
-useful error, Retry and reachable Settings at the bottom. Cached rows alone do not prove a live
+list is active, without replacing in-conversation Find. While the catalog reconnects with its rows
+kept, the bottom holds the transcript's glass pill, a spinner beside "Reconnecting to server" over
+"Channels may be out of date", and the whole pill is a button that retries at once. VoiceOver reads
+it as one button with the readable failure as its hint. Any other catalog failure shows its
+heading, useful error, Retry and reachable Settings there. Cached rows alone do not prove a live
 connection.
 
 **Phone channel toolbar.** The bar holds only the channel's title, Overview and Message View. Like

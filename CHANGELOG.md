@@ -9,6 +9,7 @@
 - Closing Find now lowers the keyboard right away, instead of a moment after the message box comes back.
 - Ready for an upcoming Toy Box update that makes the channel list lighter to download.
 - Notifications and the Needs You widget show a waiting request's question sooner and use less data, since it now comes with the channel list.
+- While the channel list reconnects, a quieter notice now says your channels may be out of date, and tapping it tries again right away.
 
 ## Mac 0.1.28
 
