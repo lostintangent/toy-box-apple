@@ -5,8 +5,8 @@ import Intents
 import Observation
 
 /// The share extension's one message: where it goes and what it carries. Sending saves it to the
-/// shared outbox, which hands it to iOS, so the sheet closes at once and the app shows it until the
-/// server confirms it.
+/// shared outbox and makes one attempt while the sheet shows Sending. Whatever that doesn't settle,
+/// the app shows and sends at its next launch.
 @MainActor @Observable
 public final class MobileShareSession {
     public struct Target: Equatable, Sendable {
@@ -41,7 +41,7 @@ public final class MobileShareSession {
         let api = server.flatMap { try? ChannelAPI(serverURL: $0, session: session) }
         serverURL = api == nil ? nil : server
         catalog = api.map { ChannelCatalogStore(api: $0) }
-        self.outbox = api == nil ? nil : outbox ?? .mobile(handsOff: true)
+        self.outbox = api == nil ? nil : outbox ?? .mobile(sendsOnce: true)
         catalog?.outbox = self.outbox
         recentChannelIDs = history?.recentChannelIDs ?? []
         if let server, let identifier = intent?.conversationIdentifier,
@@ -85,7 +85,7 @@ public final class MobileShareSession {
         target = Target(id: channel.id, name: channel.name)
     }
 
-    /// Returns once iOS has the message, even offline, and the app shows any failure in the channel.
+    /// Returns once the one attempt settles, even offline, and the app shows any failure in the channel.
     public func send() async {
         guard canSend, let target, let content, let catalog, let outbox, let serverURL else { return }
         phase = .sending

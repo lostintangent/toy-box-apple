@@ -52,19 +52,15 @@ public final class ChannelOutbox {
     private(set) var isLoaded = false
 
     @ObservationIgnored private weak var catalog: ChannelCatalogStore?
-    @ObservationIgnored private var lines: [String: Line] = [:]
-    @ObservationIgnored private var pauses: [UUID: Pause] = [:]
+    /// Each channel's delivery, one message at a time.
+    @ObservationIgnored private var lines: [String: Task<Void, Never>] = [:]
+    /// The channels whose line waits for the server to be reachable again, which `wake()` cuts short.
+    @ObservationIgnored private var waiting: Set<String> = []
     /// Confirmed or withdrawn this run, so a scan that read a file before its removal doesn't bring
     /// the message back.
     @ObservationIgnored private var removed: Set<UUID> = []
     @ObservationIgnored private var reads = 0
-    @ObservationIgnored private let uploads: (any Uploads)?
-    @ObservationIgnored private let handsOff: Bool
-    /// Messages iOS is uploading, so a second hand-off skips them.
-    @ObservationIgnored private var uploading: Set<UUID> = []
-    /// What the app delegate runs once a session iOS woke it for has reported every upload, by session.
-    @ObservationIgnored private var completions: [String: () -> Void] = [:]
-    @ObservationIgnored private var listening: Task<Void, Never>?
+    @ObservationIgnored private let sendsOnce: Bool
     @ObservationIgnored private var writes: Task<Void, Never>?
     @ObservationIgnored private var scanning: Task<Void, Never>?
     @ObservationIgnored private let retryWindow: TimeInterval
@@ -75,63 +71,47 @@ public final class ChannelOutbox {
     /// The Mac's folder, beside its drafts. The phone passes one in its shared app group instead.
     public static var defaultFolder: URL { .savedWriting().appending(path: "Sending", directoryHint: .isDirectory) }
 
-    /// `background` hands sends to iOS on the phone. See `handOff()`.
-    public convenience init(folder: URL = ChannelOutbox.defaultFolder, background: Background? = nil) {
-        self.init(folder: folder, retryWindow: 120,
-                  uploads: background.map { BackgroundUploads($0, folder: folder) },
-                  handsOff: background?.handsOff ?? false)
+    /// `sendsOnce` is for the share extension, which ends before it could retry. Its outbox leaves
+    /// the folder's other messages to the app, and each send makes one attempt before it returns.
+    /// Whatever that leaves Sending, the app sends at its next launch.
+    public convenience init(folder: URL = ChannelOutbox.defaultFolder, sendsOnce: Bool = false) {
+        self.init(folder: folder, retryWindow: 120, sendsOnce: sendsOnce)
     }
 
     /// `now` and `sleep` time retries. Tests pass a clock they move instead of waiting.
     init(folder: URL, retryWindow: TimeInterval, reconnectPolicy: ReconnectPolicy = .init(),
          now: @escaping () -> Date = { .now },
          sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },
-         uploads: (any Uploads)? = nil, handsOff: Bool = false) {
+         sendsOnce: Bool = false) {
         self.folder = folder
         self.retryWindow = retryWindow
         self.reconnectPolicy = reconnectPolicy
         self.now = now
         self.sleep = sleep
-        self.uploads = uploads
-        self.handsOff = handsOff
-        // An outbox that hands off sends only its own messages, and leaves the rest to the app.
-        if handsOff { isLoaded = true } else { scan() }
-        if let uploads { listen(to: uploads) }
+        self.sendsOnce = sendsOnce
+        // Without a scan the outbox never loads, so it starts no lines.
+        if !sendsOnce { scan() }
     }
 
     // MARK: Sending
 
     /// Shows the message in its channel at once and returns once it's saved. Never throws, and if
     /// saving fails the message still sends from memory. `answering` is the request the caller acted
-    /// on. Without one, it's the request waiting in that channel now. Sending an ID that's Not sent
-    /// sends it again.
+    /// on. Without one, it's the request waiting in that channel now.
     @discardableResult
-    public func send(_ text: String, images: [ComposerImage] = [], to channelID: String, on server: URL,
-                     answering request: Int? = nil, id: UUID = UUID()) async -> UUID {
-        await send(text, attachments: images.map(\.attachment), to: channelID, on: server, answering: request, id: id)
-    }
-
-    /// Sends attachments already encoded, as the share sheet's are.
-    @discardableResult
-    public func send(_ text: String, attachments: [ChannelAttachment], to channelID: String, on server: URL,
-                     answering request: Int? = nil, id: UUID = UUID()) async -> UUID {
-        if let existing = queue.first(where: { $0.id == id }) {
-            if existing.state != .sending { sendAgain(id) }
-            return id
-        }
+    public func send(_ text: String, attachments: [ChannelAttachment] = [], to channelID: String, on server: URL,
+                     answering request: Int? = nil) async -> UUID {
         let destination = Destination(server: Self.key(server), channelID: channelID)
-        let message = Message(id: id, server: destination.server, channelID: channelID,
+        let message = Message(id: UUID(), server: destination.server, channelID: channelID,
                               text: text.trimmingCharacters(in: .whitespacesAndNewlines),
                               attachments: attachments,
                               request: request ?? waitingRequest(at: destination), sentAt: now(), state: .sending)
-        removed.remove(id)
         queue.append(message)
         // The row shows at once, and delivery starts once the message is saved.
         await save(message).value
         changed()
-        // The extension ends right after, so its upload must have started.
-        if handsOff { await writes?.value }
-        return id
+        if sendsOnce { await attempt(message) }
+        return message.id
     }
 
     /// The transcript's own rows for a channel on the current server: Sending or Not sent, in order.
@@ -140,7 +120,7 @@ public final class ChannelOutbox {
         return queue.filter { $0.server == server && $0.channelID == channelID }
     }
 
-    public func message(_ id: UUID) -> Message? { queue.first { $0.id == id } }
+    func message(_ id: UUID) -> Message? { queue.first { $0.id == id } }
 
     /// Puts a Not sent message back in line under the same ID.
     public func sendAgain(_ id: UUID) {
@@ -172,20 +152,12 @@ public final class ChannelOutbox {
         }
     }
 
-    /// Whether any answer to a request is in the outbox, Sending or Not sent. The channel hides the
-    /// request's choices meanwhile, since a Not sent answer sits right below with Send Again.
-    public func holdsAnswer(to request: Int, in channelID: String) -> Bool {
-        guard let server else { return false }
-        return queue.contains { $0.server == server && $0.channelID == channelID && $0.request == request }
-    }
-
     // MARK: The catalog store's signals
 
     /// The catalog store for the current server delivers its messages. Another server's wait.
     func attach(_ catalog: ChannelCatalogStore) {
         guard self.catalog !== catalog else { return }
-        for line in lines.values { line.task.cancel() }
-        lines = [:]
+        restart(lines.keys)
         self.catalog = catalog
         server = Self.key(catalog.api.baseURL)
         catalogChanged(catalog, recovered: false)
@@ -194,8 +166,7 @@ public final class ChannelOutbox {
 
     func detach(_ catalog: ChannelCatalogStore) {
         guard self.catalog === catalog else { return }
-        for line in lines.values { line.task.cancel() }
-        lines = [:]
+        restart(lines.keys)
         self.catalog = nil
         server = nil
         changed()
@@ -207,9 +178,10 @@ public final class ChannelOutbox {
         wake()
     }
 
-    /// The server may be reachable again, so every delivery waiting for a connection tries now.
+    /// The server may be reachable again, so every line waiting for it tries now.
     func wake() {
-        for (id, pause) in pauses where pause.wakesEarly { resume(id) }
+        restart(waiting)
+        changed()
     }
 
     /// Each catalog prunes answers the catalog no longer lists as waiting, and drops the messages of
@@ -232,15 +204,6 @@ public final class ChannelOutbox {
         changed()
     }
 
-    /// A channel's stream reported the channel deleted, so its messages leave with it.
-    func channelDeleted(_ channelID: String, on server: URL) {
-        let key = Self.key(server)
-        let gone = queue.filter { $0.server == key && $0.channelID == channelID }.map(\.id)
-        guard !gone.isEmpty else { return }
-        for id in gone { drop(id) }
-        changed()
-    }
-
     /// A channel's snapshot or replay arrived with these messages, so any of ours among them, Sending
     /// or Not sent, is confirmed.
     func received(_ messages: some Sequence<ChannelMessage>, in channelID: String, on server: URL) {
@@ -251,86 +214,7 @@ public final class ChannelOutbox {
         for message in echoed { confirm(message.id) }
     }
 
-    // MARK: Handing off to iOS
-
-    /// Hands each channel's next message to iOS as a background upload, for the phone's app delegate
-    /// when its background time is about to end. iOS finishes it even if Toy Box stops running, and
-    /// its answer comes back through the same confirmation. The outbox keeps trying as well, since the
-    /// server ignores whichever arrives second, and only the next message goes, so a channel's
-    /// messages still arrive in order. Returns once iOS has every upload, so background time can end.
-    public func handOff() async {
-        startUploads()
-        await writes?.value
-    }
-
-    private func startUploads() {
-        guard let uploads, let catalog, let server else { return }
-        var channels = Set<String>()
-        for message in queue where message.server == server && message.state == .sending {
-            guard channels.insert(message.channelID).inserted, !uploading.contains(message.id) else { continue }
-            let request: URLRequest
-            do {
-                request = try catalog.api.messageRequest(channelId: message.channelID, id: message.id.uuidString,
-                                                         content: message.text, attachments: message.attachments)
-            } catch { continue }
-            uploading.insert(message.id)
-            let id = message.id
-            write { uploads.start(request, id: id) }
-        }
-    }
-
-    /// iOS relaunched or woke the app with finished uploads, from its own session or the share
-    /// extension's. `completion` runs once they're applied. False for a session that isn't the outbox's.
-    @discardableResult
-    public func handleEvents(forBackgroundSession session: String, completion: @escaping () -> Void) -> Bool {
-        guard let uploads, session.hasPrefix(uploads.session) else { return false }
-        completions[session] = completion
-        // Reads the share extension's messages before its uploads report.
-        reload()
-        uploads.open(session)
-        return true
-    }
-
-    private func listen(to uploads: any Uploads) {
-        listening = Task { [weak self] in
-            for await upload in uploads.events { await self?.apply(upload) }
-        }
-    }
-
-    private func apply(_ upload: Upload) async {
-        switch upload {
-        case .finished(let id, let response, let data, let error):
-            await scanning?.value
-            uploading.remove(id)
-            guard let message = message(id) else { return }
-            let outcome = if let error { Outcome(error, isLive: catalog?.isLive ?? false) }
-                else if let response { Outcome(response, data: data, isLive: catalog?.isLive ?? false, now: now()) }
-                else { Outcome.trouble(retryAfter: nil) }
-            switch outcome {
-            case .accepted(let sent): confirm(id, merging: sent)
-            case .rejected where message.state == .sending: stop(id)
-            // Still Sending, so the outbox keeps trying while Toy Box runs, or at its next launch.
-            default: Self.logger.info("A background upload didn't confirm a message")
-            }
-        case .delivered(let session):
-            await settled()
-            completions.removeValue(forKey: session)?()
-        }
-    }
-
     // MARK: Delivery
-
-    private struct Line {
-        let token: UUID
-        let task: Task<Void, Never>
-    }
-
-    private struct Pause {
-        let message: UUID
-        let continuation: CheckedContinuation<Void, Never>
-        let wakesEarly: Bool
-        var timer: Task<Void, Never>?
-    }
 
     /// Recomputes what depends on the queue and starts a line for each channel with a message to send.
     private func changed() {
@@ -338,22 +222,19 @@ public final class ChannelOutbox {
             || server.map { server in queue.contains { $0.server == server && $0.state == .sending } } ?? false
         if isDelivering != delivering { isDelivering = delivering }
         guard isLoaded, let catalog, let server else { return }
-        if handsOff { return startUploads() }
         let api = catalog.api
         let channels = Set(queue.lazy.filter { $0.server == server && $0.state == .sending }.map(\.channelID))
         for channelID in channels where lines[channelID] == nil {
-            let token = UUID()
-            lines[channelID] = Line(token: token, task: Task { [weak self] in
-                await self?.deliver(in: channelID, server: server, api: api)
-                self?.lineEnded(channelID, token: token)
-            })
+            lines[channelID] = Task { [weak self] in await self?.deliver(in: channelID, server: server, api: api) }
         }
     }
 
-    private func lineEnded(_ channelID: String, token: UUID) {
-        guard lines[channelID]?.token == token else { return }
-        lines[channelID] = nil
-        changed()
+    /// Ends these channels' lines, so `changed()` starts each again from its next message.
+    private func restart(_ channelIDs: some Sequence<String>) {
+        for channelID in Array(channelIDs) {
+            lines.removeValue(forKey: channelID)?.cancel()
+            waiting.remove(channelID)
+        }
     }
 
     /// Sends a channel's messages one at a time, oldest first. A Not sent message steps out of line.
@@ -361,124 +242,99 @@ public final class ChannelOutbox {
         while !Task.isCancelled, let next = queue.first(where: {
             $0.server == server && $0.channelID == channelID && $0.state == .sending
         }) {
-            await deliver(next.id, api: api)
+            await deliver(next, api: api)
         }
+        if !Task.isCancelled { lines[channelID] = nil }
     }
 
-    /// Tries until the server confirms or refuses the message, or it stops being Sending.
-    private func deliver(_ id: UUID, api: ChannelAPI) async {
+    /// Tries until the server confirms or refuses the message, or it stops being Sending. Trouble
+    /// retries within the window, and a server Toy Box can't reach gets as long as it takes.
+    private func deliver(_ message: Message, api: ChannelAPI) async {
         var troubleSince: Date?
-        var troubleCount = 0
-        var waits = 0
-        while !Task.isCancelled, let message = self.message(id), message.state == .sending {
-            let store = catalog?.existingChannel(id: message.channelID)
-            if store?.holds(id) == true { return confirm(id) }
+        var attempt = 0
+        while !Task.isCancelled, self.message(message.id)?.state == .sending {
             let started = now()
             let outcome = await post(message, api: api)
-            guard !Task.isCancelled, self.message(id)?.state == .sending else { return }
+            guard !Task.isCancelled, self.message(message.id)?.state == .sending else { return }
+            let delay = reconnectPolicy.delay(attempt: attempt)
+            attempt += 1
             switch outcome {
             case .accepted(let sent):
-                confirm(id, merging: sent)
-                // A 409 returns nothing, so an open channel resumes from its last revision to show it.
-                if sent == nil, let store, store.isTrying, !store.holds(id) { store.reconnect() }
+                confirm(message.id, merging: sent)
                 return
             case .rejected:
-                return stop(id)
+                return stop(message.id)
             case .unreachable:
                 troubleSince = nil
-                troubleCount = 0
-                await pause(id, for: reconnectPolicy.delay(attempt: waits), wakesEarly: true)
-                waits += 1
-            case .trouble(let retryAfter):
-                waits = 0
+                waiting.insert(message.channelID)
+            case .trouble:
                 let since = troubleSince ?? started
                 troubleSince = since
-                let delay = max(Self.backoff(troubleCount), retryAfter ?? 0)
-                troubleCount += 1
-                guard now().timeIntervalSince(since) + delay <= retryWindow else { return stop(id) }
-                await pause(id, for: delay, wakesEarly: false)
+                guard now().timeIntervalSince(since) + delay <= retryWindow else { return stop(message.id) }
             }
+            try? await sleep(delay)
+            if !Task.isCancelled { waiting.remove(message.channelID) }
         }
     }
 
-    static func backoff(_ attempt: Int) -> TimeInterval {
-        let steps: [TimeInterval] = [1, 2, 4, 8, 15, 30]
-        return attempt < steps.count ? steps[attempt] : 60
+    /// The share extension's one attempt, which returns once its outcome is saved and its channel
+    /// marked read.
+    private func attempt(_ message: Message) async {
+        guard let catalog else { return }
+        switch await post(message, api: catalog.api) {
+        case .accepted(let sent): await confirm(message.id, merging: sent)?.value
+        case .rejected: stop(message.id)
+        case .unreachable, .trouble: break
+        }
+        await writes?.value
     }
 
     private func post(_ message: Message, api: ChannelAPI) async -> Outcome {
-        let request: URLRequest
+        let isLive = catalog?.isLive ?? false
         do {
-            request = try api.messageRequest(channelId: message.channelID, id: message.id.uuidString,
-                                             content: message.text, attachments: message.attachments)
-        } catch {
-            Self.logger.error("A message can't be sent: \(error.localizedDescription)")
-            return .rejected
-        }
-        do {
+            let request = try api.messageRequest(channelId: message.channelID, id: message.id.uuidString,
+                                                 content: message.text, attachments: message.attachments)
             let (data, response) = try await api.session.data(for: request)
-            guard let response = response as? HTTPURLResponse else { return .trouble(retryAfter: nil) }
-            let outcome = Outcome(response, data: data, isLive: catalog?.isLive ?? false, now: now())
+            guard let response = response as? HTTPURLResponse else { return .trouble }
+            let outcome = Outcome(response, data: data, isLive: isLive)
             if case .accepted = outcome { return outcome }
             let failure = ChannelAPI.failure(status: response.statusCode, data: data)
             Self.logger.info("Sending got \(response.statusCode): \(failure.localizedDescription)")
             return outcome
         } catch {
             Self.logger.info("Sending failed: \(error.localizedDescription)")
-            return Outcome(error, isLive: catalog?.isLive ?? false)
+            return Outcome(error, isLive: isLive)
         }
     }
 
-    /// Waits for `seconds`, or until `wake()` when `wakesEarly`. Cancelling the task, or the message
-    /// leaving the queue, ends it at once.
-    private func pause(_ message: UUID, for seconds: TimeInterval, wakesEarly: Bool) async {
-        let id = UUID()
-        let sleep = sleep
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                pauses[id] = Pause(message: message, continuation: continuation, wakesEarly: wakesEarly)
-                pauses[id]?.timer = Task { [weak self] in
-                    try? await sleep(seconds)
-                    self?.resume(id)
-                }
-                if Task.isCancelled { resume(id) }
-            }
-        } onCancel: {
-            Task { @MainActor [weak self] in self?.resume(id) }
-        }
-    }
-
-    private func resume(_ id: UUID) {
-        guard let pause = pauses.removeValue(forKey: id) else { return }
-        pause.timer?.cancel()
-        pause.continuation.resume()
-    }
-
-    private func confirm(_ id: UUID, merging sent: ChannelMessage? = nil) {
-        guard let index = queue.firstIndex(where: { $0.id == id }) else { return }
+    /// Returns the channel's mark read, if it makes one.
+    @discardableResult
+    private func confirm(_ id: UUID, merging sent: ChannelMessage? = nil) -> Task<Void, Never>? {
+        guard let index = queue.firstIndex(where: { $0.id == id }) else { return nil }
         let message = queue.remove(at: index)
         removed.insert(id)
         delete(id)
-        release(id)
         let destination = Destination(server: message.server, channelID: message.channelID)
         if let request = message.request { answered[destination, default: []].insert(request) }
+        var read: Task<Void, Never>?
         if message.server == server, let catalog {
             let store = catalog.existingChannel(id: message.channelID)
             if let sent { store?.mergeSent(sent) }
             // The user's own message never leaves its channel unread. A 409 brings no sequence, so it
             // marks nothing unless the open channel already has the message.
             if let through = sent?.sequence ?? store?.sequence(ofSent: id) {
-                markRead(message.channelID, through: through, api: catalog.api)
+                read = markRead(message.channelID, through: through, api: catalog.api)
             }
             catalog.onSendConfirmed?(message.channelID)
         }
         changed()
+        return read
     }
 
     /// One attempt, logging a failure. It counts as delivering, so the phone's background time covers it.
-    private func markRead(_ channelID: String, through sequence: Int, api: ChannelAPI) {
+    private func markRead(_ channelID: String, through sequence: Int, api: ChannelAPI) -> Task<Void, Never> {
         reads += 1
-        Task {
+        return Task {
             do { _ = try await api.markRead(channelId: channelID, sequence: sequence) }
             catch { Self.logger.info("Could not mark a sent message read: \(error.localizedDescription)") }
             reads -= 1
@@ -497,12 +353,6 @@ public final class ChannelOutbox {
         queue.removeAll { $0.id == id }
         removed.insert(id)
         delete(id)
-        release(id)
-    }
-
-    /// Ends a removed message's pause, so its line moves on to the next message.
-    private func release(_ message: UUID) {
-        for (id, pause) in pauses where pause.message == message { resume(id) }
     }
 
     /// The request waiting in a channel on the current server: the open channel's, otherwise the
@@ -611,7 +461,7 @@ extension ChannelOutbox {
         /// Toy Box can't reach the server, so the message waits for a reconnect, however long.
         case unreachable
         /// The server has trouble, so the message retries within the window.
-        case trouble(retryAfter: TimeInterval?)
+        case trouble
         /// The server refused it, so the message stops as Not sent.
         case rejected
 
@@ -624,38 +474,25 @@ extension ChannelOutbox {
             .dnsLookupFailed, .internationalRoamingOff, .dataNotAllowed, .callIsActive, .cancelled,
         ]
 
-        init(_ response: HTTPURLResponse, data: Data, isLive: Bool, now: Date) {
-            let status = response.statusCode
-            switch status {
+        init(_ response: HTTPURLResponse, data: Data, isLive: Bool) {
+            switch response.statusCode {
             case 200..<300: self = .accepted(ChannelAPI.sentMessage(in: data))
             case 409: self = .accepted(nil)
-            case _ where Self.gatewayStatuses.contains(status) && !isLive: self = .unreachable
-            case 408, 429, 500...:
-                self = .trouble(retryAfter: Self.retryAfter(response.value(forHTTPHeaderField: "Retry-After"), now: now))
+            case let status where Self.gatewayStatuses.contains(status): self = isLive ? .trouble : .unreachable
+            case 408, 429, 500...: self = .trouble
             case 400..<500: self = .rejected
-            default: self = .trouble(retryAfter: nil)
+            default: self = .trouble
             }
         }
 
         /// A timeout is a weak signal, like a gateway error, unless the catalog is connected.
         init(_ error: any Error, isLive: Bool) {
-            guard let error = error as? URLError else { self = .trouble(retryAfter: nil); return }
-            if Self.unreachableErrors.contains(error.code) || error.code == .timedOut && !isLive {
+            let code = (error as? URLError)?.code
+            if let code, Self.unreachableErrors.contains(code) || code == .timedOut && !isLive {
                 self = .unreachable
             } else {
-                self = .trouble(retryAfter: nil)
+                self = .trouble
             }
-        }
-
-        /// Seconds, or an HTTP date.
-        static func retryAfter(_ value: String?, now: Date) -> TimeInterval? {
-            guard let value = value?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { return nil }
-            if let seconds = TimeInterval(value) { return max(0, seconds) }
-            let format = DateFormatter()
-            format.locale = Locale(identifier: "en_US_POSIX")
-            format.timeZone = TimeZone(identifier: "GMT")
-            format.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
-            return format.date(from: value).map { max(0, $0.timeIntervalSince(now)) }
         }
     }
 }

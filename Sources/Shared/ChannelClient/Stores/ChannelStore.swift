@@ -130,6 +130,9 @@ public final class ChannelStore {
     @ObservationIgnored public var onSendConfirmed: (@MainActor (String) -> Void)?
     /// The app's outbox, which delivers every message sent through it. Set by the catalog store.
     @ObservationIgnored public internal(set) weak var outbox: ChannelOutbox?
+    /// The messages the outbox still holds for this channel, Sending or Not sent, which the
+    /// transcript shows below the server's.
+    public var sending: [ChannelOutbox.Message] { outbox?.messages(in: id) ?? [] }
 
     @ObservationIgnored private var observation: Task<Void, Never>?
     /// From `connect()` until `disconnect()`. Internal and unobserved, so tests check a disconnect
@@ -800,7 +803,6 @@ public final class ChannelStore {
             stopGrace()
             phase = .deleted
             observation = nil
-            outbox?.channelDeleted(id, on: api.baseURL)
             return true
         }
         if event.type == "snapshot", let snapshot = event.state {
@@ -842,13 +844,9 @@ public final class ChannelStore {
             }
             stopGrace()
             phase = .connected
-            outbox?.wake()
         }
         return false
     }
-
-    /// Whether the channel already shows a message the outbox is sending, so it confirms without posting.
-    func holds(_ id: UUID) -> Bool { sequence(ofSent: id) != nil }
 
     /// Where a message the outbox sent landed, once this channel has it.
     func sequence(ofSent id: UUID) -> Int? {

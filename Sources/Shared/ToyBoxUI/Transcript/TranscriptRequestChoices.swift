@@ -23,7 +23,7 @@ public struct TranscriptRequestChoices: Equatable, Sendable {
     /// a send in `sendAttempts` holding one of the labels counts too.
     @MainActor
     public init?(request: ChannelMessage?, store: ChannelStore, isConnected: Bool) {
-        guard let request, store.outbox?.holdsAnswer(to: request.sequence, in: store.id) != true else { return nil }
+        guard let request, !store.sending.contains(where: { $0.request == request.sequence }) else { return nil }
         self.init(sequence: request.sequence, labels: request.suggestedReplies, attempts: store.sendAttempts,
                   isConnected: isConnected)
     }

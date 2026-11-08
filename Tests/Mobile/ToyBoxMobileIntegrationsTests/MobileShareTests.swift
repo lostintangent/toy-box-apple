@@ -152,7 +152,7 @@ struct MobileShareTests {
 
     // MARK: Session
 
-    @Test func aSendGoesToTheOutboxSoTheSheetIsDoneAtOnceAndRemembersTheChannel() async throws {
+    @Test func aSendMakesOneAttemptThroughTheOutboxAndRemembersTheChannel() async throws {
         let fixture = try ShareHTTPFixture()
         let donor = FakeDonor()
         let (session, outbox, directory) = try await Self.session(fixture, donor: donor)
@@ -161,6 +161,9 @@ struct MobileShareTests {
         session.note = "Look"
 
         await session.send()
+        #expect(fixture.posts.map(\.content) == ["Look\n\nhttps://example.com/story"])
+        #expect(fixture.reads == ["studio"], "The sheet waits for its channel to be marked read")
+        #expect(outbox.messages(in: "studio").isEmpty)
         #expect(session.phase == .sent)
         #expect(!session.canSend)
         session.choose(Self.channel("design", "Design"))
@@ -168,10 +171,6 @@ struct MobileShareTests {
         let history = try MobileShareHistory(directory: directory, donor: donor.donor)
         #expect(history.recentChannelIDs == ["studio"])
         #expect(donor.donated.count == 1)
-
-        try await Self.delivered(outbox)
-        #expect(fixture.posts.map(\.content) == ["Look\n\nhttps://example.com/story"])
-        #expect(fixture.reads == ["studio"])
     }
 
     @Test func aSuggestionOpensItsChannelOnlyWhileTheServerStillListsIt() async throws {
@@ -234,29 +233,19 @@ struct MobileShareTests {
         return (try MobileShareHistory(directory: directory, donor: donor.donor), directory)
     }
 
-    /// A session with the saved server, its channels loaded and a web page to share. Its outbox
-    /// delivers in process, where the share extension's hands off to iOS.
+    /// A session with the saved server, its channels loaded and a web page to share.
     private static func session(_ fixture: ShareHTTPFixture, donor: FakeDonor = FakeDonor())
         async throws -> (MobileShareSession, ChannelOutbox, URL) {
         let (history, directory) = try history(donor)
         await history.select(serverURL: fixture.serverURL).value
-        let outbox = ChannelOutbox(folder: directory.appending(path: "Sending", directoryHint: .isDirectory))
+        let outbox = ChannelOutbox(folder: directory.appending(path: "Sending", directoryHint: .isDirectory),
+                                   sendsOnce: true)
         let session = MobileShareSession(history: history, intent: nil, session: fixture.session, outbox: outbox)
         let page = try #require(URL(string: "https://example.com/story"))
         await session.start([NSItemProvider(object: page as NSURL)], title: "Story")
         #expect(session.content?.link?.url == page)
         #expect(session.catalog?.isLoaded == true)
         return (session, outbox, directory)
-    }
-
-    /// Returns once the outbox has nothing left to deliver, including marking its messages read.
-    private static func delivered(_ outbox: ChannelOutbox) async throws {
-        let changes = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
-        defer { changes.continuation.finish() }
-        var iterator = changes.stream.makeAsyncIterator()
-        while withObservationTracking({ outbox.isDelivering }, onChange: { changes.continuation.yield() }) {
-            guard await iterator.next() != nil else { throw CancellationError() }
-        }
     }
 
     private static func intent(_ target: MobileShareTarget, name: String) -> INSendMessageIntent {

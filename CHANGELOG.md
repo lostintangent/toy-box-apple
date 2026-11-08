@@ -26,7 +26,7 @@
 - A reply you type in the channel list now waits for a connection, like the suggested replies, so your words stay put while you're offline.
 - After you send your own reply to a request in the channel list, the card settles straight back into its row, so it's clear where your answer went.
 - A message you send now keeps trying on its own through a dropped connection, or while the Mac running your server sleeps, and it never posts twice.
-- Sharing to a channel now closes the share sheet right away, and the message finishes sending in the background, even if you don't open Toy Box.
+- Sharing to a channel no longer stops on an error in the share sheet. A message that can't go out waits in its channel in Toy Box and keeps trying from there.
 - A message that didn't send is now tinted red with just a Retry button, and you can delete it from its menu if you no longer need it.
 
 ## iPhone 0.1.23

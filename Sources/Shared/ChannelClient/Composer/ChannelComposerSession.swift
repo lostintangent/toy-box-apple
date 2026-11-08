@@ -91,13 +91,11 @@ public final class ChannelComposerSession {
 
     private func submit(to outbox: ChannelOutbox) async -> ChannelSendResult? {
         let revision = draft.revision
-        // Unchanged text restored by Edit keeps its ID, so a copy the server did get never posts twice.
-        let id = draft.sendAttemptID.flatMap(UUID.init(uuidString:)) ?? UUID()
-        draft.associateSend(id: id.uuidString)
         submissionError = nil
         isSubmitting = true
         defer { isSubmitting = false }
-        await outbox.send(draft.text, images: draft.images, to: store.id, on: store.api.baseURL, id: id)
+        let id = await outbox.send(draft.text, attachments: draft.images.map(\.attachment),
+                                   to: store.id, on: store.api.baseURL)
         clearSentDraft(revision: revision)
         return .alreadyAccepted(id: id.uuidString)
     }

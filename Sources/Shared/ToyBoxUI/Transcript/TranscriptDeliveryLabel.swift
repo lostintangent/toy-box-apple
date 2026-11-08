@@ -29,9 +29,3 @@ public struct TranscriptDeliveryLabel<Content: View>: View {
             }
     }
 }
-
-extension ChannelStore {
-    /// The messages the outbox still holds for this channel, Sending or Not sent, which the
-    /// transcript shows below the server's.
-    @MainActor public var sending: [ChannelOutbox.Message] { outbox?.messages(in: id) ?? [] }
-}

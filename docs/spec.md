@@ -192,19 +192,19 @@ keep `reconcileManagementWrite`.
   without checking, since they can't know first.
 - **In order, under one ID.** Each message records its server and channel, so a reply to another
   server's notification waits for that server. A channel's messages go one at a time, oldest
-  first, and every attempt reuses the caller's UUID, so the server never posts one twice.
+  first, and every attempt reuses the UUID `send` gave it, so the server never posts one twice.
   Channels deliver independently.
 - **The server's answer confirms it.** A 2xx, a 409 for an ID the server already has, or the
   message arriving in a snapshot or replay takes it out of the outbox. An open channel merges the
-  message the POST returns, and after a 409 it resumes from its last revision to show it. The
-  outbox then marks the channel read through the message, since the user's own message never
-  leaves a channel unread.
+  message the POST returns, and after a 409 the message arrives through its stream. The outbox
+  then marks the channel read through the message, since the user's own message never leaves a
+  channel unread.
 - **When delivery fails:**
 
   | What happened | For example | The outbox |
   | --- | --- | --- |
-  | Toy Box can't reach the server | Offline, can't find or connect to the host, a lost connection, or a timeout or 502, 503, 504 or 530 while the catalog isn't connected, as when a phone's signal is weak or the Mac behind Tailscale Serve or Cloudflare Tunnel sleeps | Waits for the catalog to recover, the network to return, the app to come back or a channel stream to connect, with the reconnect backoff as a fallback, then sends again. It never gives up, even across launches |
-  | The server has trouble | 408, 429, any other 5xx, or a timeout or gateway error while the catalog is connected | Retries after 1, 2, 4, 8, 15 and 30 seconds, then every minute, honoring `Retry-After`, for 2 minutes, then stops. Becoming unreachable meanwhile waits as above and starts the 2 minutes over |
+  | Toy Box can't reach the server | Offline, can't find or connect to the host, a lost connection, or a timeout or 502, 503, 504 or 530 while the catalog isn't connected, as when a phone's signal is weak or the Mac behind Tailscale Serve or Cloudflare Tunnel sleeps | Waits for the catalog to recover, the network to return or the app to come back, with the reconnect backoff as a fallback, then sends again. It never gives up, even across launches |
+  | The server has trouble | 408, 429, any other 5xx, or a timeout or gateway error while the catalog is connected | Retries with the reconnect backoff, from half a second up to every 15 seconds, for 2 minutes, then stops. Becoming unreachable meanwhile waits as above and starts the 2 minutes over |
   | The server says no | Any other 4xx | Stops at once. A deleted channel's messages leave with it |
 
 - **Not sent is the one failed state.** A message the outbox stops trying shows Not sent on its
@@ -219,13 +219,12 @@ keep `reconcileManagementWrite`.
   stops counting, so the request comes back. In the channel the choices stay hidden while any
   answer to the request is in the outbox, since its row sits just below.
 - **The phone finishes sends in the background.** While `isDelivering` is true, the app delegate
-  holds background time, so a Lock Screen reply finishes after its action returns. When that time
-  is about to end, `await handOff()` gives iOS each channel's next Sending message as a background
-  upload, which finishes even if Toy Box stops running. The share extension hands off each send
-  before `send` returns, so its sheet closes at once. When iOS wakes the app with the results,
-  `handleEvents(forBackgroundSession:completion:)` applies them by the same rules. The outbox keeps
-  trying while it runs as well, since the server ignores whichever copy arrives second.
-  ChannelClient makes no `UIApplication` call.
+  holds background time, so a Lock Screen reply finishes after its action returns. Whatever is
+  still Sending when that time ends resumes when the app next launches or comes back. The share
+  extension's outbox is made with `sendsOnce`, since the extension ends before it could retry. It
+  leaves the folder's other messages to the app, and its `send` makes one attempt and marks the
+  channel read before it returns. Whatever that attempt leaves Sending, the app sends. ChannelClient
+  makes no `UIApplication` call.
 
 ## Protocol
 
@@ -3060,9 +3059,10 @@ The header stays centered on the sheet in every state. Close and the trailing co
 to 60 points plus 8, so a long name truncates instead of running under them. The header's text
 stops growing at the Large text size, with the Large Content Viewer above it.
 
-Send saves the message to the app's outbox, which hands it to iOS before it returns, as
-[Sending](#sending) describes, so it never waits on the server, even offline. Sending shows a
-progress indicator while it saves, and Sent shows a checkmark for 0.7 s before the sheet closes.
+Send saves the message to the app's outbox and makes one attempt, as [Sending](#sending)
+describes, so the sheet waits on the server once and never retries, even offline. Sending shows a
+progress indicator until that attempt answers, and Sent shows a checkmark for 0.7 s before the
+sheet closes.
 From Send on, the composer is dimmed to 50% and locked, as is the channel button, and Close is
 disabled. The message shows in its channel in the app as Sending, and a failure waits there as
 Not sent. Swiping down with a note asks "Discard Note" or "Keep Editing".
