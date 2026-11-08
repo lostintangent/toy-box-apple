@@ -19,7 +19,7 @@ struct DemoIntegrationTests {
     }
 
     @Test(.enabled(if: demoURL != nil))
-    func catalogSnapshotPostConflictReadAndResume() async throws {
+    func catalogSnapshotPostRepeatReadAndResume() async throws {
         let api = try ChannelAPI(serverURL: #require(Self.demoURL))
         // Any loopback demo, including one on its own TOY_BOX_DEMO_PORT, but never the live server.
         guard api.baseURL.port != 3100, ["localhost", "127.0.0.1"].contains(api.baseURL.host) else {
@@ -41,9 +41,8 @@ struct DemoIntegrationTests {
         let echo = try #require(try await iterator.next())
         #expect(echo.message?.id == id)
         let revision = try #require(echo.revision)
-        await #expect(throws: ChannelAPIError.duplicateMessage) {
-            try await api.post(channelId: channel.id, id: id, content: "Not duplicated")
-        }
+        let repeated = try await api.post(channelId: channel.id, id: id, content: "Not duplicated")
+        #expect(repeated == posted)
         let seen = try await api.markRead(channelId: channel.id, sequence: posted.sequence)
         #expect(seen == posted.sequence)
         let resumedStream = api.observe(channelId: channel.id, after: revision)

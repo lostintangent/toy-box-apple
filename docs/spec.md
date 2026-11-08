@@ -194,10 +194,11 @@ keep `reconcileManagementWrite`.
   server's notification waits for that server. A channel's messages go one at a time, oldest
   first, and every attempt reuses the UUID `send` gave it, so the server never posts one twice.
   Channels deliver independently.
-- **The server's answer confirms it.** A 2xx, a 409 for an ID the server already has, or the
-  message arriving in a snapshot or replay takes it out of the outbox. An open channel merges the
-  message the POST returns, and after a 409 the message arrives through its stream. The outbox
-  then marks the channel read through the message, since the user's own message never leaves a
+- **The server's answer confirms it.** A 2xx or the message arriving in a snapshot or replay
+  takes it out of the outbox. An ID the channel already has answers with the message it stored, so
+  a retry after a lost answer confirms like the first. An ID from another channel is a 409, refused
+  like any other 4xx. An open channel merges the message the POST returns, and the outbox then
+  marks the channel read through the message, since the user's own message never leaves a
   channel unread. Every list treats it as read from the moment the server has it, without waiting
   for that round trip, so a row never flashes unread for the user's own message. The first of
   these to bring the message back also files each image its row already loaded under the link the
@@ -239,7 +240,7 @@ keep `reconcileManagementWrite`.
 | `GET /api/v1/channels` | Catalog `{version, channels, members, lead, working}` for the sidebar. `lead` is the profile every channel's lead shares, under the channel's ID, and is always present. `working` lists running agent IDs. Each channel may leave out `tasks`, which only a channel's snapshot needs, and carries `request`, its waiting message without reactions, or `null`, whose sequence is always `requestSequence`. With `Accept: text/event-stream` it streams: `snapshot` with the catalog, then `working`, `channel.upserted`, `channel.deleted`, `channel.member.upserted` and `channel.member.deleted`, with a keepalive every 5 seconds. There's no cursor, so every reconnect starts with a fresh `snapshot` |
 | `GET /api/v1/channels/:id` (SSE) | `snapshot`, then live events. With `after`: replay, then `resumed` with full presence. The store holds the replay and publishes it with `resumed` as one change, so a reopened channel never redraws what it missed event by event. A drop mid-replay publishes nothing, and the retry asks again after the published revision. `presence` is sparse and merges. `deleted` is terminal |
 | `GET /api/v1/channels/:id/messages?before=N` | Older page of up to 100 messages `{version, revision, messages}` |
-| `POST /api/v1/channels/:id/messages` | `{id, content, attachments?}` with a client UUID. 201 returns the message. 409 means a duplicate. Never auto-retry |
+| `POST /api/v1/channels/:id/messages` | `{id, content, attachments?}` with a client UUID. 201 returns the message, and the stored one for an ID the channel already has. An ID from another channel is 409 |
 | `POST /api/v1/channels/:id/read` | `{sequence}` monotonic read, which acknowledges completion but never a request |
 | `PUT /api/v1/channels/:id/bookmarks/:sequence` | Bookmark a user or agent message (204). A message that's already bookmarked is also 204, and a system or missing message is 422 |
 | `DELETE /api/v1/channels/:id/bookmarks/:sequence` | Remove a bookmark (204), including one that isn't there |
@@ -2086,7 +2087,7 @@ Submitting creates one optimistic row, which shows "Sending" only while the send
 after 1 second. A committed echo replaces it by UUID. When a send fails, the row keeps its text
 and attachments, its bubble's accent wash turns red, like the orange of a waiting request, and a
 Retry button sits below it. Delete sits in the bubble's menu and each attachment's, so a message
-with only images can be deleted too, without a wash. VoiceOver reads the message as "Not sent". Retry keeps the original UUID, so a 409 cannot deliver it twice. Do not clear a newer
+with only images can be deleted too, without a wash. VoiceOver reads the message as "Not sent". Retry keeps the original UUID, so the server can't deliver it twice. Do not clear a newer
 draft when an older send eventually succeeds.
 
 The tray is a compact 34-point header inside the floating composer: a 28-point row of controls

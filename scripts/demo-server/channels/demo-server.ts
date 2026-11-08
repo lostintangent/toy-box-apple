@@ -81,7 +81,8 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
   }
   const clients = new Set<ServerResponse>();
   const replayHistory: Snapshot[] = [];
-  const messageIds = new Set<string>(snapshot.messages.map(({ id }: { id: string }) => id));
+  // Like the server, a repeated ID returns its stored message, even after the snapshot drops it.
+  const storedMessages = new Map<string, Snapshot>(snapshot.messages.map((message: Snapshot) => [message.id, message]));
   const watchers = new Map<string, Set<ServerResponse>>();
   let resourceRevision = 1;
   const resourceEvent = (url: string) => ({ type: resources.has(url) ? "changed" : "deleted", timestamp: resourceRevision });
@@ -193,9 +194,8 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
             || (!body.content.trim() && !uploads.length)) {
           json(response, 400, { error: 'Expected a user message with id and content.' }); return;
         }
-        if (messageIds.has(body.id)) {
-          json(response, 409, { error: 'Message ID already exists.' }); return;
-        }
+        const stored = storedMessages.get(body.id);
+        if (stored) { json(response, 201, { version: 1, message: stored }); return; }
         const timestamp = new Date().toISOString();
         const sequence = snapshot.channel.latestSequence + 1;
         // Like the server, each upload becomes a file named by its type, echoed in the order sent.
@@ -211,7 +211,7 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
         });
         const message = { id: body.id, content: body.content.trim(), sender: { type: 'user' }, sequence, timestamp,
           ...(attachments.length ? { attachments } : {}) };
-        messageIds.add(message.id);
+        storedMessages.set(message.id, message);
         snapshot.messages.push(message);
         snapshot.messages = snapshot.messages.slice(-100);
         snapshot.revision++;
@@ -243,7 +243,7 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
         id: crypto.randomUUID(), sequence, timestamp, sender: { type: 'system' },
         content: { type: 'artifact_removed', actor: { type: 'user' }, artifact: { id: artifact.id, file: artifact.file, title: artifact.title, url: artifact.url } },
       };
-      messageIds.add(message.id);
+      storedMessages.set(message.id, message);
       snapshot.messages = [...snapshot.messages, message].slice(-100);
       snapshot.revision++;
       Object.assign(snapshot.channel, { latestSequence: sequence, updatedAt: timestamp });
@@ -293,8 +293,8 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
     replace(next: Snapshot) {
       snapshot = structuredClone(next);
       replayHistory.length = 0;
-      messageIds.clear();
-      for (const { id } of snapshot.messages) messageIds.add(id);
+      storedMessages.clear();
+      for (const message of snapshot.messages) storedMessages.set(message.id, message);
       publish({ type: 'snapshot', state: snapshot });
     },
     setResource(url: string, content: string, type = 'text/markdown; charset=utf-8') { resources.set(url, { type, content }); publishResource(url); },

@@ -6,7 +6,6 @@ public enum ChannelAPIError: Error, Equatable, LocalizedError, Sendable {
     case invalidResponse
     case unsupportedVersion(Int)
     case http(status: Int, message: String)
-    case duplicateMessage
     case invalidMessage(String)
     case disconnected
     case streamEnded
@@ -19,7 +18,6 @@ public enum ChannelAPIError: Error, Equatable, LocalizedError, Sendable {
         case .invalidResponse: "The server returned an invalid response."
         case .unsupportedVersion(let version): "This server uses unsupported protocol version \(version)."
         case .http(let status, let message): "\(message) (HTTP \(status))"
-        case .duplicateMessage: "This message ID was already accepted. It was not sent again."
         case .invalidMessage(let message): message
         case .disconnected: "The channel isn't connected."
         case .streamEnded: "The channel connection ended. Reconnecting."
@@ -398,7 +396,6 @@ public struct ChannelAPI: Sendable {
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else { throw ChannelAPIError.invalidResponse }
         guard (200..<300).contains(response.statusCode) else {
-            if response.statusCode == 409 { throw ChannelAPIError.duplicateMessage }
             throw Self.failure(status: response.statusCode, data: data)
         }
         return (data, response)
