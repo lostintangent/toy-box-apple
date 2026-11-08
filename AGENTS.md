@@ -142,12 +142,12 @@ Surfaces meet at these seams:
 - **Every send goes through `ChannelOutbox`,** a deliberate guard for the user's words. It gives
   each message a UUID and reuses it on every attempt and Send Again, so the server never posts one
   twice.
-- **Optimistic writes are idempotent upserts into the store.** Write the user's change into the
-  store at once, as the value it should end at, and let the stream confirm it. A send keeps its
-  UUID, a read only raises its marker and a bookmark sets its state, so repeating a write or
-  receiving its echo changes nothing. Show a pending send's effect by reading through the outbox
-  rather than storing it, so a send that ends Not sent leaves nothing to undo. Undo a failed write
-  only when the user would otherwise think it saved, like a bookmark.
+- **Optimistic writes are idempotent upserts into the store.** A send keeps its UUID, a read only
+  raises its marker and a bookmark sets its state, so repeating a write or receiving its echo
+  changes nothing. Until the server answers, show a write by reading the store through it, like
+  the outbox's sends or a bookmark in flight, so a stale update can't hide it and a failure leaves
+  nothing to undo. Once the server answers, upsert it into the store. Report a failure only when
+  the user would otherwise think it saved, like a bookmark.
 - **Management writes are never retried.** A 422 is a rejection, but a 500, timeout or lost
   connection may have committed, so call `reconcileManagementWrite(channelId:)` before offering
   another attempt. Can't connect, offline and bad-host failures stay ordinary retryable errors.

@@ -28,7 +28,7 @@ struct BookmarkTests {
         #expect(store.bookmarks == [2])
         #expect(mock.finishPendingResponses() == 1)
         await first.value
-        #expect(store.state?.bookmarks == [])
+        #expect(store.state?.bookmarks == [2])
         #expect(store.bookmarks == [2])
         _ = try store.apply(.init(type: "bookmarks", revision: 11, bookmarks: [2]))
         #expect(store.bookmarks == [2])
