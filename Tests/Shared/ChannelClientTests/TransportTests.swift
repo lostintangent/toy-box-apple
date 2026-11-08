@@ -117,7 +117,7 @@ struct TransportTests {
             return try .stream(holdsResumed ? [] : [resumed])
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(initialDelay: 0.01), sendJournal: nil)
+                                 reconnectPolicy: .init(initialDelay: 0.01))
         store.connect()
         defer { store.disconnect() }
         if holdsResumed {
@@ -137,7 +137,7 @@ struct TransportTests {
             try .stream([.init(type: "resumed", presence: ["test": .init(state: "working")])])
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(initialDelay: 5, grace: 0), sendJournal: nil)
+                                 reconnectPolicy: .init(initialDelay: 5, grace: 0))
         store.connect()
         defer { store.disconnect() }
         try await eventually {
@@ -152,7 +152,7 @@ struct TransportTests {
         let mock = MockTransport { _, _ in
             try .stream([.init(type: "snapshot", state: initial), .init(type: "deleted", channelId: "test")])
         }
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try mock.api())
         store.connect()
         try await eventually { store.phase == .deleted }
         store.connect()
@@ -169,7 +169,7 @@ struct TransportTests {
                         keepOpen: count > 1)
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(initialDelay: 0.01), sendJournal: nil)
+                                 reconnectPolicy: .init(initialDelay: 0.01))
         store.connect()
         defer { store.disconnect() }
         if holdsRecovery {
@@ -184,25 +184,24 @@ struct TransportTests {
         #expect(store.state?.messages.map(\.sequence) == [100])
     }
 
-    @Test @MainActor func staleStateRemainsVisibleAndCannotSend() async throws {
+    @Test @MainActor func staleStateRemainsVisible() async throws {
         let initial = testState(revision: 5, messages: [testMessage(1)])
         let mock = MockTransport { _, _ in
             try .stream([.init(type: "snapshot", state: initial)], keepOpen: false)
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(initialDelay: 5, grace: 0), sendJournal: nil)
+                                 reconnectPolicy: .init(initialDelay: 5, grace: 0))
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.message == ChannelAPIError.streamEnded.localizedDescription }
         #expect(store.state?.messages.count == 1)
-        await #expect(throws: ChannelAPIError.disconnected) { try await store.post(content: "Not sent") }
         #expect(mock.requests.count == 1)
     }
 
     @Test @MainActor func releasingStoreCancelsObservation() async throws {
         let initial = testState()
         let mock = MockTransport { _, _ in try .stream([.init(type: "snapshot", state: initial)]) }
-        var store: ChannelStore? = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        var store: ChannelStore? = ChannelStore(id: "test", api: try mock.api())
         weak let weakStore = store
         store?.connect()
         try await eventually { store?.phase.isConnected == true }
@@ -240,7 +239,7 @@ struct TransportTests {
         let mock = MockTransport { _, _ in try .stream([.init(type: "snapshot", state: initial)]) }
         for round in 0..<100 {
             let api = try mock.api()
-            let store = ChannelStore(id: "test", api: api, sendJournal: nil)
+            let store = ChannelStore(id: "test", api: api)
             store.connect()
             if round.isMultiple(of: 2) {
                 try await eventually { store.phase.isConnected }
@@ -261,7 +260,7 @@ struct TransportTests {
             }
             return try .stream([.init(type: "snapshot", state: initial)])
         }
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try mock.api())
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.isConnected }
@@ -280,7 +279,7 @@ struct TransportTests {
             }
             return try .stream([.init(type: "snapshot", state: initial)])
         }
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try mock.api())
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.isConnected }
@@ -300,7 +299,7 @@ struct TransportTests {
             }
             return try .stream([.init(type: "snapshot", state: initial)])
         }
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try mock.api())
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.isConnected }
@@ -317,7 +316,7 @@ struct TransportTests {
             }
             return try .stream([.init(type: "snapshot", state: initial)])
         }
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try mock.api())
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.isConnected }
@@ -333,7 +332,7 @@ struct TransportTests {
             page.keepOpen = count == 1
             return page
         }
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try mock.api())
         _ = try store.apply(.init(type: "snapshot", state: testState(revision: 10, messages: [testMessage(100)])))
         let reveal = Task { await store.loadHistory(through: 5) }
         try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
@@ -350,7 +349,7 @@ struct TransportTests {
             page.keepOpen = count == 1
             return page
         }
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try mock.api())
         _ = try store.apply(.init(type: "snapshot", state: testState(revision: 10, messages: [testMessage(100)])))
         let paging = Task { await store.loadOlder() }
         try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
@@ -370,29 +369,6 @@ struct TransportTests {
         #expect(mock.requests.count == 1)
     }
 
-    @Test @MainActor func serverFailurePreservesUncertainAttemptOutsideCanonicalState() async throws {
-        let initial = testState(revision: 10, messages: [testMessage(1)])
-        let mock = MockTransport { request, _ in
-            if request.httpMethod == "POST" {
-                return MockResponse(status: 503, body: Data(#"{"error":"Try later."}"#.utf8))
-            }
-            return try .stream([.init(type: "snapshot", state: initial)])
-        }
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
-        store.connect()
-        defer { store.disconnect() }
-        try await eventually { store.phase.isConnected }
-        await #expect(throws: ChannelAPIError.http(status: 503, message: "Try later.")) {
-            try await store.post(content: "Hello")
-        }
-        #expect(store.state?.messages.map(\.id) == ["m1"])
-        #expect(store.sendAttempts.count == 1)
-        #expect(store.sendAttempts.first?.phase == .deliveryNotConfirmed)
-        #expect(store.sendAttempts.first?.message.sequence == 0)
-        #expect(store.sendAttempts.first?.error?.contains("Try later.") == true)
-        #expect(mock.requests.filter { $0.httpMethod == "POST" }.count == 1)
-    }
-
     @Test @MainActor func unreadBoundaryRemainsStableWhileReadAdvances() async throws {
         var initial = testState(revision: 10, messages: [testMessage(1), testMessage(2)])
         initial.channel.seenThrough = 1
@@ -403,7 +379,7 @@ struct TransportTests {
             }
             return try .stream([.init(type: "snapshot", state: snapshot)])
         }
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try mock.api())
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.isConnected }
@@ -457,7 +433,7 @@ struct TransportTests {
             response.keepOpen = count == 1
             return response
         }
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try mock.api())
         var state = testState(revision: 10, messages: [testMessage(1), testMessage(2), testMessage(3)])
         state.channel.seenThrough = 1
         _ = try store.apply(.init(type: "snapshot", state: state))

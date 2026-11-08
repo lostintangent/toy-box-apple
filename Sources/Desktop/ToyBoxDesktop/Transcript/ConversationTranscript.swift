@@ -23,7 +23,6 @@ struct ConversationTranscript: View {
     @ViewState var pagingAnchor: PagingAnchor?
     @ViewState private var highlightedSequence: Int?
     @ViewState private var revealError: String?
-    @ViewState private var sendActionError: String?
     @ViewState var isRevealing = false
     @ViewState private var lastMarkedRead = 0
     @ViewState private var expandedMessageIds: Set<String> = []
@@ -205,7 +204,7 @@ struct ConversationTranscript: View {
                     scrollToLatest(using: proxy)
                 }
             }
-            .onChange(of: store.sendAttempts.map(\.id)) { old, new in
+            .onChange(of: store.sending.map(\.id)) { old, new in
                 if isAtBottom && !find.isPresented && new.count > old.count { scrollToLatest(using: proxy) }
             }
             .onChange(of: store.requestSequence, initial: true) { _, sequence in
@@ -307,7 +306,7 @@ struct ConversationTranscript: View {
         let findHighlights = find.highlights
         let bookmarks = store.bookmarks.map(Set.init)
         let catchUp = interaction.messageView == .all ? catchUp : nil
-        let requestChoices = TranscriptRequestChoices(request: store.request, attempts: store.sendAttempts,
+        let requestChoices = TranscriptRequestChoices(request: store.request, store: store,
                                                       isConnected: store.phase.isConnected)
         return LazyVStack(alignment: .leading, spacing: 0) {
             historyHeader
@@ -347,13 +346,14 @@ struct ConversationTranscript: View {
                     .equatable()
                     .padding(.top, gaps[row.id] ?? TranscriptSpacing.run)
             }
-            let attemptDividers = TranscriptRowBuilder.pendingDividers(store.sendAttempts.map(\.message),
+            let outgoing = store.sending
+            let sendingDividers = TranscriptRowBuilder.pendingDividers(outgoing.map(\.message),
                                                                        after: rows.last?.messages.last, roster: store.roster)
-            ForEach(store.sendAttempts) { attempt in
-                sendAttempt(attempt, divider: attemptDividers[attempt.id],
-                            statusReactions: statusReactions[attempt.message.sequence] ?? [])
-                    .padding(.top, TranscriptSpacing.above(attemptDividers[attempt.id]))
-                    .id("attempt-\(attempt.id)")
+            ForEach(outgoing) { message in
+                let divider = sendingDividers[message.id.uuidString]
+                sending(message, divider: divider)
+                    .padding(.top, TranscriptSpacing.above(divider))
+                    .id("attempt-\(message.id)")
             }
             Color.clear.frame(height: 16).id("transcript-end")
         }
@@ -373,39 +373,29 @@ struct ConversationTranscript: View {
         return agents.statusReactions(presence: store.presence)
     }
 
-    private func sendAttempt(_ attempt: ChannelSendAttempt, divider: TranscriptDivider?,
-                             statusReactions: [ChannelReaction]) -> some View {
+    private func sending(_ message: ChannelOutbox.Message, divider: TranscriptDivider?) -> some View {
         VStack(alignment: .leading, spacing: TranscriptSpacing.divider) {
             if let divider { TranscriptDividerStack(divider: divider, catchUp: nil, store: store) }
-            sendAttempt(attempt, statusReactions: statusReactions)
+            sending(message)
         }
     }
 
-    private func sendAttempt(_ attempt: ChannelSendAttempt, statusReactions: [ChannelReaction]) -> some View {
-        VStack(alignment: .trailing, spacing: 6) {
-            TranscriptDeliveryLabel(phase: attempt.phase, slowAfter: slowSendDelay) { label in
-                TranscriptUserMessage(message: attempt.message, agents: store.roster, api: store.api,
-                                      deliveryLabel: label, statusReactions: statusReactions)
+    /// A failed send adds only its red wash and Retry, with Delete in the bubble's menu.
+    private func sending(_ message: ChannelOutbox.Message) -> some View {
+        let outbox = store.outbox, isNotSent = message.state == .notSent
+        return VStack(alignment: .trailing, spacing: 6) {
+            TranscriptDeliveryLabel(state: message.state, slowAfter: slowSendDelay) { label in
+                TranscriptUserMessage(message: message.message, agents: store.roster, api: store.api,
+                                      deliveryLabel: label,
+                                      deleteNotSent: isNotSent ? { outbox?.withdraw(message.id) } : nil)
             }
-            if let error = attempt.error {
-                Text(error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-            }
-            if attempt.canRetry {
-                HStack(spacing: 12) {
-                    Button("Edit") { interaction.editSendAttempt(id: attempt.id) }
-                        .help("Restore this message to the composer without losing a newer draft.")
-                    Button("Send Again") {
-                        Task {
-                            do {
-                                try await store.retrySend(id: attempt.id)
-                                interaction.jumpToLatest()
-                            }
-                            catch { sendActionError = error.localizedDescription }
-                        }
-                    }
-                    .disabled(!store.phase.isConnected || store.isSending)
-                    .help("Send again with the original message ID. Never retried automatically.")
+            if isNotSent {
+                Button("Retry") {
+                    outbox?.sendAgain(message.id)
+                    interaction.jumpToLatest()
                 }
+                .disabled(!store.phase.isConnected)
+                .help("Send this message again")
                 .font(.caption)
             }
         }
@@ -418,7 +408,7 @@ struct ConversationTranscript: View {
     }
 
     func prepareFind() {
-        find.prepare(messages: store.messages.filter { !store.optimisticMessageIds.contains($0.id) },
+        find.prepare(messages: store.messages,
                      agents: store.roster, hasOlder: store.hasOlderMessages)
         expandedMessageIds.formUnion(find.matches.filter {
             $0.system?.type == "member_joined" || $0.system?.type == "member_left"
@@ -447,19 +437,13 @@ struct ConversationTranscript: View {
         let presence = store.phase.isUnavailable ? [:] : store.presence
         let hasWorkingAgents = store.roster.contains { presence[$0.id]?.state == "working" }
         let rises: AnyTransition = reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4))
-        let hasNotices = revealError != nil || sendActionError != nil || store.readError != nil
+        let hasNotices = revealError != nil || store.readError != nil
         return VStack(alignment: .leading, spacing: 8) {
             if let error = revealError {
                 TranscriptNotice {
                     Label(error, systemImage: "exclamationmark.triangle")
                 } action: {
                     Button("Dismiss") { revealError = nil }
-                }
-                .transition(rises)
-            }
-            if let error = sendActionError {
-                TranscriptNotice { Text(error) } action: {
-                    Button("Dismiss") { sendActionError = nil }
                 }
                 .transition(rises)
             }

@@ -13,7 +13,7 @@ struct ChannelConnectionsTests {
 
     func connectedStores(_ ids: String..., to connections: ChannelConnections) async throws -> [ChannelStore] {
         let api = try mock.api()
-        let stores = ids.map { ChannelStore(id: $0, api: api, sendJournal: nil) }
+        let stores = ids.map { ChannelStore(id: $0, api: api) }
         for store in stores { connections.hold(store) }
         try await eventually { stores.allSatisfy(\.phase.isConnected) }
         return stores
@@ -112,7 +112,7 @@ struct ChannelConnectionsTests {
                                 .init(type: "resumed", presence: [:])])
         }
         let connections = ChannelConnections(linger: .zero)
-        let store = ChannelStore(id: "a", api: try mock.api(), sendJournal: nil)
+        let store = ChannelStore(id: "a", api: try mock.api())
         connections.hold(store)
         try await eventually { store.phase.isConnected }
         #expect(store.unreadAfter == 0)

@@ -455,9 +455,10 @@ struct TranscriptPresentationTests {
         let wash = Color.accentColor.opacity(0.09)
         for isDark in [false, true] {
             let neutral = Color.primary.opacity(isDark ? 0.07 : 0.045)
-            let orange = Color.orange.opacity(0.10)
+            let orange = Color.orange.opacity(0.10), red = Color.red.opacity(0.10)
             let mac: [TranscriptSurface: [Color]] = [
                 .canvas: [], .agent: [neutral], .user: [wash], .pendingAgent: isDark ? [neutral, orange] : [orange],
+                .notSentUser: isDark ? [neutral, red] : [red],
             ]
             for (surface, fills) in mac {
                 #expect(surface.fills(isDark: isDark) == fills)

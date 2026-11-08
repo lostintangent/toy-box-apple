@@ -15,8 +15,6 @@ struct ReplyToRequestIntent: AppIntent {
     var message: String
 
     @AppDependency var context: ChannelIntents
-    /// Retained by this invocation, including a repeated perform after an uncertain delivery.
-    let sendID = UUID().uuidString
 
     static var parameterSummary: some ParameterSummary {
         Summary("Reply to \(\.$request) with \(\.$message)")
@@ -30,7 +28,7 @@ struct ReplyToRequestIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        try await context.replyToRequest(request.entry, message: message, id: sendID) { prompt in
+        try await context.replyToRequest(request.entry, message: message) { prompt in
             try await requestConfirmation(actionName: .send, dialog: "\(prompt.question)")
         }
         return .result(dialog: "Sent to \(request.channelName).")

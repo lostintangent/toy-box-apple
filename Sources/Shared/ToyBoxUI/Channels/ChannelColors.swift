@@ -36,6 +36,7 @@ public enum ChannelColors {
     public static let userWash = Color.accentColor.opacity(0.09)
     public static let sourceHighlight = Color.accentColor.opacity(0.09)
     public static let requestWash = Color.orange.opacity(0.10)
+    public static let notSentWash = Color.red.opacity(0.10)
     public static let newRule = Color.blue.opacity(0.7)
 }
 
@@ -59,7 +60,7 @@ extension Channel.Attention {
 
 /// Bubble fills and mention ink share the same composite over the conversation canvas.
 public enum TranscriptSurface: Hashable, Sendable {
-    case canvas, agent, pendingAgent, user
+    case canvas, agent, pendingAgent, user, notSentUser
 
     /// Fills layered over the transcript canvas, bottom first. `canvasIsBlack` is the phone's pure
     /// black Dark canvas, where the user's accent wash alone barely leaves black.
@@ -72,6 +73,8 @@ public enum TranscriptSurface: Hashable, Sendable {
         case .pendingAgent: return isDark ? [neutral, ChannelColors.requestWash] : [ChannelColors.requestWash]
         // Over black, the wash sits on the agent bubble's neutral lift so it stands off the canvas as clearly.
         case .user: return isDark && canvasIsBlack ? [neutral, ChannelColors.userWash] : [ChannelColors.userWash]
+        // A message that didn't send takes the request wash's language in red, in place of the user's wash.
+        case .notSentUser: return isDark ? [neutral, ChannelColors.notSentWash] : [ChannelColors.notSentWash]
         }
     }
 
@@ -80,6 +83,7 @@ public enum TranscriptSurface: Hashable, Sendable {
         case .canvas: nil
         case .agent, .user: .primary.opacity(0.5)
         case .pendingAgent: .orange
+        case .notSentUser: .red
         }
     }
 }

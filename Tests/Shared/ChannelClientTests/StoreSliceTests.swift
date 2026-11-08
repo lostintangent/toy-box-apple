@@ -40,7 +40,7 @@ struct StoreSliceTests {
     }
 
     @Test func eachEventMovesOnlyTheSlicesItChanges() throws {
-        let store = ChannelStore(id: "test", api: try MockTransport { _, _ in .init() }.api(), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try MockTransport { _, _ in .init() }.api())
         var initial = testState(revision: 1, messages: [testMessage(1)])
         initial.members = [ChannelAgent(id: "ana", name: "Ana", role: "Engineer")]
         _ = try store.apply(.init(type: "snapshot", state: initial))
@@ -88,14 +88,14 @@ struct StoreSliceTests {
     }
 
     @Test func aRecoverySnapshotWithTheSameContentMovesOnlyState() throws {
-        let store = ChannelStore(id: "test", api: try MockTransport { _, _ in .init() }.api(), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try MockTransport { _, _ in .init() }.api())
         _ = try store.apply(.init(type: "snapshot", state: testState(revision: 1, messages: [testMessage(1)])))
         let recovered = testState(revision: 40, messages: [testMessage(1)])
         #expect(try changes(in: store, applying: .init(type: "snapshot", state: recovered)) == ["state"])
     }
 
     @Test func slicesMatchTheStateTheyCameFrom() throws {
-        let store = ChannelStore(id: "test", api: try MockTransport { _, _ in .init() }.api(), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try MockTransport { _, _ in .init() }.api())
         #expect(!store.isLoaded)
         var state = testState(revision: 1, messages: [testMessage(1)])
         state.lead.status = .init(state: "waiting", text: "Review")

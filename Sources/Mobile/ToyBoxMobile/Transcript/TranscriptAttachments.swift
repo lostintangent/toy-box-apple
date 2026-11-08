@@ -13,28 +13,39 @@ struct TranscriptAttachments: View {
     let alignment: UnitPoint
     /// The message the images belong to, which the gallery names.
     let source: TranscriptImageSource
+    /// Set only on a message that didn't send, so one with only images can still be deleted.
+    var delete: (() -> Void)?
     @Environment(TranscriptGallery.self) private var gallery: TranscriptGallery?
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
     var body: some View {
         let images = TranscriptGallery.images(in: attachments)
         TranscriptAttachmentStrip(count: attachments.count, alignment: alignment, presented: presented) { offset in
-            let attachment = attachments[offset]
-            if TranscriptGallery.isGalleryImage(attachment) {
-                let position = attachments[..<offset].count(where: TranscriptGallery.isGalleryImage)
-                if let gallery {
-                    TranscriptImage(attachment: attachment, api: api, voiceOver: voiceOver) {
-                        gallery.open(images: images, at: position, source: source, api: api)
-                    }
-                } else {
-                    TranscriptImage(attachment: attachment, api: api, voiceOver: voiceOver)
-                }
-            } else if attachment.contentType?.conforms(to: .movie) == true,
-                      let address = attachment.url, let url = api.resourceURL(address) {
-                TranscriptVideo(url: url, name: attachment.displayName)
+            if let delete {
+                tile(attachments[offset], at: offset, images: images)
+                    .contextMenu { Button("Delete", systemImage: "trash", role: .destructive, action: delete) }
             } else {
-                TranscriptFileRow(attachment: attachment, api: api)
+                tile(attachments[offset], at: offset, images: images)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func tile(_ attachment: ChannelAttachment, at offset: Int, images: [ChannelAttachment]) -> some View {
+        if TranscriptGallery.isGalleryImage(attachment) {
+            let position = attachments[..<offset].count(where: TranscriptGallery.isGalleryImage)
+            if let gallery {
+                TranscriptImage(attachment: attachment, api: api, voiceOver: voiceOver) {
+                    gallery.open(images: images, at: position, source: source, api: api)
+                }
+            } else {
+                TranscriptImage(attachment: attachment, api: api, voiceOver: voiceOver)
+            }
+        } else if attachment.contentType?.conforms(to: .movie) == true,
+                  let address = attachment.url, let url = api.resourceURL(address) {
+            TranscriptVideo(url: url, name: attachment.displayName)
+        } else {
+            TranscriptFileRow(attachment: attachment, api: api)
         }
     }
 

@@ -12,139 +12,6 @@ import UniformTypeIdentifiers
 
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct ComposerTests {
-    @Test(arguments: [
-        ("  Please proceed.\n", "@lead Please proceed."),
-        ("@ada Please proceed.", "@ada Please proceed.")
-    ])
-    func notificationReplyPostsOnceFromAColdStoreWithoutChangingItsDraft(text: String, expected: String) async throws {
-        let fixture = try replyFixture(.sent)
-        defer { fixture.close() }
-        let draft = ComposerDraft(imageIsReadable: { _ in false })
-        draft.text = "My newer draft"
-        let revision = draft.revision
-        let id = UUID().uuidString
-
-        #expect(fixture.store.state == nil)
-        #expect(!fixture.store.phase.isConnected)
-        let result = await ComposerSession.sendNotificationReply(
-            text, to: "lead", store: fixture.store, id: id, isCurrentRegistration: { true })
-
-        #expect(result == .sent)
-        #expect(fixture.posts == [.init(id: id, content: expected)])
-        #expect(draft.text == "My newer draft")
-        #expect(draft.revision == revision)
-        #expect(draft.sendAttemptID == nil)
-        #expect(fixture.store.sendAttempts.allSatisfy { $0.phase == .confirmed })
-    }
-
-    @Test(arguments: [ReplyResponse.rejected, .unconfirmed])
-    func notificationReplyFailuresUseTheExistingOutboxAndEditConfirmation(response: ReplyResponse) async throws {
-        let fixture = try replyFixture(response)
-        defer { fixture.close() }
-        let id = UUID().uuidString
-        let draft = ComposerDraft(imageIsReadable: { _ in false })
-        draft.text = "Keep my newer draft"
-        let composer = ChannelComposerSession(store: fixture.store, draft: draft)
-
-        let result = await ComposerSession.sendNotificationReply(
-            "Please proceed.", to: "lead", store: fixture.store, id: id, isCurrentRegistration: { true })
-
-        #expect(result == .failed(id: id))
-        #expect(fixture.posts == [.init(id: id, content: "@lead Please proceed.")])
-        let attempt = try #require(fixture.store.sendAttempts.first)
-        #expect(attempt.id == id)
-        #expect(attempt.content == "@lead Please proceed.")
-        #expect(attempt.phase == (response == .rejected ? .notSent : .deliveryNotConfirmed))
-        #expect(attempt.canRetry)
-        #expect(attempt.error != nil)
-        #expect(draft.text == "Keep my newer draft")
-        #expect(draft.sendAttemptID == nil)
-        #expect(!composer.edit(attempt))
-        #expect(composer.pendingEdit == attempt)
-        #expect(draft.text == "Keep my newer draft")
-        #expect(composer.appendPendingEdit())
-        #expect(draft.text == "Keep my newer draft\n\n@lead Please proceed.")
-        #expect(draft.sendAttemptID == nil)
-    }
-
-    @Test func anUnchangedNotificationReplyKeepsItsUUIDWhenEditedInTheExistingComposer() async throws {
-        let fixture = try replyFixture(.unconfirmed)
-        defer { fixture.close() }
-        let id = UUID().uuidString
-        let draft = ComposerDraft(imageIsReadable: { _ in false })
-        let composer = ChannelComposerSession(store: fixture.store, draft: draft)
-        let result = await ComposerSession.sendNotificationReply(
-            "Proceed.", to: "lead", store: fixture.store, id: id, isCurrentRegistration: { true })
-        #expect(result == .failed(id: id))
-
-        #expect(composer.edit(try #require(fixture.store.sendAttempts.first)))
-        #expect(draft.text == "@lead Proceed.")
-        #expect(draft.sendAttemptID == id)
-        #expect(composer.attempt?.id == id)
-        draft.text += " With the second option."
-        #expect(draft.sendAttemptID == nil)
-    }
-
-    @Test func aNotificationReplyRemainsInTheDurableOutboxAfterAColdFailure() async throws {
-        let directory = FileManager.default.temporaryDirectory.appending(
-            path: "toybox-notification-reply-\(UUID().uuidString)", directoryHint: .isDirectory)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let journal = ChannelSendJournal(directory: directory)
-        let fixture = try replyFixture(.unconfirmed, journal: journal)
-        defer { fixture.close() }
-        let id = UUID().uuidString
-        let result = await ComposerSession.sendNotificationReply(
-            "Proceed.", to: "lead", store: fixture.store, id: id, isCurrentRegistration: { true })
-        #expect(result == .failed(id: id))
-
-        let restored = ChannelStore(id: fixture.store.id, api: fixture.store.api, sendJournal: journal)
-        await #expect(throws: ChannelAPIError.disconnected) {
-            try await restored.post(id: id, content: "@lead Proceed.")
-        }
-        let attempt = try #require(restored.sendAttempts.first)
-        #expect(attempt.id == id)
-        #expect(attempt.content == "@lead Proceed.")
-        #expect(attempt.canRetry)
-        #expect(fixture.posts.count == 1)
-    }
-
-    @Test(arguments: [false, true])
-    func oldRegistrationsAndKnownDeletedChannelsDoNotPostOrTouchDrafts(deleted: Bool) async throws {
-        let fixture = try replyFixture(.sent)
-        defer { fixture.close() }
-        if deleted { _ = try fixture.store.apply(.init(type: "deleted")) }
-        let draft = ComposerDraft(imageIsReadable: { _ in false })
-        draft.text = "Keep this"
-        let revision = draft.revision
-
-        let result = await ComposerSession.sendNotificationReply(
-            "Proceed.", to: "lead", store: fixture.store, isCurrentRegistration: { deleted })
-
-        #expect(result == .notSent)
-        #expect(fixture.posts.isEmpty)
-        #expect(fixture.store.sendAttempts.isEmpty)
-        #expect(draft.text == "Keep this")
-        #expect(draft.revision == revision)
-    }
-
-    @Test func aDeletedChannelResponseUsesThePlainNotSentOutcome() async throws {
-        let fixture = try replyFixture(.deleted)
-        defer { fixture.close() }
-        let result = await ComposerSession.sendNotificationReply(
-            "Proceed.", to: "lead", store: fixture.store, isCurrentRegistration: { true })
-        #expect(result == .notSent)
-        #expect(fixture.posts.count == 1)
-    }
-
-    @Test func anAlreadyAcceptedNotificationReplyDoesNotMakeASecondPost() async throws {
-        let fixture = try replyFixture(.duplicate)
-        defer { fixture.close() }
-        let result = await ComposerSession.sendNotificationReply(
-            "Proceed.", to: "lead", store: fixture.store, isCurrentRegistration: { true })
-        #expect(result == .sent)
-        #expect(fixture.posts.count == 1)
-    }
-
     @Test func aPendingComposerFocusSurvivesPresentationAndOnlyItsCurrentTokenCanBeConsumed() throws {
         let interaction = ChannelInteraction()
         #expect(interaction.pendingComposerFocusRequest == nil)
@@ -994,10 +861,12 @@ struct ComposerTests {
         #expect(target.input.text.isEmpty)
     }
 
-    @Test func sendWaitsForFinalWordsBeforeCreatingItsOnlyAttempt() async throws {
+    @Test func sendWaitsForFinalWordsBeforeSendingThem() async throws {
         let recognizer = MobileTestRecognizer()
         recognizer.finalWords = [("Final words.", true)]
-        let (session, target) = try dictatingSession(recognizer, allowsFinalizedPost: true)
+        let outbox = ChannelOutbox(folder: scratchFolder())
+        defer { try? FileManager.default.removeItem(at: outbox.folder) }
+        let (session, target) = try dictatingSession(recognizer, outbox: outbox)
         defer { session.dictation.deactivate() }
         await session.dictation.refreshLanguageSupport()
         session.dictation.toggleRecheckingInput()
@@ -1005,20 +874,20 @@ struct ComposerTests {
         recognizer.send("Uncertain words", isFinal: false)
         #expect(session.draft.text.isEmpty)
         #expect(session.canSend)
-        #expect(await !session.send(), "The fixture rejects the finalized POST with 422")
+        #expect(await session.send())
         #expect(session.draft.text.isEmpty)
-        #expect(session.store.sendAttempts.count == 1)
-        #expect(session.store.sendAttempts.first?.phase == .notSent)
-        #expect(session.draft.sendAttemptID == nil)
-        #expect(session.composer.error == nil)
+        #expect(outbox.queue.map(\.text) == ["Final words."], "It sends the finalized words, never the tentative display")
         #expect(!session.dictation.isSessionActive)
         #expect(!session.isFinalizingDictation)
+        withExtendedLifetime(target) {}
     }
 
     @Test func unconfirmedDictationKeepsWordsWithoutPostingAndBlocksDuplicateSubmission() async throws {
         let recognizer = MobileTestRecognizer()
         recognizer.stalls = true
-        let (session, target) = try dictatingSession(recognizer)
+        let outbox = ChannelOutbox(folder: scratchFolder())
+        defer { try? FileManager.default.removeItem(at: outbox.folder) }
+        let (session, target) = try dictatingSession(recognizer, outbox: outbox)
         defer { session.dictation.deactivate() }
         await session.dictation.refreshLanguageSupport()
         session.dictation.toggleRecheckingInput()
@@ -1033,8 +902,7 @@ struct ComposerTests {
         #expect(await !send.value)
         #expect(session.draft.text == "Keep these words")
         #expect(target.input.text == session.draft.text)
-        #expect(session.store.sendAttempts.isEmpty)
-        #expect(session.draft.sendAttemptID == nil)
+        #expect(outbox.queue.isEmpty)
         #expect(session.dictation.notice == .unsent(revision: session.draft.revision))
         #expect(!session.isFinalizingDictation)
     }
@@ -1060,129 +928,14 @@ struct ComposerTests {
         recognizer.send("Late result", isFinal: true)
         #expect(session.draft.text == "Stay in this draft")
         #expect(target.input.text == session.draft.text)
-        #expect(session.store.sendAttempts.isEmpty)
-    }
-
-    enum ReplyResponse: String, Sendable {
-        case sent, rejected, unconfirmed, deleted, duplicate
-    }
-
-    private struct ReplyPost: Codable, Equatable, Sendable {
-        let id: String
-        let content: String
-    }
-
-    private struct ReplyFixture {
-        let store: ChannelStore
-        let host: String
-        let session: URLSession
-
-        var posts: [ReplyPost] { MobileReplyProtocol.posts.withLock { $0[host] ?? [] } }
-
-        func close() {
-            session.invalidateAndCancel()
-            MobileReplyProtocol.posts.withLock { $0[host] = nil }
-        }
-    }
-
-    private func replyFixture(
-        _ response: ReplyResponse, journal: ChannelSendJournal? = nil
-    ) throws -> ReplyFixture {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [MobileReplyProtocol.self]
-        let host = "\(response.rawValue)-\(UUID().uuidString.lowercased()).test"
-        let session = URLSession(configuration: configuration)
-        let api = try ChannelAPI(serverURL: "https://\(host)", session: session)
-        return ReplyFixture(store: ChannelStore(id: "test", api: api, sendJournal: journal),
-                            host: host, session: session)
-    }
-
-    private final class MobileReplyProtocol: URLProtocol, @unchecked Sendable {
-        static let posts = Mutex<[String: [ReplyPost]]>([:])
-
-        override class func canInit(with request: URLRequest) -> Bool { true }
-        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-        override func startLoading() {
-            do {
-                let url = try #require(request.url)
-                let host = try #require(url.host)
-                #expect(request.httpMethod == "POST")
-                #expect(url.path == "/api/v1/channels/test/messages",
-                        "A native Reply posts without opening a stream or requiring a snapshot")
-                let payload = try JSONDecoder().decode(ReplyPost.self, from: body())
-                #expect(UUID(uuidString: payload.id) != nil)
-                Self.posts.withLock { $0[host, default: []].append(payload) }
-                let outcome = try #require(ReplyResponse(rawValue: String(host.prefix(while: { $0 != "-" }))))
-                if outcome == .unconfirmed {
-                    client?.urlProtocol(self, didFailWithError: URLError(.timedOut))
-                    return
-                }
-                let status: Int
-                let data: Data
-                switch outcome {
-                case .sent:
-                    status = 200
-                    let message = ChannelMessage(
-                        id: payload.id, sequence: 42, timestamp: "2026-10-27T00:00:00Z",
-                        sender: .user, content: .text(payload.content))
-                    data = try JSONEncoder().encode(Response(version: 1, message: message))
-                case .rejected:
-                    status = 422
-                    data = Data(#"{"error":"Reply rejected"}"#.utf8)
-                case .deleted:
-                    status = 404
-                    data = Data(#"{"error":"Channel deleted"}"#.utf8)
-                case .duplicate:
-                    status = 409
-                    data = Data(#"{"error":"Message already accepted"}"#.utf8)
-                case .unconfirmed:
-                    throw ChannelAPIError.invalidResponse
-                }
-                let response = try #require(HTTPURLResponse(
-                    url: url, statusCode: status, httpVersion: nil,
-                    headerFields: ["Content-Type": "application/json"]))
-                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-                client?.urlProtocol(self, didLoad: data)
-                client?.urlProtocolDidFinishLoading(self)
-            } catch {
-                Issue.record(error)
-                client?.urlProtocol(self, didFailWithError: error)
-            }
-        }
-
-        override func stopLoading() {}
-
-        private func body() throws -> Data {
-            if let data = request.httpBody { return data }
-            let stream = try #require(request.httpBodyStream)
-            stream.open()
-            defer { stream.close() }
-            var data = Data()
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while true {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                guard count >= 0 else { throw stream.streamError ?? ChannelAPIError.invalidResponse }
-                if count == 0 { return data }
-                data.append(contentsOf: buffer.prefix(count))
-            }
-        }
-
-        private struct Response: Encodable {
-            let version: Int
-            let message: ChannelMessage
-        }
     }
 
     private func dictatingSession(
-        _ recognizer: MobileTestRecognizer, probe: MobileDictationProbe = .init(),
-        allowsFinalizedPost: Bool = false
+        _ recognizer: MobileTestRecognizer, probe: MobileDictationProbe = .init(), outbox: ChannelOutbox? = nil
     ) throws -> (ComposerSession, MobileDictationTarget) {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [MobileDictationProtocol.self]
-        let host = allowsFinalizedPost ? "finalized-dictation.test" : "no-dictation-post.test"
-        let api = try ChannelAPI(serverURL: "https://\(host)", session: URLSession(configuration: configuration))
-        let store = ChannelStore(id: "test", api: api, sendJournal: nil)
+        // Without a catalog the outbox only saves, so nothing here posts.
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "https://dictation.test"))
+        store.outbox = outbox
         _ = try store.apply(.init(type: "snapshot", state: .init(
             revision: 1,
             channel: .init(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
@@ -1227,6 +980,10 @@ struct ComposerTests {
         )
         system.refreshNotifications = []
         return system
+    }
+
+    private func scratchFolder() -> URL {
+        FileManager.default.temporaryDirectory.appending(path: "tbm-dictation-\(UUID())", directoryHint: .isDirectory)
     }
 
     @Test func aFailedRequestRevealRetainsItsQuestionThroughRetryUntilSettledSuccess() {
@@ -1356,54 +1113,6 @@ struct ComposerTests {
             isCancelled = true
             finishContinuation?.resume(throwing: CancellationError())
             finishContinuation = nil
-        }
-    }
-
-    private final class MobileDictationProtocol: URLProtocol, @unchecked Sendable {
-        override class func canInit(with request: URLRequest) -> Bool { true }
-        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-        override func startLoading() {
-            do {
-                #expect(request.url?.host == "finalized-dictation.test", "Unconfirmed dictation must not post")
-                #expect(request.httpMethod == "POST")
-                let payload = try JSONDecoder().decode(Payload.self, from: body())
-                #expect(payload.content == "Final words.", "The POST contains finalized words, never the tentative display")
-                #expect(UUID(uuidString: payload.id) != nil)
-                let url = try #require(request.url)
-                let response = try #require(HTTPURLResponse(
-                    url: url, statusCode: 422, httpVersion: nil,
-                    headerFields: ["Content-Type": "application/json"]
-                ))
-                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-                client?.urlProtocol(self, didLoad: Data(#"{"error":"Rejected after finalization"}"#.utf8))
-                client?.urlProtocolDidFinishLoading(self)
-            } catch {
-                Issue.record(error)
-                client?.urlProtocol(self, didFailWithError: error)
-            }
-        }
-
-        override func stopLoading() {}
-
-        private func body() throws -> Data {
-            if let body = request.httpBody { return body }
-            let stream = try #require(request.httpBodyStream)
-            stream.open()
-            defer { stream.close() }
-            var data = Data()
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while true {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                guard count >= 0 else { throw stream.streamError ?? ChannelAPIError.invalidResponse }
-                if count == 0 { return data }
-                data.append(contentsOf: buffer.prefix(count))
-            }
-        }
-
-        private struct Payload: Decodable {
-            let id: String
-            let content: String
         }
     }
 

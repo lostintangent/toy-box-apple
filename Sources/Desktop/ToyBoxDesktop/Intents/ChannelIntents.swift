@@ -5,19 +5,27 @@ import ChannelIntelligence
 import ChannelKit
 import Foundation
 
-/// What Siri and Shortcuts use from the running app: its server, the channel stores its windows
-/// share, and the route a notification takes to open a channel. Intents read the catalog fresh,
-/// send through a channel's outbox, and never mark anything read.
+/// What Siri and Shortcuts use from the running app: its server, its loaded catalog, the channel
+/// stores its windows share, its outbox, and the route a notification takes to open a channel.
+/// Intents name channels from the loaded catalog and save what they send to the outbox. Reading
+/// never marks anything read.
 @MainActor
 final class ChannelIntents {
     struct Host {
         var api: @MainActor () -> ChannelAPI?
+        /// The current server's channels once its catalog has loaded, kept through a lost connection.
+        /// Nil until then, and throws when the catalog can't load.
+        var channels: @MainActor () throws -> [Channel]?
         var store: @MainActor (String) -> ChannelStore?
-        /// Keeps a store connected while an intent uses it, shared with any window showing it.
+        /// Keeps a store connected while Catch Me Up reads it, shared with any window showing it.
         var hold: @MainActor (ChannelStore) -> Void
         var release: @MainActor (ChannelStore) -> Void
+        /// Saves a message to the app's outbox, which shows it in its channel and delivers it.
+        var send: @MainActor (Outgoing) async -> Void
         var open: @MainActor (String) -> Void
         var requests: @MainActor () async throws -> [WaitingRequestEntry] = { [] }
+        /// Whether a channel's request is still waiting for you, by the app's waiting rule.
+        var isWaiting: @MainActor (_ channelID: String, _ request: Int) -> Bool = { _, _ in true }
         var revealRequest: @MainActor (String, Int) -> Void = { _, _ in }
         /// The channel or artifact in the frontmost window, which is all Siri may read.
         var onScreen: @MainActor () -> OnScreen? = { nil }
@@ -85,8 +93,14 @@ final class ChannelIntents {
         }
     }
 
-    /// Requests answered from a card while the app runs, by channel.
-    private var replies: [String: Set<Int>] = [:]
+    /// A message an intent hands to the outbox.
+    struct Outgoing: Equatable, Sendable {
+        let text: String
+        let channelID: String
+        let server: URL
+        /// The request it answers.
+        let request: Int?
+    }
 
     /// Spotlight's channels, kept only for the server saved in Settings.
     private(set) var spotlight: ChannelSpotlight?
@@ -105,14 +119,20 @@ final class ChannelIntents {
 
     // MARK: Channels
 
-    func catalog() async throws -> ChannelCatalog {
-        guard let api = host.api() else { throw ChannelIntentError.noServer }
-        do { return try await api.catalog() }
-        catch { throw ChannelIntentError.unreachable }
+    /// The loaded catalog's channels. Right after launch they wait for the first catalog, and after
+    /// that they stay through a lost connection, so Siri can still save a message to send.
+    func channels() async throws -> [Channel] {
+        guard host.api() != nil else { throw ChannelIntentError.noServer }
+        let deadline = ContinuousClock.now + connectionTimeout
+        while true {
+            if let channels = try host.channels() { return channels }
+            guard ContinuousClock.now < deadline else { throw ChannelIntentError.unreachable }
+            try await Task.sleep(for: .milliseconds(50))
+        }
     }
 
     func entities() async throws -> [ChannelEntity] {
-        let channels = try await catalog().channels
+        let channels = try await channels()
         let shown = shownChannel()
         return channels.map { channel in
             ChannelEntity(channel, content: shown?.id == channel.id ? shown?.content ?? "" : "")
@@ -144,7 +164,7 @@ final class ChannelIntents {
     }
 
     func channel(_ id: String) async throws -> Channel {
-        guard let channel = try await catalog().channels.first(where: { $0.id == id }) else {
+        guard let channel = try await channels().first(where: { $0.id == id }) else {
             throw ChannelIntentError.channelNotFound
         }
         return channel
@@ -195,56 +215,45 @@ final class ChannelIntents {
 
     /// The entity can outlive its request. Validate before and after confirmation, including the
     /// server and requester, so a stale Spotlight action never answers a replacement question.
-    func replyToRequest(_ request: WaitingRequestEntry, message: String, id: String,
+    func replyToRequest(_ request: WaitingRequestEntry, message: String,
                         confirm: @Sendable (SendConfirmation) async throws -> Void) async throws {
         let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw ChannelIntentError.emptyMessage }
-        try requireServer(request)
-        try await connected(request.link.channelID) { store in
-            let requester = try requireWaiting(request, in: store)
-            let name = store.state?.channel.name ?? request.channelName
-            if let attempt = store.sendAttempts.first(where: { $0.id == id }) {
-                switch attempt.phase {
-                case .confirmed: return
-                case .notSent: throw ChannelIntentError.waitingToSend(name)
-                case .sending, .deliveryNotConfirmed: throw ChannelIntentError.notConfirmed(name)
-                }
-            }
-            let prompt = SendConfirmation(channel: name, message: text, recipient: requester.name)
-            if let confirmationOverride { try await confirmationOverride(prompt) } else { try await confirm(prompt) }
-            try requireServer(request)
-            guard try requireWaiting(request, in: store).name == requester.name else {
-                throw ChannelIntentError.requestNotWaiting
-            }
-            let content = "@\(requester.handle) \(text)"
-            try await post(content, id: id, channelName: name, store: store)
-            replies[request.link.channelID, default: []].insert(request.link.sequence)
+        let server = try requireServer(request)
+        let waiting = try await requireWaiting(request)
+        let prompt = SendConfirmation(channel: waiting.channelName, message: text, recipient: waiting.agent.name)
+        if let confirmationOverride { try await confirmationOverride(prompt) } else { try await confirm(prompt) }
+        guard try requireServer(request) == server, try await requireWaiting(request).agent.name == waiting.agent.name else {
+            throw ChannelIntentError.requestNotWaiting
         }
+        await host.send(.init(text: "@\(waiting.agent.handle) \(text)", channelID: request.link.channelID,
+                              server: server, request: request.link.sequence))
     }
 
-    private func requireServer(_ request: WaitingRequestEntry) throws {
+    @discardableResult
+    private func requireServer(_ request: WaitingRequestEntry) throws -> URL {
         guard let api = host.api() else { throw ChannelIntentError.noServer }
         guard ChannelWaitingRequest.normalizedServer(api.baseURL.absoluteString) == request.link.serverURL else {
             throw ChannelIntentError.differentServer
         }
+        return api.baseURL
     }
 
-    private func requireWaiting(_ request: WaitingRequestEntry, in store: ChannelStore) throws -> ChannelAgent {
-        guard let state = store.state, state.channel.requestSequence == request.link.sequence,
-              let message = state.request?.sequence == request.link.sequence ? state.request
-                : state.messages.first(where: { $0.sequence == request.link.sequence }),
-              message.sender.type == "agent", message.sender.agentId == request.agent.id,
-              let requester = ([state.lead] + state.members).first(where: { $0.id == request.agent.id }) else {
+    /// The request as the app has it now, still waiting and asked by the same agent, whose current
+    /// name the reply mentions.
+    private func requireWaiting(_ request: WaitingRequestEntry) async throws -> WaitingRequestEntry {
+        guard let current = try await host.requests().first(where: { $0.id == request.id }),
+              current.agent.id == request.agent.id else {
             throw ChannelIntentError.requestNotWaiting
         }
-        return requester
+        return current
     }
 
     // MARK: Catch Me Up
 
     /// One channel's catch-up, or a line for each channel that needs you when none is named.
     func catchUp(channelID: String?) async throws -> CatchUpAnswer.Answer {
-        let channels = try await catalog().channels
+        let channels = try await channels()
         if let channelID {
             guard let channel = channels.first(where: { $0.id == channelID }) else {
                 throw ChannelIntentError.channelNotFound
@@ -290,51 +299,30 @@ final class ChannelIntents {
 
     // MARK: Send Message
 
-    /// Confirms, then makes one attempt through the channel's outbox under a caller-owned ID. A
-    /// failed attempt waits in the channel for Send Again. A reply mentions its recipient first, as
-    /// the composer's Reply does. Returns the channel's name.
-    func send(_ text: String, id: String = UUID().uuidString, to channelID: String, recipient: String? = nil,
+    /// Confirms, then saves the message to the app's outbox, which shows it in the channel at once
+    /// and delivers it once the server can take it. A reply mentions its recipient first, as the
+    /// composer's Reply does, and answers `request` when the card names one. Returns the channel's
+    /// name.
+    @discardableResult
+    func send(_ text: String, to channelID: String, recipient: String? = nil, answering request: Int? = nil,
               confirm: @Sendable (SendConfirmation) async throws -> Void) async throws -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ChannelIntentError.emptyMessage }
         let channel = try await channel(channelID)
+        guard let server = host.api()?.baseURL else { throw ChannelIntentError.noServer }
         let prompt = SendConfirmation(channel: channel.name, message: trimmed, recipient: recipient)
         if let confirmationOverride { try await confirmationOverride(prompt) } else { try await confirm(prompt) }
         let content = recipient.map { "@\(ChannelAgent.handle(forName: $0)) \(trimmed)" } ?? trimmed
-        return try await connected(channelID) { store in
-            try await post(content, id: id, channelName: channel.name, store: store)
-            return channel.name
-        }
+        await host.send(.init(text: content, channelID: channelID, server: server, request: request))
+        return channel.name
     }
 
-    private func post(_ content: String, id: String, channelName: String, store: ChannelStore) async throws {
-        do { try await store.post(id: id, content: content) }
-        catch {
-            if store.phase == .deleted { throw ChannelIntentError.channelDeleted(channelName) }
-            switch store.sendAttempts.first(where: { $0.id == id })?.phase {
-            case .deliveryNotConfirmed: throw ChannelIntentError.notConfirmed(channelName)
-            case .notSent: throw ChannelIntentError.waitingToSend(channelName)
-            default: throw ChannelIntentError.notSent(channelName)
-            }
-        }
-    }
-
-    /// Sends a card's reply, then remembers the request it answers so the card shows it as Replied.
-    @discardableResult
-    func reply(_ text: String, id: String = UUID().uuidString, to channelID: String, recipient: String?,
-               request: Int?, confirm: @Sendable (SendConfirmation) async throws -> Void) async throws -> String {
-        let name = try await send(text, id: id, to: channelID, recipient: recipient, confirm: confirm)
-        if let request { replies[channelID, default: []].insert(request) }
-        return name
-    }
-
-    /// The card with its request marked Replied once you've answered it, here or in a window that
-    /// has the channel open. It never connects a channel.
+    /// The card with its request marked Replied once it's no longer waiting, which includes an
+    /// answer still sending. It never connects a channel.
     func withReplies(_ card: CatchUpCard) -> CatchUpCard {
         guard let channelID = card.channelID, let request = card.reply?.request else { return card }
         var card = card
-        card.isReplied = replies[channelID]?.contains(request) == true
-            || host.store(channelID)?.state.map { ChannelWaitingRequest.isReplied(request, in: $0.messages) } == true
+        card.isReplied = !host.isWaiting(channelID, request)
         return card
     }
 
@@ -357,14 +345,24 @@ final class ChannelIntents {
 }
 
 extension ChannelIntents {
-    /// The app's intents. Their stores are the ones its windows show, so a send appears in an open
-    /// channel at once and a failed one waits there for Send Again.
+    /// The app's intents, which share its catalog, stores and outbox with its windows, so a send
+    /// appears in its channel at once and a failed one waits there for Send Again.
     convenience init(model: AppModel) {
         self.init(host: Host(
             api: { model.api },
+            channels: {
+                guard let catalog = model.catalog else { throw ChannelIntentError.noServer }
+                if catalog.isLoaded { return catalog.channels }
+                if catalog.phase.failure != nil { throw ChannelIntentError.unreachable }
+                return nil
+            },
             store: { model.catalog?.channel(id: $0) },
             hold: { model.hold($0) },
             release: { model.release($0) },
+            send: { message in
+                await model.outbox.send(message.text, to: message.channelID, on: message.server,
+                                        answering: message.request)
+            },
             open: { id in
                 NSApplication.shared.activate()
                 model.navigationRequest = .init(channelID: id, sequence: nil)
@@ -373,9 +371,12 @@ extension ChannelIntents {
             requests: {
                 try await Self.resolveWaitingRequests {
                     guard let catalog = model.catalog else { throw ChannelIntentError.noServer }
-                    guard catalog.phase.message == nil else { throw ChannelIntentError.unreachable }
+                    guard catalog.isLoaded || catalog.phase.failure == nil else { throw ChannelIntentError.unreachable }
                     return (model.serverURL, catalog.isLoaded, model.menuBarStatus.waiting)
                 }
+            },
+            isWaiting: { channelID, request in
+                model.menuBarStatus.waiting.contains { $0.id == channelID && $0.sequence == request }
             },
             revealRequest: { model.activate(channelID: $0, sequence: $1) },
             onScreen: { model.onScreen }
@@ -420,11 +421,7 @@ enum ChannelIntentError: Error, Equatable, CustomLocalizedStringResourceConverti
     case noServer
     case unreachable
     case channelNotFound
-    case channelDeleted(String)
     case emptyMessage
-    case notSent(String)
-    case waitingToSend(String)
-    case notConfirmed(String)
     case requestNotWaiting
     case differentServer
 
@@ -433,11 +430,7 @@ enum ChannelIntentError: Error, Equatable, CustomLocalizedStringResourceConverti
         case .noServer: "Toy Box isn't connected to a server. Choose one in Settings."
         case .unreachable: "Can't connect to your Toy Box server. Check that it's running, then try again."
         case .channelNotFound: "That channel isn't on your Toy Box server anymore."
-        case .channelDeleted(let name): "\(name) was deleted, so your message wasn't sent."
         case .emptyMessage: "There's nothing to send."
-        case .notSent(let name): "Your message to \(name) wasn't sent. Try again in a moment."
-        case .waitingToSend(let name): "Your message to \(name) wasn't sent. It's waiting in the channel so you can send it again."
-        case .notConfirmed(let name): "Your Toy Box server didn't confirm your message to \(name). Open the channel to see if it arrived before you send it again."
         case .requestNotWaiting: "That request is no longer waiting for your reply. Open the channel to see what's new."
         case .differentServer: "That request belongs to another Toy Box server. Switch servers in Settings to open or answer it."
         }

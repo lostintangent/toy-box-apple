@@ -91,7 +91,7 @@ struct BookmarkTests {
             guard request.url?.path.hasSuffix("/messages") == true else { return MockResponse(status: 204) }
             return try .json(ChannelHistoryPage(version: 1, revision: 10, messages: (1...4).map { testMessage($0) }))
         }
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try mock.api())
         var state = testState(revision: 10, messages: [testMessage(5), testMessage(6, text: "Newest")])
         state.bookmarks = [2, 6]
         _ = try store.apply(.init(type: "snapshot", state: state))
@@ -107,7 +107,7 @@ struct BookmarkTests {
 
     /// A store connected to a channel with messages 1 to 3, as if its stream had just opened.
     private func connectedStore(_ mock: MockTransport, bookmarks: [Int]?) throws -> ChannelStore {
-        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        let store = ChannelStore(id: "test", api: try mock.api())
         var state = testState(revision: 10, messages: [testMessage(1), testMessage(2), testMessage(3)])
         state.bookmarks = bookmarks
         _ = try store.apply(.init(type: "snapshot", state: state))

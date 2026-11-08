@@ -11,17 +11,24 @@ public struct TranscriptRequestChoices: Equatable, Sendable {
     /// Sending needs a connected channel, so the choices wait for it like the composer does.
     public let canSend: Bool
 
-    public init?(request: ChannelMessage?, attempts: [ChannelSendAttempt], isConnected: Bool) {
+    public init?(request: ChannelMessage?, isConnected: Bool) {
         guard let request else { return nil }
-        self.init(sequence: request.sequence, labels: request.suggestedReplies, attempts: attempts,
-                  isConnected: isConnected)
+        self.init(sequence: request.sequence, labels: request.suggestedReplies, isConnected: isConnected)
     }
 
-    /// None without labels, or once the outbox holds one of them in any phase. That answer leaves for
-    /// good: a failed send keeps Send Again in the outbox, so the choices don't come back with it. A
-    /// committed answer makes the transcript's request acknowledged instead.
-    public init?(sequence: Int, labels: [String], attempts: [ChannelSendAttempt], isConnected: Bool) {
-        guard !labels.isEmpty, !attempts.contains(where: { labels.contains($0.content) }) else { return nil }
+    /// A channel's own choices: none while the outbox holds any answer to the request, Sending or Not
+    /// sent, since a Not sent answer sits right below with Retry. Elsewhere a Not sent answer brings
+    /// the request back, through `ChannelWaitingRequests`. A committed answer makes the transcript's
+    /// request acknowledged instead.
+    @MainActor
+    public init?(request: ChannelMessage?, store: ChannelStore, isConnected: Bool) {
+        guard let request, !store.sending.contains(where: { $0.request == request.sequence }) else { return nil }
+        self.init(request: request, isConnected: isConnected)
+    }
+
+    /// None without labels.
+    public init?(sequence: Int, labels: [String], isConnected: Bool) {
+        guard !labels.isEmpty else { return nil }
         self.sequence = sequence
         self.labels = labels
         canSend = isConnected
@@ -34,23 +41,25 @@ public struct TranscriptRequestChoices: Equatable, Sendable {
 }
 
 extension ChannelWaitingRequests.Entry {
-    /// The choices a Needs You card offers, which leave for good once the outbox holds one.
-    public func choices(attempts: [ChannelSendAttempt], isConnected: Bool) -> TranscriptRequestChoices? {
+    /// The choices a Needs You card offers.
+    public func choices(isConnected: Bool) -> TranscriptRequestChoices? {
         TranscriptRequestChoices(sequence: sequence, labels: request?.message.suggestedReplies ?? [],
-                                 attempts: attempts, isConnected: isConnected)
+                                 isConnected: isConnected)
     }
 
     /// The choices as they were before one began sending, which the card holds until it confirms.
-    public var heldChoices: TranscriptRequestChoices? { choices(attempts: [], isConnected: true) }
+    public var heldChoices: TranscriptRequestChoices? { choices(isConnected: true) }
 }
 
 extension ChannelInteraction {
     /// Sends a suggested reply at once as the user's own message, through the outbox with a new ID,
-    /// and follows it to the latest like a composer send.
+    /// and follows it to the latest like a composer send. It answers the channel's waiting request.
     public func sendSuggestedReply(_ label: String, store: ChannelStore) {
         jumpToLatest()
+        guard let outbox = store.outbox else { return }
         Task {
-            if (try? await store.post(id: UUID().uuidString, content: label)) != nil { jumpToLatest() }
+            await outbox.send(label, to: store.id, on: store.api.baseURL)
+            jumpToLatest()
         }
     }
 }

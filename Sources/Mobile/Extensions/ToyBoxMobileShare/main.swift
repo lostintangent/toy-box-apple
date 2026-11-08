@@ -4,7 +4,7 @@ import SwiftUI
 import ToyBoxMobileIntegrations
 import UIKit
 
-/// The share sheet's window. It posts by itself, since an iOS share extension can't open its app.
+/// The share sheet's window. It hands its message to iOS, since an iOS share extension can't open its app.
 @objc(ToyBoxMobileShareViewController)
 final class ShareViewController: UIViewController, UIAdaptivePresentationControllerDelegate {
     private var session: MobileShareSession?

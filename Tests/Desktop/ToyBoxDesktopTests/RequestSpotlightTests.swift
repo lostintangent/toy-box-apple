@@ -3,7 +3,6 @@ import AppKit
 @testable import ChannelClient
 import ChannelKit
 import Foundation
-import Synchronization
 import Testing
 @testable import ToyBoxDesktop
 
@@ -153,101 +152,71 @@ struct RequestSpotlightTests {
         #expect(fixture.opened == ["studio:8"])
     }
 
-    @Test func replyConfirmsOncePostsOneCallerOwnedIDAndNeverOpensAWindow() async throws {
+    @Test func replyConfirmsOnceThenSavesOneMentionWithoutConnectingOrOpening() async throws {
         let fixture = try RequestIntentFixture(entry: entry())
-        try await fixture.context.replyToRequest(fixture.entry, message: "  Ship it. \n", id: "owned-id") { _ in }
-        let posts = RequestPostProtocol.posts.withLock { $0 }
-        #expect(posts == [.init(id: "owned-id", content: "@lead Ship it.")])
+        try await fixture.context.replyToRequest(fixture.entry, message: "  Ship it. \n") { _ in }
+        let server = try #require(URL(string: "https://server.test"))
+        #expect(fixture.sent == [.init(text: "@lead Ship it.", channelID: "studio", server: server, request: 8)])
         #expect(fixture.confirmations == [.init(channel: "Studio", message: "Ship it.", recipient: "Lead")])
-        #expect(fixture.opened.isEmpty && fixture.held == 1 && fixture.released == 1)
-        #expect(fixture.store.sendAttempts.isEmpty)
-        #expect(fixture.store.messages.contains { $0.id == "owned-id" && $0.sender == .user })
+        #expect(fixture.opened.isEmpty)
     }
 
     @Test func replyRechecksTheRequestAndServerAfterConfirmation() async throws {
         let fixture = try RequestIntentFixture(entry: entry())
-        fixture.onConfirm = {
-            var state = try #require(fixture.store.state)
-            state.channel.requestSequence = 9
-            _ = try fixture.store.apply(.init(type: "snapshot", state: state))
-        }
+        let replacement = try entry(sequence: 9)
+        fixture.onConfirm = { fixture.entries = [replacement] }
         await #expect(throws: ChannelIntentError.requestNotWaiting) {
-            try await fixture.context.replyToRequest(fixture.entry, message: "Hi", id: "changed") { _ in }
+            try await fixture.context.replyToRequest(fixture.entry, message: "Hi") { _ in }
         }
-        #expect(RequestPostProtocol.posts.withLock { $0 }.isEmpty)
+        fixture.entries = [fixture.entry]
         fixture.onConfirm = { fixture.api = try ChannelAPI(serverURL: "https://other.test") }
-        var state = try #require(fixture.store.state)
-        state.channel.requestSequence = 8
-        _ = try fixture.store.apply(.init(type: "snapshot", state: state))
         await #expect(throws: ChannelIntentError.differentServer) {
-            try await fixture.context.replyToRequest(fixture.entry, message: "Hi", id: "server") { _ in }
+            try await fixture.context.replyToRequest(fixture.entry, message: "Hi") { _ in }
         }
-        #expect(RequestPostProtocol.posts.withLock { $0 }.isEmpty)
+        #expect(fixture.sent.isEmpty)
     }
 
-    @Test func declinedStaleAndEmptyRepliesNeverPost() async throws {
+    @Test func declinedStaleAndEmptyRepliesNeverSave() async throws {
         let fixture = try RequestIntentFixture(entry: entry())
         fixture.onConfirm = { throw CancellationError() }
         await #expect(throws: CancellationError.self) {
-            try await fixture.context.replyToRequest(fixture.entry, message: "Hi", id: "declined") { _ in }
+            try await fixture.context.replyToRequest(fixture.entry, message: "Hi") { _ in }
         }
         await #expect(throws: ChannelIntentError.emptyMessage) {
-            try await fixture.context.replyToRequest(fixture.entry, message: " \n ", id: "empty") { _ in }
+            try await fixture.context.replyToRequest(fixture.entry, message: " \n ") { _ in }
         }
-        var state = try #require(fixture.store.state)
-        state.channel.requestSequence = nil
-        _ = try fixture.store.apply(.init(type: "snapshot", state: state))
+        fixture.entries = []
         await #expect(throws: ChannelIntentError.requestNotWaiting) {
-            try await fixture.context.replyToRequest(fixture.entry, message: "Hi", id: "stale") { _ in }
+            try await fixture.context.replyToRequest(fixture.entry, message: "Hi") { _ in }
         }
-        #expect(fixture.confirmations.count == 1 && RequestPostProtocol.posts.withLock { $0 }.isEmpty)
+        #expect(fixture.confirmations.count == 1 && fixture.sent.isEmpty)
     }
 
-    @Test func replyUsesTheCurrentCanonicalRequesterAndRejectsRenameDuringConfirmation() async throws {
+    @Test func replyUsesTheCurrentRequesterAndRejectsRenameDuringConfirmation() async throws {
         let fixture = try RequestIntentFixture(entry: entry())
-        var state = try #require(fixture.store.state)
-        state.lead.name = "Design Lead"
-        _ = try fixture.store.apply(.init(type: "snapshot", state: state))
-        fixture.onConfirm = {
-            var updated = try #require(fixture.store.state)
-            updated.lead.name = "New Name"
-            _ = try fixture.store.apply(.init(type: "snapshot", state: updated))
-        }
+        fixture.entries = [try entry(agentName: "Design Lead")]
+        let renamed = try entry(agentName: "New Name")
+        fixture.onConfirm = { fixture.entries = [renamed] }
         await #expect(throws: ChannelIntentError.requestNotWaiting) {
-            try await fixture.context.replyToRequest(fixture.entry, message: "Hi", id: "renamed") { _ in }
+            try await fixture.context.replyToRequest(fixture.entry, message: "Hi") { _ in }
         }
         #expect(fixture.confirmations.first?.recipient == "Design Lead")
-        #expect(RequestPostProtocol.posts.withLock { $0 }.isEmpty)
+        #expect(fixture.sent.isEmpty)
         fixture.onConfirm = {}
-        try await fixture.context.replyToRequest(fixture.entry, message: "Hello", id: "current") { _ in }
-        #expect(RequestPostProtocol.posts.withLock { $0.last?.content } == "@new-name Hello")
+        try await fixture.context.replyToRequest(fixture.entry, message: "Hello") { _ in }
+        #expect(fixture.sent.map(\.text) == ["@new-name Hello"])
     }
 
-    @Test(arguments: [422, 503])
-    func failedRepliesStayInTheOutboxWithoutAnAutomaticSecondAttempt(status: Int) async throws {
-        let fixture = try RequestIntentFixture(entry: entry())
-        RequestPostProtocol.status.withLock { $0 = status }
-        let expected: ChannelIntentError = status == 422 ? .waitingToSend("Studio") : .notConfirmed("Studio")
-        for _ in 0..<2 {
-            await #expect(throws: expected) {
-                try await fixture.context.replyToRequest(fixture.entry, message: "Hi", id: "same-id") { _ in }
-            }
-        }
-        #expect(RequestPostProtocol.posts.withLock { $0.count } == 1)
-        #expect(fixture.store.sendAttempts.first?.id == "same-id")
-        #expect(fixture.store.sendAttempts.first?.phase == (status == 422 ? .notSent : .deliveryNotConfirmed))
-        #expect(fixture.confirmations.count == 1 && fixture.opened.isEmpty)
-    }
-
-    private func item(sequence: Int = 8) -> MenuBarStatus.Item {
+    private func item(sequence: Int = 8, agentName: String = "Lead") -> MenuBarStatus.Item {
         .init(id: "studio", name: "Studio", subtitle: "Lead needs your reply",
-              agent: .init(id: "lead", name: "Lead",
+              agent: .init(id: "lead", name: agentName,
                            avatar: .init(mark: "M4 4L20 20M4 20L20 4", color: "#0891b2")),
               sequence: sequence, quote: "Should we ship the caf\u{00e9} layout?", requestedAt: .distantPast)
     }
 
-    private func entry(server: String = "https://server.test", sequence: Int = 8) throws -> WaitingRequestEntry {
-        try #require(WaitingRequestEntry(item: item(sequence: sequence), serverURL: server))
+    private func entry(server: String = "https://server.test", sequence: Int = 8,
+                       agentName: String = "Lead") throws -> WaitingRequestEntry {
+        try #require(WaitingRequestEntry(item: item(sequence: sequence, agentName: agentName), serverURL: server))
     }
 }
 
@@ -273,18 +242,19 @@ private final class FakeRequestIndex {
 @MainActor
 private final class RequestIntentFixture {
     var api: ChannelAPI?
-    let store: ChannelStore
     let entry: WaitingRequestEntry
     var entries: [WaitingRequestEntry]
     var opened: [String] = []
-    var held = 0
-    var released = 0
+    var sent: [ChannelIntents.Outgoing] = []
     var confirmations: [ChannelIntents.SendConfirmation] = []
     var onConfirm: () throws -> Void = {}
     lazy var context: ChannelIntents = {
         let context = ChannelIntents(host: .init(
-            api: { self.api }, store: { _ in self.store },
-            hold: { _ in self.held += 1 }, release: { _ in self.released += 1 },
+            api: { self.api },
+            channels: { Issue.record("A reply reads the waiting request, not the channel list"); return nil },
+            store: { _ in Issue.record("A reply never connects its channel"); return nil },
+            hold: { _ in }, release: { _ in },
+            send: { self.sent.append($0) },
             open: { _ in Issue.record("Reply must not open a window") },
             requests: { self.entries }, revealRequest: { self.opened.append("\($0):\($1)") }
         ))
@@ -298,66 +268,6 @@ private final class RequestIntentFixture {
     init(entry: WaitingRequestEntry) throws {
         self.entry = entry
         entries = [entry]
-        RequestPostProtocol.posts.withLock { $0 = [] }
-        RequestPostProtocol.status.withLock { $0 = 201 }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [RequestPostProtocol.self]
-        let api = try ChannelAPI(serverURL: entry.link.serverURL, session: URLSession(configuration: configuration))
-        self.api = api
-        store = ChannelStore(id: entry.link.channelID, api: api, sendJournal: nil)
-        let request = ChannelMessage(id: "request", sequence: entry.link.sequence, timestamp: "2026-10-24T12:00:00Z",
-                                     sender: .agent(entry.agent.id), content: .text(entry.question), request: true)
-        let channel = Channel(id: entry.link.channelID, name: entry.channelName,
-                              model: .init(provider: "test", name: "test"), latestSequence: entry.link.sequence,
-                              requestSequence: entry.link.sequence, updatedAt: request.timestamp)
-        _ = try store.apply(.init(type: "snapshot", state: .init(revision: 1, channel: channel, lead: entry.agent,
-                                                                messages: [request], request: request)))
+        api = try ChannelAPI(serverURL: entry.link.serverURL)
     }
-}
-
-private final class RequestPostProtocol: URLProtocol, @unchecked Sendable {
-    struct Posted: Codable, Sendable, Equatable { let id: String; let content: String }
-    private struct Envelope: Encodable { let version = 1; let message: ChannelMessage }
-    static let posts = Mutex<[Posted]>([])
-    static let status = Mutex(201)
-
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        do {
-            #expect(request.httpMethod == "POST")
-            let url = try #require(request.url)
-            let data: Data
-            if let body = request.httpBody { data = body }
-            else {
-                let stream = try #require(request.httpBodyStream)
-                stream.open()
-                defer { stream.close() }
-                var body = Data()
-                var buffer = [UInt8](repeating: 0, count: 4096)
-                while stream.hasBytesAvailable {
-                    let count = stream.read(&buffer, maxLength: buffer.count)
-                    guard count >= 0 else { throw ChannelAPIError.invalidResponse }
-                    if count == 0 { break }
-                    body.append(contentsOf: buffer.prefix(count))
-                }
-                data = body
-            }
-            let posted = try JSONDecoder().decode(Posted.self, from: data)
-            Self.posts.withLock { $0.append(posted) }
-            let status = Self.status.withLock { $0 }
-            let responseData = status == 201 ? try JSONEncoder().encode(Envelope(
-                message: .init(id: posted.id, sequence: 10, timestamp: "2026-10-24T12:01:00Z",
-                               sender: .user, content: .text(posted.content))
-            )) : Data(#"{"error":"Rejected"}"#.utf8)
-            let response = try #require(HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1",
-                                                        headerFields: ["Content-Type": "application/json"]))
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: responseData)
-            client?.urlProtocolDidFinishLoading(self)
-        } catch { client?.urlProtocol(self, didFailWithError: error) }
-    }
-
-    override func stopLoading() {}
 }

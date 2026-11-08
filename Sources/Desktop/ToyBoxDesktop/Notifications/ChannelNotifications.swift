@@ -7,16 +7,12 @@ import UserNotifications
 @MainActor @Observable
 final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     nonisolated static let replyAction = ChannelNotificationCategory.reply
-    nonisolated static let replyFailedCategory = ChannelNotificationCategory.replyFailed
-    /// An attempted reply that wasn't confirmed, waiting in the channel's outbox.
-    static let waitingBody = "Your reply wasn't sent. It's waiting in the channel so you can send it again."
     /// How long a request waits for its text before it's delivered without it.
     static let contentDeadline: Duration = .seconds(3)
 
     struct Activation: Equatable {
         var channel: ChannelNotification.Activation
         var serverURL: String
-        var focusComposer = false
     }
 
     private(set) var authorization: UNAuthorizationStatus = .notDetermined
@@ -24,8 +20,8 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     @ObservationIgnored var onActivate: ((Activation) -> Void)?
     /// Finds a request's message, from an open channel's state or else its history.
     @ObservationIgnored var resolveRequest: ((Channel, Int) async -> ChannelRequestMessage?)?
-    /// A channel's shared store on a server, only while it's the current one.
-    @ObservationIgnored var store: ((_ serverURL: String, _ channelID: String) -> ChannelStore?)?
+    /// Saves a reply to the outbox, which delivers it to its server now or once that's current again.
+    @ObservationIgnored var send: ((NotificationReply) async -> Void)?
     @ObservationIgnored private var policy = Policy()
     @ObservationIgnored private var current: Current?
     @ObservationIgnored private var withdrawn: Current?
@@ -198,38 +194,12 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
                      kind: ChannelPushPayload.Kind(rawValue: kind), sequence: userInfo["sequence"] as? Int ?? 0)
     }
 
-    /// Posts a reply typed into a notification without bringing the app forward. A reply that
-    /// can't be sent is never lost. One the app attempted waits in the channel under its message ID,
-    /// like the phone's, so sending it again can't post it twice. One for a deleted channel or
-    /// another server was never posted, so it becomes the channel's draft on its own server.
-    func reply(_ text: String, channelID: String, channelName: String, handle: String?, serverURL: String) async {
-        guard let addressed = ChannelNotification.Reply(text, to: handle) else { return }
-        let content = addressed.content
-        let store = store?(serverURL, channelID)
-        var outcome = NotificationReply.Outcome.failed
-        if let store { outcome = await NotificationReply(store: store).send(content) }
-        guard outcome != .sent, let server = URL(string: serverURL) else { return }
-        let body: String
-        if store != nil, outcome == .failed {
-            body = Self.waitingBody
-        } else {
-            let draft = ComposerDraft.shared(serverURL: server, channelID: channelID)
-            draft.text = addressed.appended(to: draft.text)
-            body = outcome == .deleted
-                ? ChannelNotification.Content(deletedChannel: channelName).body
-                : ChannelNotification.Content.unsentBody
-        }
-
-        let notice = UNMutableNotificationContent()
-        notice.title = channelName
-        notice.body = body
-        notice.sound = .default
-        notice.categoryIdentifier = Self.replyFailedCategory
-        notice.threadIdentifier = "\(serverURL):\(channelID)"
-        notice.userInfo = ["channelID": channelID, "channelName": channelName,
-                           "kind": Self.replyFailedCategory, "serverURL": serverURL]
-        await add(UNNotificationRequest(identifier: "\(serverURL):\(channelID):\(Self.replyFailedCategory):\(UUID().uuidString)",
-                                        content: notice, trigger: nil))
+    /// Saves a reply or choice without bringing the app forward, then clears its notification, since
+    /// the outbox owns it from there.
+    private func save(_ reply: NotificationReply, from identifier: String) async {
+        guard let send else { return }
+        await send(reply)
+        center.removeDeliveredNotifications(withIdentifiers: [identifier])
     }
 
     private func presentation(kind: String?, channelID: String?, serverURL: String?) -> UNNotificationPresentationOptions {
@@ -249,29 +219,19 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse) async {
-        let content = response.notification.request.content
-        let info = content.userInfo
+        let info = response.notification.request.content.userInfo
         guard let id = info["channelID"] as? String, let server = info["serverURL"] as? String else { return }
         let kind = info["kind"] as? String
         let sequence = info["sequence"] as? Int
-        let name = info["channelName"] as? String ?? content.title
-        let handle = info["handle"] as? String
-        switch response.actionIdentifier {
-        case Self.replyAction:
-            let text = (response as? UNTextInputNotificationResponse)?.userText ?? ""
-            await reply(text, channelID: id, channelName: name, handle: handle, serverURL: server)
-        case UNNotificationDefaultActionIdentifier:
+        if let reply = NotificationReply(action: response.actionIdentifier,
+                                         text: (response as? UNTextInputNotificationResponse)?.userText, info: info) {
+            await save(reply, from: response.notification.request.identifier)
+        } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
             let activation = Activation(
                 channel: .init(channelID: id, kind: kind.flatMap(ChannelPushPayload.Kind.init(rawValue:)),
                                sequence: sequence),
-                serverURL: server, focusComposer: kind == Self.replyFailedCategory)
+                serverURL: server)
             await MainActor.run { onActivate?(activation) }
-        default:
-            // A choice sends its label as written, like the web's answer(label), so no handle is added.
-            if let choice = SuggestedReplies(info["replies"] as? [String])
-                .label(forAction: response.actionIdentifier) {
-                await reply(choice, channelID: id, channelName: name, handle: nil, serverURL: server)
-            }
         }
     }
 

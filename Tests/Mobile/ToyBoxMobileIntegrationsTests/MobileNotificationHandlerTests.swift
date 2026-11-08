@@ -27,7 +27,7 @@ private final class FakeReplyCenter {
 
 struct MobileNotificationHandlerTests {
     @Test(arguments: [ChannelPushPayload.Kind.request, .completion])
-    @MainActor func displayReadyAlertsReturnUnchangedAndReloadWidgetsBeforeDelivery(kind: ChannelPushPayload.Kind) async throws {
+    @MainActor func displayReadyAlertsGainOnlyTheirServerAndReloadWidgetsBeforeDelivery(kind: ChannelPushPayload.Kind) async throws {
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registration = try MobilePushRegistrationStore(directory: directory)
@@ -38,7 +38,9 @@ struct MobileNotificationHandlerTests {
         let delivered = await handler.process(original)
         events.append("delivered")
         #expect(events == ["reload", "delivered"])
-        #expect(delivered === original)
+        let expected = try #require(original.mutableCopy() as? UNMutableNotificationContent)
+        expected.userInfo["serverURL"] = registration.serverURL
+        #expect(delivered.isEqual(expected))
         #expect(delivered.title == "Studio")
         #expect(delivered.body == original.body)
         #expect(delivered.threadIdentifier == "\(registration.registrationID):studio")
@@ -97,8 +99,8 @@ struct MobileNotificationHandlerTests {
         for replies in invalid {
             let original = Self.content(registration: registration, replies: replies)
             let delivered = await handler.process(original)
-            #expect(delivered === original)
             #expect(delivered.categoryIdentifier == "request")
+            #expect(delivered.userInfo["serverURL"] as? String == registration.serverURL)
         }
         #expect(center.writes == 0)
     }
@@ -113,8 +115,8 @@ struct MobileNotificationHandlerTests {
         let handler = MobileNotificationHandler(directory: directory, reloadWidgets: {},
                                                 replyCategories: center.publisher())
         let delivered = await handler.process(original)
-        #expect(delivered === original)
         #expect(delivered.categoryIdentifier == "request")
+        #expect(delivered.userInfo["serverURL"] as? String == registration.serverURL)
     }
 
     private static func directory() -> URL {

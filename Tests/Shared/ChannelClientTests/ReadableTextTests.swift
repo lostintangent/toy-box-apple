@@ -96,7 +96,7 @@ struct ReadableTextTests {
     }
 
     private func store(_ channel: Channel, messages: [ChannelMessage], request: ChannelMessage?) throws -> ChannelStore {
-        let store = ChannelStore(id: channel.id, api: try ChannelAPI(serverURL: "https://fixture.example"), sendJournal: nil)
+        let store = ChannelStore(id: channel.id, api: try ChannelAPI(serverURL: "https://fixture.example"))
         _ = try store.apply(.init(type: "snapshot", state: ChannelState(
             revision: 1, channel: channel,
             lead: .lead(id: "lead", profile: .init(name: "Lead", role: "Coordinator",

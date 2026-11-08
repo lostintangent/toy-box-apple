@@ -390,14 +390,16 @@ struct TranscriptTests {
     }
 
     @Test func onlyANewSendFollowsToTheBottom() {
-        func attempt(_ id: String, _ phase: ChannelSendPhase) -> ChannelSendAttempt {
-            ChannelSendAttempt(id: id, content: id, attachments: [], timestamp: "2026-10-25T12:00:00Z", phase: phase)
+        let ids = (old: UUID(), lost: UUID(), new: UUID())
+        func message(_ id: UUID, _ state: ChannelOutbox.State) -> ChannelOutbox.Message {
+            ChannelOutbox.Message(id: id, server: "https://example.invalid", channelID: "c", text: "Hi",
+                                  attachments: [], request: nil, sentAt: .now, state: state)
         }
-        // The restored outbox lands after the unread landing and must not move the reader.
-        #expect(!startsOwnPost(after: [], in: [attempt("old", .deliveryNotConfirmed), attempt("lost", .notSent)]))
-        #expect(startsOwnPost(after: ["old"], in: [attempt("old", .notSent), attempt("new", .sending)]))
-        // Send Again reuses its id, so it isn't a new post.
-        #expect(!startsOwnPost(after: ["old"], in: [attempt("old", .sending)]))
+        // Not sent messages kept from an earlier run must not move the reader.
+        #expect(!startsOwnPost(after: [], in: [message(ids.old, .notSent), message(ids.lost, .notSent)]))
+        #expect(startsOwnPost(after: [ids.old], in: [message(ids.old, .notSent), message(ids.new, .sending)]))
+        // Retry reuses its id, so it isn't a new post.
+        #expect(!startsOwnPost(after: [ids.old], in: [message(ids.old, .sending)]))
     }
 
     @Test func phoneFindRevealsOnlyOnNavigationAndSpeaksPartialPositionsAsProvisional() {
@@ -602,7 +604,7 @@ struct TranscriptTests {
                     UIColor(color).resolvedColor(with: traits).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
                     return TranscriptRGB(red: red, green: green, blue: blue, alpha: alpha)
                 }
-                for surface in [TranscriptSurface.agent, .pendingAgent, .user] {
+                for surface in [TranscriptSurface.agent, .pendingAgent, .user, .notSentUser] {
                     let ink = rgb(TranscriptMentionInk(surface: surface, isDark: dark, isContrastIncreased: increased)
                         .color(for: pale))
                     let background = surface.fills(isDark: dark, canvasIsBlack: true)

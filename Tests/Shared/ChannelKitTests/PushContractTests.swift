@@ -23,7 +23,6 @@ struct PushContractTests {
         #expect(ChannelNotificationCategory.request == "request")
         #expect(ChannelNotificationCategory.completion == "completion")
         #expect(ChannelNotificationCategory.reply == "reply")
-        #expect(ChannelNotificationCategory.replyFailed == "replyFailed")
         let fields: [String: Any] = ["kind": "request", "channelID": "channel", "sequence": 15, "registrationID": "device"]
         let payload = try ChannelPushPayload(userInfo: fields)
         let invalid: [(String, Any)] = [

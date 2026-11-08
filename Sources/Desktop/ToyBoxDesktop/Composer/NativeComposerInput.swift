@@ -6,20 +6,6 @@ import SwiftUI
 import ToyBoxUI
 import UniformTypeIdentifiers
 
-struct ComposerFailureFeedback: Equatable {
-    let id: String
-    let message: String
-}
-
-struct ComposerFailureAnnouncements {
-    private var announcedIDs: Set<String> = []
-
-    mutating func receive(_ feedback: ComposerFailureFeedback, isEligible: Bool) -> Bool {
-        guard isEligible else { return false }
-        return announcedIDs.insert(feedback.id).inserted
-    }
-}
-
 struct NativeComposerInput: NSViewRepresentable {
     enum AgentManagement {
         case hidden, disabled
@@ -56,7 +42,6 @@ struct NativeComposerInput: NSViewRepresentable {
     var onError: (String) -> Void
     var agentManagement: AgentManagement = .hidden
     var snapshot: WindowSnapshot? = nil
-    var failureFeedback: ComposerFailureFeedback? = nil
     var dictation: ComposerDictation? = nil
     var isEditable = true
     var minimumHeight: CGFloat = 0
@@ -133,7 +118,6 @@ struct NativeComposerInput: NSViewRepresentable {
             }
         }
         coordinator.measure()
-        coordinator.announceSendFailure()
         if input.window?.firstResponder === input { coordinator.updateCompletion() }
         if let name = snapshot?.requestedState,
            ["composer-draft", "composer-mentions", "composer-mention-keys"].contains(name),
@@ -193,7 +177,6 @@ struct NativeComposerInput: NSViewRepresentable {
         private var suppressedContext: String?
         private var lastModelText: String
         private var isApplyingModelText = false
-        private static var failureAnnouncements = ComposerFailureAnnouncements()
         fileprivate var dictationSession: DictationSession? {
             didSet { input?.isDictating = dictationSession != nil }
         }
@@ -301,17 +284,6 @@ struct NativeComposerInput: NSViewRepresentable {
             parent.text = input.string
             measure()
             updateCompletion()
-        }
-
-        func announceSendFailure() {
-            guard parent.snapshot == nil, let feedback = parent.failureFeedback,
-                  let input, let window = input.window,
-                  Self.failureAnnouncements.receive(
-                    feedback, isEligible: window.isKeyWindow && window.isVisible && !window.isMiniaturized
-                  ) else { return }
-            NSAccessibility.post(element: input, notification: .announcementRequested,
-                                 userInfo: [.announcement: feedback.message,
-                                            .priority: NSAccessibilityPriorityLevel.medium.rawValue])
         }
 
         func verifySnapshotMentionKeys() async {
@@ -734,19 +706,11 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         let center = NotificationCenter.default
-        center.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: nil)
         center.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
         if let window {
-            center.addObserver(self, selector: #selector(windowBecameKey),
-                               name: NSWindow.didBecomeKeyNotification, object: window)
             center.addObserver(self, selector: #selector(windowResignedKey),
                                name: NSWindow.didResignKeyNotification, object: window)
-            coordinator?.announceSendFailure()
         }
-    }
-
-    @objc private func windowBecameKey(_ notification: Notification) {
-        coordinator?.announceSendFailure()
     }
 
     @objc private func windowResignedKey(_ notification: Notification) {

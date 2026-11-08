@@ -18,7 +18,6 @@ struct QuickSendView: View {
     @ViewState private var heldStore: ChannelStore?
     @ViewState private var showsChooser = false
     @ViewState private var focusID = UUID()
-    @ViewState private var confirmationDismissal: Task<Void, Never>?
     @ViewState private var isDragging = false
     @ViewState private var catalogConnectingLong = false
 
@@ -75,7 +74,7 @@ struct QuickSendView: View {
             }
         }
         .onDrop(of: [UTType.fileURL, .image], isTargeted: $isDragging) { providers in
-            guard let session, !session.isReadOnly, session.confirmation == nil else { return false }
+            guard let session, session.confirmation == nil else { return false }
             return providers.map { session.draft.attachProvider($0) }.contains(true)
         }
         .environment(\.channelTextScale, textScale)
@@ -102,13 +101,10 @@ struct QuickSendView: View {
         .onChange(of: selectedID) { _, _ in holdSelectedStore(); applyIncoming() }
         .onChange(of: session.map(ObjectIdentifier.init)) { _, _ in holdSelectedStore() }
         .onChange(of: session?.draft.revision) { _, _ in trackDraft() }
-        .onChange(of: session?.isReadOnly) { _, _ in applyIncoming() }
         .onChange(of: session?.confirmation?.id) { _, _ in applyIncoming() }
         .onChange(of: incoming?.draft.isLoadingImages) { _, _ in applyIncoming() }
         .onChange(of: incoming?.draft.revision) { _, _ in applyIncoming() }
         .onChange(of: model.serverURL) { _, _ in
-            confirmationDismissal?.cancel()
-            for session in sessions.values { session.cancelOpenOnConfirmation() }
             model.quickSend.dismiss()
             endPresentation()
             sessions = [:]
@@ -141,9 +137,6 @@ struct QuickSendView: View {
         }
         if session?.isSubmitting == true {
             return "Shared content is saved and will be added after this send."
-        }
-        if session?.isReadOnly == true {
-            return "Shared content is saved. Choose another channel or Edit this message to add it."
         }
         if session?.store.phase == .deleted {
             return "Shared content is saved. Choose another channel to add it."
@@ -237,7 +230,6 @@ struct QuickSendView: View {
     }
 
     private func beginPresentation() {
-        confirmationDismissal?.cancel()
         if let api = model.api {
             if history == nil { history = .init(serverURL: api.baseURL) }
             if incoming == nil { incoming = .init(serverURL: api.baseURL) }
@@ -251,8 +243,6 @@ struct QuickSendView: View {
 
     private func receivePendingPrefill() {
         guard let api = model.api, let prefill = model.quickSend.pendingPrefill else { return }
-        confirmationDismissal?.cancel()
-        session?.cancelOpenOnConfirmation()
         if incoming?.serverURL != api.baseURL { incoming = .init(serverURL: api.baseURL) }
         incoming?.receive(prefill)
         model.quickSend.consumePrefill(id: prefill.id)
@@ -286,7 +276,6 @@ struct QuickSendView: View {
     }
 
     private func select(_ channel: Channel) {
-        confirmationDismissal?.cancel()
         model.quickSend.leaveReply()
         history?.choose(channel)
         installSession(channelID: channel.id)
@@ -309,7 +298,8 @@ struct QuickSendView: View {
                 return
             }
             replySession = AuxiliaryComposerSession(store: catalog.channel(id: target.channelID),
-                scope: .inboxReply(sequence: target.sequence), requester: requester, draft: draft)
+                scope: .inboxReply(sequence: target.sequence), requester: requester, draft: draft,
+                isConnected: isCatalogConnected)
         } else if let requester {
             replySession?.seedRequesterIfNew(requester)
         }
@@ -321,7 +311,12 @@ struct QuickSendView: View {
 
     private func installSession(channelID: String) {
         guard sessions[channelID] == nil, let catalog = model.catalog else { return }
-        sessions[channelID] = AuxiliaryComposerSession(store: catalog.channel(id: channelID), scope: .quickSend)
+        sessions[channelID] = AuxiliaryComposerSession(store: catalog.channel(id: channelID), scope: .quickSend,
+                                                       isConnected: isCatalogConnected)
+    }
+
+    private var isCatalogConnected: @MainActor () -> Bool {
+        { [weak model] in model?.catalog?.phase.failure == nil }
     }
 
     private func holdSelectedStore() {
@@ -335,42 +330,36 @@ struct QuickSendView: View {
     private func trackDraft() {
         guard model.quickSend.replyTarget == nil, let selectedID, let session else { return }
         history?.trackDraft(channelID: selectedID, name: session.store.details?.name,
-                            hasContent: session.draft.hasContent || session.draft.sendAttemptID != nil)
+                            hasContent: session.draft.hasContent)
     }
 
     private func endPresentation() {
-        confirmationDismissal?.cancel()
         showsChooser = false
         trackDraft()
         if let heldStore { model.release(heldStore) }
         heldStore = nil
     }
 
-    private func open(_ session: AuxiliaryComposerSession, sequence: Int? = nil) {
+    private func open(_ session: AuxiliaryComposerSession) {
         guard model.api?.baseURL == session.store.api.baseURL else { return }
         model.quickSend.dismiss()
-        model.activate(channelID: session.store.id, sequence: sequence)
+        model.activate(channelID: session.store.id)
     }
 
+    /// The message is saved, so the panel closes at once, or opens its channel for Command-Return.
+    /// Shared content that arrived during the save stays open in a fresh editor instead.
     private func confirmed(_ confirmation: AuxiliaryComposerSession.Confirmation,
                            session: AuxiliaryComposerSession) {
         guard model.api?.baseURL == session.store.api.baseURL else { return }
         trackDraft()
         guard model.quickSend.isPresented, self.session === session else { return }
-        if confirmation.opensChannel { open(session, sequence: confirmation.sequence); return }
-        let presentation = model.quickSend.presentationID
-        confirmationDismissal?.cancel()
-        confirmationDismissal = Task {
-            do { try await Task.sleep(for: .milliseconds(700)) }
-            catch { return }
-            guard model.quickSend.presentationID == presentation, self.session === session else { return }
-            if model.quickSend.replyTarget == nil, incoming?.hasPendingContent == true {
-                session.beginPresentation()
-                applyIncoming()
-                return
-            }
-            model.quickSend.dismiss()
+        if confirmation.opensChannel { open(session); return }
+        if model.quickSend.replyTarget == nil, incoming?.hasPendingContent == true {
+            session.beginPresentation()
+            applyIncoming()
+            return
         }
+        model.quickSend.dismiss()
     }
 }
 

@@ -151,7 +151,6 @@ private struct ChannelComposer: View {
     @ViewState private var caretRequest: NativeComposerInput.CaretRequest?
     @ViewState private var requestPreview = false
     @ViewState private var requestHoverTask: Task<Void, Never>?
-    @ViewState private var showAppendConfirmation = false
     @ViewState private var dictation = ComposerDictation()
     @ViewState private var sendsAfterDictation = false
 
@@ -162,21 +161,8 @@ private struct ChannelComposer: View {
 
     private var explainsDeletion: Bool { store.phase == .deleted }
 
-    private var isSubmitting: Bool { session.isSubmitting }
-    private var submissionError: String? { session.error }
-
     private var canSend: Bool {
         session.canSend(hasAdditionalContent: dictation.hasWords)
-    }
-
-    private var associatedAttempt: ChannelSendAttempt? {
-        session.attempt
-    }
-
-    private var failureFeedback: ComposerFailureFeedback? {
-        store.lastSendFailure.map { failure in
-            .init(id: failure.id, message: "\(failure.phase.label). \(failure.error)")
-        }
     }
 
     private var placeholder: String {
@@ -187,8 +173,7 @@ private struct ChannelComposer: View {
     }
 
     private var hasNotices: Bool {
-        draft.error != nil || store.attemptPersistenceError != nil || submissionError != nil
-            || explainsDeletion || draft.isOverLimit || dictation.notice != nil
+        draft.error != nil || explainsDeletion || draft.isOverLimit || dictation.notice != nil
     }
 
     var body: some View {
@@ -211,23 +196,6 @@ private struct ChannelComposer: View {
             if inserted > 0 { caretRequest = .init(id: UUID(), location: inserted) }
             focusRequest = UUID()
         }
-        .onChange(of: interaction.editSendAttemptRequest?.token) { _, _ in
-            guard let request = interaction.editSendAttemptRequest,
-                  let attempt = store.sendAttempts.first(where: { $0.id == request.id }) else { return }
-            dictation.commitNow()
-            if session.edit(attempt) { focusRequest = UUID() }
-            else { showAppendConfirmation = true }
-        }
-        .confirmationDialog("Keep your current draft?", isPresented: $showAppendConfirmation,
-                            titleVisibility: .visible) {
-            Button("Append Unsent Message") {
-                guard session.appendPendingEdit() else { return }
-                focusRequest = UUID()
-            }
-            Button("Cancel", role: .cancel) { session.pendingEdit = nil }
-        } message: {
-            Text(ChannelComposerSession.appendExplanation)
-        }
         .onAppear {
             adoptDraft()
             dictation.activate()
@@ -239,16 +207,11 @@ private struct ChannelComposer: View {
             requestPreview = false
             showPicker = false
             isDragging = false
-            showAppendConfirmation = false
             adoptDraft()
         }
         .onChange(of: draft.revision) { _, revision in
             registerDraft()
             dictation.draftChanged(to: revision)
-        }
-        .onChange(of: session.isConfirmed) { _, _ in session.reconcile() }
-        .onChange(of: associatedAttempt?.id) { old, new in
-            if old == nil, new != nil, isSubmitting { interaction.jumpToLatest() }
         }
         .task(id: snapshot?.requestedState) {
             switch snapshot?.requestedState {
@@ -340,12 +303,6 @@ private struct ChannelComposer: View {
                     composerError(notice.text) { dictation.dismissNotice() }
                 }
             }
-            if let error = store.attemptPersistenceError {
-                composerError(error)
-            }
-            if let error = submissionError {
-                composerError(error)
-            }
             if explainsDeletion {
                 deletionNotice
             }
@@ -388,7 +345,7 @@ private struct ChannelComposer: View {
                                         try await management.createMentionMember(name: name, store: store, catalog: app.catalog)
                                     }, edit: { agent in
                                         management.present(.editMember(channelId: store.id, agentId: agent.id))
-                                    }) : .disabled, snapshot: snapshot, failureFeedback: failureFeedback,
+                                    }) : .disabled, snapshot: snapshot,
                                     dictation: dictation)
                     .frame(height: inputHeight)
             }
@@ -551,7 +508,6 @@ private struct ChannelComposer: View {
     /// Points the window's interaction and dictation at the draft being composed.
     private func adoptDraft() {
         registerDraft()
-        session.reconcile()
         dictation.draftRevision = { [draft] in draft.revision }
     }
 

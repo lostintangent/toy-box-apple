@@ -82,7 +82,7 @@ struct ResumeReplayTests {
 
     private func store(_ mock: MockTransport) throws -> ChannelStore {
         // The grace never ends on its own, so a slow run can't report a failure mid-replay.
-        ChannelStore(id: "test", api: try mock.api(), reconnectPolicy: .init(initialDelay: 0.01), sendJournal: nil,
+        ChannelStore(id: "test", api: try mock.api(), reconnectPolicy: .init(initialDelay: 0.01),
                      sleep: { _ in try await Task.sleep(for: .seconds(3600)) })
     }
 
@@ -176,39 +176,6 @@ struct ResumeReplayTests {
         #expect(changes.counts == Dictionary(uniqueKeysWithValues: SliceChanges.everySlice.map { ($0, 1) }))
         #expect(store.state?.revision == 208)
         #expect(store.messages.count == 206)
-    }
-
-    @Test func aSendTheReplayConfirmsSettlesWhenItsMessageAppears() async throws {
-        let initial = initial
-        let id = UUID().uuidString
-        let mock = MockTransport { request, _ in
-            if request.httpMethod == "POST" { throw URLError(.networkConnectionLost) }
-            return try .stream(request.url?.query == nil ? [.init(type: "snapshot", state: initial)] : [])
-        }
-        let store = try store(mock)
-        defer { store.disconnect() }
-        store.connect()
-        try await eventually { store.phase.isConnected }
-        await #expect(throws: URLError.self) { try await store.postInBackground(id: id, content: "Ship it") }
-        #expect(store.sendAttempts.map(\.phase) == [.deliveryNotConfirmed])
-        store.disconnect()
-        try await eventually(observing: mock) { mock.pendingResponseCount == 0 }
-
-        reopen(store)
-        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
-        let sent = ChannelMessage(id: id, sequence: 2, timestamp: "2026-10-01T00:02:00Z",
-                                  sender: .user, content: .text("Ship it"))
-        #expect(mock.sendPendingBody(try MockResponse.stream([.init(type: "message", revision: 2, message: sent)]).body) == 1)
-        try await eventually { store.heldReplay?.count == 1 }
-        // The attempt stays until its message is published, so the send never disappears in between.
-        #expect(store.sendAttempts.map(\.id) == [id])
-        #expect(store.optimisticMessageIds == [id])
-
-        #expect(mock.sendPendingBody(try MockResponse.stream([resumed]).body) == 1)
-        try await eventually { store.phase.isConnected }
-        #expect(store.sendAttempts.isEmpty)
-        #expect(store.optimisticMessageIds.isEmpty)
-        #expect(store.messages.map(\.id) == ["m1", id])
     }
 
     @Test func aDeletionMidReplayDropsWhatItHeld() async throws {

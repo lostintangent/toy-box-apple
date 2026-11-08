@@ -117,7 +117,7 @@ struct TranscriptFindTests {
                         message(2, "no result", sender: .agent("lead")), message(3, "unrelated")]
         let rows = TranscriptRowBuilder().rows(messages, lead: agent, members: [])
         let api = try ChannelAPI(serverURL: "https://find.invalid")
-        let store = ChannelStore(id: "find", api: api, sendJournal: nil)
+        let store = ChannelStore(id: "find", api: api)
         let channel = TranscriptRowChannel(agents: [agent], id: "find", historyStart: 1, api: api)
         func content(_ row: TranscriptRow, query: String) -> TranscriptRowContent {
             .init(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil, catchUp: nil,

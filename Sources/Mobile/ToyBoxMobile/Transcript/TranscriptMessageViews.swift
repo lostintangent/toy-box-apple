@@ -123,6 +123,8 @@ struct TranscriptUserMessage: View {
     var identifier: String?
     var findHighlight: TranscriptFindHighlight?
     var bookmark: TranscriptBookmark?
+    /// Set only on a send that failed, which washes the bubble red and offers Delete.
+    var deleteNotSent: (() -> Void)?
     @Environment(\.horizontalSizeClass) private var sizeClass
     /// Scales the Mac's reading caps with Dynamic Type.
     @ScaledMetric(relativeTo: .body) private var textScale: CGFloat = 1
@@ -135,31 +137,35 @@ struct TranscriptUserMessage: View {
                 header.accessibilityHidden(true)
                 if !message.text.isEmpty {
                     TranscriptBody(text: message.text, agents: channel.agents, baseURL: channel.api.baseURL,
-                                   surface: .user, findHighlight: findHighlight)
+                                   surface: surface, findHighlight: findHighlight)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .transcriptBubble(.user, cornerStyle: .continuous, canvasIsBlack: true)
+                        .transcriptBubble(surface, cornerStyle: .continuous, canvasIsBlack: true)
                         .contentShape(.contextMenuPreview, .rect(cornerRadius: 12, style: .continuous))
                         .contextMenu {
-                            TranscriptMessageMenu(text: message.text, selectsText: $selectsText, bookmark: bookmark)
+                            TranscriptMessageMenu(text: message.text, selectsText: $selectsText, bookmark: bookmark,
+                                                  delete: deleteNotSent)
                         }
                         .overlay { TranscriptBookmarkMark(bookmark: bookmark, edge: .leading) { header } }
                 }
                 if let attachments = message.attachments, !attachments.isEmpty {
                     TranscriptAttachments(attachments: attachments, api: channel.api, alignment: .trailing,
                                           source: .init(messageID: message.id, sender: "You",
-                                                        timestamp: message.timestamp))
+                                                        timestamp: message.timestamp),
+                                          delete: deleteNotSent)
                 }
                 TranscriptReactions(message: message, agents: channel.agents, statusReactions: statusReactions)
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier ?? "message-\(message.sequence)")
-        .accessibilityLabel(message.accessibilityLabel(author: "You", delivery: deliveryLabel))
+        .accessibilityLabel(message.accessibilityLabel(author: "You",
+                                                       delivery: deleteNotSent == nil ? deliveryLabel : "Not sent"))
         .accessibilityValue(bookmark?.isBookmarked == true ? "Bookmarked" : "")
         .accessibilityActions {
             Button("Copy Message") { UIPasteboard.general.string = message.text }
             if let bookmark { Button(bookmark.actionTitle) { bookmark.toggleAnnouncing() } }
+            if let deleteNotSent { Button("Delete", action: deleteNotSent) }
         }
         .sheet(isPresented: $selectsText) { TranscriptSelectTextSheet(text: message.text) }
     }
@@ -172,6 +178,8 @@ struct TranscriptUserMessage: View {
         }
         .font(.footnote)
     }
+
+    private var surface: TranscriptSurface { deleteNotSent == nil ? .user : .notSentUser }
 }
 
 struct TranscriptAgentMessage: View {
@@ -324,10 +332,14 @@ private struct TranscriptMessageMenu: View {
     let text: String
     @Binding var selectsText: Bool
     let bookmark: TranscriptBookmark?
+    var delete: (() -> Void)?
 
     var body: some View {
         Button("Copy Message", systemImage: "doc.on.doc") { UIPasteboard.general.string = text }
         Button("Select Text", systemImage: "selection.pin.in.out") { selectsText = true }
+        if let delete {
+            Section { Button("Delete", systemImage: "trash", role: .destructive, action: delete) }
+        }
         if let bookmark {
             Section {
                 Button(bookmark.actionTitle, systemImage: bookmark.actionSymbol) { bookmark.toggle() }

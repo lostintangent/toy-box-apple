@@ -25,6 +25,8 @@ final class AppModel {
     private let dockAttention: DockAttention
     private(set) var serverURL: String
     private(set) var catalog: ChannelCatalogStore?
+    /// Every message the user sends until its server confirms it. The current catalog delivers it.
+    let outbox: ChannelOutbox
     private(set) var configurationError: String?
     private(set) var openChannelIDs: Set<String> = []
     private(set) var activeChannelID: String?
@@ -56,6 +58,10 @@ final class AppModel {
     init(launchOptions: LaunchOptions = .init()) {
         self.launchOptions = launchOptions
         updates = AppUpdates(isSnapshot: launchOptions.isSnapshot)
+        // A snapshot never sends, so it leaves the user's saved messages alone.
+        outbox = ChannelOutbox(folder: launchOptions.isSnapshot
+            ? .temporaryDirectory.appending(path: "ToyBoxSnapshot-\(UUID().uuidString)", directoryHint: .isDirectory)
+            : ChannelOutbox.defaultFolder)
         openAtLogin = OpenAtLogin(isAvailable: OpenAtLogin.isAllowed(
             launchOptions, bundleID: Bundle.main.bundleIdentifier))
         quickSend = QuickSendController(options: launchOptions)
@@ -80,12 +86,10 @@ final class AppModel {
         if !launchOptions.isSnapshot { launchChannelID = launchChannel.channelID(serverURL: self.serverURL) }
         notifications.onActivate = { [weak self] activation in
             guard let self, self.serverURL == activation.serverURL else { return }
-            self.activate(channelID: activation.channel.channelID, sequence: activation.channel.sequence,
-                          focusComposer: activation.focusComposer)
+            self.activate(channelID: activation.channel.channelID, sequence: activation.channel.sequence)
         }
-        notifications.store = { [weak self] serverURL, channelID in
-            guard let self, self.serverURL == serverURL else { return nil }
-            return self.catalog?.channel(id: channelID)
+        notifications.send = { [weak self] reply in
+            await self?.outbox.send(reply.content, to: reply.channelID, on: reply.server, answering: reply.request)
         }
         notifications.resolveRequest = { [weak self] channel, sequence in
             try? await self?.waitingRequests?.message(channelID: channel.id, sequence: sequence)
@@ -150,6 +154,7 @@ final class AppModel {
             let api = try ChannelAPI(serverURL: serverURL)
             if self.serverURL != api.baseURL.absoluteString { quickSend.dismiss() }
             catalog?.stopPolling()
+            catalog?.outbox = nil
             connections.disconnectAll()
             composerSessions = [:]
             self.serverURL = api.baseURL.absoluteString
@@ -157,6 +162,7 @@ final class AppModel {
                 UserDefaults.standard.set(self.serverURL, forKey: AppConfiguration.serverURLKey)
             }
             let catalog = ChannelCatalogStore(api: api)
+            catalog.outbox = outbox
             self.catalog = catalog
             waitingRequests = ChannelWaitingRequests(catalog: catalog)
             isRefreshingCatalog = false
@@ -252,9 +258,9 @@ final class AppModel {
     /// Brings a channel forward from outside its windows, as notifications and the menu bar do. The
     /// frontmost window selects it, or a new window opens on it when there is none. Without a
     /// channel, the frontmost window just comes forward.
-    func activate(channelID: String?, sequence: Int? = nil, focusComposer: Bool = false) {
+    func activate(channelID: String?, sequence: Int? = nil) {
         if let channelID {
-            navigationRequest = .init(channelID: channelID, sequence: sequence, focusComposer: focusComposer)
+            navigationRequest = .init(channelID: channelID, sequence: sequence)
         }
         let app = NSApplication.shared
         guard app.isHidden else {
@@ -412,6 +418,4 @@ struct ChannelNavigationRequest: Identifiable {
     let id = UUID()
     let channelID: String
     let sequence: Int?
-    /// Set when a reply from a notification wasn't sent and waits in the composer.
-    var focusComposer = false
 }

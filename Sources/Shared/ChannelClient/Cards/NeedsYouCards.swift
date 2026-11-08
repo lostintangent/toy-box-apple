@@ -3,17 +3,17 @@ import Foundation
 import Observation
 
 /// The Needs You cards in the phone's channel list: a waiting channel's row shows its question, one
-/// card opens at a time, and a choice or a typed reply answers it without opening the channel. It
-/// holds the cards' rules, and the app draws them and supplies their motion. See Needs You in the
-/// list in docs/spec.md.
+/// card opens at a time, and a choice or a typed reply answers it without opening the channel. A
+/// reply goes to the outbox, so the card closes with its check at once, and a reply that ends Not
+/// sent brings its request back as a waiting row. It holds the cards' rules, and the app draws them
+/// and supplies their motion. See Needs You in the list in docs/spec.md.
 @MainActor @Observable
 package final class NeedsYouCards {
     package enum Phase: Equatable {
         /// The card lifted above the list, with the field for a typed reply.
         case composing
+        /// The outbox is saving the reply, which holds the card for that moment.
         case sending
-        /// The reply stays in the channel's outbox under its UUID, so Send Again can't post it twice.
-        case failed(ChannelSendPhase)
     }
 
     /// What a waiting channel's row shows.
@@ -32,10 +32,6 @@ package final class NeedsYouCards {
         /// Leads a typed reply, so it goes to the requester.
         let handle: String?
         var phase: Phase
-        var hasFailed = false
-        /// The reply's one attempt in the channel's outbox, which Send Again repeats under its UUID.
-        var attempt: (id: String, content: String)?
-        var postingSince: ContinuousClock.Instant?
     }
 
     private var answer: Answer?
@@ -43,8 +39,8 @@ package final class NeedsYouCards {
     package var words = ""
     /// The card the person opened, which stays open while its request waits.
     package private(set) var opened: ChannelWaitingRequests.Entry.ID?
-    /// Requests answered here, which never reopen while the catalog catches up.
-    package private(set) var answered: Set<ChannelWaitingRequests.Entry.ID> = []
+    /// The request answered here last, so the card that opens after it scrolls into view.
+    private var answered: ChannelWaitingRequests.Entry.ID?
     /// A sent typed reply's card while it shrinks from above the list back into its row.
     package private(set) var landing: ChannelWaitingRequests.Entry?
     @ObservationIgnored private let checks: CardChecks
@@ -70,23 +66,18 @@ package final class NeedsYouCards {
         self.pause = pause
     }
 
-    /// The request being answered, as it was when the answer began, since the catalog drops it once
-    /// the server has the answer.
+    /// The request being answered, as it was when the answer began, since the waiting requests drop
+    /// it once the outbox has the answer.
     package var replying: ChannelWaitingRequests.Entry? { answer?.entry }
     package var phase: Phase? { answer?.phase }
     /// True while a typed reply holds the list, with its card lifted and every other row dimmed.
     package var isLifted: Bool { answer?.isLifted == true }
-    /// True once the reply has failed, so its card keeps the failure's place while Send Again retries.
-    package var hasFailed: Bool { answer?.hasFailed == true }
-    /// When the reply's attempt began posting, which Send's progress waits 300 ms from.
-    package var postingSince: ContinuousClock.Instant? { answer?.postingSince }
 
     /// The open card among the waiting requests, newest first: the one being answered, otherwise
     /// the one the person opened while it waits, otherwise the newest.
     package func open(in waiting: [ChannelWaitingRequests.Entry]) -> ChannelWaitingRequests.Entry? {
         if let replying { return waiting.first { $0.id == replying.id } ?? replying }
-        let unanswered = waiting.filter { !answered.contains($0.id) }
-        return unanswered.first { $0.id == opened } ?? unanswered.first
+        return waiting.first { $0.id == opened } ?? waiting.first
     }
 
     /// True when the open card changed from `previous` to `card` because of the person: a tap on
@@ -95,19 +86,13 @@ package final class NeedsYouCards {
     package func reveals(_ card: ChannelWaitingRequests.Entry.ID?,
                          after previous: ChannelWaitingRequests.Entry.ID?) -> Bool {
         guard let card else { return false }
-        return card == opened || previous.map(answered.contains) == true
+        return card == opened || (previous != nil && previous == answered)
     }
 
-    /// True when the request still needs an answer here, so its row shows its question.
-    package func isWaiting(_ entry: ChannelWaitingRequests.Entry) -> Bool {
-        !answered.contains(entry.id)
-    }
-
-    /// What each waiting row shows, by channel. A request answered here leaves an ordinary row
-    /// while the catalog catches up.
+    /// What each waiting row shows, by channel.
     package func rows(in waiting: [ChannelWaitingRequests.Entry]) -> [String: Row] {
         var rows: [String: Row] = [:]
-        for entry in waiting where isWaiting(entry) { rows[entry.channel.id] = .question(entry) }
+        for entry in waiting { rows[entry.channel.id] = .question(entry) }
         if let open = open(in: waiting) { rows[open.channel.id] = .card(open) }
         return rows
     }
@@ -119,24 +104,19 @@ package final class NeedsYouCards {
         return Set([open] + order[..<index].suffix(1))
     }
 
-    /// Opens a compact row's card, closing the others. A failed reply's card closes too, and its
-    /// reply waits in the channel's outbox.
+    /// Opens a compact row's card, closing the others.
     package func open(_ request: ChannelWaitingRequests.Entry.ID) {
-        guard !isLifted, phase != .sending, opened != request || replying != nil else { return }
-        animate(.open) {
-            if case .failed = phase { close() }
-            opened = request
-        }
+        guard answer == nil, opened != request else { return }
+        animate(.open) { opened = request }
     }
 
-    /// Sends a choice at once as written, through the channel's outbox with a new UUID.
+    /// Sends a choice at once as written.
     package func send(_ choice: String, to entry: ChannelWaitingRequests.Entry, on store: ChannelStore) async {
-        guard answer == nil else { return }
+        guard answer == nil, store.outbox != nil else { return }
         opened = entry.id
-        answer = Answer(entry: entry, isLifted: false, store: store, handle: nil, phase: .sending,
-                        attempt: (UUID().uuidString, choice))
+        answer = Answer(entry: entry, isLifted: false, store: store, handle: nil, phase: .sending)
         words = choice
-        await deliver()
+        await deliver(choice)
     }
 
     /// Lifts the card above the list with an empty field for a typed reply, which goes to the
@@ -154,40 +134,31 @@ package final class NeedsYouCards {
 
     /// True when the typed reply has words to send.
     package var canSend: Bool {
-        phase == .composing && ChannelNotification.Reply(words, to: answer?.handle) != nil
+        phase == .composing && answer?.store.outbox != nil
+            && ChannelNotification.Reply(words, to: answer?.handle) != nil
     }
 
-    /// Sends the typed reply, or repeats a failed attempt under its UUID.
+    /// Sends the typed reply.
     package func send() async {
-        if case .failed = phase { return await deliver() }
         guard canSend, let content = ChannelNotification.Reply(words, to: answer?.handle)?.content else { return }
-        answer?.attempt = (UUID().uuidString, content)
-        await deliver()
+        await deliver(content)
     }
 
-    private func deliver() async {
-        guard let answer, let attempt = answer.attempt else { return }
+    private func deliver(_ content: String) async {
+        guard let answer, let outbox = answer.store.outbox else { return }
         let entry = answer.entry
         self.answer?.phase = .sending
-        self.answer?.postingSince = .now
-        let posted: Bool
-        do {
-            try await answer.store.postInBackground(id: attempt.id, content: attempt.content)
-            posted = true
-        } catch { posted = false }
-        guard self.answer?.attempt?.id == attempt.id else { return }
-        self.answer?.postingSince = nil
-        guard posted else {
-            let failure = answer.store.failedPhase(ofSend: attempt.id)
-            self.answer?.phase = .failed(failure)
-            self.answer?.hasFailed = true
-            return announce(failure.label)
-        }
+        // The request stops waiting as the outbox takes the reply, and the card holds until it's saved.
+        await outbox.send(content, to: entry.channel.id, on: answer.store.api.baseURL, answering: entry.sequence)
+        guard self.answer?.entry.id == entry.id, self.answer?.phase == .sending else { return }
         // The card shrinks straight back into its row, which wears the check, as the next opens.
         // Each row's check settles on its own, so answering the next card leaves this one's in place.
         // A typed reply's words fade with its card rather than blanking as it lands.
         animate(.sent) {
-            answered.insert(entry.id)
+            answered = entry.id
+            // The card the person opened ends with its answer, so if the reply ends Not sent, its
+            // request comes back without opening itself or moving the list.
+            opened = nil
             checks.sent(entry.channel.id)
             if answer.isLifted {
                 landing = entry
@@ -204,13 +175,10 @@ package final class NeedsYouCards {
         if self.answer == nil { words = "" }
     }
 
-    /// Lowers a typed reply back into its row and discards its words. After a failure, the reply
-    /// stays in the channel's outbox, where the conversation offers Send Again like any failed send.
+    /// Lowers a typed reply back into its row and discards its words.
     package func cancel() {
-        switch phase {
-        case .composing, .failed: animate(.open) { close() }
-        case .sending, nil: break
-        }
+        guard phase == .composing else { return }
+        animate(.open) { close() }
     }
 
     /// Ends the reply when something takes the person away from the list. A typed reply's words

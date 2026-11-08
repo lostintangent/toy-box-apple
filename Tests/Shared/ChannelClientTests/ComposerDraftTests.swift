@@ -1,4 +1,4 @@
-import ChannelClient
+@testable import ChannelClient
 import ChannelKit
 import CoreGraphics
 import Foundation
@@ -9,17 +9,13 @@ import UniformTypeIdentifiers
 
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct ComposerDraftTests {
-    @Test func textAndOriginalSendIDSurviveRestoration() async throws {
+    @Test func textSurvivesRestoration() async throws {
         try await withDraft { draft, url in
             #expect(!draft.hasContent)
             draft.text = "@lead First draft"
-            draft.associateSend(id: "original-send-id")
             let restored = makeDraft(fileURL: url)
             #expect(draft.error == nil)
             #expect(restored.text == draft.text)
-            #expect(restored.sendAttemptID == "original-send-id")
-            draft.text = "A newer draft"
-            #expect(draft.sendAttemptID == nil)
         }
     }
 
@@ -39,7 +35,6 @@ struct ComposerDraftTests {
         try await withDraft { draft, _ in
             draft.text = "Original"
             let originalRevision = draft.revision
-            draft.associateSend(id: "original")
             draft.text = "A newer draft"
             draft.clear(ifUnchanged: originalRevision)
             #expect(draft.text == "A newer draft")
@@ -57,10 +52,8 @@ struct ComposerDraftTests {
             #expect(restored.images.first?.data == image.data)
             let metadata = try #require(String(data: Data(contentsOf: url), encoding: .utf8))
             #expect(!metadata.contains(image.data.base64EncodedString()))
-            draft.associateSend(id: "with-image")
             draft.removeImage(id: image.id)
             #expect(draft.images.isEmpty)
-            #expect(draft.sendAttemptID == nil)
             let imageURL = url.deletingPathExtension().appendingPathComponent(image.id.uuidString)
             #expect(!FileManager.default.fileExists(atPath: imageURL.path))
         }
@@ -79,17 +72,14 @@ struct ComposerDraftTests {
         }
     }
 
-    @Test func attachmentOnlyDraftClearsItsOriginalUUID() async throws {
+    @Test func anAttachmentOnlyDraftClears() async throws {
         try await withDraft { draft, url in
             draft.append(try sampleImage())
-            draft.associateSend(id: "attachment-only")
             draft.clear(ifUnchanged: draft.revision)
             #expect(!draft.hasContent)
             #expect(draft.images.isEmpty)
-            #expect(draft.sendAttemptID == nil)
             let restored = makeDraft(fileURL: url)
             #expect(!restored.hasContent)
-            #expect(restored.sendAttemptID == nil)
         }
     }
 
@@ -103,12 +93,10 @@ struct ComposerDraftTests {
                 .init(name: "Missing type.png", base64: readable.data.base64EncodedString()),
                 readable.attachment,
             ]
-            draft.restore(content: "Keep every attachment", attachments: attachments,
-                          sendAttemptID: "original")
+            draft.restore(content: "Keep every attachment", attachments: attachments)
             #expect(draft.images.count == attachments.count)
             #expect(draft.hasUnreadableImage)
             #expect(draft.images.last?.data == readable.data)
-            #expect(draft.sendAttemptID == "original")
             #expect(draft.error?.contains("before sending") == true)
             let restored = makeDraft(fileURL: url)
             #expect(restored.images.count == attachments.count)
@@ -117,7 +105,6 @@ struct ComposerDraftTests {
             for image in draft.images where !isReadableImage(image.data) { draft.removeImage(id: image.id) }
             #expect(draft.images.count == 1)
             #expect(!draft.hasUnreadableImage)
-            #expect(draft.sendAttemptID == nil)
         }
     }
 
@@ -177,14 +164,13 @@ struct ComposerDraftTests {
         }
     }
 
-    @Test func retryingASaveRecoversWithoutChangingTheDraftOrSendID() async throws {
+    @Test func retryingASaveRecoversWithoutChangingTheDraft() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-draft-\(UUID())")
         try Data("Not a directory".utf8).write(to: directory)
         defer { remove(directory) }
         let url = directory.appendingPathComponent("draft.json")
         let draft = makeDraft(fileURL: url)
         draft.text = "Keep this text"
-        draft.associateSend(id: "original")
         let revision = draft.revision
         #expect(!draft.isSavedLocally)
         try FileManager.default.removeItem(at: directory)
@@ -194,7 +180,6 @@ struct ComposerDraftTests {
         #expect(draft.revision == revision)
         let restored = makeDraft(fileURL: url)
         #expect(restored.text == "Keep this text")
-        #expect(restored.sendAttemptID == "original")
     }
 
     @Test func cameraPhotosBecomeOrientedJPEGAndThumbnailsStayCachedWhileTyping() async throws {
@@ -203,14 +188,12 @@ struct ComposerDraftTests {
         }.value
         let draft = imageIODraft()
         draft.text = "Keep this photo caption"
-        draft.associateSend(id: "earlier")
         let earlierRevision = draft.revision
         draft.append(image)
         draft.clear(ifUnchanged: earlierRevision)
         #expect(draft.isLoadingImages)
         try await finishLoading(draft)
         #expect(draft.text == "Keep this photo caption")
-        #expect(draft.sendAttemptID == nil)
         let prepared = try #require(draft.images.first)
         #expect(prepared.id == image.id)
         #expect(prepared.name == "Generated.jpg")
@@ -283,12 +266,10 @@ struct ComposerDraftTests {
         }.value
         for image in images {
             try await withDraft { draft, url in
-                draft.restore(content: "Legacy caption", attachments: [image.attachment], sendAttemptID: "legacy")
+                // This draft reads only the sample PNG, so it saves these images as they are.
+                draft.restore(content: "Legacy caption", attachments: [image.attachment])
                 let original = try #require(draft.images.first)
                 let legacyThumbnail = try #require(await draft.loadThumbnail(for: original))
-                var metadata = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
-                metadata.removeValue(forKey: "sendAttemptID")
-                try JSONSerialization.data(withJSONObject: metadata).write(to: url, options: .atomic)
                 let restored = imageIODraft(fileURL: url)
                 #expect(restored.isLoadingImages)
                 #expect(restored.thumbnail(for: original) === legacyThumbnail)
@@ -303,7 +284,6 @@ struct ComposerDraftTests {
                 #expect(try #require(properties[kCGImagePropertyPixelWidth] as? Int) <= 8_000)
                 #expect(try #require(properties[kCGImagePropertyPixelHeight] as? Int) <= 8_000)
                 #expect(restored.text == "Legacy caption edited during conversion")
-                #expect(restored.sendAttemptID == nil)
                 #expect(restored.error == nil)
                 #expect(await restored.loadThumbnail(for: prepared) !== legacyThumbnail)
                 let bytes = try Data(contentsOf: url.deletingPathExtension().appendingPathComponent(prepared.id.uuidString))
@@ -312,35 +292,6 @@ struct ComposerDraftTests {
                 #expect(reopened.images == restored.images)
                 #expect(!reopened.isLoadingImages)
             }
-        }
-    }
-
-    @Test func imageOnlyRecoveryEditsNormalizeLegacyImagesThroughEveryDraftMutation() async throws {
-        let image = try await Task.detached {
-            try Self.generatedImage(width: 64, height: 32, type: .heic)
-        }.value
-        for mutation in ["explicit", "remove", "append"] {
-            let draft = imageIODraft()
-            draft.restore(content: "", attachments: [image.attachment, try sampleImage().attachment],
-                          sendAttemptID: "legacy")
-            #expect(!draft.isLoadingImages)
-            switch mutation {
-            case "explicit":
-                draft.editAsNewMessage()
-            case "remove":
-                draft.removeImage(id: try #require(draft.images.last?.id))
-            default:
-                let other = imageIODraft()
-                other.restore(content: "", attachments: [.init(name: "Missing.png", mimeType: "image/png")])
-                draft.append(contentsOf: other)
-                draft.removeImage(id: try #require(draft.images.last?.id))
-            }
-            #expect(draft.isLoadingImages)
-            #expect(draft.sendAttemptID == nil)
-            try await finishLoading(draft)
-            #expect(draft.text.isEmpty)
-            #expect(draft.images.first?.mimeType == "image/jpeg")
-            #expect(!draft.hasUnreadableImage)
         }
     }
 
@@ -358,7 +309,7 @@ struct ComposerDraftTests {
         #expect(draft.thumbnail(for: restored) == nil)
     }
 
-    @Test func reattachmentReplacesOnlyItsSlotAndPersistsNormalizedBytesUnderANewAttempt() async throws {
+    @Test func reattachmentReplacesOnlyItsSlotAndPersistsNormalizedBytes() async throws {
         let replacement = try await Task.detached {
             try Self.generatedImage(width: 64, height: 32, type: .heic)
         }.value
@@ -367,7 +318,7 @@ struct ComposerDraftTests {
             let readable = try sampleImage()
             draft.restore(content: "Keep this caption", attachments: [
                 readable.attachment, .init(name: "Missing.png", mimeType: "image/png"), readable.attachment,
-            ], sendAttemptID: "old-attempt")
+            ])
             let original = draft.images
             let slot = original[1]
             #expect(draft.thumbnail(for: slot) == nil)
@@ -384,7 +335,6 @@ struct ComposerDraftTests {
             #expect(prepared.data.count <= 5_000_000)
             #expect(await draft.loadThumbnail(for: prepared) != nil)
             #expect(draft.text == "Keep this caption")
-            #expect(draft.sendAttemptID == nil)
             #expect(!draft.hasUnreadableImage)
             #expect(!draft.isLoadingImages)
             #expect(draft.error == nil)
@@ -392,16 +342,15 @@ struct ComposerDraftTests {
             #expect(bytes == prepared.data)
             let reopened = imageIODraft(fileURL: url)
             #expect(reopened.images == draft.images)
-            #expect(reopened.sendAttemptID == nil)
         }
     }
 
-    @Test func failedReattachmentKeepsItsSlotAndOriginalAttemptWithANamedError() async throws {
+    @Test func failedReattachmentKeepsItsSlotWithANamedError() async throws {
         try await withDraft { _, url in
             let draft = imageIODraft()
             draft.restore(content: "Keep this caption", attachments: [
                 .init(name: "Missing.png", mimeType: "image/png"),
-            ], sendAttemptID: "old-attempt")
+            ])
             let original = draft.images
             let slot = try #require(original.first)
             for name in ["Corrupt.png", "Unsupported.txt", "Does not exist.png"] {
@@ -409,7 +358,6 @@ struct ComposerDraftTests {
                 if name != "Does not exist.png" { try Data("Not an image".utf8).write(to: replacement) }
                 #expect(await !draft.reattachImage(id: slot.id, from: replacement))
                 #expect(draft.images == original)
-                #expect(draft.sendAttemptID == "old-attempt")
                 #expect(draft.text == "Keep this caption")
                 #expect(draft.error?.contains(name) == true)
                 #expect(draft.hasUnreadableImage)
@@ -425,7 +373,7 @@ struct ComposerDraftTests {
             let draft = imageIODraft(fileURL: blocked.appendingPathComponent("draft.json"))
             draft.restore(content: "Keep this caption", attachments: [
                 .init(name: "Missing.png", mimeType: "image/png"),
-            ], sendAttemptID: "old-attempt")
+            ])
             let slot = try #require(draft.images.first)
             let previousError = try #require(draft.error)
             let image = try sampleImage()
@@ -435,7 +383,6 @@ struct ComposerDraftTests {
             #expect(!draft.isSavedLocally)
             #expect(draft.error == previousError)
             #expect(draft.images.first?.data == image.data)
-            #expect(draft.sendAttemptID == nil)
         }
     }
 
@@ -459,7 +406,7 @@ struct ComposerDraftTests {
             })
             draft.restore(content: "Keep this caption", attachments: [
                 .init(name: "Missing.svg", mimeType: "image/svg+xml"),
-            ], sendAttemptID: "old-attempt")
+            ])
             let original = try #require(draft.images.first)
             let replacement = url.deletingLastPathComponent().appendingPathComponent("First.svg")
             try Data("<svg/>".utf8).write(to: replacement)
@@ -487,17 +434,14 @@ struct ComposerDraftTests {
             switch change {
             case "cancel":
                 #expect(draft.images == [original])
-                #expect(draft.sendAttemptID == "old-attempt")
                 #expect(draft.error?.contains("First.svg") == true)
                 #expect(draft.error?.contains("cancelled") == true)
             case "remove":
                 #expect(draft.images.isEmpty)
-                #expect(draft.sendAttemptID == nil)
             default:
                 #expect(draft.images.count == 1)
                 #expect(draft.images.first?.name == "Second.png")
                 #expect(draft.images.first?.id == original.id)
-                #expect(draft.sendAttemptID == nil)
                 #expect(draft.error == nil)
             }
         }

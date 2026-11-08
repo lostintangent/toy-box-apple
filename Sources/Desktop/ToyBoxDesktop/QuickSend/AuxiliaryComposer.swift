@@ -35,12 +35,10 @@ struct AuxiliaryComposer: View {
     private var store: ChannelStore { session.store }
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
     private var noticeRegionHeight: CGFloat { noticeHeight > 0 ? min(noticeHeight, 84) + 16 : 0 }
-    private var canEdit: Bool { !session.isReadOnly && session.confirmation == nil }
-    private var isConnecting: Bool { store.phase == .connecting }
-    private var canSend: Bool {
-        !finalizing && (session.canSend || (dictation.hasWords && store.phase.isConnected && !store.isSending
-            && !session.requestChanged && draft.isSendable(hasAdditionalContent: true)))
-    }
+    private var canEdit: Bool { session.confirmation == nil }
+    /// QuickSend and the menu bar wait on the channel list, not the channel itself.
+    private var isOffline: Bool { !session.isConnected }
+    private var canSend: Bool { !finalizing && session.canSend(hasAdditionalContent: dictation.hasWords) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -147,19 +145,9 @@ struct AuxiliaryComposer: View {
                 dictation.toggle()
             }
             .disabled(!canEdit || store.phase == .deleted)
-            if session.isSubmitting || finalizing || session.attempt?.phase == .sending {
+            if session.isSubmitting || finalizing {
                 ProgressView().controlSize(.small).frame(width: 28, height: 28)
                     .accessibilityLabel("Sending")
-            } else if session.isUnconfirmed {
-                Button("Edit") { session.edit(); focusRequest = UUID() }.buttonStyle(.borderless)
-                if isConnecting {
-                    ComposerConnectingIndicator()
-                } else {
-                    Button("Send Again") { send(opensChannel: false) }.disabled(!canSend)
-                        .help("Retry the original message with the same message ID")
-                }
-            } else if isConnecting {
-                ComposerConnectingIndicator()
             } else {
                 Button { send(opensChannel: false) } label: {
                     Image(systemName: "arrow.up")
@@ -172,8 +160,7 @@ struct AuxiliaryComposer: View {
                 .disabled(!canSend)
                 .help(style == .reply ? "Reply \u{00b7} Return" : "Send \u{00b7} Return")
                 .accessibilityLabel(style == .reply ? "Reply" : "Send message")
-                .accessibilityHint(store.phase.sendUnavailableReason
-                                   ?? (session.requestChanged ? session.requestChangeNotice : ""))
+                .accessibilityHint(sendUnavailableReason ?? (session.requestChanged ? session.requestChangeNotice : ""))
                 .contextMenu {
                     Button("Send and Open Channel") { send(opensChannel: true) }
                         .keyboardShortcut(.return, modifiers: .command).disabled(!canSend)
@@ -193,11 +180,6 @@ struct AuxiliaryComposer: View {
                     Spacer(minLength: 0)
                     Button("Open Channel", action: onOpenChannel).buttonStyle(.link)
                 }
-            } else if let notice = session.deliveryNotice {
-                Text(notice).foregroundStyle(.primary)
-            }
-            if session.editedUnconfirmedMessage {
-                Text("Sending edited text creates a new message. The earlier message may already have arrived.")
             }
             if let error = draft.error {
                 HStack(alignment: .firstTextBaseline) {
@@ -207,11 +189,10 @@ struct AuxiliaryComposer: View {
                         .labelStyle(.iconOnly).buttonStyle(.borderless)
                 }
             }
-            if let error = store.attemptPersistenceError { Text(error).foregroundStyle(.primary) }
-            if let error = session.error, session.deliveryNotice == nil { Text(error).foregroundStyle(.primary) }
+            if let error = session.error { Text(error).foregroundStyle(.primary) }
             if let notice = dictation.notice { Text(notice.text) }
             if draft.isOverLimit { Text("Messages are limited to 12,000 characters.") }
-            if store.phase.isUnavailable {
+            if store.phase == .deleted || isOffline {
                 HStack(alignment: .firstTextBaseline) {
                     Text(connectionText)
                     Spacer(minLength: 0)
@@ -234,6 +215,11 @@ struct AuxiliaryComposer: View {
         }
         return draft.isSavedLocally ? "Offline. Your draft stays on this Mac."
             : "Offline. This draft could not be saved. Copy it somewhere safe."
+    }
+
+    private var sendUnavailableReason: String? {
+        if store.phase == .deleted { return "This channel was deleted" }
+        return isOffline ? "Toy Box isn't connected" : nil
     }
 
     private var confirmationText: String {

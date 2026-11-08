@@ -285,8 +285,7 @@ struct OverviewTests {
     func teamRowsAreSixPointsShorterAtOrdinarySizesAndFourAtAccessibilitySizes(
         size: DynamicTypeSize
     ) async throws {
-        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let state = ChannelState(
             revision: 1,
             channel: .init(id: "channel", name: "Team", model: .init(provider: "test", name: "test"),
@@ -342,8 +341,7 @@ struct OverviewTests {
     func teamCountdownKeepsTheDefaultRowHeightAndOneCurrentAccessibleAnnouncement(
         size: DynamicTypeSize
     ) async throws {
-        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let wake = Date.now.addingTimeInterval(480).ISO8601Format()
         var state = ChannelState(
             revision: 1,
@@ -473,8 +471,7 @@ struct OverviewTests {
     func loadedOpeningStartsBelowTheToolbarAndUsesTheSameGapAsEverySection(
         teamExpanded: Bool, size: DynamicTypeSize
     ) async throws {
-        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         _ = try store.apply(.init(type: "snapshot", state: .init(
             revision: 1,
             channel: .init(id: "channel", name: "Workshop", purpose: "Build.", directory: "/Workshop",
@@ -519,8 +516,7 @@ struct OverviewTests {
     }
 
     @Test func teamOpensTheListWhenThereIsNoPurposeFolderOrPreview() async throws {
-        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         _ = try store.apply(.init(type: "snapshot", state: .init(
             revision: 1,
             channel: .init(id: "channel", name: "Workshop", model: .init(provider: "test", name: "test"),
@@ -554,8 +550,7 @@ struct OverviewTests {
         let directory = "/srv/work/toy-box-desktop/"
         let screenID = "window:12345:67890:123456789"
         let address = "https://example.com/preview"
-        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         _ = try store.apply(.init(type: "snapshot", state: .init(
             revision: 1,
             channel: .init(id: "channel", name: "Workshop", purpose: "Build.", directory: directory,
@@ -825,8 +820,7 @@ struct OverviewTests {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
-        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let presenter = ManagementPresenter()
         let host = UIHostingController(rootView:
             OverviewList {
@@ -963,8 +957,7 @@ struct OverviewTests {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
-        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let artifact = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: "Daily notes")
         let host = UIHostingController(rootView:
             OverviewList {
@@ -1011,8 +1004,7 @@ struct OverviewTests {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
-        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let artifact = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: "Daily notes")
         let state = ChannelOverview.Artifact()
         state.recovery.record(ChannelAPIError.http(status: 500, message: "Server error"))
@@ -1110,8 +1102,7 @@ struct OverviewTests {
     }
 
     @Test func inProgressFilterHidesDoneBranchesAndExplainsWhenNothingHoldsWork() async throws {
-        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         func applyTasks(_ tasks: [ChannelTask]) throws {
             _ = try store.apply(.init(type: "snapshot", state: .init(
                 revision: (store.state?.revision ?? 0) + 1,
@@ -1172,8 +1163,7 @@ struct OverviewTests {
         let api = try ChannelAPI(serverURL: "https://working-filter.invalid",
                                  session: URLSession(configuration: configuration))
         let store = ChannelStore(id: "channel", api: api,
-                                 reconnectPolicy: .init(initialDelay: 60, maximumDelay: 60, grace: 3),
-                                 sendJournal: nil, sleep: { _ in })
+                                 reconnectPolicy: .init(initialDelay: 60, maximumDelay: 60, grace: 3), sleep: { _ in })
         defer { store.disconnect() }
         var state = ChannelState(
             revision: 1,
@@ -1837,8 +1827,7 @@ struct ChannelFollowTests {
         let api = try ChannelAPI(serverURL: "https://\(fixture.suite).invalid",
                                  session: URLSession(configuration: configuration))
         let unreachable = ChannelStore(id: "channel", api: api,
-                                       reconnectPolicy: .init(initialDelay: 60, maximumDelay: 60, grace: 3),
-                                       sendJournal: nil, sleep: { _ in })
+                                       reconnectPolicy: .init(initialDelay: 60, maximumDelay: 60, grace: 3), sleep: { _ in })
         defer { unreachable.disconnect() }
         unreachable.connect()
         await fixture.wait { unreachable.phase.isUnavailable }

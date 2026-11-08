@@ -1158,89 +1158,6 @@ struct NotificationTests {
         #expect(ChannelNotification.Reply("@lead Ship it", to: "ada-lovelace")?.content == "@lead Ship it")
         #expect(ChannelNotification.Reply("Ship it", to: nil)?.content == "Ship it")
         #expect(ChannelNotification.Reply(" \n ", to: "ada-lovelace") == nil)
-        #expect(ChannelNotification.Reply("@ada Ship it", to: nil)?.appended(to: "") == "@ada Ship it")
-        #expect(ChannelNotification.Reply("@ada Ship it", to: nil)?.appended(to: "Earlier thought\n")
-            == "Earlier thought\n\n@ada Ship it")
-    }
-
-    @Test func sentRepliesMarkTheChannelReadThroughThemselves() async {
-        var read: [Int] = []
-        let reply = NotificationReply(post: { id, content in .committed(self.message(content, sequence: 31)) },
-                                      markRead: { read.append($0) }, pause: {})
-        #expect(await reply.send("@ada Ship it") == .sent)
-        #expect(read == [31])
-    }
-
-    @Test func onlyTransportFailuresRetryOnceWithTheSameID() async {
-        var ids: [String] = []
-        var pauses = 0
-        func reply(_ failures: [any Error]) -> NotificationReply {
-            var remaining = failures
-            return NotificationReply(post: { id, content in
-                ids.append(id)
-                if !remaining.isEmpty { throw remaining.removeFirst() }
-                return .committed(self.message(content, sequence: 31))
-            }, markRead: { _ in }, pause: { pauses += 1 })
-        }
-
-        #expect(await reply([URLError(.timedOut)]).send("Hi", id: "a") == .sent)
-        #expect(ids == ["a", "a"] && pauses == 1)
-        #expect(await reply([URLError(.timedOut), URLError(.notConnectedToInternet)]).send("Hi", id: "c") == .failed)
-        ids = []
-        pauses = 0
-        #expect(await reply([ChannelAPIError.http(status: 500, message: "Down")]).send("Hi", id: "d") == .failed)
-        #expect(await reply([ChannelAPIError.http(status: 404, message: "Gone")]).send("Hi", id: "e") == .deleted)
-        #expect(ids == ["d", "e"] && pauses == 0)
-    }
-
-    /// The server commits the reply but its responses are lost. The retry or a later Send reuses the
-    /// reply's message ID, so the server accepts it once and never posts a second copy.
-    @Test(arguments: [1, 2])
-    func aReplyWhoseResponsesAreLostPostsExactlyOnce(lostResponses: Int) async throws {
-        let host = UUID().uuidString.lowercased() + ".invalid"
-        ReplyServerProtocol.servers.withLock { $0[host] = .init(lostResponses: lostResponses) }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ReplyServerProtocol.self]
-        let session = URLSession(configuration: configuration)
-        defer {
-            session.invalidateAndCancel()
-            ReplyServerProtocol.servers.withLock { _ = $0.removeValue(forKey: host) }
-        }
-        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://\(host)", session: session),
-                                 sendJournal: nil)
-        // The composer's duplicate send reconnects the store, so its loop ends before the session does.
-        defer { await store.close() }
-        let draft = ComposerDraft()
-        let id = UUID().uuidString
-
-        let outcome = await NotificationReply(store: store, pause: {}).send("@lead Ship it", id: id)
-
-        func server() -> ReplyServerProtocol.Server { ReplyServerProtocol.servers.withLock { $0[host] ?? .init() } }
-        #expect(server().posts == [id, id])
-        #expect(server().messages == [id])
-        if lostResponses == 1 {
-            #expect(outcome == .sent)
-            #expect(store.sendAttempts.allSatisfy { $0.phase == .confirmed })
-            return
-        }
-        #expect(outcome == .failed)
-        let attempt = try #require(store.sendAttempts.first)
-        #expect(attempt.id == id)
-        #expect(attempt.content == "@lead Ship it")
-        #expect(attempt.phase == .deliveryNotConfirmed)
-        #expect(!draft.hasContent)
-
-        let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
-                              updatedAt: "2026-10-24T00:00:00Z")
-        _ = try store.apply(.init(type: "snapshot", state: .init(revision: 1, channel: channel, lead: .lead(id: "lead"))))
-        let composer = ChannelComposerSession(store: store, draft: draft)
-        #expect(composer.edit(attempt))
-        #expect(draft.sendAttemptID == id)
-        #expect(await composer.send())
-        #expect(server().posts == [id, id, id])
-        #expect(server().messages == [id])
-        #expect(store.sendAttempts.allSatisfy { $0.phase == .confirmed })
-        #expect(!draft.hasContent)
     }
 
     @Test func notificationsWithdrawOnceTheyStopBeingTrue() {
@@ -1264,7 +1181,6 @@ struct NotificationTests {
         #expect(NotificationPresentation.options(kind: "request", isActiveChannel: false) == [.banner, .list, .sound])
         #expect(NotificationPresentation.options(kind: "completion", isActiveChannel: false) == [.list])
         #expect(NotificationPresentation.options(kind: "request", isActiveChannel: true) == [])
-        #expect(NotificationPresentation.options(kind: "replyFailed", isActiveChannel: true) == [.banner, .list, .sound])
     }
 
     private func requestWithReplies(_ replies: [String]?, sequence: Int = 12) -> ChannelRequestMessage {
@@ -1312,87 +1228,31 @@ struct NotificationTests {
         #expect(SuggestedReplies(replies).label(forAction: UNNotificationDefaultActionIdentifier) == nil)
     }
 
-    @Test func aChoiceSendsItsLabelOnceThroughTheOutbox() async {
-        var sent: [String] = []
-        let reply = NotificationReply(post: { _, content in
-            sent.append(content)
-            return .committed(self.message(content, sequence: 31))
-        }, markRead: { _ in }, pause: {})
-        let content = ChannelNotification.Reply("Yes", to: nil)?.content
-        #expect(await reply.send(content ?? "") == .sent)
-        #expect(sent == ["Yes"])
-    }
-}
+    @Test func aReplyOrChoiceSavesForItsOwnServerAndAnswersItsRequest() throws {
+        let server = try #require(URL(string: "https://other.example"))
+        let info: [AnyHashable: Any] = ["channelID": "workshop", "serverURL": server.absoluteString, "kind": "request",
+                                        "sequence": 12, "handle": "ada-lovelace", "replies": ["Yes", "No"]]
+        let typed = NotificationReply(action: ChannelNotifications.replyAction, text: " Ship it ", info: info)
+        #expect(typed?.content == "@ada-lovelace Ship it")
+        #expect(typed?.channelID == "workshop" && typed?.server == server && typed?.request == 12)
+        // A choice sends its label as written, with no mention.
+        #expect(NotificationReply(action: "reply-choice.1", text: nil, info: info)?.content == "No")
+        #expect(NotificationReply(action: "reply-choice.1", text: nil, info: info)?.request == 12)
 
-/// A server that commits each new message ID once, answers a repeated one with 409 like the real
-/// server, and loses its first responses after committing.
-private final class ReplyServerProtocol: URLProtocol, @unchecked Sendable {
-    struct Server: Sendable {
-        var lostResponses = 0
-        var posts: [String] = []
-        var messages: [String] = []
-    }
-    private struct Posted: Decodable {
-        let id: String
-        let content: String
-    }
-    private struct Envelope: Encodable {
-        let version = 1
-        let message: ChannelMessage
-    }
-    static let servers = Mutex<[String: Server]>([:])
+        #expect(NotificationReply(action: ChannelNotifications.replyAction, text: " \n ", info: info) == nil)
+        #expect(NotificationReply(action: "reply-choice.2", text: nil, info: info) == nil)
+        #expect(NotificationReply(action: UNNotificationDefaultActionIdentifier, text: nil, info: info) == nil)
+        var serverless = info
+        serverless["serverURL"] = nil
+        #expect(NotificationReply(action: ChannelNotifications.replyAction, text: "Hi", info: serverless) == nil)
 
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        do {
-            let url = try #require(request.url)
-            let host = try #require(url.host)
-            guard request.httpMethod == "POST", url.path == "/api/v1/channels/test/messages" else {
-                throw URLError(.cannotConnectToHost)
-            }
-            let post = try JSONDecoder().decode(Posted.self, from: body())
-            let (lost, duplicate) = try Self.servers.withLock { servers in
-                var server = try #require(servers[host])
-                server.posts.append(post.id)
-                let duplicate = server.messages.contains(post.id)
-                if !duplicate { server.messages.append(post.id) }
-                let lost = server.lostResponses > 0
-                if lost { server.lostResponses -= 1 }
-                servers[host] = server
-                return (lost, duplicate)
-            }
-            if lost { throw URLError(.timedOut) }
-            let message = ChannelMessage(id: post.id, sequence: 7, timestamp: "2026-10-24T00:00:00Z",
-                                         sender: .user, content: .text(post.content))
-            let data = duplicate ? Data(#"{"error":"Duplicate"}"#.utf8) : try JSONEncoder().encode(Envelope(message: message))
-            let response = try #require(HTTPURLResponse(url: url, statusCode: duplicate ? 409 : 201,
-                                                       httpVersion: "HTTP/1.1",
-                                                       headerFields: ["Content-Type": "application/json"]))
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data)
-            client?.urlProtocolDidFinishLoading(self)
-        } catch { client?.urlProtocol(self, didFailWithError: error) }
+        // A reply to a completion answers nothing in particular.
+        var completion = info
+        completion["kind"] = "completion"
+        completion["handle"] = nil
+        let reply = NotificationReply(action: ChannelNotifications.replyAction, text: "Thanks", info: completion)
+        #expect(reply?.content == "Thanks" && reply?.request == nil)
     }
-
-    private func body() throws -> Data {
-        if let data = request.httpBody { return data }
-        let stream = try #require(request.httpBodyStream)
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        while stream.hasBytesAvailable {
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            guard count >= 0 else { throw ChannelAPIError.invalidResponse }
-            if count == 0 { break }
-            data.append(contentsOf: buffer.prefix(count))
-        }
-        return data
-    }
-
-    override func stopLoading() {}
 }
 
 @MainActor
@@ -1531,15 +1391,17 @@ struct MenuBarExtraTests {
         #expect(!inbox.requests[0].canReply)
     }
 
-    @Test func aConfirmedReplyStaysSentUntilTheNextOpening() {
+    @Test func aRepliedRowStaysUntilTheNextOpening() {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "First?")
         var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
-        inbox.record("one", .sent)
+        inbox.record("one", .replied)
         inbox.update(.init(waiting: [item]))
-        #expect(inbox.requests[0].state == .sent)
+        #expect(inbox.requests[0].state == .replied)
         #expect(!inbox.requests[0].canReply)
+        // The outbox answers the request at once, which drops it from waiting without "answered elsewhere".
         inbox.update(.init())
-        #expect(inbox.requests[0].state == .sent)
+        #expect(inbox.requests.map(\.state) == [.replied])
+        #expect(inbox.requests[0].item == item)
         #expect(MenuBarInboxRequests(status: .init()).requests.isEmpty)
     }
 
@@ -1561,27 +1423,10 @@ struct MenuBarExtraTests {
         var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         #expect(inbox.requests[0].canChoose)
         #expect(!inbox.requests[0].canReply)
-        inbox.record("one", .sending)
+        inbox.record("one", .replied)
         #expect(!inbox.requests[0].canChoose)
-        #expect(inbox.requests[0].state.notice == "Sending reply…")
-        inbox.record("one", .sent)
-        #expect(!inbox.requests[0].canChoose)
-        #expect(inbox.requests[0].state.notice == "Reply sent")
-    }
-
-    @Test func aSendingOrUnsentChoiceStaysUntilTheNextOpening() {
-        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?",
-                                      replies: ["Yes", "No"])
-        var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
-        inbox.record("one", .sending)
-        inbox.update(.init())
-        #expect(inbox.requests.map(\.state) == [.sending])
-        inbox.record("one", .notSent)
-        inbox.update(.init(waiting: [item]))
-        #expect(inbox.requests.map(\.state) == [.notSent])
-        #expect(inbox.requests[0].item == item)
-        #expect(inbox.requests[0].state.notice == "Reply not sent. Open the channel to send it again.")
-        #expect(MenuBarInboxRequests(status: .init()).requests.isEmpty)
+        #expect(inbox.requests[0].choices(isConnected: true) == nil)
+        #expect(inbox.requests[0].state.notice == "Replied")
     }
 
     @Test func aRequestWithoutSuggestedRepliesOffersNoChoices() {
@@ -1591,18 +1436,13 @@ struct MenuBarExtraTests {
         #expect(!inbox.requests[0].canChoose)
     }
 
-    @Test func aChoiceInTheOutboxLeavesTheRowForGood() {
+    @Test func choicesDisableWhileTheCatalogCannotConnect() throws {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?",
                                       replies: ["Yes", "No"])
         let request = MenuBarInboxRequests(status: .init(waiting: [item])).requests[0]
-        func attempt(_ content: String, phase: ChannelSendPhase) -> ChannelSendAttempt {
-            ChannelSendAttempt(id: UUID().uuidString, content: content, attachments: [],
-                               timestamp: "2026-10-25T12:00:00Z", phase: phase)
-        }
-        #expect(request.choices(attempts: []) == ["Yes", "No"])
-        #expect(request.choices(attempts: [attempt("Maybe", phase: .confirmed)]) == ["Yes", "No"])
-        #expect(request.choices(attempts: [attempt("Yes", phase: .notSent)]) == [])
-        #expect(request.choices(attempts: [attempt("No", phase: .confirmed)]) == [])
+        #expect(try #require(request.choices(isConnected: true)).canSend)
+        let offline = try #require(request.choices(isConnected: false))
+        #expect(offline.labels == ["Yes", "No"] && !offline.canSend)
     }
 
     @Test func aShortRequestTakesItsLinesAndALongOneScrollsWithinTheCap() throws {
@@ -1825,32 +1665,24 @@ struct ChannelTitleFitTests {
 @MainActor
 struct SiriOnScreenTests {
     @Test func siriReadsTheChannelInTheFrontWindowAndOnlyNamesOthers() async throws {
-        let server = "siri-\(UUID().uuidString.lowercased()).example"
         let launch = channel("launch", "Launch")
-        SiriCatalogProtocol.servers.withLock {
-            $0[server] = .init(catalog: ChannelCatalog(lead: Self.lead, channels: [launch, channel("other", "Other")]))
-        }
-        defer { SiriCatalogProtocol.servers.withLock { _ = $0.removeValue(forKey: server) } }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [SiriCatalogProtocol.self]
-        let api = try ChannelAPI(serverURL: "https://\(server)", session: URLSession(configuration: configuration))
+        let api = try ChannelAPI(serverURL: "https://fixture.example")
         let request = ChannelMessage(id: "m2", sequence: 2, timestamp: "2026-11-05T12:01:00Z", sender: .agent("lead"),
                                      content: .text("Ship it?"), request: true)
-        let store = ChannelStore(id: "launch", api: api, sendJournal: nil)
+        let store = ChannelStore(id: "launch", api: api)
         _ = try store.apply(.init(type: "snapshot", state: ChannelState(
             revision: 1, channel: launch, lead: .lead(id: "lead", profile: Self.lead), members: [],
             messages: [ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-11-05T12:00:00Z", sender: .user,
                                       content: .text("Can you **check** the build?")), request],
             request: request)))
         var shown: ChannelIntents.OnScreen? = .channel(store)
-        let context = intents(api: api) { shown }
+        let context = intents(api: api, channels: [launch, channel("other", "Other")]) { shown }
         let text = store.readableText(name: "Launch")
         #expect(text.contains("Ship it?"))
 
-        // Siri resolves the window's channel from its live store, without asking the server.
+        // Siri resolves the window's channel from its live store.
         let resolved = try await context.entities(for: ["launch"])
         #expect(resolved.map(\.content) == [text])
-        #expect(SiriCatalogProtocol.servers.withLock { $0[server]?.requests } == 0)
         let exported = try await #require(resolved.first).exported(as: .utf8PlainText)
         #expect(String(decoding: exported, as: UTF8.self) == text)
 
@@ -1882,7 +1714,7 @@ struct SiriOnScreenTests {
                                    url: "/api/serve/launch/plan.md")
         let page = ChannelArtifact(file: .init(kind: "machine", path: "page.html"), title: "Page",
                                    url: "/api/serve/launch/page.html")
-        let store = ChannelStore(id: "launch", api: try ChannelAPI(serverURL: "https://fixture.example"), sendJournal: nil)
+        let store = ChannelStore(id: "launch", api: try ChannelAPI(serverURL: "https://fixture.example"))
         session.configure(api: store.api, channelID: "launch", artifacts: [plan, page])
         let context = intents(api: nil) { .artifact(session, in: store) }
         let planID = ArtifactEntity.id(channelID: "launch", artifactID: plan.id)
@@ -1964,39 +1796,10 @@ struct SiriOnScreenTests {
                 updatedAt: "2026-11-05T12:00:00Z")
     }
 
-    private func intents(api: ChannelAPI?, onScreen: @escaping @MainActor () -> ChannelIntents.OnScreen?) -> ChannelIntents {
-        ChannelIntents(host: .init(api: { api }, store: { _ in nil }, hold: { _ in }, release: { _ in }, open: { _ in },
-                                   onScreen: onScreen))
+    private func intents(api: ChannelAPI?, channels: [Channel] = [],
+                         onScreen: @escaping @MainActor () -> ChannelIntents.OnScreen?) -> ChannelIntents {
+        ChannelIntents(host: .init(api: { api }, channels: { channels }, store: { _ in nil }, hold: { _ in },
+                                   release: { _ in }, send: { _ in Issue.record("Reading never sends") },
+                                   open: { _ in }, onScreen: onScreen))
     }
-}
-
-/// A server that only serves its channel list, counting each request.
-private final class SiriCatalogProtocol: URLProtocol, @unchecked Sendable {
-    struct Server: Sendable {
-        var catalog: ChannelCatalog
-        var requests = 0
-    }
-    static let servers = Mutex<[String: Server]>([:])
-
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        do {
-            let url = try #require(request.url)
-            let host = try #require(url.host)
-            let catalog = try Self.servers.withLock { servers in
-                servers[host]?.requests += 1
-                return try #require(servers[host]?.catalog)
-            }
-            guard request.httpMethod == "GET", url.path == "/api/v1/channels" else { throw URLError(.cannotConnectToHost) }
-            let response = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
-                                                       headerFields: ["Content-Type": "application/json"]))
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: try JSONEncoder().encode(catalog))
-            client?.urlProtocolDidFinishLoading(self)
-        } catch { client?.urlProtocol(self, didFailWithError: error) }
-    }
-
-    override func stopLoading() {}
 }

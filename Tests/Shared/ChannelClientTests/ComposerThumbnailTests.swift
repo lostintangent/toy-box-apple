@@ -39,7 +39,7 @@ struct ComposerThumbnailTests {
             ))])
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(initialDelay: 0.01), sendJournal: nil)
+                                 reconnectPolicy: .init(initialDelay: 0.01))
         store.connect()
         defer { store.disconnect() }
         try await eventually(observing: mock) {
@@ -105,11 +105,18 @@ struct ComposerThumbnailTests {
     @Test func aRetainedThumbnailCannotHideALaterPreparationFailure() async throws {
         let image = ComposerImage(name: "Unreadable.heic", mimeType: "image/heic", data: Data("Unreadable".utf8))
         let bitmap = try fixtureBitmap()
-        let draft = ComposerDraft(imageIsReadable: { _ in true })
+        // Preparation waits for the test, so the thumbnail loads while it's still under way.
+        let release = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        defer { release.continuation.finish() }
+        let draft = ComposerDraft(imageIsReadable: { _ in true }, rasterizeImage: { _, _ in
+            var releases = release.stream.makeAsyncIterator()
+            _ = await releases.next()
+            return nil
+        })
         draft.thumbnailDecoder = { _, _ in bitmap }
-        draft.restore(content: "Keep this caption", attachments: [image.attachment], sendAttemptID: "previous-send")
+        draft.restore(content: "Keep this caption", attachments: [image.attachment])
         let restored = try #require(draft.images.first)
-        #expect(!draft.isLoadingImages)
+        #expect(draft.isLoadingImages)
         let retained = try #require(await draft.loadThumbnail(for: restored))
         #expect(retained === bitmap)
         let lookupChanged = Mutex(false)
@@ -119,11 +126,9 @@ struct ComposerThumbnailTests {
             lookupChanged.withLock { $0 = true }
         }
 
-        draft.text = "Edited caption"
-        #expect(draft.isLoadingImages)
+        release.continuation.yield()
         try await eventually { !draft.isLoadingImages }
         #expect(draft.images == [restored])
-        #expect(draft.sendAttemptID == nil)
         #expect(draft.hasUnreadableImage)
         #expect(draft.error?.contains(image.name) == true)
         #expect(lookupChanged.withLock { $0 })

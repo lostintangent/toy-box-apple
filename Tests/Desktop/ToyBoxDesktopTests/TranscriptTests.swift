@@ -171,7 +171,7 @@ struct TranscriptTests {
     @MainActor
     @Test func mentionInkKeepsItsIdentityHueAtTextContrastOnEverySurface() throws {
         let colors = ["#7fa171", "#ffffff", "#000000", "#ffff00", "#00ffff", "#ff0000", "#123"]
-        let surfaces: [TranscriptSurface] = [.canvas, .agent, .pendingAgent, .user]
+        let surfaces: [TranscriptSurface] = [.canvas, .agent, .pendingAgent, .user, .notSentUser]
         for (name, isDark, isIncreased) in [(NSAppearance.Name.aqua, false, false), (.darkAqua, true, false),
                                             (.accessibilityHighContrastAqua, false, true),
                                             (.accessibilityHighContrastDarkAqua, true, true)] {
@@ -240,7 +240,7 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test(arguments: [TranscriptSurface.user, .agent])
+    @Test(arguments: [TranscriptSurface.user, .agent, .notSentUser])
     func bubblesGainAVisibleEdgeOnlyUnderIncreasedContrast(surface: TranscriptSurface) async throws {
         for name in [NSAppearance.Name.aqua, .darkAqua] {
             for contrast in [ColorSchemeContrast.standard, .increased] {
@@ -370,9 +370,8 @@ struct TranscriptTests {
         }
         defer { NotificationCenter.default.removeObserver(token) }
         harness.interaction.jumpToLatest()
-        _ = try? await harness.store.post(id: UUID().uuidString, content: "Sent while scrolled up", attachments: [])
-        #expect(harness.store.sendAttempts.first?.error != nil)
-        try await harness.waitUntil { abs(harness.bottomGap) < 2 }
+        await harness.send("Sent while scrolled up")
+        try await harness.waitUntil { harness.store.sending.first?.state == .notSent && abs(harness.bottomGap) < 2 }
         try await harness.settled()
         let landed = try #require(gaps.values.firstIndex { abs($0) < 2 })
         #expect(gaps.values[landed...].allSatisfy { $0 <= 48 }, "Gaps after the jump: \(gaps.values[landed...])")
@@ -382,7 +381,8 @@ struct TranscriptTests {
 
     /// Rule 4. A message on its way is drawn exactly as it will be once sent, with the same bubble and
     /// gap, and the day divider when it's the first message today, so confirming it changes nothing on
-    /// screen. The send is held at the server until the pending message has settled.
+    /// screen. The send is held at the server until the pending message has settled, then its event
+    /// arrives on the stream.
     @Test(arguments: [false, true]) @MainActor
     func confirmingASendChangesNothingOnScreen(firstToday: Bool) async throws {
         let today = Date.now.ISO8601Format()
@@ -394,25 +394,25 @@ struct TranscriptTests {
         let harness = try await TranscriptHarness(messages: messages, slowSendDelay: .seconds(3600))
         defer { await harness.close() }
         harness.holdSends()
-        let id = UUID().uuidString
-        let send = Task { try await harness.store.post(id: id, content: "Ship it", attachments: []) }
+        let id = await harness.send("Ship it").uuidString
         try await harness.waitUntil { harness.heldSends == 1 && abs(harness.bottomGap) < 2 }
         try await harness.settled()
-        let attempt = try #require(harness.store.sendAttempts.first)
+        let pending = try #require(harness.store.sending.first)
         let clip = harness.scrollView.contentView
-        let pending = (height: harness.scrollView.documentView?.bounds.height, top: clip.bounds.minY,
-                       pixels: transcriptLayerPixels(of: harness.scrollView))
+        let drawn = (height: harness.scrollView.documentView?.bounds.height, top: clip.bounds.minY,
+                     pixels: transcriptLayerPixels(of: harness.scrollView))
 
-        try harness.confirmSend(ChannelMessage(id: id, sequence: 41, timestamp: attempt.timestamp, sender: .user,
-                                               content: .text("Ship it")))
-        _ = try await send.value
-        try await harness.waitUntil { harness.store.sendAttempts.isEmpty && harness.capture.frames[id] != nil }
+        let sent = ChannelMessage(id: id, sequence: 41, timestamp: pending.message.timestamp, sender: .user,
+                                  content: .text("Ship it"))
+        harness.push(sent, revision: 2)
+        try harness.confirmSend(sent)
+        try await harness.waitUntil { harness.store.sending.isEmpty && harness.capture.frames[id] != nil }
         try await harness.settled()
         #expect(harness.store.messages.last?.id == id)
         #expect((harness.capture.frames["divider-\(id)"] != nil) == firstToday)
-        #expect(harness.scrollView.documentView?.bounds.height == pending.height)
-        #expect(clip.bounds.minY == pending.top)
-        let changed = transcriptChangedBounds(pending.pixels, transcriptLayerPixels(of: harness.scrollView),
+        #expect(harness.scrollView.documentView?.bounds.height == drawn.height)
+        #expect(clip.bounds.minY == drawn.top)
+        let changed = transcriptChangedBounds(drawn.pixels, transcriptLayerPixels(of: harness.scrollView),
                                               width: Int(harness.scrollView.bounds.width))
         #expect(changed == nil, "Confirming redrew \(String(describing: changed))")
     }
@@ -1301,8 +1301,7 @@ struct TranscriptTests {
     @MainActor
     @Test func aRowRedrawsWhenItsBookmarksBecomeChangeable() throws {
         let lead = ChannelAgent.lead(id: "lead")
-        let store = ChannelStore(id: "bookmarks", api: try ChannelAPI(serverURL: "https://bookmarks.invalid"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "bookmarks", api: try ChannelAPI(serverURL: "https://bookmarks.invalid"))
         let message = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-10-22T10:00:00Z",
                                      sender: .agent("lead"), content: .text("Hello"))
         let row = try #require(TranscriptRowBuilder().rows([message], lead: lead, members: []).last)
@@ -2572,6 +2571,9 @@ private final class TranscriptHarness {
     let capture: TranscriptLayoutCapture
     private(set) var scrollView = NSScrollView()
     private let session: URLSession
+    private let outbox: ChannelOutbox
+    /// Delivers the outbox's messages to this server, as the app's catalog does.
+    private let catalog: ChannelCatalogStore
     private let window: NSWindow
     private var turnObserver: CFRunLoopObserver?
     private var onTurn: (@MainActor (TranscriptHarness) -> Void)?
@@ -2601,8 +2603,12 @@ private final class TranscriptHarness {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [TranscriptServerProtocol.self]
         let session = URLSession(configuration: configuration)
-        let store = ChannelStore(id: "harness", api: try ChannelAPI(serverURL: "https://\(host)", session: session),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "harness", api: try ChannelAPI(serverURL: "https://\(host)", session: session))
+        let outbox = ChannelOutbox(folder: FileManager.default.temporaryDirectory
+            .appending(path: "tbm-transcript-outbox-\(UUID())", directoryHint: .isDirectory), retryWindow: 120)
+        let catalog = ChannelCatalogStore(api: store.api)
+        catalog.outbox = outbox
+        store.outbox = outbox
         let interaction = ChannelInteraction()
         let capture = TranscriptLayoutCapture()
         if warm {
@@ -2635,7 +2641,7 @@ private final class TranscriptHarness {
         window.isReleasedWhenClosed = false
         window.contentView = view
         (self.host, self.store, self.interaction, self.capture) = (host, store, interaction, capture)
-        (self.session, self.window) = (session, window)
+        (self.session, self.window, self.outbox, self.catalog) = (session, window, outbox, catalog)
         if let onTurn {
             self.onTurn = onTurn
             // After Core Animation's commit, so it sees each pass as drawn.
@@ -2840,6 +2846,12 @@ private final class TranscriptHarness {
         if let data { stream?.deliver(data) }
     }
 
+    /// Sends through the outbox, as the composer does. Unless held, the server refuses it.
+    @discardableResult
+    func send(_ text: String) async -> UUID {
+        await outbox.send(text, to: store.id, on: store.api.baseURL)
+    }
+
     /// Holds every send until `confirmSend(_:)` answers it with the server's copy.
     func holdSends() {
         TranscriptServerProtocol.fixtures.withLock { $0[host]?.holdsSends = true }
@@ -2870,6 +2882,8 @@ private final class TranscriptHarness {
         if let turnObserver { CFRunLoopRemoveObserver(CFRunLoopGetMain(), turnObserver, .commonModes) }
         turnObserver = nil
         await store.close()
+        catalog.outbox = nil
+        try? FileManager.default.removeItem(at: outbox.folder)
         window.close()
         session.invalidateAndCancel()
         TranscriptServerProtocol.fixtures.withLock { _ = $0.removeValue(forKey: host) }
@@ -2877,8 +2891,8 @@ private final class TranscriptHarness {
 }
 
 /// An in-memory channel server: a snapshot stream that stays open for pushed events, history pages
-/// that can be held until released, sends that can be held until confirmed, and a 503 for every
-/// other write, like an unavailable server.
+/// that can be held until released, sends that can be held until confirmed or are otherwise refused,
+/// and a 503 for every other write, like an unavailable server.
 private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
     struct HeldResponse: Sendable {
         var request: TranscriptServerProtocol
@@ -2924,7 +2938,7 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
             return Data(#"{"version":1,"revision":1,"messages":\#(encoded)}"#.utf8)
         }
         let sends = method == "POST" && url.lastPathComponent == "messages"
-        enum Reply { case stream(Data), page(Data), held, unavailable, missing }
+        enum Reply { case stream(Data), page(Data), held, refused, unavailable, missing }
         let reply = Self.fixtures.withLock { fixtures -> Reply in
             guard var fixture = fixtures[host] else { return .missing }
             defer { fixtures[host] = fixture }
@@ -2937,6 +2951,7 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
                 fixture.heldSends.append(self)
                 return .held
             }
+            if sends { return .refused }
             guard method == "GET", url.lastPathComponent == "messages", let page else { return .unavailable }
             guard fixture.holdsHistory else { return .page(page) }
             fixture.held.append(.init(request: self, body: page))
@@ -2949,6 +2964,7 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didLoad: snapshot)
         case .page(let body): respond(status: 200, body: body)
         case .held: break
+        case .refused: respond(status: 422, body: Data(#"{"error":"The message was refused."}"#.utf8))
         case .unavailable: respond(status: 503, body: Data(#"{"error":"The server is unavailable."}"#.utf8))
         }
     }
@@ -2995,8 +3011,7 @@ private final class HoveredMessage {
     init(id: String) async throws {
         pointer.location = { .zero }
         let lead = ChannelAgent.lead(id: "lead")
-        let store = ChannelStore(id: "selection", api: try ChannelAPI(serverURL: "https://selection.invalid"),
-                                 sendJournal: nil)
+        let store = ChannelStore(id: "selection", api: try ChannelAPI(serverURL: "https://selection.invalid"))
         let message = ChannelMessage(id: id, sequence: 1, timestamp: "2026-10-22T10:00:00Z", sender: .agent("lead"),
                                      content: .text(String(repeating: "A paragraph long enough to wrap. ", count: 6)
                                          + "\n\nA second paragraph."))

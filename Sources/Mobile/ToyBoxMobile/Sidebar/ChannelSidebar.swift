@@ -278,8 +278,7 @@ struct ChannelSidebar: View {
     }
 
     private func choices(_ entry: ChannelWaitingRequests.Entry) -> TranscriptRequestChoices? {
-        entry.choices(attempts: model.catalog?.existingChannel(id: entry.channel.id)?.sendAttempts ?? [],
-                      isConnected: model.catalog?.phase.failure == nil)
+        entry.choices(isConnected: model.catalog?.phase.failure == nil)
     }
 
     private func openChannel(_ entry: ChannelWaitingRequests.Entry) {

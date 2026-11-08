@@ -56,8 +56,7 @@ struct ComposerSurface: View {
         return AgentMentions.Choice.choices(matching: query.text, among: store.roster)
     }
     private var hasNotices: Bool {
-        draft.error != nil || composer.error != nil || store.attemptPersistenceError != nil
-            || draft.isOverLimit || session.isLoadingImages
+        draft.error != nil || draft.isOverLimit || session.isLoadingImages
             || store.phase.isUnavailable
             || dictation.notice != nil
     }
@@ -124,14 +123,6 @@ struct ComposerSurface: View {
             guard let reply = interaction.replyRequest else { return }
             session.reply(to: reply.agent)
         }
-        .onChange(of: interaction.editSendAttemptRequest?.token) { _, _ in
-            guard let id = interaction.editSendAttemptRequest?.id,
-                  let attempt = store.sendAttempts.first(where: { $0.id == id }) else { return }
-            session.edit(attempt)
-        }
-        .onChange(of: composer.isConfirmed) { _, confirmed in
-            if confirmed { composer.reconcile(); interaction.jumpToLatest() }
-        }
         .onChange(of: draft.revision) { _, revision in
             registerDraft()
             dictation.draftChanged(to: revision)
@@ -143,7 +134,6 @@ struct ComposerSurface: View {
             if phase != .active { dictation.deactivate() }
         }
         .onAppear {
-            composer.reconcile()
             registerDraft()
         }
         .onDisappear {
@@ -152,17 +142,7 @@ struct ComposerSurface: View {
         }
         .task(id: scenePhase) {
             if scenePhase == .active, !isReaderCovered { await dictation.refreshLanguageSupport() }
-        }
-        .confirmationDialog("Keep your current draft?", isPresented: Binding(
-            get: { composer.pendingEdit != nil },
-            set: { if !$0 { composer.pendingEdit = nil } }
-        ), titleVisibility: .visible) {
-            Button("Append Unsent Message") { session.appendPendingEdit() }
-            Button("Cancel", role: .cancel) { composer.pendingEdit = nil }
-        } message: {
-            Text(ChannelComposerSession.appendExplanation)
-        }
-    }
+        }    }
 
     private var container: some View {
         VStack(spacing: 0) {
@@ -318,8 +298,6 @@ struct ComposerSurface: View {
                 notice(draft.isSavedLocally ? error : "Couldn't save this draft on this iPhone. \(error)")
                 if !draft.isSavedLocally { Button("Retry Saving Draft") { draft.retrySave() } }
             }
-            if let error = composer.error { notice(error) }
-            if let error = store.attemptPersistenceError { notice(error) }
             if draft.isOverLimit { notice("Messages are limited to 12,000 characters.") }
             if session.isLoadingImages { Label("Reading images", systemImage: "photo") }
             if let notice = dictation.notice {

@@ -176,11 +176,11 @@ final class TranscriptScroll {
     var visibleRows: [String] { layout.map(Model.visibleRows(in:)) ?? [] }
 }
 
-/// Only a send made now follows the reader to the bottom. The outbox restored at launch can arrive
-/// after landing, and its attempts never start out sending.
-func startsOwnPost(after previous: [String], in attempts: [ChannelSendAttempt]) -> Bool {
+/// Only a new message on its way follows the reader to the bottom. A Not sent one the outbox kept
+/// from an earlier run doesn't, and Retry jumps on its own.
+func startsOwnPost(after previous: [UUID], in sending: [ChannelOutbox.Message]) -> Bool {
     let previous = Set(previous)
-    return attempts.contains { !previous.contains($0.id) && $0.phase == .sending }
+    return sending.contains { !previous.contains($0.id) && $0.state == .sending }
 }
 
 struct ConversationView: View {
@@ -232,7 +232,7 @@ struct ConversationView: View {
         let channel = TranscriptRowChannel(id: store.id, agents: store.roster, api: store.api)
         let statusReactions = statusReactions
         let card = interaction.messageView == .all ? catchUp.map { (session: $0, store: store) } : nil
-        let requestChoices = TranscriptRequestChoices(request: store.request, attempts: store.sendAttempts,
+        let requestChoices = TranscriptRequestChoices(request: store.request, store: store,
                                                       isConnected: store.phase.isConnected)
         let bookmarks = store.bookmarks.map(Set.init)
         let isConnected = store.phase.isConnected
@@ -276,15 +276,17 @@ struct ConversationView: View {
                         .padding(.top, item.spacing)
                         .id(item.id)
                 }
-                let attemptDividers = TranscriptRowBuilder.pendingDividers(store.sendAttempts.map(\.message),
+                let sending = store.sending
+                let sendingDividers = TranscriptRowBuilder.pendingDividers(sending.map(\.message),
                                                                            after: items.last?.messages.last, roster: store.roster)
-                ForEach(store.sendAttempts) { attempt in
-                    // The committed row takes the attempt's UUID, so keep the two identities apart.
-                    TranscriptSendAttempt(attempt: attempt, divider: attemptDividers[attempt.id], store: store,
-                                          channel: channel)
-                        .padding(.top, items.isEmpty && attempt.id == store.sendAttempts.first?.id
-                                 ? 0 : TranscriptSpacing.above(attemptDividers[attempt.id]))
-                        .id("attempt-\(attempt.id)")
+                ForEach(sending) { message in
+                    // The committed row takes the message's UUID, so keep the two identities apart.
+                    let divider = sendingDividers[message.id.uuidString]
+                    TranscriptSending(message: message, divider: divider, outbox: store.outbox,
+                                      isConnected: store.phase.isConnected, channel: channel)
+                        .padding(.top, items.isEmpty && message.id == sending.first?.id
+                                 ? 0 : TranscriptSpacing.above(divider))
+                        .id("attempt-\(message.id)")
                 }
             }
             .padding(.top, 12)
@@ -356,7 +358,7 @@ struct ConversationView: View {
         }
         .overlay {
             if store.phase != .deleted {
-                TranscriptPlaceholder(store: store, isEmpty: items.isEmpty && store.sendAttempts.isEmpty) {
+                TranscriptPlaceholder(store: store, isEmpty: items.isEmpty && store.sending.isEmpty) {
                     Task { await store.loadOlder() }
                 }
             }
@@ -366,8 +368,8 @@ struct ConversationView: View {
             land(items)
         }
         .onChange(of: store.phase.isConnected) { land(items) }
-        .onChange(of: store.sendAttempts.map(\.id)) { old, _ in
-            if startsOwnPost(after: old, in: store.sendAttempts) { place(scroll.update(.ownPostConfirmed)) }
+        .onChange(of: store.sending.map(\.id)) { old, _ in
+            if startsOwnPost(after: old, in: store.sending) { place(scroll.update(.ownPostConfirmed)) }
         }
         .onChange(of: interaction.findRequest) { openFind() }
         .onChange(of: interaction.findNavigation?.token) {
@@ -424,7 +426,7 @@ struct ConversationView: View {
     }
 
     private func prepareFind() {
-        find.prepare(messages: store.messages.filter { !store.optimisticMessageIds.contains($0.id) },
+        find.prepare(messages: store.messages,
                      agents: store.roster, hasOlder: store.hasOlderMessages)
     }
 
@@ -611,51 +613,49 @@ private struct TranscriptPagingAccessory: View {
 }
 
 /// A message on its way, drawn exactly as it will be once sent, so confirming it changes nothing on
-/// screen. A failed one keeps its label and actions.
-private struct TranscriptSendAttempt: View {
-    let attempt: ChannelSendAttempt
+/// screen. A failed one adds only its red wash and Retry, with Delete in the bubble's menu.
+private struct TranscriptSending: View {
+    let message: ChannelOutbox.Message
     let divider: TranscriptDivider?
-    let store: ChannelStore
+    let outbox: ChannelOutbox?
+    let isConnected: Bool
     let channel: TranscriptRowChannel
     @Environment(ChannelInteraction.self) private var interaction
-    @ViewState private var actionError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let divider { TranscriptRule(divider: divider).padding(.bottom, TranscriptSpacing.divider) }
-            message
+            row
         }
     }
 
-    private var message: some View {
+    private var row: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            TranscriptDeliveryLabel(phase: attempt.phase) { label in
-                TranscriptUserMessage(message: attempt.message, channel: channel, deliveryLabel: label,
-                                      identifier: "send-\(attempt.id)")
+            TranscriptDeliveryLabel(state: message.state) { label in
+                TranscriptUserMessage(message: message.message, channel: channel, deliveryLabel: label,
+                                      identifier: "send-\(message.id)",
+                                      deleteNotSent: delete)
             }
-            if let error = actionError ?? attempt.error {
-                Text(error).font(.footnote).foregroundStyle(TranscriptInk.secondary)
-            }
-            if attempt.canRetry {
-                HStack(spacing: 12) {
-                    Button("Edit") { interaction.editSendAttempt(id: attempt.id) }
-                    Button("Send Again") {
-                        Task {
-                            do {
-                                actionError = nil
-                                try await store.retrySend(id: attempt.id)
-                                interaction.jumpToLatest()
-                            } catch { actionError = error.localizedDescription }
-                        }
-                    }
-                    .disabled(!store.phase.isConnected || store.isSending)
+            if message.state == .notSent {
+                Button("Retry") {
+                    outbox?.sendAgain(message.id)
+                    interaction.jumpToLatest()
                 }
+                .disabled(!isConnected)
                 .buttonStyle(.bordered)
+                .tint(.primary)
                 .controlSize(.small)
                 .font(.footnote)
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    /// Delete, offered only once the send has failed.
+    private var delete: (() -> Void)? {
+        guard message.state == .notSent else { return nil }
+        let outbox = outbox, id = message.id
+        return { outbox?.withdraw(id) }
     }
 }
 

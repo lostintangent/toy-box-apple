@@ -95,9 +95,6 @@ struct ShareSheet: View {
                         .frame(width: 36, height: 36)
                         .background(.tint, in: Circle())
                         .accessibilityLabel("Sent")
-                case .unconfirmed, .offline:
-                    Button("Send Again", systemImage: "arrow.clockwise") { Task { await session.send() } }
-                        .buttonStyle(.glassProminent)
                 }
             }
             .dynamicTypeSize(...DynamicTypeSize.large)
@@ -133,7 +130,6 @@ private struct ShareComposer: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                notice
                 Group {
                     content
                     TextField("Add a note", text: $session.note, axis: .vertical)
@@ -149,17 +145,6 @@ private struct ShareComposer: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .onAppear { noteFocused = true }
-    }
-
-    @ViewBuilder private var notice: some View {
-        switch session.phase {
-        case .unconfirmed:
-            ShareNotice(title: "Toy Box didn't confirm this.", detail: "Sending again can't post it twice.")
-        case .offline:
-            ShareNotice(title: "You're offline.", detail: "Nothing was sent.")
-        default:
-            if let notice = session.notice { ShareNotice(title: notice, detail: nil) }
-        }
     }
 
     @ViewBuilder private var content: some View {
@@ -204,26 +189,6 @@ private struct ShareComposer: View {
     }
 }
 
-private struct ShareNotice: View {
-    let title: String
-    let detail: String?
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).fontWeight(.semibold)
-                if let detail { Text(detail).foregroundStyle(.secondary) }
-            }
-        }
-        .font(.subheadline)
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-        .accessibilityElement(children: .combine)
-    }
-}
-
 /// Up to three recent channels, then the rest A to Z, like the Mac's Quick Send.
 private struct ShareChannelPicker: View {
     let session: MobileShareSession
@@ -234,9 +199,6 @@ private struct ShareChannelPicker: View {
         let channels = session.catalog?.channels ?? []
         let choices = channels.choices(matching: query, recentIDs: session.recentChannelIDs)
         List {
-            if let notice = session.notice {
-                ShareNotice(title: notice, detail: nil).listRowBackground(Color.clear)
-            }
             if !choices.recent.isEmpty {
                 Section("Recent") { ForEach(choices.recent) { row($0) } }
             }

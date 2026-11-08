@@ -63,9 +63,9 @@ Signing, notarization, in-place updates and TestFlight are in [releases.md](rele
   server's catalog stream from launch, so each change arrives as it happens, in the background
   too, where requests still reach the Dock badge and notifications.
   Neither waits for the main thread to start a request. The catalog opens its stream at once, and
-  connecting starts a channel's stream and the outbox read together. Events are read off the
-  main actor and queued for it as each one decodes, after the restored outbox, so a snapshot that
-  arrives while the first window is being built applies in the main thread's next turn.
+  connecting starts a channel's stream. Events are read off the main actor and queued for it as
+  each one decodes, so a snapshot that arrives while the first window is being built applies in
+  the main thread's next turn.
   The first window connects its channel only once it appears. Connecting earlier gains nothing,
   because that snapshot already arrives while the window is built, and a channel loaded before the
   window holds the window back until its whole transcript renders, about 470 ms later on the launch
@@ -96,11 +96,7 @@ Signing, notarization, in-place updates and TestFlight are in [releases.md](rele
   still need the active scene. Nothing on screen changes because the scene went inactive or a
   channel is reconnecting quietly: sidebar working agents and the notification tip stay until the
   channel is stale or deleted.
-- **Background sends:** `ChannelStore.postInBackground(id:content:)` accepts a caller-owned UUID
-  without opening or waiting for SSE. It restores the same outbox, durably records the attempt
-  before its one HTTP request, and retains rejection or uncertain-delivery classification before
-  returning a failure. Explicit retries reuse that UUID. Normal `post` and `retrySend` still
-  require a live channel. A duplicate acceptance never starts a stream for a background send.
+- **Sending:** every message goes through one outbox, as [Sending](#sending) describes.
 - **Wire rules:**
   - Decode leniently, so unknown system message kinds and fields degrade to a generic row instead
     of failing the stream.
@@ -135,8 +131,8 @@ Connection. Three invariants hold:
 Send, management and read marking wait for `isConnected`. A read write belongs to the store, so
 cancelling the reader that started it neither interrupts it nor reports an error. A later read
 joins that write, which sends the newest position before it finishes. Notices, agent status and working
-presence change on `isUnavailable` (failed or deleted), never on a view timer. Send attempts, Send
-Again and `reconcileManagementWrite` are delivery, not connection, and a handed-off channel that
+presence change on `isUnavailable` (failed or deleted), never on a view timer. The outbox, Retry
+and `reconcileManagementWrite` are delivery, not connection, and a handed-off channel that
 couldn't be opened is Handoff's `missing`.
 
 - **Channel stream:** `connect()` starts the stream and keeps retrying until `disconnect()`, and
@@ -176,6 +172,61 @@ couldn't be opened is Handoff's `missing`.
   `connected` with the channel count, or `failed`. `isConnecting` drives the button.
 - **Holders:** `ChannelConnections` counts who holds each store through `hold` and `release`. The
   last release lingers as State describes, and `disconnectAll` serves a server change.
+
+### Sending
+
+Every message the user sends goes through one `ChannelOutbox` (ChannelClient), from a composer,
+a card, a choice, a notification, Siri, Quick Send or the share sheet. Each app makes one at
+launch, and the catalog store for the current server delivers that server's messages, whether or
+not their channel is open. So every entry point just calls `send` and moves on. None waits on the
+network, retries or reports a delivery failure itself. Management writes aren't messages, so they
+keep `reconcileManagementWrite`.
+
+- **Saved before it returns.** `send` shows the message in its channel at once as Sending, saves
+  it as its own file and returns. It never throws, and if saving fails the message still sends
+  from memory. The Mac keeps the files in Application Support and the phone in its app group, so
+  the share extension writes to the app's outbox. Messages still Sending resume at the next
+  launch.
+- **Offline still disables Send.** A surface that knows it's offline keeps Send disabled, as
+  [Connections](#connections) describes. Only the Lock Screen, Siri and the share sheet send
+  without checking, since they can't know first.
+- **In order, under one ID.** Each message records its server and channel, so a reply to another
+  server's notification waits for that server. A channel's messages go one at a time, oldest
+  first, and every attempt reuses the UUID `send` gave it, so the server never posts one twice.
+  Channels deliver independently.
+- **The server's answer confirms it.** A 2xx, a 409 for an ID the server already has, or the
+  message arriving in a snapshot or replay takes it out of the outbox. An open channel merges the
+  message the POST returns, and after a 409 the message arrives through its stream. The outbox
+  then marks the channel read through the message, since the user's own message never leaves a
+  channel unread.
+- **When delivery fails:**
+
+  | What happened | For example | The outbox |
+  | --- | --- | --- |
+  | Toy Box can't reach the server | Offline, can't find or connect to the host, a lost connection, or a timeout or 502, 503, 504 or 530 while the catalog isn't connected, as when a phone's signal is weak or the Mac behind Tailscale Serve or Cloudflare Tunnel sleeps | Waits for the catalog to recover, the network to return or the app to come back, with the reconnect backoff as a fallback, then sends again. It never gives up, even across launches |
+  | The server has trouble | 408, 429, any other 5xx, or a timeout or gateway error while the catalog is connected | Retries with the reconnect backoff, from half a second up to every 15 seconds, for 2 minutes, then stops. Becoming unreachable meanwhile waits as above and starts the 2 minutes over |
+  | The server says no | Any other 4xx | Stops at once. A deleted channel's messages leave with it |
+
+- **Not sent is the one failed state.** A message the outbox stops trying shows Not sent on its
+  row in the transcript, with Retry and Delete, and nowhere else. Retry puts it back in line under
+  the same ID, and Delete withdraws it. It steps out of line so the channel's later messages
+  continue, and it stays Not sent across launches.
+- **The waiting rule.** `ChannelWaitingRequests` decides what's waiting for the transcript's
+  choices, Needs You, the menu bar, the Dock, widgets and notifications. Each message records the
+  request its caller answered, or the one waiting in its channel when it was sent, so a newer
+  request is never hidden. While the answer is Sending its request counts as answered, and once
+  it's confirmed the request stays answered until the catalog stops listing it. A Not sent answer
+  stops counting, so the request comes back. In the channel the choices stay hidden while any
+  answer to the request is in the outbox, since its row sits just below.
+- **The phone finishes sends in the background.** While `isDelivering` is true, the app delegate
+  holds background time, so a Lock Screen reply finishes after its action returns. Whatever is
+  still Sending when that time ends resumes when the app next launches or comes back. The share
+  extension's outbox is made with `sendsOnce`, since the extension ends before it could retry. It
+  leaves the folder's other messages to the app, and its `send` makes one attempt and marks the
+  channel read before it returns. The attempt gives up after 10 seconds without hearing from the
+  server, so a sleeping server never holds the sheet for long. Whatever that attempt leaves Sending,
+  the app sends. ChannelClient
+  makes no `UIApplication` call.
 
 ## Protocol
 
@@ -398,7 +449,7 @@ drop shadows. Use an 8-point spacing rhythm, with 4-point adjustments inside com
 | --- | --- |
 | Conversation background | `textBackgroundColor`, opaque in both appearances |
 | Agent message surface | Neutral tonal fill over the conversation, approximately 4.5% primary ink in light and 7% in dark. A pending request swaps it for a warm orange wash. Borders only under Increase Contrast |
-| Your message surface | Accent at 9% over the conversation, with normal label text. On the phone's pure black Dark canvas, the wash sits over the agent bubble's 7% neutral lift so the bubble stands off black as clearly. Under Increase Contrast, the same 1-point `primary` edge at 50% as agent bubbles |
+| Your message surface | Accent at 9% over the conversation, with normal label text. On the phone's pure black Dark canvas, the wash sits over the agent bubble's 7% neutral lift so the bubble stands off black as clearly. Under Increase Contrast, the same 1-point `primary` edge at 50% as agent bubbles. A message that didn't send swaps the accent for a red wash at the request wash's strength, over the neutral fill in dark, with a red edge under Increase Contrast |
 | Navigation and inspector | System sidebar and inspector materials, no manual blur stacking |
 | Floating controls and popovers | Native toolbar, popover and control materials |
 | Text | `labelColor`, `secondaryLabelColor`, `tertiaryLabelColor` by hierarchy |
@@ -828,7 +879,7 @@ navigation keeps list focus until explicitly moving into the conversation.
 | Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without connecting, the transcript's floating pill says "Reconnecting to server" over "Messages may be out of date" (see Reconnecting notice), the channel's only outage notice. It has no Retry, because the channel keeps trying and tries again at once when the network comes back or moves, the app becomes active again or the catalog recovers (see Connections). The notice stays until the channel connects. A reconnect that goes live sooner shows nothing. Until then agent status, working presence and every connection notice stay as they were while live. Disable delivery and management actions, not editing. Time away from the app never counts toward the three seconds |
 | Disconnected without any state | `wifi.exclamationmark`, "Can't connect to Toy Box", server host, readable failure, Retry and Settings |
 | Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar), after the catalog's stream has failed for about three seconds or at once for a refresh the user asked for. Never replace them with "No channels". When it recovers, every channel waiting out a backoff retries at once |
-| Failed send | Inline error above composer and explicit status on optimistic row, preserved text/attachments, no automatic retry |
+| Failed send | The message stays on its row in the transcript as Not sent, with its text and attachments, Retry and Delete, after the outbox's own retries (see [Sending](#sending)) |
 | Channel deleted | Stop observation, dismiss its inspector, show "This channel was deleted". Back to Channels and Copy Draft if nonempty. Never silently discard a draft or redirect to another channel |
 | Invalid URL or authorization failure | Show the actual category and server, Settings/Retry as appropriate. No fabricated successful connection |
 | Failed image/artifact/history | Localized error at that surface with Retry. Keep the rest of the channel usable |
@@ -1157,10 +1208,9 @@ disabled.
 **Send.** Tapping Send runs these steps in order:
 1. Listening stops and the waveform eases flat over 0.2 seconds. Only finalized words are sent,
    so Send waits for the final result. Cancel disables.
-2. The note goes out as one outbox attempt with its own UUID. If it hasn't confirmed after
-   300 ms, Send shows the composer's spinner.
-3. On confirmation, the recorder closes into the Sent beat in one `.smooth(duration: 0.35)`
-   transaction:
+2. The note goes to the outbox with its own UUID, and the card holds only while it's saved.
+3. Once the outbox has it, the recorder closes into the Sent beat in one
+   `.smooth(duration: 0.35)` transaction, while the note may still be sending:
    - The words, waveform and controls fade out over 0.15 seconds while the card shrinks back to
      the cell's frame, its top returning to the row if it rose. The rows it covered reappear
      as it shrinks.
@@ -1172,8 +1222,8 @@ disabled.
      circle fills the mark's 28 points, and its check is knocked out, so the surface beneath
      shows through. Nothing rings or pulses around it. `.sensoryFeedback(.success)` plays as it
      arrives.
-   - The counter gives way to the note's own time, the channel's new last activity in the row's
-     ordinary format, through the slot's swap. No word says Sent, because the check does.
+   - The counter gives way to the time the note was sent, in the row's ordinary format, through
+     the slot's swap. No word says Sent, because the check does.
    - The card's shadow and edge fade out as it lands, and its fill stays as a wash.
 4. As the card lands, its wash fades over 0.4 seconds with `.easeOut`, and the chevron and
    attention mark fade back. The row now looks ordinary except that it wears the check in
@@ -1186,13 +1236,8 @@ disabled.
 On the open channel's row, the selection band returns as the wash fades. The check stays green
 on it, since the glass selection keeps the row's standard ink.
 
-**Failure.** On a definite rejection, the recorder stays open with its words and the timer slot
-reads "Not sent". On a timeout or lost response it reads "Delivery not confirmed". Both use
-secondary ink, like a failed send in the conversation, never red. Send becomes Send Again, the
-same accent circle with `arrow.clockwise`, on the same UUID. Cancel closes the card and leaves
-the note in the channel's outbox, where the conversation offers Send Again on that UUID like any
-failed send, so a note that may have landed can't post twice. Leaving does the same. Nothing
-retries on its own.
+**Not sent.** The card never waits on the server or reports a failure. A note the outbox can't
+deliver waits in its channel as Not sent, with Retry, like any message.
 
 **Cancel and leaving.** Cancel discards the note without confirmation, since nothing was sent.
 The card shrinks back to the row with the open spring in reverse as the mic swaps back to the
@@ -1211,9 +1256,8 @@ so focus stays inside it while it's open and returns to the channel's row when i
 Opening moves focus to the words and announces "Listening". The words are one element whose
 value updates without announcing each word. Send reads "Send to Lead" and Cancel reads "Cancel".
 The Magic Tap sends and the escape gesture cancels. A send announces "Sent to Lead in
-[channel]", so the check is hidden from VoiceOver, and a failure announces once, like any send
-error. At accessibility text sizes the recorder keeps the stacked heading, and its words and
-controls grow with the text.
+[channel]", so the check is hidden from VoiceOver. At accessibility text sizes the recorder keeps
+the stacked heading, and its words and controls grow with the text.
 
 #### Needs You in the list
 
@@ -1253,31 +1297,32 @@ only once the card would run past the visible list, fading at whichever edge it 
 the choices and Reply always stay in view. The lines above and below the card hide, and it offers no
 Talk swipe.
 
-**Choices.** A choice sends at once as written, through the channel's outbox with its own UUID,
-as in the transcript. The card holds as it was while the reply sends, its choices still and
-ignoring taps, with the composer's spinner after 300 ms. On confirmation it runs the talk card's
-beats. In one `.smooth(duration: 0.35)` transaction the card shrinks straight back into its row
+**Choices.** A choice goes at once as written to the outbox with its own UUID, answering the
+card's request, as in the transcript. The card holds as it was only while the outbox saves it,
+its choices still and ignoring taps, then runs the talk card's beats while the reply may still be
+sending. In one `.smooth(duration: 0.35)` transaction the card shrinks straight back into its row
 as the next waiting request's card opens, and the row's mark becomes the talk card's done check
 through `.replace`, with `.sensoryFeedback(.success)`. Two seconds after the card lands, the check
 swaps back to the channel mark through the same `.replace`. No word says Sent and the reply's
 words don't show, because the check does. Answering the next card before then leaves the first
-check in place, and each row settles on its own. An answered request never reopens while the
-catalog catches up.
+check in place, and each row settles on its own. The waiting rule counts a request answered from
+the moment its reply is sending, so it never reopens while the reply sends or the catalog catches
+up.
 
 **Reply.** Reply lifts the card above the list, where it gains the recorder's base and shadow and
 every other row dims to 40% and ignores taps. A plain field takes the choices' place, focused at
 once with the prompt "Reply to [requester]", and grows to five lines. Cancel and Send are the
 talk card's controls. The card follows the recorder's Room rules within the area above the
 keyboard, so its controls always stay visible. The reply leads with the requester's `@handle`
-unless it starts with a mention. Send holds the lifted card while the reply sends, then on
-confirmation it shrinks from above the list straight into its row, its words fading with its base
+unless it starts with a mention. While the server is unavailable Send disables, as the choices
+do, and the words stay. Send holds the lifted card only while the outbox saves the reply, then it
+shrinks from above the list straight into its row, its words fading with its base
 and shadow, in the choices' one transaction as the next card opens, and its row wears the check,
 as a choice's does.
 
-**Failure.** A failed reply keeps its card with its words, "Not sent" or "Delivery not
-confirmed", and Send Again on the same UUID. Nothing retries on its own, and the choices never
-return, since the outbox holds the attempt. Cancel, or opening another card, closes the failed
-card and leaves the reply in the channel's outbox, where the conversation offers Send Again.
+**Not sent.** The card never waits on the server or reports a failure. A reply the outbox can't
+deliver waits in its channel as Not sent, with Retry, and its request comes back where it was in
+the list, without scrolling it.
 
 **Leaving.** Cancel discards a typed reply. Opening a channel, Search, Settings or a management
 sheet, backgrounding, or the channel going away ends it, and saves its words as that channel's
@@ -1287,7 +1332,7 @@ draft, after any draft already there.
 bounce, and the check keeps its 2-second hold. A waiting row's hint is "Shows the request", and the card's heading reads the channel's
 name with the hint "Opens the channel at this request". The lifted card is modal, and the escape
 gesture cancels. A sent reply announces "Reply sent in [channel]", so the check is hidden from
-VoiceOver, and a failure announces its label.
+VoiceOver.
 
 ### Transcript
 
@@ -1354,7 +1399,7 @@ only according to the canonical helper. In-body mentions are selectable, semibol
 agent's identity ink, with no background, and keep the accessible agent name. Derive the ink from
 the avatar color. Mix it toward black in light appearance and white in dark, in 5% steps, until
 it reaches 4.5:1 against the composited surface it sits on: the agent fill, the user's
-accent-tinted bubble or the pending orange wash. Under Increase Contrast the target is 7:1. Keep the seven-color, five-surface contrast regression
+accent-tinted bubble, the pending orange wash or the Not sent red wash. Under Increase Contrast the target is 7:1. Keep the seven-color, six-surface contrast regression
 with these targets.
 Everyone and Lead follow the same rule with the accent and the lead's color. Weight carries the
 cue for color-blind readers. Unknown mentions remain literal, not a false agent chip.
@@ -1631,7 +1676,7 @@ inspector, not this row.
 
 A request may offer two to four suggested replies. ChannelKit reads them through `ChannelMessage.suggestedReplies`, which returns trimmed, non-empty labels of at most 80 UTF-16 units, and only on a `request: true` message. A malformed list reads as no choices, so the request still shows with Reply.
 
-**Instant send.** A tap sends the label as the user's reply at once, through the same optimistic send as Reply, with a caller-owned UUID kept in the outbox until the server confirms it. Choices leave when the user answers. A failed send stays in the outbox with Send Again, and the choices do not return. Reading a request never answers it, and choices never send in the background.
+**Instant send.** A tap sends the label as the user's reply at once, through the same optimistic send as Reply, with a caller-owned UUID kept in the outbox until the server confirms it. Choices leave when the user answers. A failed send stays in the transcript as Not sent with Retry, and the choices do not return. Reading a request never answers it, and choices never send in the background.
 
 **Where choices appear.** Choices appear on the transcript's pending request, the Mac menu bar inbox, the Mac notification banner, the phone transcript, the phone list's Needs You card and the phone Lock Screen notification. They do not appear on sidebar or menu badges (counts only), the composer's Input needed state (it opens the question, and choices stay in the transcript), the Dock menu, Spotlight, the morning digest, Control Center, Quick Send or the Siri snippet. Menu items cannot hold buttons, so those surfaces keep Reply or open the channel.
 
@@ -1873,8 +1918,8 @@ The composer covers:
   `resolveChannelAudience`
 - Image attachments by paste, drag and file picker, sent inline as base64
 - Sending is unavailable while disconnected, with a visible stale state, but editing isn't. A
-  failed send stays on its row in the transcript with Edit and Send Again. The composer gets its
-  text back only through Edit, and it is never retried automatically
+  message the outbox can't deliver stays on its row in the transcript as Not sent, with Retry,
+  and the composer never takes its text back
 - Optimistic message that the committed echo replaces, drawn exactly as the echo (bubble, gap and
   day divider) so confirming changes nothing on screen. Only a send still going after 1 second
   shows a quiet "Sending"
@@ -2026,12 +2071,11 @@ only for a deleted channel, with its draft recovery. A stale snapshot must never
 send's audience without reconnection.
 
 Submitting creates one optimistic row, which shows "Sending" only while the send is still going
-after 1 second. A committed echo replaces it by UUID. On a definite rejection, mark the row
-"Not sent" and keep its text and attachments on the row for Edit. On timeout or lost response,
-say "Delivery not confirmed" rather than falsely claiming failure. Expose Edit and explicit Send
-Again, never an automatic retry. Keep the original UUID when verifying or explicitly repeating
-that attempted send so a 409 cannot deliver it twice. Do not clear a newer draft when an older
-send eventually succeeds.
+after 1 second. A committed echo replaces it by UUID. When a send fails, the row keeps its text
+and attachments, its bubble's accent wash turns red, like the orange of a waiting request, and a
+Retry button sits below it. Delete sits in the bubble's menu and each attachment's, so a message
+with only images can be deleted too, without a wash. VoiceOver reads the message as "Not sent". Retry keeps the original UUID, so a 409 cannot deliver it twice. Do not clear a newer
+draft when an older send eventually succeeds.
 
 The tray is a compact 34-point header inside the floating composer: a 28-point row of controls
 with 3 points above and below. Lead with Bookmarks when the channel has any (see Bookmarks), then
@@ -2776,26 +2820,12 @@ text arrives late. Agent avatars as the notification image need Communication No
 are out of scope.
 
 Reply is a `UNTextInputNotificationAction`: title "Reply", button "Send", placeholder "Reply". It
-posts in the background without activating the app or opening a window. The posted text is
-addressed exactly like the in-app Reply: prepend the requester's `@handle ` unless the reply
-already starts with an @mention. Post through the channel's shared `ChannelStore` background send
-with a fresh message ID, which records it in the channel's outbox before its request, and retry
-once after 2 seconds with the same ID only for a transport failure. A 409 for that ID means the
-server already has it and counts as sent. On success, mark the channel read through the reply's own
-sequence, as replying from a Messages notification does, and show nothing else. Empty or
-whitespace-only replies post nothing.
-
-When a reply can't be sent, never lose it and never post it twice. A reply that was attempted but
-not confirmed may already be on the server, so it keeps its message ID and waits in the channel's
-outbox, as on the phone. Send Again reuses that ID, and Edit follows the composer's rule for
-restoring an unsent message, so the server accepts it at most once. Leave the draft untouched and
-deliver one notification: title the channel name, body "Your reply wasn't sent. It's waiting in the
-channel so you can send it again." Activating it opens the channel with the composer focused. A
-reply that can't have been posted has no ID to keep. A deleted channel saves the text as that
-channel's draft, appending after a blank line when a draft exists, and says "Your reply wasn't sent
-because [channel] was deleted." A notification from a server other than the current one never posts
-to the current server. It saves its draft under its own server and says "Your reply wasn't sent.
-It's saved as a draft."
+sends in the background without activating the app or opening a window. The text is addressed
+exactly like the in-app Reply: prepend the requester's `@handle ` unless the reply already starts
+with an @mention. A reply or choice goes to the app's outbox for the server that posted the
+notification, answering that notification's request, and the notification clears. The outbox
+delivers it and marks the channel read, as Sending describes, so the action never waits on the
+network or posts a second notification. Empty or whitespace-only replies send nothing.
 
 Notifications withdraw themselves. Remove a channel's delivered request notification as soon as
 its `requestSequence` changes or clears, wherever it was answered. Remove a completion once
@@ -2807,7 +2837,10 @@ Settings toggles apply throughout.
 
 **Phone.** The phone's request and completion alerts arrive by push. Their text, badge, service
 extension and routing are under Push and topic subscriptions, and their Lock Screen reply choices
-are under Suggested replies.
+are under Suggested replies. A Lock Screen reply or choice is addressed like the Mac's and goes to
+the app's outbox for the server the alert came from, which the service extension records on the
+alert, answering that alert's request. Only that notification clears. The reply finishes in the
+background and marks the channel read, as Sending describes.
 
 ### Menu bar extra
 
@@ -2849,8 +2882,11 @@ fixed footer, with 16-point content insets.
 | Empty and unavailable | "All caught up" when nothing needs attention, "Connecting…" before the first catalog, "No channels yet" with the main-window route, and "Connect to Toy Box" with Settings for invalid configuration. Offline keeps cached rows, says requests may be out of date and offers Retry |
 | Footer | A fixed Quick Send command with the configured shortcut, then Open Toy Box and Settings. Close the inbox before opening another surface. No Quit, because this is a regular Dock app |
 
-An open inbox preserves its original request order and appends newly waiting channels. Answered
-and confirmed-sent rows stay in place until the next opening. A newer request never silently
+An open inbox preserves its original request order and appends newly waiting channels. A reply
+or choice turns its row Replied the moment the outbox saves it, and the editor folds away. Its
+delivery shows in the channel, never in the inbox. Answered and Replied rows stay in place until
+the next opening, when a Not sent answer brings its request back with its choices. A newer request
+never silently
 replaces the original quote. If an expanded request is answered or replaced, keep its editable
 draft, disable sending and show the corresponding explanation with Open Channel. Reply drafts
 are separate from main-window and Quick Send drafts, keyed by normalized server URL, channel and
@@ -2945,20 +2981,20 @@ the chooser instead of selecting an urgent channel. No-server, no-channel and de
 states offer Settings, the main window or Choose Channel. A channel list that can't load offers
 Retry. An offline target keeps its note without Retry, because the channel reconnects on its own.
 
-Return sends, Shift-Return inserts a newline and Command-Return sends and opens the confirmed
-message. IME and mention completion consume Return first. Escape closes completion or a picker
+Return sends, Shift-Return inserts a newline and Command-Return sends and opens the channel. IME and mention completion consume Return first. Escape closes completion or a picker
 before stopping dictation, then hides the panel. Command-W, another global shortcut press or a
 click away also hide it, preserving the draft. Owned sheets and popovers are not outside clicks.
 Images and dictation reuse the main composer's validation and permission handling. Opening Quick
 Send never requests microphone permission, reads the general clipboard or marks messages read.
 
-Both auxiliary editors use the channel's shared outbox and one caller-owned message UUID.
-Sending is read-only and makes one attempt. Hiding does not cancel or retry delivery.
-Unconfirmed delivery retains the submitted text and images with explicit Edit and Send Again.
-Send Again reuses the original UUID. Confirmation clears only the unchanged submitted revision,
-announces once and shows Sent. Quick Send hides after 700 ms, or opens the confirmed message for
-Command-Return. A confirmation while hidden never reopens the panel. Changing servers closes
-both surfaces and cancels navigation from the old server.
+Both auxiliary editors send through the app's outbox, like the channel composer. Their Send
+follows the channel list rather than the channel, so it never waits for a channel to connect and
+is disabled only while the list is offline, with "Toy Box isn't connected". Saving clears the
+draft and announces the send once. Quick Send then closes at once, or opens the channel for
+Command-Return, and the message shows in its channel as Sending. A message that fails stays there
+as Not sent with Retry, never in Quick Send or the inbox. Shared content that arrives while a send
+saves opens in a fresh editor instead of closing the panel. Changing servers closes both surfaces
+and never opens a channel from the old server.
 
 General settings places the native Quick Send shortcut recorder below Show in menu bar. The
 default is Control-Shift-Space. It records physical keys, displays the current keyboard layout,
@@ -2971,13 +3007,13 @@ permission, and snapshot and benchmark launches never register or present these 
 **Send to Toy Box.** The explicit Services action, system Share action and Dock file drops open
 the same Quick Send panel, not another editor. They prefill content for review, never send,
 answer a request or mark messages read automatically. Shared text and URLs append after a blank
-line to the selected draft. Images append to its existing attachments. Neither replaces text,
-images or an unresolved send's message UUID. The Services command accepts an explicitly supplied
+line to the selected draft. Images append to its existing attachments. Neither replaces text or
+images. The Services command accepts an explicitly supplied
 selection of text, URLs, images or file URLs. The document declaration has `LSHandlerRank` None,
 so Toy Box never claims to be a default file handler. Services never read or clear the general
 clipboard.
 
-While no channel is selected or the current send is immutable, incoming content is saved in a
+While no channel is selected or a send is saving, incoming content is saved in a
 separate server-scoped staging draft. Append it to the target only when that draft is editable.
 Multiple invocations preserve all incoming content rather than replacing an earlier payload,
 and consumption happens once so reopening the panel cannot duplicate it. Consumption clears only
@@ -3007,8 +3043,8 @@ sheet for up to ten images or one web link. Anything else, or an image it can't 
 the app group's share history and never connects anywhere else. With none saved, it says "Open
 Toy Box to connect first".
 
-The app saves that server whenever it connects and records each channel the server confirms a
-send to, from the app or the extension. That history keeps the 20 most recent channels for that
+The app saves that server whenever it connects and records each channel the user sends to, from
+the app once the server confirms it or from the extension. That history keeps the 20 most recent channels for that
 server and mirrors them as `INSendMessageIntent` donations, so the share sheet suggests them with the channel
 mark. Each donation is grouped by its server and channel, and changing servers or the catalog
 dropping a channel deletes its suggestion. A suggestion opens straight to its composer. Anything
@@ -3025,20 +3061,17 @@ the server's limits, because iOS ends a share extension near 120 MB. Ten 24-mega
 the request about three times over, so the byte limit keeps ten images' request under 20 MB.
 
 The header stays centered on the sheet in every state. Close and the trailing control are both
-36-point circles: Send (arrow up), progress, Sent (checkmark) or Send Again (`arrow.clockwise`,
-labeled "Send Again"). The channel button keeps 68 points clear of each edge, Close's measured 56
+36-point circles: Send (arrow up), progress or Sent (checkmark). The channel button keeps 68 points clear of each edge, Close's measured 56
 to 60 points plus 8, so a long name truncates instead of running under them. The header's text
 stops growing at the Large text size, with the Large Content Viewer above it.
 
-The first Send makes one attempt with its own UUID through `ChannelStore.postInBackground`, without
-a channel connection. Sending shows a progress indicator, and Sent shows a checkmark for 0.7 s
-before the sheet closes. While an attempt is in flight or unresolved, the composer is dimmed to
-50% and locked, as is the channel button. A lost connection says "You're offline." over "Nothing
-was sent." and anything else unconfirmed says "Toy Box didn't confirm this." over "Sending again
-can't post it twice." Both keep the attempt, so Send Again reuses its UUID. A refusal shows the server's
-message alone and unlocks, and the next Send is a new attempt. A deleted channel says
-"<name> no longer exists. Choose another channel." and returns to the list. Close is disabled
-while sending. Swiping down with a note asks "Discard Note" or "Keep Editing".
+Send saves the message to the app's outbox and makes one attempt, as [Sending](#sending)
+describes, so the sheet waits on the server once and never retries, even offline. Sending shows a
+progress indicator until that attempt answers, and Sent shows a checkmark for 0.7 s before the
+sheet closes.
+From Send on, the composer is dimmed to 50% and locked, as is the channel button, and Close is
+disabled. The message shows in its channel in the app as Sending, and a failure waits there as
+Not sent. Swiping down with a note asks "Discard Note" or "Keep Editing".
 
 ### Catch-up summaries
 
@@ -3238,8 +3271,8 @@ chevron. Each row runs Open Channel. "Plus 2 more channels" follows when there a
 
 The card is a hidden `SnippetIntent` that carries its content as JSON, so the system can redraw
 it after a relaunch without the server or the model. Its `perform` only reads. It shows the
-request as Replied once the app has sent a reply to it, or once a window's live store has a
-message from you after it, and never connects a channel. The view is plain SwiftUI with
+request as Replied once it's no longer waiting, including while the app's answer to it is still
+sending, and never connects a channel. The view is plain SwiftUI with
 `AgentAvatarView`, because the system archives it, and its buttons are `Button(intent:)`, because
 closures don't run in a snippet. Reply is a hidden background `ReplyIntent`. It asks "What do you
 want to say to Lead?", confirms "Send “[text]” to Lead in Studio demo?", then sends "@lead [text]"
@@ -3247,12 +3280,10 @@ through Send Message's path, mentioning the asker as the transcript's Reply does
 they've left. It returns no dialog, so the card redraws as Replied.
 
 Send Message trims the text and refuses an empty one before asking anything. It confirms with
-`requestConfirmation(actionName: .send)` and "Send “[text]” to [channel]?", then posts once
-through the channel's shared `ChannelStore` with a fresh caller-owned ID, so it joins the outbox
-and appears in an open window at once. It never retries. A rejection says "Your message to
-[channel] wasn't sent. It's waiting in the channel so you can send it again." An unconfirmed
-delivery says "Your Toy Box server didn't confirm your message to [channel]. Open the channel to
-see if it arrived before you send it again." Other errors: "Toy Box isn't connected to a
+`requestConfirmation(actionName: .send)` and "Send “[text]” to [channel]?", then saves the message
+to the app's outbox. It never waits on the network, so delivery and failure show only in the
+channel, as Sending describes. Siri finds channels in the app's channel list,
+waiting for its first load when the app has just launched. Other errors: "Toy Box isn't connected to a
 server. Choose one in Settings.", "Can't connect to your Toy Box server. Check that it's running,
 then try again." and "That channel isn't on your Toy Box server anymore." Errors about the server
 always say "your Toy Box server", since "Toy Box" alone also names the app.
@@ -3355,9 +3386,8 @@ in the channel. It never automatically sends or answers it.
 "Reply to [Request] with [Message]". It asks for missing text, confirms the message, requester and
 channel, then revalidates that the original request is still waiting on the current server.
 An answered, replaced or unavailable request explains the change without posting to a newer one.
-Use the in-app Reply's canonical mention and one caller-owned UUID/outbox attempt, without
-opening a window. Empty text posts nothing. Rejection and uncertain-delivery handling preserve
-the submitted text through Send Message's intent send path.
+It sends through Send Message's path with the in-app Reply's canonical mention, without opening a
+window. Empty text sends nothing.
 
 Remove indexed requests when answered, replaced, deleted or after a server switch. Follow
 `ChannelSpotlight`'s production and server-override gating for indexing and cleanup. Background
@@ -3687,9 +3717,6 @@ real AppKit/SwiftUI behavior over a custom imitation, and preserve it through al
 - Settings and composer errors use primary text with a red symbol. Overview, transcript and
   sidebar use the same Shared completion palette.
 - Request announcements keep their baseline, deduplication and background and snapshot suppression.
-  Every failed explicit send, including a retry with the same delivery UUID and phase, emits a fresh
-  store-owned failure ID. Composer consumes that ID directly and deduplicates across windows.
-  Journal restoration is quiet, and confirmation or discard clear resolved failures.
 - The missing-profile fallback initial uses primary ink on its cyan field. Rendered regressions keep
   the 4.5:1 floor for missing and invalid-mark profiles in both appearances. Supplied marks retain
   contrasting black or white ink.

@@ -5,15 +5,25 @@
 ### Features
 
 - A request waiting for you can now be read aloud, so you can hear it while you do something else.
+- Sending a message from anywhere, including Quick Send, the menu bar and notifications, is now done the moment you press Send. Toy Box keeps trying on its own through a dropped connection or while your server is out of reach, and never posts twice.
+
+### Bugs/Polish
+
+- A message that can't be sent now waits in its channel with Retry, and you can delete it if you no longer need it.
+- A reply from a notification now marks its channel read once it's sent.
 
 ## iPhone 0.1.24
 
 ### Features
 
 - A request waiting for you can now be read aloud, from the channel list or the conversation, and it keeps reading if you lock your phone.
+- Sending a message from anywhere, including the Lock Screen and the share sheet, is now done the moment you press Send. Toy Box keeps trying on its own through a dropped connection or while your server is out of reach, and never posts twice.
 
 ### Bugs/Polish
 
+- A message that can't be sent now waits in its channel with Retry, and you can delete it if you no longer need it.
+- A reply from the Lock Screen now marks its channel read once it's sent.
+- A reply you type in the channel list now waits for a connection, like the suggested replies, so your words stay put while you're offline.
 - After you send your own reply to a request in the channel list, the card settles straight back into its row, so it's clear where your answer went.
 - A channel's name and time now hold still as its request opens and closes in the channel list, and when its agents start or stop working, so the list never flickers.
 

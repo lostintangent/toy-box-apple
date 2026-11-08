@@ -36,7 +36,7 @@ struct ShellTests {
         subscribe: @escaping (ChannelAPI, String, String) async throws -> Void = { _, _, _ in },
         unsubscribe: @escaping (ChannelAPI, String, String) async throws -> Void = { _, _, _ in },
         readAuthorization: @escaping () async -> UNAuthorizationStatus = { .authorized },
-        addNotice: @escaping (UNNotificationRequest) async throws -> Void = { _ in },
+        removeDelivered: @escaping ([String]) -> Void = { _ in },
         setBadgeCount: @escaping (Int) async throws -> Void = { _ in },
         _ work: @MainActor (UserDefaults, MobileNotificationRegistration, ChannelNotifications) async throws -> Void
     ) async throws {
@@ -50,7 +50,8 @@ struct ShellTests {
                 try registration.select(api: api)
                 let notifications = ChannelNotifications(
                     defaults: defaults, registration: registration,
-                    readAuthorization: readAuthorization, addNotice: addNotice, setBadgeCount: setBadgeCount)
+                    readAuthorization: readAuthorization, removeDelivered: removeDelivered,
+                    setBadgeCount: setBadgeCount)
                 notifications.configure(api: api)
                 try await work(defaults, registration, notifications)
                 await registration.waitUntilIdle()
@@ -801,30 +802,35 @@ struct ShellTests {
         }
     }
 
-    @Test func nativeReplyDispatchKeepsTheOriginalPayloadAndRejectsAnOldRegistrationWithOnePlainNotice() async throws {
-        var notices: [UNNotificationRequest] = []
-        try await withNotifications(addNotice: { notices.append($0) }) { _, registration, notifications in
+    @Test func aReplyOrChoiceSavesForItsOwnServerAndClearsOnlyThatNotification() async throws {
+        var removed: [String] = []
+        try await withNotifications(removeDelivered: { removed += $0 }) { _, registration, notifications in
             let id = try #require(registration.current?.registrationID)
-            let payload = ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: id)
-            var replies = 0
-            notifications.onReply = { received, text, handle in
-                #expect(received == payload)
-                #expect(text == "Keep the library by the desks")
-                #expect(handle == "lead")
-                replies += 1
-                return .failed(id: "durable-outbox-id")
-            }
-            await notifications.receive(payload, action: ChannelNotificationCategory.reply,
-                                        text: "Keep the library by the desks", handle: "lead", identifier: "request")
-            #expect(replies == 1)
-            #expect(notices.isEmpty)
+            let current = try #require(URL(string: "https://fixture.example"))
+            let earlier = try #require(URL(string: "https://earlier.example"))
+            var saved: [ChannelNotifications.Reply] = []
+            notifications.onReply = { saved.append($0) }
+
             await notifications.receive(
-                ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: "old"),
-                action: ChannelNotificationCategory.reply, text: "Don't send this", handle: "lead", identifier: "old")
-            #expect(replies == 1)
-            #expect(notices.count == 1)
-            #expect(notices.first?.content.body == "Your reply wasn't sent.")
-            #expect(notices.first?.content.userInfo.isEmpty == true)
+                ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: id),
+                action: ChannelNotificationCategory.reply, text: "  Keep the library by the desks\n",
+                handle: "lead", identifier: "request")
+            await notifications.receive(
+                ChannelPushPayload(kind: .completion, channelID: "second", sequence: 7, registrationID: "old"),
+                action: "reply-choice.1", text: nil, handle: "lead", replies: ["Yes", "No"],
+                server: earlier.absoluteString, identifier: "earlier")
+            await notifications.receive(
+                ChannelPushPayload(kind: .request, channelID: "first", sequence: 43, registrationID: "old"),
+                action: ChannelNotificationCategory.reply, text: "Nowhere to go", handle: "lead", identifier: "unknown")
+            await notifications.receive(
+                ChannelPushPayload(kind: .request, channelID: "first", sequence: 44, registrationID: id),
+                action: ChannelNotificationCategory.reply, text: "  ", handle: "lead", identifier: "empty")
+
+            #expect(saved == [
+                .init(content: "@lead Keep the library by the desks", channelID: "first", server: current, request: 42),
+                .init(content: "No", channelID: "second", server: earlier, request: nil)
+            ])
+            #expect(removed == ["request", "earlier"])
         }
     }
 
@@ -946,8 +952,6 @@ struct ShellTests {
             #expect(notifications.presentation(for: other, category: ChannelNotificationCategory.completion) == [.list])
             notifications.disable()
             #expect(notifications.presentation(for: other, category: ChannelNotificationCategory.request).isEmpty)
-            #expect(notifications.presentation(for: nil, category: ChannelNotificationCategory.replyFailed)
-                    == [.banner, .list, .sound])
         }
     }
 
@@ -1769,7 +1773,6 @@ struct ShellTests {
         draft.text = "A draft to keep\nwith its original spacing."
         let bytes = try #require(draftImage().pngData())
         draft.append(.init(name: "Original image.png", mimeType: "image/png", data: bytes))
-        draft.associateSend(id: "unconfirmed-attempt")
         let revision = draft.revision
         let providers = DraftPasteboard.itemProviders(for: draft)
         #expect(providers.count == 2)
@@ -1779,7 +1782,6 @@ struct ShellTests {
         let image = try await copiedData(from: providers[1], type: .png)
         #expect(image == bytes)
         #expect(draft.revision == revision)
-        #expect(draft.sendAttemptID == "unconfirmed-attempt")
         #expect(draft.images.first?.data == bytes)
     }
 
@@ -1837,7 +1839,7 @@ struct ShellTests {
                                    url: "/api/serve/launch/plan.md")
         let page = ChannelArtifact(file: .init(kind: "machine", path: "page.html"), title: "Page",
                                    url: "/api/serve/launch/page.html")
-        let store = ChannelStore(id: "launch", api: try ChannelAPI(serverURL: "https://fixture.example"), sendJournal: nil)
+        let store = ChannelStore(id: "launch", api: try ChannelAPI(serverURL: "https://fixture.example"))
         session.configure(api: store.api, channelID: "launch", artifacts: [plan, page])
         let channel = Channel(id: "launch", name: "Launch", model: .init(provider: "test", name: "test"),
                               updatedAt: "2026-11-05T12:00:00Z")
@@ -1943,7 +1945,7 @@ struct ShellTests {
     }
 
     private func siriStore(_ channel: Channel, messages: [ChannelMessage], request: ChannelMessage?) throws -> ChannelStore {
-        let store = ChannelStore(id: channel.id, api: try ChannelAPI(serverURL: "https://fixture.example"), sendJournal: nil)
+        let store = ChannelStore(id: channel.id, api: try ChannelAPI(serverURL: "https://fixture.example"))
         _ = try store.apply(.init(type: "snapshot", state: ChannelState(
             revision: 1, channel: channel,
             lead: .lead(id: "lead", profile: .init(name: "Lead", role: "Coordinator",
