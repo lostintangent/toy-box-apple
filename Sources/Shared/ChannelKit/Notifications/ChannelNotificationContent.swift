@@ -5,6 +5,7 @@ extension ChannelNotification {
     public struct Content: Equatable, Sendable {
         public static let bodyLimit = 400
         public static let waitingBody = "Your team is waiting for your reply."
+        public static let completionBody = "All tasks completed"
         public static let requestPlaceholder = "Waiting for your reply"
         public static let completionPlaceholder = "Tasks completed"
         /// A waiting request whose requester or words aren't known yet.
@@ -19,16 +20,6 @@ extension ChannelNotification {
         /// The request as a reader sees it in the transcript, or the waiting copy when it has no words or attachments.
         public init(request: ChannelRequestMessage) {
             self.init(body: Self.requestText(request))
-        }
-
-        public init(completion tasks: [ChannelTask]) {
-            let text: String
-            switch tasks.count {
-            case 0: text = "All tasks completed"
-            case 1: text = "Completed \u{201C}\(tasks[0].title)\u{201D}"
-            case let count: text = "All \(count) tasks completed"
-            }
-            self.init(body: text)
         }
 
         public static func subtitle(requester: String) -> String {

@@ -92,7 +92,7 @@ final class AppModel {
             await self?.outbox.send(reply.content, to: reply.channelID, on: reply.server, answering: reply.request)
         }
         notifications.resolveRequest = { [weak self] channel, sequence in
-            try? await self?.waitingRequests?.message(channelID: channel.id, sequence: sequence)
+            self?.waitingRequests?.entries().first { $0.channel.id == channel.id && $0.sequence == sequence }?.request
         }
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
             applicationObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) {
@@ -252,7 +252,6 @@ final class AppModel {
             notifications.update(channels: catalog.channels, activeChannelID: activeChannelID,
                                  serverURL: serverURL)
         }
-        if showsMenuBarExtra { waitingRequests?.resolve(openChannelIDs: openChannelIDs) }
     }
 
     /// Brings a channel forward from outside its windows, as notifications and the menu bar do. The
@@ -323,10 +322,6 @@ final class AppModel {
         return MenuBarStatus(requests: waitingRequests.entries(openChannelIDs: openChannelIDs), catalog.channels.map {
             .init(channel: presentation.channel($0), working: presentation.working($0, agents: presentation.agents($0)))
         }, unreachableHost: unreachable)
-    }
-
-    func retryMenuBarRequest(channelID: String) {
-        waitingRequests?.retry(channelID: channelID, openChannelIDs: openChannelIDs)
     }
 
     /// Keeps the status item in step with activity, including an open channel's live presence.

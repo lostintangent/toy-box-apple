@@ -16,6 +16,7 @@
 
 - Ready for an upcoming Toy Box update that makes the channel list lighter to download.
 - Notifications and the menu bar show a waiting request's question sooner and use less data, since it now comes with the channel list.
+- A finished task list's notification now simply says all tasks are completed, since it marks the whole list being done rather than one task.
 
 ## iPhone 0.1.25
 

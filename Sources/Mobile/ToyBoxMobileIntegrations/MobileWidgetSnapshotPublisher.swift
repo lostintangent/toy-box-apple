@@ -33,9 +33,8 @@ public final class MobileWidgetSnapshotPublisher {
     }
 
     /// Publishes the app's waiting requests, which the channel list shares, so both agree.
-    public func update(requests: ChannelWaitingRequests?, serverURL: String) async throws {
-        let token = UUID()
-        generation = token
+    public func update(requests: ChannelWaitingRequests?, serverURL: String) throws {
+        generation = UUID()
         guard let requests, case let catalog = requests.catalog, catalog.api.baseURL.absoluteString == serverURL,
               catalog.isLoaded, catalog.phase.message == nil else {
             var snapshot = previous?.serverURL == serverURL ? previous : nil
@@ -46,9 +45,7 @@ public final class MobileWidgetSnapshotPublisher {
             ))
             return
         }
-        let snapshot = try await resolvedSnapshot(requests: requests, serverURL: serverURL, token: token,
-                                                  allowsPartialHistory: true)
-        try publish(snapshot)
+        try publish(snapshot(of: requests, serverURL: serverURL))
     }
 
     public func refresh(session: URLSession = .shared, now: Date = .now) async throws -> NeedsYouSnapshot? {
@@ -61,7 +58,7 @@ public final class MobileWidgetSnapshotPublisher {
         do {
             snapshot = try await withThrowingTaskGroup(of: NeedsYouSnapshot.self) { group in
                 group.addTask {
-                    try await self.fetchedSnapshot(serverURL: serverURL, session: session, token: token)
+                    try await self.fetchedSnapshot(serverURL: serverURL, session: session)
                 }
                 group.addTask {
                     try await Task.sleep(for: .seconds(10))
@@ -90,38 +87,24 @@ public final class MobileWidgetSnapshotPublisher {
         return previous
     }
 
-    private func fetchedSnapshot(serverURL: String, session: URLSession, token: UUID) async throws -> NeedsYouSnapshot {
+    private func fetchedSnapshot(serverURL: String, session: URLSession) async throws -> NeedsYouSnapshot {
         let catalog = ChannelCatalogStore(api: try ChannelAPI(serverURL: serverURL, session: session))
         await catalog.refresh()
         try Task.checkCancellation()
         if let failure = catalog.phase.failure { throw failure }
-        return try await resolvedSnapshot(
-            requests: ChannelWaitingRequests(catalog: catalog), serverURL: serverURL, token: token,
-            allowsPartialHistory: false)
+        return try snapshot(of: ChannelWaitingRequests(catalog: catalog), serverURL: serverURL)
     }
 
-    private func resolvedSnapshot(requests: ChannelWaitingRequests, serverURL: String, token: UUID,
-                                  allowsPartialHistory: Bool) async throws -> NeedsYouSnapshot {
+    private func snapshot(of requests: ChannelWaitingRequests, serverURL: String) throws -> NeedsYouSnapshot {
         guard requests.catalog.state != nil else { throw ChannelAPIError.invalidResponse }
-        var offline = false
-        for entry in requests.entries() {
+        let waiting = requests.entries()
+        for entry in waiting {
             guard entry.sequence < Int.max, ChannelWaitingRequest.Identity(
                 serverURL: serverURL, channelID: entry.channel.id, sequence: entry.sequence
             ) != nil else { throw ChannelAPIError.invalidMessage("A waiting request has an invalid sequence.") }
-            do {
-                _ = try await requests.message(channelID: entry.channel.id, sequence: entry.sequence)
-            } catch {
-                if Task.isCancelled || error is CancellationError
-                    || (error as? URLError)?.code == .cancelled { throw error }
-                if !allowsPartialHistory { throw error }
-                offline = true
-                logger.error("Could not load a widget request: \(error.localizedDescription)")
-            }
-            try Task.checkCancellation()
-            guard generation == token else { throw CancellationError() }
         }
-        return NeedsYouSnapshot(serverURL: serverURL, updatedAt: .now, isOffline: offline, isAvailable: true,
-                                waiting: requests.entries())
+        return NeedsYouSnapshot(serverURL: serverURL, updatedAt: .now, isOffline: false, isAvailable: true,
+                                waiting: waiting)
     }
 
     func publish(_ proposed: NeedsYouSnapshot, now: Date = .now) throws {

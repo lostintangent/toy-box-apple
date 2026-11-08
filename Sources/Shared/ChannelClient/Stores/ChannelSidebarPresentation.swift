@@ -15,7 +15,10 @@ public struct ChannelSidebarPresentation {
     public func channel(_ channel: Channel) -> Channel {
         guard openChannelIDs.contains(channel.id), let store = catalog?.channel(id: channel.id),
               let details = store.details else { return channel }
-        return details.applying(to: channel, requestSequence: store.requestSequence)
+        var live = details.applying(to: channel, requestSequence: store.requestSequence)
+        // The channel's own stream can deliver a request before the channel list does.
+        live.request = store.request
+        return live
     }
 
     public func attention(_ channel: Channel) -> Channel.Attention? {

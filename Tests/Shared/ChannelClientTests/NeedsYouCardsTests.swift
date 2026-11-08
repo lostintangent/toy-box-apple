@@ -160,8 +160,8 @@ struct NeedsYouCardsTests {
     }
 }
 
-/// A server for the cards' journeys: a catalog whose waiting channels' requests its history knows,
-/// the waiting rule over it, and an outbox in a scratch folder. Each post is logged, then answered.
+/// A server for the cards' journeys: a catalog that lists each waiting channel's request, the
+/// waiting rule over it, and an outbox in a scratch folder. Each post is logged, then answered.
 @MainActor final class CardServer {
     struct Post: Equatable, Sendable {
         var channel: String
@@ -196,30 +196,28 @@ struct NeedsYouCardsTests {
     static func start(waiting: [(channel: String, sequence: Int)] = [], channels: [String] = [], now: Date = .now,
                       answer: (@Sendable (Post, Int) throws -> MockResponse)? = nil) async throws -> CardServer {
         var listed: [Channel] = []
-        var history: [String: ChannelMessage] = [:]
         for (index, request) in waiting.enumerated() {
             let time = String(format: "2026-11-07T10:%02d:00Z", 59 - index)
             var channel = Channel(id: request.channel, name: request.channel, model: .init(provider: "test", name: "test"),
                                   latestSequence: request.sequence, updatedAt: time)
             channel.requestSequence = request.sequence
-            listed.append(channel)
             // The Lead's ID is its channel's.
-            history[request.channel] = ChannelMessage(id: "m\(request.sequence)", sequence: request.sequence, timestamp: time,
-                                                      sender: .agent(request.channel),
-                                                      content: .text("Where should the library sit?"), request: true)
+            channel.request = ChannelMessage(id: "m\(request.sequence)", sequence: request.sequence, timestamp: time,
+                                             sender: .agent(request.channel),
+                                             content: .text("Where should the library sit?"), request: true)
+            listed.append(channel)
         }
         listed += channels.map {
             Channel(id: $0, name: $0, model: .init(provider: "test", name: "test"), updatedAt: "2026-11-07T09:00:00Z")
         }
         let served = ChannelCatalog(lead: testLeadProfile, channels: listed)
         let log = Log()
-        let mock = MockTransport { [history] request, _ in
+        let mock = MockTransport { request, _ in
             let path = request.url?.path ?? ""
             if path == "/api/v1/channels" { return try .json(served) }
             let parts = path.split(separator: "/").map(String.init)
-            guard parts.count == 5, parts[4] == "messages" else { throw URLError(.unsupportedURL) }
-            guard request.httpMethod == "POST" else {
-                return try .json(ChannelHistoryPage(version: 1, revision: 1, messages: history[parts[3]].map { [$0] } ?? []))
+            guard parts.count == 5, parts[4] == "messages", request.httpMethod == "POST" else {
+                throw URLError(.unsupportedURL)
             }
             let body = try JSONDecoder().decode(Body.self, from: requestBody(request))
             let post = Post(channel: parts[3], id: body.id, content: body.content)
@@ -231,10 +229,9 @@ struct NeedsYouCardsTests {
         let folder = FileManager.default.temporaryDirectory.appending(path: "tbm-cards-\(UUID())", directoryHint: .isDirectory)
         let outbox = ChannelOutbox(folder: folder, retryWindow: 120, now: { now })
         catalog.outbox = outbox
-        let server = CardServer(mock: mock, catalog: catalog, outbox: outbox, log: log, folder: folder)
-        server.requests.resolve()
-        try await eventually { server.requests.entries().allSatisfy { $0.request != nil } }
-        return server
+        // An app's outbox has read its folder long before anyone replies.
+        try await eventually { outbox.isLoaded }
+        return CardServer(mock: mock, catalog: catalog, outbox: outbox, log: log, folder: folder)
     }
 
     /// The server's acceptance, which `keepOpen` holds until the test finishes it.
