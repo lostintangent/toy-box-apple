@@ -221,6 +221,8 @@ struct TranscriptUserMessage: View {
     var statusReactions: [ChannelReaction] = []
     var findHighlight: TranscriptFindHighlight?
     var bookmark: TranscriptBookmark?
+    /// Set only on a send that failed, which washes the bubble red and offers Delete.
+    var deleteNotSent: (() -> Void)?
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.transcriptPointer) private var pointer
     @ViewState private var isHovered = false
@@ -234,10 +236,10 @@ struct TranscriptUserMessage: View {
                 if !message.text.isEmpty {
                     TranscriptMarkdown(content: message.text, agents: agents, baseURL: api.baseURL,
                                        selectable: selectsText, findHighlight: findHighlight)
-                        .environment(\.transcriptSurface, .user)
+                        .environment(\.transcriptSurface, surface)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .transcriptBubble(.user)
+                        .transcriptBubble(surface)
                         .overlay {
                             TranscriptHoverActions(isHovered: $isHovered, isFocused: isFocused, edge: .leading,
                                                    text: message.text, bookmark: bookmark, header: header)
@@ -272,15 +274,23 @@ struct TranscriptUserMessage: View {
         .contextMenu {
             Button("Copy Message", systemImage: "doc.on.doc") { TranscriptClipboard.copy(message.text) }
             TranscriptBookmarkMenuItem(bookmark: bookmark)
+            if let deleteNotSent {
+                Divider()
+                Button("Delete", systemImage: "trash", role: .destructive, action: deleteNotSent)
+            }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(message.accessibilityLabel(author: "You", delivery: deliveryLabel))
+        .accessibilityLabel(message.accessibilityLabel(author: "You",
+                                                       delivery: deleteNotSent == nil ? deliveryLabel : "Not sent"))
         .accessibilityValue(bookmark?.isBookmarked == true ? "Bookmarked" : "")
         .accessibilityActions {
             Button("Copy Message") { TranscriptClipboard.copy(message.text) }
             if let bookmark { Button(bookmark.actionTitle) { bookmark.toggleAnnouncing() } }
+            if let deleteNotSent { Button("Delete", action: deleteNotSent) }
         }
     }
+
+    private var surface: TranscriptSurface { deleteNotSent == nil ? .user : .notSentUser }
 
     private var header: some View {
         HStack(spacing: 8) {

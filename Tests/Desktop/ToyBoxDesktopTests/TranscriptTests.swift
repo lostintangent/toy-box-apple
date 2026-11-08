@@ -171,7 +171,7 @@ struct TranscriptTests {
     @MainActor
     @Test func mentionInkKeepsItsIdentityHueAtTextContrastOnEverySurface() throws {
         let colors = ["#7fa171", "#ffffff", "#000000", "#ffff00", "#00ffff", "#ff0000", "#123"]
-        let surfaces: [TranscriptSurface] = [.canvas, .agent, .pendingAgent, .user]
+        let surfaces: [TranscriptSurface] = [.canvas, .agent, .pendingAgent, .user, .notSentUser]
         for (name, isDark, isIncreased) in [(NSAppearance.Name.aqua, false, false), (.darkAqua, true, false),
                                             (.accessibilityHighContrastAqua, false, true),
                                             (.accessibilityHighContrastDarkAqua, true, true)] {
@@ -240,7 +240,7 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test(arguments: [TranscriptSurface.user, .agent])
+    @Test(arguments: [TranscriptSurface.user, .agent, .notSentUser])
     func bubblesGainAVisibleEdgeOnlyUnderIncreasedContrast(surface: TranscriptSurface) async throws {
         for name in [NSAppearance.Name.aqua, .darkAqua] {
             for contrast in [ColorSchemeContrast.standard, .increased] {

@@ -232,7 +232,7 @@ struct ConversationView: View {
         let channel = TranscriptRowChannel(id: store.id, agents: store.roster, api: store.api)
         let statusReactions = statusReactions
         let card = interaction.messageView == .all ? catchUp.map { (session: $0, store: store) } : nil
-        let requestChoices = TranscriptRequestChoices(request: store.request, attempts: store.sendAttempts,
+        let requestChoices = TranscriptRequestChoices(request: store.request, store: store,
                                                       isConnected: store.phase.isConnected)
         let bookmarks = store.bookmarks.map(Set.init)
         let isConnected = store.phase.isConnected
@@ -611,14 +611,13 @@ private struct TranscriptPagingAccessory: View {
 }
 
 /// A message on its way, drawn exactly as it will be once sent, so confirming it changes nothing on
-/// screen. A failed one keeps its label and actions.
+/// screen. A failed one adds only its red wash and Retry, with Delete in the bubble's menu.
 private struct TranscriptSendAttempt: View {
     let attempt: ChannelSendAttempt
     let divider: TranscriptDivider?
     let store: ChannelStore
     let channel: TranscriptRowChannel
     @Environment(ChannelInteraction.self) private var interaction
-    @ViewState private var actionError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -631,31 +630,30 @@ private struct TranscriptSendAttempt: View {
         VStack(alignment: .trailing, spacing: 6) {
             TranscriptDeliveryLabel(phase: attempt.phase) { label in
                 TranscriptUserMessage(message: attempt.message, channel: channel, deliveryLabel: label,
-                                      identifier: "send-\(attempt.id)")
-            }
-            if let error = actionError ?? attempt.error {
-                Text(error).font(.footnote).foregroundStyle(TranscriptInk.secondary)
+                                      identifier: "send-\(attempt.id)",
+                                      deleteNotSent: delete)
             }
             if attempt.canRetry {
-                HStack(spacing: 12) {
-                    Button("Edit") { interaction.editSendAttempt(id: attempt.id) }
-                    Button("Send Again") {
-                        Task {
-                            do {
-                                actionError = nil
-                                try await store.retrySend(id: attempt.id)
-                                interaction.jumpToLatest()
-                            } catch { actionError = error.localizedDescription }
-                        }
+                Button("Retry") {
+                    Task {
+                        if (try? await store.retrySend(id: attempt.id)) != nil { interaction.jumpToLatest() }
                     }
-                    .disabled(!store.phase.isConnected || store.isSending)
                 }
+                .disabled(!store.phase.isConnected || store.isSending)
                 .buttonStyle(.bordered)
+                .tint(.primary)
                 .controlSize(.small)
                 .font(.footnote)
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    /// Delete, offered only once the send has failed.
+    private var delete: (() -> Void)? {
+        guard attempt.canRetry else { return nil }
+        let store = store, id = attempt.id
+        return { Task { try? await store.discardSendAttempt(id: id) } }
     }
 }
 
