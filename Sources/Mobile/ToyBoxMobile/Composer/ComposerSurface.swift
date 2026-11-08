@@ -57,7 +57,7 @@ struct ComposerSurface: View {
     }
     private var hasNotices: Bool {
         draft.error != nil || draft.isOverLimit || session.isLoadingImages
-            || store.phase.isUnavailable
+            || store.phase == .deleted
             || dictation.notice != nil
     }
 

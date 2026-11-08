@@ -499,6 +499,53 @@ struct ComposerTests {
         withExtendedLifetime(target) {}
     }
 
+    @Test func aReconnectingChannelAddsNoEmptyNoticeAboveTheText() async throws {
+        let suite = "composer-reconnecting-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = AppModel(arguments: ["--server", "https://composer-reconnecting.invalid"],
+                           environment: [:], defaults: defaults)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ComposerUnreachableProtocol.self]
+        let store = ChannelStore(
+            id: "test", api: try ChannelAPI(serverURL: "https://composer-reconnecting.invalid",
+                                            session: URLSession(configuration: configuration)),
+            reconnectPolicy: .init(initialDelay: 60, maximumDelay: 60, grace: 3), sleep: { _ in })
+        defer { store.disconnect() }
+        let (session, target) = try dictatingSession(MobileTestRecognizer(), store: store)
+        defer { session.dictation.deactivate() }
+        let host = UIHostingController(rootView: ComposerSurface(session: session)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .environment(app)
+            .environment(ChannelInteraction(isInspectorPresented: false))
+            .environment(ManagementPresenter())
+            .environment(Overview())
+            .environment(\.horizontalSizeClass, .compact)
+            .dynamicTypeSize(.large))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 400))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        func textTop() throws -> CGFloat {
+            let input = try #require(session.editor.textView)
+            return input.convert(input.bounds, to: host.view).minY
+        }
+        let connecting = try textTop()
+
+        store.connect()
+        let failed = Task { @MainActor in
+            for await unavailable in Observations({ store.phase.isUnavailable }) where unavailable { return true }
+            return false
+        }
+        Task { try await Task.sleep(for: .seconds(10)); failed.cancel() }
+        try #require(await failed.value, "The unreachable channel reports its failure")
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        #expect(abs(try textTop() - connecting) <= 0.5, "Only a deleted channel draws a notice above the text")
+        withExtendedLifetime(target) {}
+    }
+
     @Test(arguments: [false, true], [false, true])
     func onlyCompactWithTheKeyboardDownRemovesTheBottomGap(compact: Bool, keyboardVisible: Bool) {
         #expect(ComposerBottomSpacing.value(compact: compact, keyboardVisible: keyboardVisible)
@@ -931,10 +978,11 @@ struct ComposerTests {
     }
 
     private func dictatingSession(
-        _ recognizer: MobileTestRecognizer, probe: MobileDictationProbe = .init(), outbox: ChannelOutbox? = nil
+        _ recognizer: MobileTestRecognizer, probe: MobileDictationProbe = .init(), outbox: ChannelOutbox? = nil,
+        store: ChannelStore? = nil
     ) throws -> (ComposerSession, MobileDictationTarget) {
         // Without a catalog the outbox only saves, so nothing here posts.
-        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "https://dictation.test"))
+        let store = try store ?? ChannelStore(id: "test", api: ChannelAPI(serverURL: "https://dictation.test"))
         store.outbox = outbox
         _ = try store.apply(.init(type: "snapshot", state: .init(
             revision: 1,
@@ -1205,4 +1253,15 @@ private struct KeyboardScreenHarness<Composer: View, Find: View>: View {
         .softwareKeyboardVisibility($keyboardIsVisible)
         .onChange(of: keyboardIsVisible, initial: true) { _, visible in screen.keyboardIsVisible = visible }
     }
+}
+
+private final class ComposerUnreachableProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        client?.urlProtocol(self, didFailWithError: URLError(.cannotConnectToHost))
+    }
+
+    override func stopLoading() {}
 }
