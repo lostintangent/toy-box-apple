@@ -145,7 +145,9 @@ Surfaces meet at these seams:
 - **Optimistic writes are idempotent upserts into the store.** Write the user's change into the
   store at once, as the value it should end at, and let the stream confirm it. A send keeps its
   UUID, a read only raises its marker and a bookmark sets its state, so repeating a write or
-  receiving its echo changes nothing. Undo only a write that fails.
+  receiving its echo changes nothing. Show a pending send's effect by reading through the outbox
+  rather than storing it, so a send that ends Not sent leaves nothing to undo. Undo a failed write
+  only when the user would otherwise think it saved, like a bookmark.
 - **Management writes are never retried.** A 422 is a rejection, but a 500, timeout or lost
   connection may have committed, so call `reconcileManagementWrite(channelId:)` before offering
   another attempt. Can't connect, offline and bad-host failures stay ordinary retryable errors.

@@ -66,6 +66,11 @@ extension Channel {
         return attention == .waiting || !isOpen ? attention : nil
     }
 
+    /// Reads the channel through `sequence`. A read only ever moves forward.
+    public mutating func read(through sequence: Int) {
+        seenThrough = max(seenThrough, sequence)
+    }
+
     public var unreadAfter: Int? {
         latestSequence > seenThrough ? seenThrough : nil
     }

@@ -122,6 +122,11 @@ public final class ChannelOutbox {
 
     func message(_ id: UUID) -> Message? { queue.first { $0.id == id } }
 
+    /// The channels on the current server with a message Sending.
+    var sendingChannelIDs: Set<String> {
+        Set(queue.lazy.filter { $0.server == self.server && $0.state == .sending }.map(\.channelID))
+    }
+
     /// Puts a Not sent message back in line under the same ID.
     public func sendAgain(_ id: UUID) {
         guard let index = queue.firstIndex(where: { $0.id == id }), queue[index].state != .sending else { return }
@@ -223,8 +228,7 @@ public final class ChannelOutbox {
         if isDelivering != delivering { isDelivering = delivering }
         guard isLoaded, let catalog, let server else { return }
         let api = catalog.api
-        let channels = Set(queue.lazy.filter { $0.server == server && $0.state == .sending }.map(\.channelID))
-        for channelID in channels where lines[channelID] == nil {
+        for channelID in sendingChannelIDs where lines[channelID] == nil {
             lines[channelID] = Task { [weak self] in await self?.deliver(in: channelID, server: server, api: api) }
         }
     }
@@ -325,6 +329,7 @@ public final class ChannelOutbox {
             // The user's own message never leaves its channel unread. A 409 brings no sequence, so it
             // marks nothing unless the open channel already has the message.
             if let through = sent?.sequence ?? store?.sequence(ofSent: id) {
+                catalog.read(message.channelID, through: through)
                 read = markRead(message.channelID, through: through, api: catalog.api)
             }
             catalog.onSendConfirmed?(message.channelID)

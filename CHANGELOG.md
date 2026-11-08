@@ -4,7 +4,15 @@
 
 ### Bugs/Polish
 
+- A request in the channel list now opens with its question already showing, instead of a placeholder that fills in a moment later.
+- After you reply from the channel list, that channel no longer flashes unread for your own message.
 - Finishing a voice note in the channel list no longer makes that channel's time flicker, so the list stays calm as your note goes out.
+
+## Mac 0.1.27
+
+### Bugs/Polish
+
+- After you send from Quick Send, the menu bar or a notification, that channel no longer flashes unread for your own message.
 
 ## Mac 0.1.26
 

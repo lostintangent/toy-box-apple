@@ -74,10 +74,12 @@ package final class NeedsYouCards {
     package var isLifted: Bool { answer?.isLifted == true }
 
     /// The open card among the waiting requests, newest first: the one being answered, otherwise
-    /// the one the person opened while it waits, otherwise the newest.
+    /// the one the person opened while it waits, otherwise the newest. A request opens only once its
+    /// words are known.
     package func open(in waiting: [ChannelWaitingRequests.Entry]) -> ChannelWaitingRequests.Entry? {
         if let replying { return waiting.first { $0.id == replying.id } ?? replying }
-        return waiting.first { $0.id == opened } ?? waiting.first
+        let known = waiting.filter { $0.request != nil }
+        return known.first { $0.id == opened } ?? known.first
     }
 
     /// True when the open card changed from `previous` to `card` because of the person: a tap on
@@ -89,10 +91,11 @@ package final class NeedsYouCards {
         return card == opened || (previous != nil && previous == answered)
     }
 
-    /// What each waiting row shows, by channel.
+    /// What each waiting row shows, by channel. A request whose words aren't known yet leaves its
+    /// channel an ordinary row.
     package func rows(in waiting: [ChannelWaitingRequests.Entry]) -> [String: Row] {
         var rows: [String: Row] = [:]
-        for entry in waiting { rows[entry.channel.id] = .question(entry) }
+        for entry in waiting where entry.request != nil { rows[entry.channel.id] = .question(entry) }
         if let open = open(in: waiting) { rows[open.channel.id] = .card(open) }
         return rows
     }
