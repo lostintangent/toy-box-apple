@@ -10,6 +10,7 @@ struct MockResponse: Sendable {
     var contentType = "application/json"
     var body = Data()
     var keepOpen = false
+    var headers: [String: String] = [:]
 
     static func json<Value: Encodable>(_ value: Value, status: Int = 200) throws -> MockResponse {
         MockResponse(status: status, body: try JSONEncoder().encode(value))
@@ -128,6 +129,8 @@ final class MockTransport: Sendable {
             return state.requests.count
         }
         changed()
+        // Again once the handler ran, so a test can wait on what it recorded.
+        defer { changed() }
         return try handler(request, count)
     }
 
@@ -156,7 +159,7 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
             let value = try transport.response(for: request)
             let response = HTTPURLResponse(url: url, statusCode: value.status,
                                            httpVersion: "HTTP/1.1",
-                                           headerFields: ["Content-Type": value.contentType])!
+                                           headerFields: value.headers.merging(["Content-Type": value.contentType]) { $1 })!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             if !value.body.isEmpty {
                 client?.urlProtocol(self, didLoad: value.body)

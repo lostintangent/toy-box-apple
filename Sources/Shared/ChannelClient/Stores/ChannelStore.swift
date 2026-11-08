@@ -848,8 +848,11 @@ public final class ChannelStore {
     }
 
     /// Whether the channel already shows a message the outbox is sending, so it confirms without posting.
-    func holds(_ id: UUID) -> Bool {
-        state?.messages.contains { $0.sender == .user && UUID(uuidString: $0.id) == id } == true
+    func holds(_ id: UUID) -> Bool { sequence(ofSent: id) != nil }
+
+    /// Where a message the outbox sent landed, once this channel has it.
+    func sequence(ofSent id: UUID) -> Int? {
+        state?.messages.first { $0.sender == .user && UUID(uuidString: $0.id) == id }?.sequence
     }
 
     /// Shows a message the outbox sent before its event arrives.

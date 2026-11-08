@@ -38,12 +38,14 @@ public final class ChannelWaitingRequests {
     }
 
     /// Waiting channels as the sidebar shows them, newest request first. One whose message isn't
-    /// known yet sorts by its channel's last activity.
+    /// known yet sorts by its channel's last activity. A request the outbox answers isn't waiting.
     public func entries(openChannelIDs: Set<String> = []) -> [Entry] {
         let projection = ChannelSidebarPresentation(catalog: catalog, openChannelIDs: openChannelIDs)
+        let outbox = catalog.outbox.flatMap { $0.server == ChannelOutbox.key(catalog.api.baseURL) ? $0 : nil }
         return catalog.channels.compactMap { listed -> (entry: Entry, date: Date)? in
             let channel = projection.channel(listed)
-            guard let sequence = channel.requestSequence else { return nil }
+            guard let sequence = channel.requestSequence,
+                  outbox?.answers(sequence, in: channel.id) != true else { return nil }
             let entry = Entry(channel: channel, sequence: sequence, request: known(channel.id, sequence))
             return (entry, entry.requestedAt ?? (try? Date(channel.updatedAt, strategy: .iso8601)) ?? .distantPast)
         }.sorted { $0.date > $1.date }.map(\.entry)

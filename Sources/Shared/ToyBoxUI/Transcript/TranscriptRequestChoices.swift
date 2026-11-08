@@ -17,6 +17,17 @@ public struct TranscriptRequestChoices: Equatable, Sendable {
                   isConnected: isConnected)
     }
 
+    /// A channel's own choices: none while the outbox holds any answer to the request, Sending or Not
+    /// sent, since a Not sent answer sits right below with Retry. Elsewhere a Not sent answer brings
+    /// the request back, through `ChannelWaitingRequests`. Until every send goes through the outbox,
+    /// a send in `sendAttempts` holding one of the labels counts too.
+    @MainActor
+    public init?(request: ChannelMessage?, store: ChannelStore, isConnected: Bool) {
+        guard let request, store.outbox?.holdsAnswer(to: request.sequence, in: store.id) != true else { return nil }
+        self.init(sequence: request.sequence, labels: request.suggestedReplies, attempts: store.sendAttempts,
+                  isConnected: isConnected)
+    }
+
     /// None without labels, or once the outbox holds one of them in any phase. That answer leaves for
     /// good: a failed send keeps Send Again in the outbox, so the choices don't come back with it. A
     /// committed answer makes the transcript's request acknowledged instead.
@@ -46,11 +57,16 @@ extension ChannelWaitingRequests.Entry {
 
 extension ChannelInteraction {
     /// Sends a suggested reply at once as the user's own message, through the outbox with a new ID,
-    /// and follows it to the latest like a composer send.
+    /// and follows it to the latest like a composer send. It answers the channel's waiting request.
     public func sendSuggestedReply(_ label: String, store: ChannelStore) {
         jumpToLatest()
         Task {
-            if (try? await store.post(id: UUID().uuidString, content: label)) != nil { jumpToLatest() }
+            if let outbox = store.outbox {
+                await outbox.send(label, to: store.id, on: store.api.baseURL)
+                jumpToLatest()
+            } else if (try? await store.post(id: UUID().uuidString, content: label)) != nil {
+                jumpToLatest()
+            }
         }
     }
 }

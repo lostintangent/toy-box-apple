@@ -45,8 +45,8 @@ public final class ChannelOutbox {
     private(set) var answered: [Destination: Set<Int>] = [:]
     /// The server whose catalog delivers, so rows and the waiting rule read only its messages.
     public private(set) var server: String?
-    /// True while a message to the current server is still sending, so the phone's app delegate
-    /// holds background time.
+    /// True while a message to the current server is still sending, or a confirmed one is still
+    /// marking its channel read, so the phone's app delegate holds background time.
     public private(set) var isDelivering = false
     /// The saved messages have been read, so delivery can start in order.
     private(set) var isLoaded = false
@@ -57,6 +57,7 @@ public final class ChannelOutbox {
     /// Confirmed or withdrawn this run, so a scan that read a file before its removal doesn't bring
     /// the message back.
     @ObservationIgnored private var removed: Set<UUID> = []
+    @ObservationIgnored private var reads = 0
     @ObservationIgnored private var writes: Task<Void, Never>?
     @ObservationIgnored private var scanning: Task<Void, Never>?
     @ObservationIgnored private let retryWindow: TimeInterval
@@ -103,9 +104,9 @@ public final class ChannelOutbox {
                               request: request ?? waitingRequest(at: destination), sentAt: now(), state: .sending)
         removed.remove(id)
         queue.append(message)
-        let write = save(message)
+        // The row shows at once, and delivery starts once the message is saved.
+        await save(message).value
         changed()
-        await write.value
         return id
     }
 
@@ -234,6 +235,7 @@ public final class ChannelOutbox {
     }
 
     private struct Pause {
+        let message: UUID
         let continuation: CheckedContinuation<Void, Never>
         let wakesEarly: Bool
         var timer: Task<Void, Never>?
@@ -241,7 +243,8 @@ public final class ChannelOutbox {
 
     /// Recomputes what depends on the queue and starts a line for each channel with a message to send.
     private func changed() {
-        let delivering = server.map { server in queue.contains { $0.server == server && $0.state == .sending } } ?? false
+        let delivering = reads > 0
+            || server.map { server in queue.contains { $0.server == server && $0.state == .sending } } ?? false
         if isDelivering != delivering { isDelivering = delivering }
         guard isLoaded, let catalog, let server else { return }
         let api = catalog.api
@@ -292,7 +295,7 @@ public final class ChannelOutbox {
             case .unreachable:
                 troubleSince = nil
                 troubleCount = 0
-                await pause(reconnectPolicy.delay(attempt: waits), wakesEarly: true)
+                await pause(id, for: reconnectPolicy.delay(attempt: waits), wakesEarly: true)
                 waits += 1
             case .trouble(let retryAfter):
                 waits = 0
@@ -301,7 +304,7 @@ public final class ChannelOutbox {
                 let delay = max(Self.backoff(troubleCount), retryAfter ?? 0)
                 troubleCount += 1
                 guard now().timeIntervalSince(since) + delay <= retryWindow else { return stop(id) }
-                await pause(delay, wakesEarly: false)
+                await pause(id, for: delay, wakesEarly: false)
             }
         }
     }
@@ -334,13 +337,14 @@ public final class ChannelOutbox {
         }
     }
 
-    /// Waits for `seconds`, or until `wake()` when `wakesEarly`. Cancelling the task ends it at once.
-    private func pause(_ seconds: TimeInterval, wakesEarly: Bool) async {
+    /// Waits for `seconds`, or until `wake()` when `wakesEarly`. Cancelling the task, or the message
+    /// leaving the queue, ends it at once.
+    private func pause(_ message: UUID, for seconds: TimeInterval, wakesEarly: Bool) async {
         let id = UUID()
         let sleep = sleep
         await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                pauses[id] = Pause(continuation: continuation, wakesEarly: wakesEarly)
+                pauses[id] = Pause(message: message, continuation: continuation, wakesEarly: wakesEarly)
                 pauses[id]?.timer = Task { [weak self] in
                     try? await sleep(seconds)
                     self?.resume(id)
@@ -363,13 +367,31 @@ public final class ChannelOutbox {
         let message = queue.remove(at: index)
         removed.insert(id)
         delete(id)
+        release(id)
         let destination = Destination(server: message.server, channelID: message.channelID)
         if let request = message.request { answered[destination, default: []].insert(request) }
         if message.server == server, let catalog {
-            if let sent { catalog.existingChannel(id: message.channelID)?.mergeSent(sent) }
+            let store = catalog.existingChannel(id: message.channelID)
+            if let sent { store?.mergeSent(sent) }
+            // The user's own message never leaves its channel unread. A 409 brings no sequence, so it
+            // marks nothing unless the open channel already has the message.
+            if let through = sent?.sequence ?? store?.sequence(ofSent: id) {
+                markRead(message.channelID, through: through, api: catalog.api)
+            }
             catalog.onSendConfirmed?(message.channelID)
         }
         changed()
+    }
+
+    /// One attempt, logging a failure. It counts as delivering, so the phone's background time covers it.
+    private func markRead(_ channelID: String, through sequence: Int, api: ChannelAPI) {
+        reads += 1
+        Task {
+            do { _ = try await api.markRead(channelId: channelID, sequence: sequence) }
+            catch { Self.logger.info("Could not mark a sent message read: \(error.localizedDescription)") }
+            reads -= 1
+            changed()
+        }
     }
 
     private func stop(_ id: UUID) {
@@ -383,6 +405,12 @@ public final class ChannelOutbox {
         queue.removeAll { $0.id == id }
         removed.insert(id)
         delete(id)
+        release(id)
+    }
+
+    /// Ends a removed message's pause, so its line moves on to the next message.
+    private func release(_ message: UUID) {
+        for (id, pause) in pauses where pause.message == message { resume(id) }
     }
 
     /// The request waiting in a channel on the current server: the open channel's, otherwise the
