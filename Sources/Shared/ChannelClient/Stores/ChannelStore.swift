@@ -573,7 +573,17 @@ public final class ChannelStore {
 public final class ChannelCatalogStore {
     public let api: ChannelAPI
     public private(set) var state: ChannelCatalog?
-    public var channels: [Channel] { state?.channels ?? [] }
+    /// A channel the outbox is sending to reads as read through its latest, since the server marks it
+    /// read through the user's message once that lands.
+    public var channels: [Channel] {
+        let channels = state?.channels ?? []
+        guard let sending = outbox?.sendingChannelIDs, !sending.isEmpty else { return channels }
+        return channels.map { channel in
+            var channel = channel
+            if sending.contains(channel.id) { channel.read(through: channel.latestSequence) }
+            return channel
+        }
+    }
     public var members: [ChannelAgent] { state?.members ?? [] }
     public private(set) var working: Set<String> = []
     public private(set) var isActive = true
@@ -659,6 +669,12 @@ public final class ChannelCatalogStore {
     /// A channel's store, only if something already asked for it.
     public func existingChannel(id: String) -> ChannelStore? { detailStores[id] }
 
+    /// Reads a channel through `sequence` at once, ahead of the server's echo.
+    func read(_ channelID: String, through sequence: Int) {
+        guard let index = state?.channels.firstIndex(where: { $0.id == channelID }) else { return }
+        state?.channels[index].read(through: sequence)
+    }
+
     /// A refresh someone asked for, which joins one already in flight instead of returning early.
     /// While the stream is open it reopens the stream and returns with the fresh catalog that opens
     /// it, or reports the failure at once, since the caller waits on the outcome. Without a stream,
@@ -728,6 +744,12 @@ public final class ChannelCatalogStore {
     /// When the server comes back, held channels waiting out a backoff try again at once.
     private func applyCatalog(_ catalog: ChannelCatalog) {
         let recovered = failingSince != nil || phase.failure != nil
+        // A read only moves forward, so a catalog the server sent before it had the user's read can't undo it.
+        var catalog = catalog
+        let seen = Dictionary((state?.channels ?? []).map { ($0.id, $0.seenThrough) }, uniquingKeysWith: max)
+        for index in catalog.channels.indices {
+            catalog.channels[index].read(through: seen[catalog.channels[index].id] ?? 0)
+        }
         state = catalog
         working = Set(catalog.working)
         lastRefreshedAt = .now

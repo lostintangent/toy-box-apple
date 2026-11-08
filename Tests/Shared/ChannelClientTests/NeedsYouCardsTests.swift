@@ -68,6 +68,18 @@ struct NeedsYouCardsTests {
         #expect(Set(server.posts.map(\.id)).count == 2)
     }
 
+    @Test func aRequestOpensOnlyOnceItsWordsAreKnown() async throws {
+        let server = try await CardServer.start(waiting: [("a", 12), ("b", 7)])
+        defer { server.end() }
+        let cards = cards()
+        let known = server.requests.entries()
+        var arriving = known
+        arriving[0].request = nil
+        #expect(cards.open(in: arriving) == known[1], "The newest request waits for its words")
+        #expect(cards.rows(in: arriving) == ["b": .card(known[1])], "Its channel stays an ordinary row")
+        #expect(cards.open(in: known) == known[0], "It opens once they're known")
+    }
+
     @Test func aTypedReplyLeadsWithTheRequesterAndShrinksBackIntoItsRowAsTheNextCardOpens() async throws {
         let server = try await CardServer.start(waiting: [("a", 12), ("b", 7)])
         defer { server.end() }

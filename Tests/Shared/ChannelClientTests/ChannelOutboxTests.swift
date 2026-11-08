@@ -200,6 +200,56 @@ struct ChannelOutboxTests {
         #expect(served.reads.withLock { $0 } == [6, 7])
     }
 
+    /// The server's change for the user's message reaches the list before or after its answer to the
+    /// send, and carries the read from before it. Neither order shows the message unread, and the
+    /// next message after it still does.
+    @Test(arguments: [true, false])
+    func theUsersOwnMessageNeverLeavesItsChannelUnread(changeFirst: Bool) async throws {
+        let folder = Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var channel = Self.channel(latest: 5)
+        channel.seenThrough = 5
+        let served = Served(Self.catalog([channel]))
+        served.holdsReads.withLock { $0 = true }
+        let mock = Self.transport(served, streamsCatalog: true) { _, request in
+            struct Body: Decodable { var id: String }
+            let id = try JSONDecoder().decode(Body.self, from: requestBody(request)).id
+            var response = try MockResponse.json(SentResponse(message: Self.userMessage(id: id, sequence: 6)))
+            response.keepOpen = changeFirst
+            return response
+        }
+        defer { mock.finishPendingResponses() }
+        let catalog = ChannelCatalogStore(api: try mock.api())
+        catalog.startPolling()
+        defer { catalog.stopPolling() }
+        try await eventually { catalog.isLoaded }
+        let outbox = outbox(folder, clock: TestClock())
+        catalog.outbox = outbox
+        func change(latest: Int) async throws {
+            channel.latestSequence = latest
+            let frame = try catalogFrame("channel.upserted", ("channel", channel))
+            #expect(mock.sendPendingBody(frame, path: "/api/v1/channels") == 1)
+            try await eventually { catalog.state?.channels.first?.latestSequence == latest }
+        }
+
+        await outbox.send("Hello", to: "test", on: catalog.api.baseURL)
+        if changeFirst {
+            try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/channels/test/messages") == 1 }
+            try await change(latest: 6)
+            #expect(catalog.channels.first?.attention == nil, "Sending")
+            mock.finishPendingResponses(path: "/api/v1/channels/test/messages")
+            try await eventually { outbox.messages(in: "test").isEmpty }
+        } else {
+            try await eventually { outbox.messages(in: "test").isEmpty }
+            try await change(latest: 6)
+        }
+        #expect(catalog.channels.first?.attention == nil, "Sent")
+        try await eventually(observing: mock) { served.reads.withLock { $0 } == [6] }
+
+        try await change(latest: 7)
+        #expect(catalog.channels.first?.attention == .unread, "Someone's message after it shows")
+    }
+
     struct SentResponse: Encodable {
         var version = 1
         var message: ChannelMessage

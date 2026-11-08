@@ -99,11 +99,12 @@ final class MockTransport: Sendable {
     }
 
     @discardableResult
-    func finishPendingResponses() -> Int {
+    /// Finishes every held response, or only those for `path`.
+    func finishPendingResponses(path: String? = nil) -> Int {
         let pending = state.withLock { state in
-            let pending = Array(state.pending.values)
-            state.pending.removeAll()
-            return pending
+            let pending = state.pending.filter { path == nil || $0.value.request.url?.path == path }
+            for key in pending.keys { state.pending[key] = nil }
+            return Array(pending.values)
         }
         changed()
         for response in pending {
