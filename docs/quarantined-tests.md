@@ -1,8 +1,8 @@
 # Quarantined tests
 
-Each test here is out of the merge gate behind an opt-in, and AGENTS.md's
-[Test reliability](../AGENTS.md#test-reliability) table names its owner. An entry records the
-failed run, the diagnosis so far and what restoring the test needs. A passing rerun doesn't
+Each test here is out of the merge gate behind an opt-in, under AGENTS.md's
+[Test reliability](../AGENTS.md#test-reliability) rules. An entry names its opt-in and owner, and
+records the failed run, the diagnosis so far and what restoring the test needs. A passing rerun doesn't
 restore one. Delete the entry when its test returns to the gate, since git history keeps
 closed incidents.
 
@@ -22,7 +22,8 @@ closed incidents.
   trailing edge and back, and trailing-edge visibility synchronously in CI. The unchanged
   wheel-input assertions and 30-second deadline remain in `imageStripOverflowRespondsToWheelInput`,
   behind `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1`. Failure diagnostics include geometry, window
-  visibility, display sleep and session lock state. Composer owns both cases.
+  visibility, display sleep and session lock state. Composer owns both cases. The wheel-input case
+  stays opt-in, because native wheel animation needs an awake, unlocked Mac.
 
 ## Artifact HTML origin probe
 
