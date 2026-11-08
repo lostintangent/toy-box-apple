@@ -414,10 +414,15 @@ struct ConversationView: View {
     }
 
     /// Find and the composer trade places in one transaction, so no frame shows both bars or neither.
+    /// The leaving field keeps focus until its transition settles, so closing lowers the keyboard
+    /// first, together with the swap.
     private func swapFind(presented: Bool) {
         guard find.isPresented != presented else {
             if presented { find.present() }
             return
+        }
+        if !presented {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
         withAnimation(TranscriptFindSwap.animation(reduceMotion: reduceMotion)) {
             if presented { find.present() } else { find.close() }
