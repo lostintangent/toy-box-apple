@@ -27,27 +27,22 @@ struct RequestSpotlightTests {
         #expect(WaitingRequestQuery.matching("missing", in: [entity]).isEmpty)
     }
 
-    @Test func requestsWithoutARequesterOrWordsDoNotDelayHealthyResults() async throws {
+    @Test func requestsWithoutARequesterOrWordsAreLeftOut() throws {
         let healthy = item()
         var removedRequester = item(sequence: 9)
         removedRequester.agent = nil
         var unquoted = item(sequence: 11)
         unquoted.quote = nil
-        var polls = 0
-        let resolved = try await ChannelIntents.resolveWaitingRequests {
-            polls += 1
-            return ("https://server.test", true, [healthy, removedRequester, unquoted])
+        let entries = [healthy, removedRequester, unquoted].compactMap {
+            WaitingRequestEntry(item: $0, serverURL: "https://server.test")
         }
-        let expectedID = try entry().id
-        #expect(polls == 1 && resolved.map(\.id) == [expectedID])
+        #expect(entries.map(\.id) == [try entry().id])
     }
 
     @Test func anUnreachableServerThrows() async throws {
-        await #expect(throws: ChannelIntentError.unreachable) {
-            try await ChannelIntents.resolveWaitingRequests(timeout: .zero) {
-                throw ChannelIntentError.unreachable
-            }
-        }
+        let fixture = try RequestIntentFixture(entry: entry())
+        fixture.isUnreachable = true
+        await #expect(throws: ChannelIntentError.unreachable) { try await fixture.context.waitingRequests() }
     }
 
     @Test func answeredAndReplacedRequestsLeaveTheIndexAndServerSwitchClearsIt() async throws {
@@ -239,6 +234,7 @@ private final class RequestIntentFixture {
     var api: ChannelAPI?
     let entry: WaitingRequestEntry
     var entries: [WaitingRequestEntry]
+    var isUnreachable = false
     var opened: [String] = []
     var sent: [ChannelIntents.Outgoing] = []
     var confirmations: [ChannelIntents.SendConfirmation] = []
@@ -251,7 +247,11 @@ private final class RequestIntentFixture {
             hold: { _ in }, release: { _ in },
             send: { self.sent.append($0) },
             open: { _ in Issue.record("Reply must not open a window") },
-            requests: { self.entries }, revealRequest: { self.opened.append("\($0):\($1)") }
+            requests: {
+                if self.isUnreachable { throw ChannelIntentError.unreachable }
+                return self.entries
+            },
+            revealRequest: { self.opened.append("\($0):\($1)") }
         ))
         context.confirmationOverride = { prompt in
             self.confirmations.append(prompt)
