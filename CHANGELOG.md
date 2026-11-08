@@ -16,7 +16,7 @@
 
 ### Features
 
-- A request waiting for you can now be read aloud, from the channel list or the conversation, and it keeps reading if you lock your phone.
+- A request waiting for you can now be read aloud, so you can hear it while you do something else, even with your phone locked.
 - Replying from the Lock Screen or the channel list is now instant, and if your connection drops or your server is asleep, Toy Box sends your message as soon as it can, so nothing you send gets lost.
 
 ### Bugs/Polish
