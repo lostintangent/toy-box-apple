@@ -223,18 +223,28 @@ every build its own scratch path, so parallel builds never share `.build`.
 - **Tags need the user's approval.** `vX.Y.Z` ships the Mac to GitHub Releases, and
   `mobile-vX.Y.Z` ships the phone to TestFlight. A manual workflow run on `main` is a dry run.
   Signing, notarization, updates and TestFlight are in [docs/releases.md](docs/releases.md).
-- **Release notes are written at merge time.** The merge that lands a user-facing change adds its
-  bullet to that platform's next unreleased `## Mac X.Y.Z` or `## iPhone X.Y.Z` entry in
-  `CHANGELOG.md`, creating the entry if the newest one has shipped. A release is then only a tag.
-- **Each bullet leads with what the user gains, in plain words,** under `### Features` or
-  `### Bugs/Polish`: "The task list can now be filtered to only in-progress items, which makes it
-  easier to track progress." Name the moment they'll notice it and why it matters, never how it
-  works. Leave out internal names such as the outbox, and mechanics such as placement, glyphs,
-  colors, counts and gestures unless they're the point. If a reader who never saw the code
-  couldn't say why they'd care, rewrite it. Write one bullet per gain, folding changes that serve
-  the same one together. Each platform's notes stand on their own, never compared to the web or
-  the other app. The Lead rereads every unreleased bullet against this before asking for a tag.
 - **Workflow actions stay pinned** to full commit hashes with readable version comments.
   Dependabot checks them weekly.
 - **Never alter the user's installed validation bundle** or microphone permission state to test a
   release.
+
+### Release notes
+
+- **They're written at merge time.** The merge that lands a user-facing change adds its bullet to
+  that platform's next unreleased `## Mac X.Y.Z` or `## iPhone X.Y.Z` entry in `CHANGELOG.md`,
+  under `### Features` or `### Bugs/Polish`, creating the entry if the newest one has shipped. A
+  release is then only a tag.
+- **Each bullet leads with what the user gains, in plain words.** Name the moment they'll notice
+  it and why it matters, never how it works. If a reader who never saw the code couldn't say why
+  they'd care, rewrite it.
+
+  | Not | But |
+  | --- | --- |
+  | Quick Send, menu bar replies and notification replies now finish the moment you send, and a message that can't go out waits in its channel. | Sending from Quick Send, the menu bar or a notification is now instant, and if your connection drops or your server is asleep, Toy Box sends your message as soon as it can, so nothing you send gets lost. |
+  | A request waiting for you can now be read aloud, from the channel list or the conversation. | A request waiting for you can now be read aloud, so you can hear it while you do something else, even with your phone locked. |
+
+- **Leave out internals and mechanics.** No internal names such as the outbox, and no placement,
+  glyphs, colors, counts or gestures unless they're the point.
+- **Write one bullet per gain,** folding changes that serve the same one together. Each
+  platform's notes stand on their own, never compared to the web or the other app.
+- **The Lead rereads every unreleased bullet** against these rules before asking for a tag.
