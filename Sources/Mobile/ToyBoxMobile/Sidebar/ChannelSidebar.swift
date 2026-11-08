@@ -20,10 +20,13 @@ struct ChannelSidebar: View {
     @ViewState private var cards: NeedsYouCards
     /// The list's visible area in global space.
     @ViewState private var listBounds: CGRect = .zero
-    /// The open card's row in global space, kept from its first layout at each width, since a
-    /// swipe slides it sideways.
+    /// The open card's row in global space, from its latest layout at a new size, since a swipe or a
+    /// push only slides it.
+    @ViewState private var cardFrame: CGRect?
+    /// The open card's row in the list's own space, kept from its first layout at each width, since a
+    /// swipe slides it sideways. A push slides the whole list, so a card that first lays out mid-push
+    /// still finds the list's edge.
     @ViewState private var cardRow: CGRect?
-    @ViewState private var cardHeight: CGFloat = 0
     /// The open card, when the person caused it to open, which may scroll the list as it grows.
     @ViewState private var revealing: ChannelWaitingRequests.Entry.ID?
     /// The open card in global space while a typed reply lifts it above the list.
@@ -48,7 +51,7 @@ struct ChannelSidebar: View {
     /// How far a card reaches past its row's trailing side. A folded list ends where its rows do, so
     /// the card's content steps in there instead.
     private var reach: CGFloat {
-        min(max(listBounds.maxX - (cardRow?.maxX ?? listBounds.maxX), 0), NeedsYouCard.margin)
+        min(max(listBounds.width - (cardRow?.maxX ?? listBounds.width), 0), NeedsYouCard.margin)
     }
 
     private var initialLoading: Bool { model.catalog?.phase == .connecting }
@@ -134,7 +137,13 @@ struct ChannelSidebar: View {
                 revealing = cards.reveals(card, after: previous) ? card : nil
                 reveal(open, in: proxy)
             }
-            .onChange(of: cardHeight) { reveal(open, in: proxy) }
+            .onChange(of: cardFrame?.height) { reveal(open, in: proxy) }
+            // Runs once the list has reported its own frame from the same layout, so the two agree
+            // even while a push slides them.
+            .onChange(of: cardFrame) { _, frame in
+                guard let row = frame?.offsetBy(dx: -listBounds.minX, dy: -listBounds.minY) else { return }
+                if cardRow?.width != row.width { cardRow = row }
+            }
         }
         .onScrollPhaseChange { _, phase in
             pull.isTouching = phase == .tracking || phase == .interacting
@@ -179,8 +188,7 @@ struct ChannelSidebar: View {
                 .padding(.leading, -NeedsYouCard.margin)
                 .padding(.trailing, -reach)
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { row in
-                    if cardRow?.width != row.width { cardRow = row }
-                    cardHeight = row.height
+                    if cardFrame?.size != row.size { cardFrame = row }
                 }
         case .question(let entry):
             Button { cards.open(entry.id) } label: {

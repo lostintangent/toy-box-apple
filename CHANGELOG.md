@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.26
+
+### Bugs/Polish
+
+- On the folded iPhone, a request in the channel list no longer shows cut off on its right side when it arrives just as you open a channel.
+
 ## iPhone 0.1.25
 
 ### Bugs/Polish
