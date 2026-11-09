@@ -465,7 +465,7 @@ drop shadows. Use an 8-point spacing rhythm, with 4-point adjustments inside com
 | Floating controls and popovers | Native toolbar, popover and control materials |
 | Text | `labelColor`, `secondaryLabelColor`, `tertiaryLabelColor` by hierarchy |
 | Selection and focus | System accent, source-list selection and focus ring. Respect user accent |
-| Hover (Mac) | One hover fill for every custom control and row that responds to the pointer: primary at 12% in Dark and 8% in Light, 5% more while pressed, in the control's own shape, fading over 120 ms. A borderless button's secondary ink turns primary while lit. It's defined once and every hover uses it. Native toolbar, menu and list controls keep the system's own |
+| Hover (Mac) | One hover fill for every custom control and row that responds to the pointer: primary at 12% in Dark and 8% in Light, 5% more while pressed, in the control's own shape, fading over 120 ms. On an accent selection it's white at 20%. A borderless button's secondary ink turns primary while lit. It's defined once and every hover uses it. Native toolbar, menu and list controls keep the system's own |
 | Toy Box identity | The lead's avatar exactly as the server supplies it, a navy `#1E3A8A` circle with a gold `#FACC15` outline star, drawn as that color's `.gradient` like every avatar. Channel icons keep Toy Box's channel cyan `#0891b2`, which the lead doesn't use. Recolor neither to the accent |
 | Unread | Semantic system blue, 1-point New rule. Blue does not mean working |
 | Requests | Orange wash on the pending bubble, orange `questionmark.bubble.fill`, primary label text and a Reply button. Never an outline |
