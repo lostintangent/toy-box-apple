@@ -1097,16 +1097,17 @@ before the channel icons, and its center sits 24 points above the sidebar's bott
 | --- | --- | --- |
 | First load | `.secondary`, then a spinner after 300 ms | Nothing. The placeholder rows already show loading |
 | Last refresh succeeded | `.green` | Nothing |
-| Refresh failing, rows kept | `.orange` | The error block: "Channels may be out of date", the readable failure, then Retry and Settings. Recovery retries every failed channel at once |
+| Refresh failing, rows kept | `.orange` | The error block: "Channels may be out of date" over the readable failure. Recovery retries every failed channel at once |
 | Never loaded, invalid URL or authorization failure | `.red` | The same block, headed "Can't connect to Toy Box" |
 
 The error block moves into the same bar, 10 points above the status line and on the same 20-point
 leading edge, so a problem and the server it concerns read as one footer. The status line never
-repeats the block's words. Differentiate Without Color holds because every state other than
+repeats the block's words. The block has no buttons: the catalog keeps retrying on its own, the
+dot already marks the problem and the status line already opens Settings. Differentiate Without Color holds because every state other than
 connected shows either the loading placeholders or the block's heading directly above the dot.
 
 The footer is the sidebar's only progress indicator. When the first load or a refresh the user
-asked for (Retry, or View > Refresh, which refreshes only the channel list) takes longer than 300 ms, the dot's slot shows a native
+asked for (View > Refresh, which refreshes only the channel list) takes longer than 300 ms, the dot's slot shows a native
 indeterminate spinner,
 `ProgressView().controlSize(.mini)`, which is 10 points. Center it on the dot's center and don't
 clip it, so it overhangs the 7-point slot by 1.5 points on each side and the host text never moves.
