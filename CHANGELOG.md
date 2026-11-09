@@ -1,5 +1,11 @@
 # Changelog
 
+## Mac 0.1.29
+
+### Bugs/Polish
+
+- A channel no longer warns that your read position wasn't saved, since Toy Box saves your place again the next time you read.
+
 ## iPhone 0.1.26
 
 ### Bugs/Polish

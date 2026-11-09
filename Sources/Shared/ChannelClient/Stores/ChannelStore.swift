@@ -112,7 +112,6 @@ public final class ChannelStore {
     public private(set) var isLoadingOlder = false
     public private(set) var hasOlderMessages = true
     public private(set) var historyError: String?
-    public private(set) var readError: String?
     /// The latest bookmark change that failed and was undone, until the next change or a dismissal.
     public private(set) var bookmarkFailure: BookmarkFailure?
     /// The app's outbox, which delivers every message sent through it. Set by the catalog store.
@@ -387,14 +386,14 @@ public final class ChannelStore {
     }
 
     /// Returns once the read through `sequence`, and any later read raised meanwhile, is written or a
-    /// write fails. The store owns the write, so cancelling a caller neither interrupts it nor reports
-    /// an error, and a later caller joins it rather than leaving its read for the next scroll.
+    /// write fails. The store owns the write, so cancelling a caller doesn't interrupt it, and a later
+    /// caller joins it rather than leaving its read for the next scroll. A failed write shows nothing
+    /// and stays pending, so the next call sends it again.
     public func markRead(through sequence: Int) async {
         guard phase.isConnected, let channel = state?.channel else { return }
         pendingRead = max(pendingRead, min(sequence, channel.latestSequence))
         if readWrite == nil {
             guard pendingRead > max(channel.seenThrough, acknowledgedRead) else { return }
-            readError = nil
             readWrite = Task { await writeReads() }
         }
         await readWrite?.value
@@ -404,14 +403,9 @@ public final class ChannelStore {
         defer { readWrite = nil }
         while let current = state?.channel, pendingRead > max(current.seenThrough, acknowledgedRead), phase.isConnected {
             let target = pendingRead
-            do {
-                let seen = try await api.markRead(channelId: id, sequence: target)
-                acknowledgedRead = max(acknowledgedRead, seen)
-                if seen < target { break }
-            } catch {
-                readError = error.localizedDescription
-                break
-            }
+            guard let seen = try? await api.markRead(channelId: id, sequence: target) else { break }
+            acknowledgedRead = max(acknowledgedRead, seen)
+            if seen < target { break }
         }
     }
 

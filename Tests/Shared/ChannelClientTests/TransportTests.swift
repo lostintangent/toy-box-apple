@@ -368,15 +368,14 @@ struct TransportTests {
     }
 
     /// Transcript's read task is cancelled whenever the visible sequence moves, which used to cancel
-    /// the write in flight and report it as "Read position wasn't saved. cancelled".
-    @Test @MainActor func cancellingAReaderNeitherReportsAnErrorNorDropsItsRead() async throws {
+    /// the write in flight.
+    @Test @MainActor func cancellingAReaderDoesNotDropItsRead() async throws {
         let (mock, store) = try heldReadStore()
         let reader = Task { await store.markRead(through: 2) }
         try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
         reader.cancel()
         #expect(mock.finishPendingResponses() == 1)
         await reader.value
-        #expect(store.readError == nil)
         await store.markRead(through: 2)
         #expect(try readTargets(mock) == [2])
     }
@@ -398,8 +397,24 @@ struct TransportTests {
         #expect(mock.finishPendingResponses() == 1)
         await later.value
         await first.value
-        #expect(store.readError == nil)
         #expect(try readTargets(mock) == [2, 3])
+    }
+
+    /// A failed read shows nothing and stays pending, so the next read, even of an earlier message, sends it again.
+    @Test @MainActor func aFailedReadIsSentAgainByTheNextRead() async throws {
+        let mock = MockTransport { request, count in
+            if count == 1 { return MockResponse(status: 503, body: Data(#"{"error":"Unavailable."}"#.utf8)) }
+            let sequence = try JSONDecoder().decode([String: Int].self, from: requestBody(request))["sequence"] ?? 0
+            return MockResponse(body: Data(#"{"seenThrough":\#(sequence)}"#.utf8))
+        }
+        let store = ChannelStore(id: "test", api: try mock.api())
+        var state = testState(revision: 10, messages: [testMessage(1), testMessage(2), testMessage(3)])
+        state.channel.seenThrough = 1
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        await store.markRead(through: 2)
+        await store.markRead(through: 1)
+        await store.markRead(through: 2)
+        #expect(try readTargets(mock) == [2, 2])
     }
 
     /// A connected store that has seen message 1 of 3, whose first read response stays open until the test finishes it.
