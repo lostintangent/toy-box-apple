@@ -1429,22 +1429,25 @@ struct ComposerTests {
         window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
         window.orderFrontRegardless()
         defer { window.close() }
-        try await waitForUpdate(of: view, "both native buttons mount") {
-            func countButtons(in view: NSView) -> Int {
-                (view is NSButton ? 1 : 0) + view.subviews.reduce(0) { $0 + countButtons(in: $1) }
+        func click(_ point: NSPoint) throws {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let event = try #require(NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+                window.sendEvent(event)
             }
-            return countButtons(in: view) == 2
         }
+        try await waitForUpdate(of: view, "both buttons take a click at their center") {
+            if dictates == 0 { try click(NSPoint(x: size / 2, y: size / 2)) }
+            if attaches == 0 { try click(NSPoint(x: size * 1.5, y: size / 2)) }
+            return dictates == 1 && attaches == 1
+        }
+        dictates = 0
+        attaches = 0
         let edges = [CGPoint(x: -12, y: 0), CGPoint(x: 0, y: 11), CGPoint(x: -8, y: -9), CGPoint(x: 9, y: 9)]
         for offset in edges + [CGPoint(x: -20, y: -20)] {
             for centerX in [size / 2, size * 1.5] {
-                let point = NSPoint(x: centerX + offset.x, y: size / 2 + offset.y)
-                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                    let event = try #require(NSEvent.mouseEvent(
-                        with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
-                    window.sendEvent(event)
-                }
+                try click(NSPoint(x: centerX + offset.x, y: size / 2 + offset.y))
             }
         }
         #expect(dictates == edges.count)

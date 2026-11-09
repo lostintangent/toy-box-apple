@@ -12,7 +12,7 @@ struct DictateButton: View {
             Button(action: action) {
                 label.contentShape([.interaction, .accessibility], Circle())
             }
-                .buttonStyle(.borderless)
+                .buttonStyle(HoverFillButtonStyle(shape: Circle(), lighting: dictation.isListening ? .off : .hover))
                 .disabled(dictation.availability == .noMicrophone && dictation.phase == .idle)
                 .help(help)
                 .accessibilityLabel(accessibilityLabel)

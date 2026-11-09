@@ -36,7 +36,7 @@ struct SidebarConnectionFooter: View {
                 Button(action: openSettings) {
                     SidebarStatusLine(footer: footer, spinning: showsSpinner, serverURL: serverURL)
                 }
-                .buttonStyle(TokenCapsuleButtonStyle(emphasized: false))
+                .buttonStyle(HoverFillButtonStyle(shape: Capsule()))
                 .help("\(footer.verb) \(serverURL)\nChange the server in Settings.")
                 .accessibilityLabel("Server")
                 .accessibilityValue("\(SidebarFooter.server(serverURL)), \(footer.accessibilityValue)")
@@ -97,9 +97,9 @@ struct SidebarStatusLine: View {
                         ProgressView().controlSize(.mini).fixedSize().transition(.opacity)
                     }
                 }
+            // Secondary from the button's style, and primary while it's lit.
             Text(SidebarFooter.server(serverURL))
                 .font(.system(size: 11 * scale))
-                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }

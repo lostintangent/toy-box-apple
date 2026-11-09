@@ -151,7 +151,6 @@ private struct TranscriptCatchUpLine: View {
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.colorScheme) private var colorScheme
-    @ViewState private var isHovered = false
     @ViewState private var shownHeight: CGFloat = 0
     @ViewState private var fullHeight: CGFloat = 0
 
@@ -177,15 +176,11 @@ private struct TranscriptCatchUpLine: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.vertical, 3)
-            .background {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(isHovered ? 0.05 : 0))
-                    .padding(.horizontal, -6)
-            }
-            .contentShape(Rectangle())
+            .padding(.horizontal, 6)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
+        .buttonStyle(HoverFillButtonStyle(shape: RoundedRectangle(cornerRadius: 6, style: .continuous), inks: false))
+        // The fill reaches 6 points past the text without moving it.
+        .padding(.horizontal, -6)
         .onKeyPress(.return) {
             show()
             return .handled

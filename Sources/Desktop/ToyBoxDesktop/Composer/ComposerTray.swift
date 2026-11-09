@@ -65,14 +65,16 @@ struct ComposerTray: View {
     private func row(_ tray: ChannelTray, bookmarkCount: Int?) -> some View {
         let artifacts = tray.artifacts
         let progress = tray.taskProgress
-        return HStack(spacing: 8) {
+        // Each control's capsule reaches 6 points past its label, inside these gaps: 12 between
+        // labels, 16 between artifacts, and 12 from the glass.
+        return HStack(spacing: 0) {
             if let bookmarkCount { bookmarksButton(count: bookmarkCount) }
             if let newest = artifacts.first {
                 ViewThatFits(in: .horizontal) {
                     // With 672 points of room, the three newest show, sharing it as they truncate.
                     if artifacts.count > 1 {
-                        HStack(spacing: 8) {
-                            HStack(spacing: 16) {
+                        HStack(spacing: 0) {
+                            HStack(spacing: 16 - 2 * ComposerCapsuleLabel.outset) {
                                 // A capped frame grows to its cap, so each keeps its own width
                                 // until the row runs short.
                                 ForEach(artifacts.prefix(3)) { artifact in
@@ -86,11 +88,11 @@ struct ComposerTray: View {
                         }
                         .frame(minWidth: 672, idealWidth: 672, alignment: .leading)
                     }
-                    HStack(spacing: 8) {
+                    HStack(spacing: 0) {
                         artifactButton(newest).fixedSize(horizontal: true, vertical: false)
                         artifactCount(hiding: artifacts.count - 1)
                     }
-                    HStack(spacing: 8) {
+                    HStack(spacing: 0) {
                         artifactOverflow
                         artifactCount(hiding: artifacts.count - 1)
                     }
@@ -102,8 +104,8 @@ struct ComposerTray: View {
                 Button { showTasks.wrappedValue.toggle() } label: {
                     Label("\(progress.done)/\(progress.total)", systemImage: "checklist")
                         .lineLimit(1)
-                        .frame(minHeight: 28)
                         .fixedSize(horizontal: true, vertical: false)
+                        .modifier(ComposerCapsuleLabel())
                 }
                 .popover(isPresented: showTasks, arrowEdge: .top) {
                     ComposerTasksPopover(tasks: store.tasks, agents: store.roster,
@@ -118,11 +120,11 @@ struct ComposerTray: View {
             }
             if let preview = tray.preview { previewButton(preview) }
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(HoverFillButtonStyle(shape: Capsule()))
         .font(.system(size: 12))
         .foregroundStyle(.secondary)
         .frame(height: 28)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 12 - ComposerCapsuleLabel.outset)
         .padding(.vertical, 3)
         .task(id: snapshot?.requestedState) {
             switch snapshot?.requestedState {
@@ -164,8 +166,8 @@ struct ComposerTray: View {
                 Image(systemName: "bookmark.fill").foregroundStyle(.blue)
             }
             .lineLimit(1)
-            .frame(minHeight: 28)
             .fixedSize(horizontal: true, vertical: false)
+            .modifier(ComposerCapsuleLabel())
         }
         .popover(isPresented: showBookmarks, arrowEdge: .top) {
             ComposerBookmarksPopover(store: store) { sequence in
@@ -183,15 +185,16 @@ struct ComposerTray: View {
         Button { artifactOpener.open(artifact) } label: {
             Label(artifact.title, systemImage: "doc.text")
                 .lineLimit(1).truncationMode(.middle)
+                .frame(maxWidth: 230, alignment: .leading)
+                .modifier(ComposerCapsuleLabel())
         }
-        .frame(maxWidth: 230, alignment: .leading)
     }
 
     /// `+N` for the artifacts the tray doesn't show, which lists them all.
     @ViewBuilder private func artifactCount(hiding hidden: Int) -> some View {
         if hidden > 0 {
             Button { showArtifacts.wrappedValue.toggle() } label: {
-                Text("+\(hidden)").frame(minWidth: 28, minHeight: 28)
+                Text("+\(hidden)").modifier(ComposerCapsuleLabel())
             }
             .accessibilityLabel("Show all \(tray.artifacts.count) artifacts")
             .popover(isPresented: showArtifacts, arrowEdge: .top) { artifactList }
@@ -206,8 +209,11 @@ struct ComposerTray: View {
         } label: {
             Label("Artifacts", systemImage: "doc.text")
                 .labelStyle(.iconOnly)
+                .modifier(ComposerCapsuleLabel())
         }
-        .menuStyle(.borderlessButton)
+        // A button menu takes the tray's button style, so it lights like the rest.
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
         .fixedSize()
         .help("Shared artifacts")
     }
@@ -252,11 +258,13 @@ struct ComposerTray: View {
         if preview.kind == "url", let address = preview.url, let url = store.api.resourceURL(address) {
             Button { openURL(url) } label: {
                 Label("Preview", systemImage: "arrow.up.right.square").lineLimit(1)
+                    .modifier(ComposerCapsuleLabel())
             }
             .help("Open preview in your browser: \(url.absoluteString)")
         } else if preview.kind == "screen", let screenID = preview.screenId {
             Button { openWindow(id: "screens", value: screenID) } label: {
                 Label("Screen", systemImage: "display").lineLimit(1)
+                    .modifier(ComposerCapsuleLabel())
             }
             .help("Open screen preview")
             .accessibilityLabel("Open screen preview")
@@ -293,6 +301,18 @@ struct ComposerTasksPopover: View {
         .frame(width: Self.width)
         .frame(maxHeight: 420)
         .trayPopoverContent()
+    }
+}
+
+/// A label in a 24-point capsule of the hover fill, reaching 6 points past it on each side and
+/// centered in the 28-point controls row, as the tray's controls and Input Needed draw it.
+struct ComposerCapsuleLabel: ViewModifier {
+    static let outset: CGFloat = 6
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, Self.outset)
+            .frame(height: 24)
     }
 }
 

@@ -45,7 +45,8 @@ struct ComposerConnectingIndicator: View {
     }
 }
 
-/// Opens the image picker. Like Dictate, the whole 28pt circle takes clicks and is its accessibility frame.
+/// Opens the image picker. Like Dictate, the whole 28pt circle lights, takes clicks and is its
+/// accessibility frame.
 struct AttachImagesButton: View {
     let action: () -> Void
 
@@ -55,7 +56,7 @@ struct AttachImagesButton: View {
                 .frame(width: 28, height: 28)
                 .contentShape([.interaction, .accessibility], Circle())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(HoverFillButtonStyle(shape: Circle()))
         .help("Attach images")
         .accessibilityLabel("Attach images")
     }
@@ -225,6 +226,9 @@ private struct ChannelComposer: View {
                 draft.text = "Here's the revised entrance layout."
                 draft.error = "Library sketch.heic cannot be decoded as an image. Attach a readable image file."
                 snapshot?.markStateReady("composer-notices")
+            case "hover-all":
+                // Every control in `HoverFillButtonStyle` lights itself for this state.
+                snapshot?.markStateReady("hover-all")
             case let name? where name.hasPrefix("composer-dictation"):
                 await prepareDictationSnapshot(name)
             default: break
@@ -409,8 +413,9 @@ private struct ChannelComposer: View {
                 Image(systemName: "questionmark.circle.fill").foregroundStyle(.orange)
             }
             .lineLimit(1)
+            .modifier(ComposerCapsuleLabel())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(HoverFillButtonStyle(shape: Capsule()))
         .help("Reveal the unanswered request")
         .onHover(perform: setRequestHover)
         .popover(isPresented: $requestPreview, arrowEdge: .bottom) {
