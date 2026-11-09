@@ -767,6 +767,10 @@ separate window for that channel and leaves the current window's channel and sel
 visible conversation actively acknowledges reading. Restoring a window must not send a message or
 silently mark its unseen content as read.
 
+**Phone folds.** Unfolding the Duo keeps what the folded phone showed. A channel open folded
+unfolds without the list, which the sidebar toggle brings back, and the list folded unfolds with
+the list showing. Overview keeps its own presence the same way, as Overview describes.
+
 **Phone channel search.** Use the native bottom-bar search item in the channel-list column,
 folded and unfolded. Search leads the bar, and a flexible space puts Settings (`gearshape`, the
 Mac's gear) at its trailing end. While the split view is collapsed, as
