@@ -2494,8 +2494,8 @@ in help. Format the time with `RelativeDateTimeFormatter`, `.named` and `.short`
 that event is loaded, show the localized type ("Markdown") instead. Sort by `sharedAt` newest
 first, with undated items last and existing order preserved for equal dates. The tray is also
 newest-first. Clicking opens the artifact, and Space on a focused row shows Quick
-Look. The context menu offers Open, Quick Look, Show in Transcript (reveals the share event) and
-Copy Link. A `…` menu on the row offers the same actions, with Remove from Channel after a divider.
+Look. The context menu offers Open Artifact, Show in Transcript (reveals the share event) and
+Copy Link, without Quick Look, which Space already gives. A `…` menu on the row offers the same actions, with Remove from Channel after a divider.
 Remove from Channel is destructive and has no confirmation. It sends `removeArtifact` once and
 disables the row while the request is in flight, with a spinner and "Removing from channel". It never
 removes the row optimistically. The row leaves when the server's `artifact_removed` event arrives. A
