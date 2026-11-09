@@ -24,7 +24,6 @@ struct ConversationTranscript: View {
     @ViewState private var highlightedSequence: Int?
     @ViewState private var revealError: String?
     @ViewState var isRevealing = false
-    @ViewState private var lastMarkedRead = 0
     @ViewState private var expandedMessageIds: Set<String> = []
     @ViewState private var scrollPosition: String?
     @ViewState private var arrivalUnreadAfter: Int?
@@ -437,23 +436,13 @@ struct ConversationTranscript: View {
         let presence = store.phase.isUnavailable ? [:] : store.presence
         let hasWorkingAgents = store.roster.contains { presence[$0.id]?.state == "working" }
         let rises: AnyTransition = reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4))
-        let hasNotices = revealError != nil || store.readError != nil
+        let hasNotices = revealError != nil
         return VStack(alignment: .leading, spacing: 8) {
             if let error = revealError {
                 TranscriptNotice {
                     Label(error, systemImage: "exclamationmark.triangle")
                 } action: {
                     Button("Dismiss") { revealError = nil }
-                }
-                .transition(rises)
-            }
-            if let error = store.readError {
-                TranscriptNotice { Text("Read position wasn't saved. \(error)") } action: {
-                    Button("Retry") {
-                        if let sequence = visibleReadSequence {
-                            Task { await store.markRead(through: sequence) }
-                        }
-                    }
                 }
                 .transition(rises)
             }
@@ -516,14 +505,14 @@ struct ConversationTranscript: View {
         }
     }
 
+    /// The store skips what the server already has, so a read that failed goes again on the next pass.
     private func markVisibleRead() async {
-        guard let sequence = visibleReadSequence, sequence > lastMarkedRead else { return }
+        guard let sequence = visibleReadSequence else { return }
         do { try await Task.sleep(for: .milliseconds(250)) }
         catch { return }
         guard !Task.isCancelled, window.isKeyWindow, scenePhase == .active,
               visibleReadSequence == sequence else { return }
         await store.markRead(through: sequence)
-        if store.readError == nil { lastMarkedRead = max(lastMarkedRead, sequence) }
     }
 
     /// Programmatic scrolls never update the scroll position binding, so an anchor left by an earlier
