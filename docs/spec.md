@@ -465,6 +465,7 @@ drop shadows. Use an 8-point spacing rhythm, with 4-point adjustments inside com
 | Floating controls and popovers | Native toolbar, popover and control materials |
 | Text | `labelColor`, `secondaryLabelColor`, `tertiaryLabelColor` by hierarchy |
 | Selection and focus | System accent, source-list selection and focus ring. Respect user accent |
+| Hover (Mac) | One hover fill for every custom control and row that responds to the pointer: primary at 12% in Dark and 8% in Light, 5% more while pressed, in the control's own shape, fading over 120 ms. A borderless button's secondary ink turns primary while lit. It's defined once and every hover uses it. Native toolbar, menu and list controls keep the system's own |
 | Toy Box identity | The lead's avatar exactly as the server supplies it, a navy `#1E3A8A` circle with a gold `#FACC15` outline star, drawn as that color's `.gradient` like every avatar. Channel icons keep Toy Box's channel cyan `#0891b2`, which the lead doesn't use. Recolor neither to the accent |
 | Unread | Semantic system blue, 1-point New rule. Blue does not mean working |
 | Requests | Orange wash on the pending bubble, orange `questionmark.bubble.fill`, primary label text and a Reply button. Never an outline |
@@ -1011,7 +1012,7 @@ server and path. Never stat on every render. The three folder states are:
 
 | State | Token | Click and hover | Help |
 | --- | --- | --- | --- |
-| Openable | `folder` and name, secondary | Hover shows a capsule fill of primary at 8% light or 12% dark, plus 5% while pressed. Click opens the folder in a Finder window with `NSWorkspace.selectFile(nil, inFileViewerRootedAtPath:)`, never `NSWorkspace.open`, so a directory that is a package such as an app bundle never launches. It never selects the row | "Open toy-box in Finder", then the full path with `~` abbreviation |
+| Openable | `folder` and name, secondary | Hover shows the hover fill in a capsule. Click opens the folder in a Finder window with `NSWorkspace.selectFile(nil, inFileViewerRootedAtPath:)`, never `NSWorkspace.open`, so a directory that is a package such as an app bundle never launches. It never selects the row | "Open toy-box in Finder", then the full path with `~` abbreviation |
 | Server is another machine | `folder` and name, secondary | Static: no hover fill and no action | "On [host]: [full path]. Folders open only when the server runs on this Mac." |
 | Missing on this Mac | `questionmark.folder` and name, secondary | Static | "This folder no longer exists: [full path]" |
 
@@ -1120,7 +1121,7 @@ toolbar. Keep it, because the soft edge in the active window comes from the same
 Never fake that line, and never hide the scroll edge effect to remove it.
 
 The status line is a borderless button that opens Settings, where the server URL lives. Hover and
-press use the folder token's capsule (primary at 8% light or 12% dark, plus 5% while pressed),
+press use the folder token's capsule of the hover fill,
 outset 6 points so the dot never moves. Help reads "Connected to http://localhost:3100", or
 "Connecting to", "Reconnecting to" or "Can't connect to", then "Change the server in Settings."
 VoiceOver reads one button labeled "Server" with the value "localhost:3100, connected" (or
@@ -1844,8 +1845,7 @@ overlap the header's text, as on a short bubble, it slides outward to start 8 po
 text, or to end 8 points before it on the user's side, even beyond the bubble.
 
 **Hover feedback.** Each button highlights under the pointer like an accessory-bar button: a
-6-point continuous rounded fill, concentric with the toolbar, of primary at 12% in Dark and 8% in
-Light, 17% and 13% while pressed, and its symbol turns from secondary to primary ink. The fill
+6-point continuous rounded hover fill, concentric with the toolbar, and its symbol turns from secondary to primary ink. The fill
 fades over 120 ms. Full Keyboard Access draws the system focus ring on the focused button. One
 small button style draws this for the whole toolbar, as `TokenCapsuleButtonStyle` does for the
 sidebar's capsule. Help reads "Reply to Ada", "Copy Message", "Bookmark" or "Remove Bookmark".
@@ -1912,7 +1912,7 @@ scrolls there like Input Needed.
 | --- | --- | --- |
 | Frame | "Bookmarks" in headline at a 16-point inset, then the rows. 360 wide, max 420 high, scrolling | `NavigationStack` with the inline title "Bookmarks" and a trailing Close (`role: .close`, "Close Bookmarks"), like Working Now. A plain `List` with its background hidden, so the glass shows, and native separators |
 | Row | At least 48 high and 2 apart, with 8-point padding inside an 8-point inset, so avatars align with the title. A 20-point avatar, 8 points to the text. The name in 13 semibold with the time trailing in 11 secondary, and the preview in 12 secondary on one line | A 28-point avatar centered on the name's line, 12 points to the text. The name in body semibold with the time trailing in subheadline, and the preview in subheadline on up to two lines, both in `ChannelInk.secondary` |
-| Highlight | One highlight that the pointer and the arrow keys share: primary at 8% in Dark and 6% in Light, in a 6-point continuous rounded rectangle, the quiet gray of the toolbar's hover. The highlighted row's time becomes a Remove button, `xmark.circle.fill` in secondary, with help "Remove Bookmark" | The system's row highlight on touch |
+| Highlight | One highlight that the pointer and the arrow keys share: the hover fill in a 6-point continuous rounded rectangle. The highlighted row's time becomes a Remove button, `xmark.circle.fill` in secondary, with help "Remove Bookmark" | The system's row highlight on touch |
 | Remove | The highlighted row's Remove button, the Delete key or Remove Bookmark in the row's context menu | A trailing swipe to Remove, `bookmark.slash` in blue, with full swipe allowed |
 | Open | Click, Return or Space | Tap |
 
@@ -1998,7 +1998,9 @@ is approximately 80, or 115 with the tray, and grows to three text lines before 
 thumbnails. Attach Image
 (`photo.badge.plus`, 28-point hit target) is leading, then audience, then Input Needed. Dictate
 (`mic`) is trailing, 8 points before Send. Send is a
-28-point circular `arrow.up` trailing button using system accent. Empty content is sendable only
+28-point circular `arrow.up` trailing button using system accent. Attach Image and Dictate show the
+hover fill in their 28-point circle, and the tray's Artifacts, Tasks and Preview buttons show it as
+a capsule around their label. Listening keeps its accent circle. Empty content is sendable only
 when at least one valid attachment exists.
 
 Return sends. Shift-Return inserts a newline. Command-Return also sends. Do not submit an IME
@@ -3119,7 +3121,7 @@ count. Both numbers are parameters.
 | Header | 18 high. `text.line.3.summary` in 12-point medium secondary, 6 points, then "Summary of 42 new messages" in 12-point semibold secondary, counting messages from others. Trailing Dismiss: `xmark`, 10-point semibold tertiary, 28 x 28 hit area, help "Dismiss Summary" |
 | Lines | 8 points below the header, 2 apart, each 3 points of vertical padding. A 16-point leading slot, 8 points, then 13-point primary text, wrapping up to 3 lines and then truncating, with the full line in help. The slot holds the 16-point avatar of the sender of the line's first source. When that source is a channel event, it holds the event row's own symbol and color at 13 points instead, such as the green `checkmark.circle.fill` of All tasks completed, never a generic `info.circle`. Text scales with Text Size |
 | Needs you | The first line, only while a request is pending. The slot holds an orange 13-point `questionmark.bubble.fill`, and the text is medium weight. Once the transcript shows the request as Replied, the symbol becomes a secondary `checkmark` and the text turns secondary, in place, so the card never changes height. A later landing drops it |
-| Line action | Each line is a button. Hover fills primary at 5% in a 6-point rounded rectangle extending 6 points past the text horizontally and 3 vertically. Click, Return or Space reveals the first source through the transcript's Reveal. Help "Show Message" |
+| Line action | Each line is a button. Hover shows the hover fill in a 6-point rounded rectangle extending 6 points past the text horizontally and 3 vertically. Click, Return or Space reveals the first source through the transcript's Reveal. Help "Show Message" |
 | Footer | 8 points below the lines. "Summarized on this Mac" in 11-point tertiary. Its help: "Made on this Mac from the messages below. Summaries can be wrong." |
 
 | State | Behavior |
