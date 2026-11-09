@@ -511,8 +511,8 @@ private struct TranscriptHoverActions<Header: View>: View {
                     }
                     if edge == .trailing { bookmarkButton(divided: isActive) }
                 }
-                .labelStyle(.iconOnly)
-                .buttonStyle(TranscriptToolbarButtonStyle())
+                .labelStyle(TranscriptToolbarLabelStyle())
+                .buttonStyle(HoverFillButtonStyle(shape: RoundedRectangle(cornerRadius: 6, style: .continuous)))
                 .padding(2)
                 .background(.regularMaterial, in: .rect(cornerRadius: 8, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
@@ -559,37 +559,14 @@ extension TranscriptHoverActions where Header == Never {
     }
 }
 
-/// A hover toolbar button, like an accessory bar's: a secondary symbol that turns primary over a
-/// rounded fill concentric with the toolbar, darker while pressed.
-private struct TranscriptToolbarButtonStyle: ButtonStyle {
+/// A hover toolbar button's symbol, in a 24-point square like an accessory bar's, with the hover
+/// fill rounded concentric with the toolbar.
+private struct TranscriptToolbarLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
-        TranscriptToolbarButton(configuration: configuration)
-    }
-}
-
-private struct TranscriptToolbarButton: View {
-    let configuration: ButtonStyleConfiguration
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.isEnabled) private var isEnabled
-    @ViewState private var isHovered = false
-
-    var body: some View {
-        let isLit = isEnabled && (isHovered || configuration.isPressed)
-        configuration.label
+        Label { configuration.title } icon: { configuration.icon }
+            .labelStyle(.iconOnly)
             .font(.system(size: 11))
-            .foregroundStyle(isLit ? .primary : .secondary)
             .frame(width: 24, height: 24)
-            .background {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(.primary.opacity(isLit ? fill : 0))
-            }
-            .contentShape(Rectangle())
-            .animation(.easeOut(duration: 0.12), value: isLit)
-            .onHover { isHovered = $0 }
-    }
-
-    private var fill: Double {
-        (colorScheme == .dark ? 0.12 : 0.08) + (configuration.isPressed ? 0.05 : 0)
     }
 }
 

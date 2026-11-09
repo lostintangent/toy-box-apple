@@ -155,7 +155,6 @@ struct ComposerBookmarkRow: View {
     let onHover: () -> Void
     let onReveal: () -> Void
     let onRemove: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let date = try? Date(message.timestamp, strategy: .iso8601)
@@ -183,15 +182,9 @@ struct ComposerBookmarkRow: View {
             }
             .padding(Self.padding)
             .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-            .background {
-                if isHighlighted {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.06))
-                }
-            }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(ComposerBookmarkRowStyle())
+        .buttonStyle(HoverFillButtonStyle(shape: RoundedRectangle(cornerRadius: 6, style: .continuous),
+                                          lighting: .highlight(isHighlighted), inks: false))
         .overlay(alignment: .topTrailing) {
             if isHighlighted {
                 Button(action: onRemove) {
@@ -257,11 +250,6 @@ struct ComposerBookmarkPlaceholder: View {
     private var bar: some View {
         Capsule().fill(.quaternary).frame(height: 10)
     }
-}
-
-/// Rows draw their own highlight, so pressing one doesn't dim it the way `.plain` does.
-private struct ComposerBookmarkRowStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View { configuration.label }
 }
 
 private extension VerticalAlignment {

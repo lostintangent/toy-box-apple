@@ -115,7 +115,7 @@ private struct ChannelSidebarRowContent: View {
     /// Until it yields, a folder keeps its whole name and a purpose asks for about ten characters.
     @ViewBuilder private func detail(yields: Bool) -> some View {
         if let directory = channel.directory, !directory.isEmpty, let folder {
-            ChannelFolderToken(path: directory, availability: folder, emphasized: emphasized, open: row.openFolder)
+            ChannelFolderToken(path: directory, availability: folder, open: row.openFolder)
                 .fixedSize(horizontal: !yields, vertical: false)
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { folderFrame = $0 }
                 .padding(.leading, -6)
@@ -175,15 +175,14 @@ private struct ChannelSidebarRowContent: View {
 struct ChannelFolderToken: View {
     let path: String
     let availability: ChannelFolderAvailability
-    let emphasized: Bool
     let open: () -> Void
     @Environment(\.channelTextScale) private var scale
 
     var body: some View {
         switch availability {
         case .openable:
-            Button(action: open) { label(symbol: "folder").foregroundStyle(.secondary) }
-                .buttonStyle(TokenCapsuleButtonStyle(emphasized: emphasized))
+            Button(action: open) { label(symbol: "folder") }
+                .buttonStyle(HoverFillButtonStyle(shape: Capsule()))
                 .help("Open \(ChannelFolderName.name(of: path)) in Finder\n\((path as NSString).abbreviatingWithTildeInPath)")
         case .remote(let host):
             label(symbol: "folder").foregroundStyle(.secondary)
@@ -203,35 +202,5 @@ struct ChannelFolderToken: View {
         .padding(.horizontal, 6)
         .frame(height: 18 * scale)
         .contentShape(Capsule())
-    }
-}
-
-/// The folder token's hover and press capsule, also worn by the sidebar's server line.
-struct TokenCapsuleButtonStyle: ButtonStyle {
-    let emphasized: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        TokenCapsuleButton(configuration: configuration, emphasized: emphasized)
-    }
-}
-
-private struct TokenCapsuleButton: View {
-    let configuration: ButtonStyleConfiguration
-    let emphasized: Bool
-    @Environment(\.colorScheme) private var colorScheme
-    @ViewState private var isHovered = false
-
-    var body: some View {
-        configuration.label
-            .background {
-                if isHovered || configuration.isPressed { Capsule().fill(fill) }
-            }
-            .onHover { isHovered = $0 }
-    }
-
-    private var fill: AnyShapeStyle {
-        let pressed = configuration.isPressed ? 0.05 : 0
-        if emphasized { return AnyShapeStyle(Color.white.opacity(0.2 + pressed)) }
-        return AnyShapeStyle(HierarchicalShapeStyle.primary.opacity((colorScheme == .dark ? 0.12 : 0.08) + pressed))
     }
 }
