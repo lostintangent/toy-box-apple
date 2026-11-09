@@ -5,6 +5,7 @@
 ### Bugs/Polish
 
 - A channel no longer warns that your read position wasn't saved, since Toy Box saves your place again the next time you read.
+- An artifact's menu in Overview is shorter and clearer, starting with Open Artifact, and Space still previews it with Quick Look.
 
 ## iPhone 0.1.26
 
