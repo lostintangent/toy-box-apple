@@ -2148,9 +2148,10 @@ navigation and the same content.
 Overview takes the inspector column only where the conversation keeps the Mac's 420 points beside
 it, which on the Duo is unfolded landscape. The column opens at its 280-point minimum and widens to
 360. Folded and unfolded portrait use the
-sheet, decided by the scene's width rather than its size class alone. Rotating or folding moves an
-open Overview between the two without closing it, keeping its open page, disclosures and section
-state. The new presentation opens at its top rather than the reader's scroll position: SwiftUI's
+sheet, decided by the scene's width rather than its size class alone. Overview's presence is one
+state the sheet and column share, so rotating, folding or unfolding never opens or closes it, and
+the first tap of the Overview button after any of them toggles it. An open Overview moves between
+the two, keeping its open page, disclosures and section state. The new presentation opens at its top rather than the reader's scroll position: SwiftUI's
 List ignores a restored offset, and a restored top row doesn't hold through every Duo rotation and
 fold. The column never writes back to Overview's presence, so the transient close SwiftUI
 reports while columns reflow cannot dismiss it.
