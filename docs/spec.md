@@ -235,13 +235,16 @@ keep `reconcileManagementWrite`.
 
 ## Protocol
 
+Responses carry no version envelope, and a write that returns one resource returns it bare. A
+change to these shapes ships with both apps' builds alongside the Toy Box release that makes it.
+
 | Request | Use |
 | --- | --- |
-| `GET /api/v1/channels` | Catalog `{version, channels, members, lead, working}` for the sidebar. `lead` is the profile every channel's lead shares, under the channel's ID, and is always present. `working` lists running agent IDs. Each channel may leave out `tasks`, which only a channel's snapshot needs, and carries `request`, its waiting message without reactions, or `null`, whose sequence is always `requestSequence`. With `Accept: text/event-stream` it streams: `snapshot` with the catalog, then `working`, `channel.upserted`, `channel.deleted`, `channel.member.upserted` and `channel.member.deleted`, with a keepalive every 5 seconds. There's no cursor, so every reconnect starts with a fresh `snapshot` |
+| `GET /api/v1/channels` | Catalog `{channels, members, lead, working}` for the sidebar. `lead` is the profile every channel's lead shares, under the channel's ID, and is always present. `working` lists running agent IDs. Each channel may leave out `tasks`, which only a channel's snapshot needs, and carries `request`, its waiting message without reactions, or `null`, whose sequence is always `requestSequence`. With `Accept: text/event-stream` it streams: `snapshot` with the catalog, then `working`, `channel.upserted`, `channel.deleted`, `channel.member.upserted` and `channel.member.deleted`, with a keepalive every 5 seconds. There's no cursor, so every reconnect starts with a fresh `snapshot` |
 | `GET /api/v1/channels/:id` (SSE) | `snapshot`, then live events. With `after`: replay, then `resumed` with full presence. The store holds the replay and publishes it with `resumed` as one change, so a reopened channel never redraws what it missed event by event. A drop mid-replay publishes nothing, and the retry asks again after the published revision. `presence` is sparse and merges. `deleted` is terminal |
-| `GET /api/v1/channels/:id/messages?before=N` | Older page of up to 100 messages `{version, revision, messages}` |
+| `GET /api/v1/channels/:id/messages?before=N` | Older page of up to 100 messages `{revision, messages}` |
 | `POST /api/v1/channels/:id/messages` | `{id, content, attachments?}` with a client UUID. 201 returns the message, and the stored one for an ID the channel already has. An ID from another channel is 409 |
-| `POST /api/v1/channels/:id/read` | `{sequence}` monotonic read, which acknowledges completion but never a request |
+| `POST /api/v1/channels/:id/read` | `{sequence}` monotonic read, which acknowledges completion but never a request. Returns `{seenThrough}` |
 | `PUT /api/v1/channels/:id/bookmarks/:sequence` | Bookmark a user or agent message (204). A message that's already bookmarked is also 204, and a system or missing message is 422 |
 | `DELETE /api/v1/channels/:id/bookmarks/:sequence` | Remove a bookmark (204), including one that isn't there |
 
@@ -263,7 +266,7 @@ Screens are owned by Toy Box's Screens feature (`src/features/screens/AGENTS.md`
 
 | Request | Use |
 | --- | --- |
-| `GET /api/v1/screens` | `{version, displays, windows}`, each `{id, title, application?}`. The host's live state, fetched only when the list opens |
+| `GET /api/v1/screens` | `{displays, windows}`, each `{id, title, application?}`. The host's live state, fetched only when the list opens |
 | `GET /api/v1/screens/:id/thumbnail` | One JPEG thumbnail, never cached |
 | `/socket?service=screens&screen=:id&width=:px&height=:px` (WebSocket) | One live screen, sized to the viewer's pixels. Text `state` messages carry `{title?, status: live/paused/ended, reason?}`, and any other type is ignored. Binary packets are two big-endian `UInt32` lengths, the frame `{sequence, width, height, radius?, region?}` as JSON, then its JPEG. A region draws over the latest full frame, never over another region, and its empty JPEG restores the full frame. The viewer sends `{type: "ack", sequence}` once a frame is drawn and `{type: "resize", size: {width, height}}` once a new size settles. Messages may reach 16 MiB. The socket keeps the server URL's host, port and path prefix, over `wss` for `https` and `ws` for `http` |
 
@@ -272,18 +275,18 @@ not Channels:
 
 | Request | Use |
 | --- | --- |
-| `GET /api/v1/models` | `{version, models, defaultModel}` for model pickers. A 404 here means "models unavailable", never a reason to invent a model |
+| `GET /api/v1/models` | `{models, defaultModel}` for model pickers. A 404 here means "models unavailable", never a reason to invent a model |
 
 Management routes (documented in Toy Box's Channels `AGENTS.md`):
 
 | Request | Use |
 | --- | --- |
-| `POST /api/v1/channels` | Create `{name, purpose?, directory?, model}`. 201 `{version, channel}` |
-| `PATCH /api/v1/channels/:id` | Edit `{name?, purpose? (null clears), model?}`. Returns `{version, channel}` |
+| `POST /api/v1/channels` | Create `{name, purpose?, directory?, model}`. 201 returns the Channel |
+| `PATCH /api/v1/channels/:id` | Edit `{name?, purpose? (null clears), model?}`. Returns the Channel |
 | `DELETE /api/v1/channels/:id` | Delete the channel (204). The stream then sends `deleted` |
-| `POST /api/v1/channels/:id/members` | Create a member `{name, role?, model?}`. 201 `{version, member}` |
-| `PATCH /api/v1/channels/:id/members/:agentId` | Edit `{name?, role?, model?}`. Returns `{version, member}`. `model: null` clears the explicit override and is always allowed, even when the workspace default uses another provider. It never changes an established session's provider or history: a compatible default is followed, otherwise the existing provider's model is retained. After clearing, the returned member and its event omit `model`. Only an explicit model from another provider returns 422 |
-| `GET /api/v1/channels/:id/members/:agentId/models` | `{version, provider, models, defaultModel}` for the Edit Agent picker: models limited to the member's provider (session, else configured, else unrestricted when null). `defaultModel: null` means no compatible workspace default exists. It describes a model choice, not permission, so clearing the override stays available even when `models` is empty |
+| `POST /api/v1/channels/:id/members` | Create a member `{name, role?, model?}`. 201 returns the member |
+| `PATCH /api/v1/channels/:id/members/:agentId` | Edit `{name?, role?, model?}`. Returns the member. `model: null` clears the explicit override and is always allowed, even when the workspace default uses another provider. It never changes an established session's provider or history: a compatible default is followed, otherwise the existing provider's model is retained. After clearing, the returned member and its event omit `model`. Only an explicit model from another provider returns 422 |
+| `GET /api/v1/channels/:id/members/:agentId/models` | `{provider, models, defaultModel}` for the Edit Agent picker: models limited to the member's provider (session, else configured, else unrestricted when null). `defaultModel: null` means no compatible workspace default exists. It describes a model choice, not permission, so clearing the override stays available even when `models` is empty |
 | `DELETE /api/v1/channels/:id/members/:agentId` | Remove a member (204) |
 | `POST /api/v1/channels/:id/routines/:routineId/run` | Run a routine now (204) |
 | `DELETE /api/v1/channels/:id/routines/:routineId` | Delete a routine (204) |
