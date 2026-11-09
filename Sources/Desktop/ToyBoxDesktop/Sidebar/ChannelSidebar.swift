@@ -79,7 +79,6 @@ struct ChannelSidebar: View {
                 footer: SidebarFooter(phase: phase, isLoaded: model.catalog?.isLoaded == true),
                 busy: busy, serverURL: model.serverURL,
                 error: model.configurationError ?? model.catalog?.phase.message,
-                retry: model.configurationError == nil && model.catalog != nil ? { model.refreshCatalog() } : nil,
                 openSettings: { openSettings() },
                 openScreen: model.api == nil ? nil : { openWindow(id: "screens") }
             )
@@ -92,8 +91,8 @@ struct ChannelSidebar: View {
         .task(id: model.snapshot?.requestedState) { await prepareRetrySnapshot() }
     }
 
-    /// The `sidebar-retry` capture state presses Retry once the catalog has failed, so a capture
-    /// against a server that then stops answering shows a slow Retry.
+    /// The `sidebar-retry` capture state refreshes the catalog once it has failed, as View > Refresh
+    /// does, so a capture against a server that then stops answering shows the footer's spinner.
     private func prepareRetrySnapshot() async {
         let state = "sidebar-retry"
         guard model.snapshot?.requestedState == state, let catalog = model.catalog else { return }

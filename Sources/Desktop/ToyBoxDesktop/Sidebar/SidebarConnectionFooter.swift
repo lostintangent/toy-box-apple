@@ -8,11 +8,10 @@ import ToyBoxUI
 /// indicator.
 struct SidebarConnectionFooter: View {
     let footer: SidebarFooter
-    /// The first load or a Retry the person pressed is in flight. Background polling never is.
+    /// The first load or a View > Refresh the person chose is in flight. Background polling never is.
     let busy: Bool
     let serverURL: String
     let error: String?
-    let retry: (() -> Void)?
     let openSettings: () -> Void
     /// File > Open Screen…, or nil without a server.
     let openScreen: (() -> Void)?
@@ -67,11 +66,6 @@ struct SidebarConnectionFooter: View {
             Label(heading, systemImage: "wifi.exclamationmark")
                 .font(.caption.weight(.medium))
             Text(error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-            HStack {
-                if let retry { Button("Retry", action: retry) }
-                Button("Settings", action: openSettings)
-            }
-            .controlSize(.small)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
