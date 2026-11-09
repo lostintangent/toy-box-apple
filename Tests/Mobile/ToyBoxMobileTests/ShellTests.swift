@@ -322,6 +322,97 @@ struct ShellTests {
         }
     }
 
+    @Test func foldingUnfoldingAndRotatingKeepWhetherTheListIsShowing() async {
+        await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            defer { model.setScenePhase(.background) }
+            await model.refreshCatalog()
+            let root = RootView(handoff: ChannelHandoffNavigation()).environment(model).environment(\.scenePhase, .inactive)
+            let window = UIWindow(frame: .zero)
+            let host = UIHostingController(rootView: root)
+            window.rootViewController = host
+            // The Duo's folded scene is compact, and unfolded it's regular in either orientation.
+            let folded = CGSize(width: 466, height: 678)
+            let unfolded = CGSize(width: 951, height: 669)
+            let rotated = CGSize(width: 669, height: 951)
+            @MainActor func pose(_ size: CGSize) {
+                window.traitOverrides.horizontalSizeClass = size == folded ? .compact : .regular
+                window.frame = CGRect(origin: .zero, size: size)
+                host.view.frame = window.bounds
+            }
+            pose(unfolded)
+            window.isHidden = false
+            defer { window.isHidden = true }
+
+            await expectColumns(["Toy Box"], in: window)
+            pose(rotated)
+            await expectColumns(["Toy Box"], in: window, "Rotating keeps the list showing.")
+            pose(folded)
+            await expectColumns(["Toy Box"], in: window)
+
+            model.selectedChannelID = "first"
+            await expectColumns(["first"], in: window)
+            for size in [unfolded, rotated, unfolded] {
+                pose(size)
+                await expectColumns(["first"], in: window, "A channel open folded unfolds without the list.")
+            }
+            for size in [folded, unfolded] {
+                pose(size)
+                await expectColumns(["first"], in: window, "Folding and unfolding again keep the list hidden.")
+            }
+            pose(folded)
+            await expectColumns(["first"], in: window)
+
+            model.selection = nil
+            await expectColumns(["Toy Box"], in: window)
+            for size in [unfolded, rotated, unfolded] {
+                pose(size)
+                await expectColumns(["Toy Box"], in: window, "The list folded unfolds with the list showing.")
+            }
+            model.selectedChannelID = "first"
+            await expectColumns(["Toy Box", "first"], in: window)
+            pose(folded)
+            await expectColumns(["first"], in: window, "Folding with a channel open shows the channel.")
+            pose(unfolded)
+            await expectColumns(["first"], in: window)
+        }
+    }
+
+    /// Expects the titles of the columns a window's channel split view settles on showing: its one screen
+    /// while collapsed, and otherwise the list and the channel, unless the list is hidden.
+    private func expectColumns(_ expected: [String], in window: UIWindow, _ comment: Comment? = nil,
+                               sourceLocation: SourceLocation = #_sourceLocation) async {
+        func splits(in controller: UIViewController) -> [UISplitViewController] {
+            [controller as? UISplitViewController].compactMap(\.self) + controller.children.flatMap(splits)
+        }
+        /// The titles of the screens on top of a column's navigation stacks.
+        func titles(in controller: UIViewController) -> [String] {
+            [(controller as? UINavigationController)?.topViewController?.navigationItem.title].compactMap(\.self)
+                .filter { !$0.isEmpty } + controller.children.flatMap(titles)
+        }
+        var shown: [String] = []
+        var state = ""
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        repeat {
+            window.rootViewController?.view.setNeedsLayout()
+            window.layoutIfNeeded()
+            // The inspector's split view holds the channel's, so the channel's is the innermost.
+            let all = window.rootViewController.map(splits) ?? []
+            if let split = all.last {
+                let columns = split.isCollapsed ? Array(split.viewControllers.prefix(1))
+                    : split.displayMode == .secondaryOnly ? Array(split.viewControllers.dropFirst()) : split.viewControllers
+                shown = columns.flatMap(titles)
+            }
+            state = all.map {
+                "\($0.isCollapsed ? "collapsed" : "mode \($0.displayMode.rawValue)") \($0.viewControllers.map(titles))"
+            }.joined(separator: " in ")
+            if shown == expected { return }
+            try? await Task.sleep(for: .milliseconds(5))
+        } while ContinuousClock.now < deadline
+        Issue.record("Showed \(shown), split views: \(state). \(comment?.rawValue ?? "")", sourceLocation: sourceLocation)
+    }
+
     /// The bar item that draws the channel's name, with the menu it opens.
     private func titleButton(in item: UINavigationItem) -> (item: UIBarButtonItem, menu: UIMenu?)? {
         for barItem in item.leadingItemGroups.flatMap(\.barButtonItems) + (item.leftBarButtonItems ?? []) {
