@@ -132,8 +132,7 @@ struct OverviewArtifactRow: View {
 
     @ViewBuilder
     private var actions: some View {
-        Button("Open", action: open)
-        Button("Quick Look", action: showQuickLook).disabled(resource == nil || isFetching)
+        Button("Open Artifact", action: open)
         Button("Show in Transcript") {
             if let sequence = share?.sequence { interaction.reveal(sequence: sequence) }
         }
