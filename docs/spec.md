@@ -465,7 +465,7 @@ drop shadows. Use an 8-point spacing rhythm, with 4-point adjustments inside com
 | Floating controls and popovers | Native toolbar, popover and control materials |
 | Text | `labelColor`, `secondaryLabelColor`, `tertiaryLabelColor` by hierarchy |
 | Selection and focus | System accent, source-list selection and focus ring. Respect user accent |
-| Hover (Mac) | One hover fill for every custom control and row that responds to the pointer: primary at 12% in Dark and 8% in Light, 5% more while pressed, in the control's own shape, fading over 120 ms. On an accent selection it's white at 20%. A borderless button's secondary ink turns primary while lit. It's defined once and every hover uses it. Native toolbar, menu and list controls keep the system's own |
+| Hover (Mac) | One hover fill for every custom control and row that responds to the pointer: primary at 12% in Dark and 8% in Light, 5% more while pressed, in the control's own shape, fading over 120 ms. On an accent selection it's white at 20%. A borderless button's secondary ink turns primary while lit, and a colored symbol keeps its color. The fade holds under Reduce Motion, since it moves nothing. Disabled controls stay unlit. It's defined once and every hover uses it. Native toolbar, menu and list controls keep the system's own |
 | Toy Box identity | The lead's avatar exactly as the server supplies it, a navy `#1E3A8A` circle with a gold `#FACC15` outline star, drawn as that color's `.gradient` like every avatar. Channel icons keep Toy Box's channel cyan `#0891b2`, which the lead doesn't use. Recolor neither to the accent |
 | Unread | Semantic system blue, 1-point New rule. Blue does not mean working |
 | Requests | Orange wash on the pending bubble, orange `questionmark.bubble.fill`, primary label text and a Reply button. Never an outline |
@@ -1999,8 +1999,9 @@ thumbnails. Attach Image
 (`photo.badge.plus`, 28-point hit target) is leading, then audience, then Input Needed. Dictate
 (`mic`) is trailing, 8 points before Send. Send is a
 28-point circular `arrow.up` trailing button using system accent. Attach Image and Dictate show the
-hover fill in their 28-point circle, and the tray's Artifacts, Tasks and Preview buttons show it as
-a capsule around their label. Listening keeps its accent circle. Empty content is sendable only
+hover fill in their 28-point circle, and Input Needed shows it as a capsule like the tray's, its
+label 6 points further from the audience so the lit capsule stays 8 clear. Send and the audience
+stay unlit, and Listening keeps its accent circle with nothing on top. Empty content is sendable only
 when at least one valid attachment exists.
 
 Return sends. Shift-Return inserts a newline. Command-Return also sends. Do not submit an IME
@@ -2107,7 +2108,10 @@ with 3 points above and below. Lead with Bookmarks when the channel has any (see
 the newest shared artifacts as borderless document actions, then `+N` for the rest. With at least
 672 points left for artifacts, the three newest show, otherwise only the newest. Each is at most
 230 wide and truncates in the middle. Artifacts sit 16 apart so each icon reads with its own
-title, and `+N` follows by 8. Trailing controls are
+title, and every other control sits 12 from its neighbor, with the first and last 12 from the
+glass edge. Every tray control, including `+N` and the narrow tray's Artifacts menu, shows the
+hover fill as a 24-point capsule centered in the row and 6 points past its label on each side,
+and the whole capsule takes clicks. Trailing controls are
 Tasks with direct-root `done/total`, and Preview when set. Tasks speaks as the label "Tasks" with
 the value "1 of 4 done", never the visible slash. Keep every action on the same baseline,
 without a separate progress underline. Zero-content controls
