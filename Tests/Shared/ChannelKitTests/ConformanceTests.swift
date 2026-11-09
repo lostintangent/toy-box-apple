@@ -100,17 +100,4 @@ struct ConformanceTests {
             #expect((try? Date(value, strategy: .iso8601)) == nil)
         }
     }
-
-    @Test func localPostDoesNotAcknowledgeRequest() throws {
-        let trace = try JSONDecoder().decode(Trace.self, from: fixture("channel-transitions"))
-        let message = ChannelMessage(id: "optimistic", sequence: 0, timestamp: "2026-10-01T00:00:00Z",
-                                     sender: .user, content: .text("Reply"))
-        let event = ChannelObservationEvent(type: "message", message: message)
-        let next = trace.initial.applying(event)
-        #expect(next.revision == trace.initial.revision)
-        #expect(next.channel == trace.initial.channel)
-        #expect(next.request == trace.initial.request)
-        #expect(next.messages.last?.id == "optimistic")
-        #expect(next.applying(event) == next)
-    }
 }

@@ -50,12 +50,6 @@ extension ChannelState {
         let previous = self
         if event.type == "snapshot", let snapshot = event.state { return snapshot }
         var next = previous
-        if event.type == "message", event.revision == nil, var message = event.message {
-            guard !previous.messages.contains(where: { $0.id == message.id }) else { return previous }
-            message.sequence = (previous.messages.last?.sequence ?? 0) + 1
-            next.messages = upsertMessage(previous.messages, message)
-            return next
-        }
         if event.type == "presence" || event.type == "resumed" {
             let incoming = event.presence ?? [:]
             next.presence = event.type == "resumed"
