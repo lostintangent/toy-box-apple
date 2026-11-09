@@ -62,7 +62,10 @@
         }
       }
     ],
-    "previewUrl": "/demo-preview",
+    "preview": {
+      "kind": "url",
+      "url": "/demo-preview"
+    },
     "latestSequence": 15,
     "seenThrough": 9,
     "completedSequence": null,
@@ -484,7 +487,10 @@
           "type": "agent",
           "agentId": "studio-demo"
         },
-        "previewUrl": "/demo-preview"
+        "preview": {
+          "kind": "url",
+          "url": "/demo-preview"
+        }
       }
     },
     {
@@ -564,5 +570,6 @@
       "state": "working",
       "text": "Arranging the shared workspace"
     }
-  }
+  },
+  "bookmarks": []
 }

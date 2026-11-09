@@ -4,7 +4,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 type Entity = { id: string; channelId?: string };
-type Catalog = { channels: Entity[]; members: Entity[] };
+type Catalog = { channels: Entity[]; members: Entity[]; working: string[] };
 // The perf fixture's channels share members, so a member is one agent in one channel.
 const memberKey = (member: Entity) => JSON.stringify([member.channelId, member.id]);
 

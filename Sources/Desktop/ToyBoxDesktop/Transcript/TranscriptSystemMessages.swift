@@ -65,7 +65,7 @@ struct TranscriptSystemMessages: View {
                 }
             } else { sentence(phrase) }
         case "preview_changed":
-            if let preview = first?.preview ?? first?.previewUrl.map({ ChannelPreview(kind: "url", url: $0) }) {
+            if let preview = first?.preview {
                 if preview.kind == "url" {
                     if let address = preview.url, let url = api.resourceURL(address) {
                         valueLine(phrase, findText: "\(phrase) \(address)") {

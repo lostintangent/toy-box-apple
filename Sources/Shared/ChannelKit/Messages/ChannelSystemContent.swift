@@ -8,15 +8,14 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
     public var purpose: String?
     public var directory: String?
     public var preview: ChannelPreview?
-    public var previewUrl: String?
     public var artifact: ChannelArtifact?
     public var routine: ChannelRoutine?
     public private(set) var unknownFields: [String: JSONValue]?
 
     public init(type: String, actor: ChannelMessageSender? = nil, member: ChannelAgent? = nil,
                 name: String? = nil, purpose: String? = nil, directory: String? = nil,
-                preview: ChannelPreview? = nil, previewUrl: String? = nil,
-                artifact: ChannelArtifact? = nil, routine: ChannelRoutine? = nil) {
+                preview: ChannelPreview? = nil, artifact: ChannelArtifact? = nil,
+                routine: ChannelRoutine? = nil) {
         self.type = type
         self.actor = actor
         self.member = member
@@ -24,13 +23,12 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
         self.purpose = purpose
         self.directory = directory
         self.preview = preview
-        self.previewUrl = previewUrl
         self.artifact = artifact
         self.routine = routine
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, actor, member, name, purpose, directory, preview, previewUrl, artifact, routine
+        case type, actor, member, name, purpose, directory, preview, artifact, routine
     }
 
     public init(from decoder: any Decoder) throws {
@@ -45,14 +43,13 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
             name = try values.decode(String.self, forKey: .name)
         case "channel_purpose_changed":
             actor = try values.decode(ChannelMessageSender.self, forKey: .actor)
-            purpose = try values.decodeIfPresent(String.self, forKey: .purpose)
+            purpose = try values.decode(String?.self, forKey: .purpose)
         case "channel_directory_changed":
             actor = try values.decode(ChannelMessageSender.self, forKey: .actor)
-            directory = try values.decodeIfPresent(String.self, forKey: .directory)
+            directory = try values.decode(String?.self, forKey: .directory)
         case "preview_changed":
             actor = try values.decode(ChannelMessageSender.self, forKey: .actor)
-            preview = try values.decodeIfPresent(ChannelPreview.self, forKey: .preview)
-            previewUrl = try values.decodeIfPresent(String.self, forKey: .previewUrl)
+            preview = try values.decode(ChannelPreview?.self, forKey: .preview)
         case "artifact_shared", "artifact_removed":
             actor = try values.decode(ChannelMessageSender.self, forKey: .actor)
             artifact = try values.decode(ChannelArtifact.self, forKey: .artifact)
@@ -74,10 +71,13 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
         try values.encodeIfPresent(actor, forKey: .actor)
         try values.encodeIfPresent(member, forKey: .member)
         try values.encodeIfPresent(name, forKey: .name)
-        try values.encodeIfPresent(purpose, forKey: .purpose)
-        try values.encodeIfPresent(directory, forKey: .directory)
-        try values.encodeIfPresent(preview, forKey: .preview)
-        try values.encodeIfPresent(previewUrl, forKey: .previewUrl)
+        // A change that clears its value carries null, as the server sends it.
+        switch type {
+        case "channel_purpose_changed": try values.encode(purpose, forKey: .purpose)
+        case "channel_directory_changed": try values.encode(directory, forKey: .directory)
+        case "preview_changed": try values.encode(preview, forKey: .preview)
+        default: break
+        }
         try values.encodeIfPresent(artifact, forKey: .artifact)
         try values.encodeIfPresent(routine, forKey: .routine)
     }
@@ -103,7 +103,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
         case "channel_purpose_changed": system?.purpose == nil ? "Purpose cleared" : "Purpose updated"
         case "channel_directory_changed": system?.directory == nil ? "Working directory cleared" : "Working directory changed"
         case "preview_changed":
-            system?.preview == nil && system?.previewUrl == nil ? "Preview cleared" : "Preview updated"
+            system?.preview == nil ? "Preview cleared" : "Preview updated"
         case "artifact_shared": "Artifact shared"
         case "artifact_removed": "Artifact removed"
         case "routine_scheduled": "New routine scheduled"
@@ -136,7 +136,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
         case "channel_directory_changed":
             return directory.map { phrase + " " + $0 } ?? phrase
         case "preview_changed":
-            if let preview = self.preview ?? previewUrl.map({ ChannelPreview(kind: "url", url: $0) }) {
+            if let preview {
                 return preview.kind == "screen" ? phrase + " " + Self.screenPreview : event(preview.url)
             }
             return phrase

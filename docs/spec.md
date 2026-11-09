@@ -252,12 +252,11 @@ The apps decode only the current shapes, with no fallback for an older server.
 
 Bookmarks belong to the user, and every client of the server shares them. A snapshot carries
 `bookmarks`, the bookmarked sequences in ascending order, and the `bookmarks` event replaces the
-whole list. A resume keeps the last list. Servers that predate bookmarks leave the field out, so
-`ChannelState.bookmarks` is nil and both apps hide bookmarking. `ChannelStore.setBookmarked`
-shows the change at once and makes one attempt. The stream's echo confirms it, and a failure
-undoes it and sets `bookmarkFailure`, which says whether it was a removal. Changing it again is
-the retry, which is safe because both routes are idempotent. Writes go out in order, so a quick
-second toggle can't overtake the first.
+whole list. A resume keeps the last list. `ChannelStore.setBookmarked` shows the change at once
+and makes one attempt. The stream's echo confirms it, and a failure undoes it and sets
+`bookmarkFailure`, which says whether it was a removal. Changing it again is the retry, which is
+safe because both routes are idempotent. Writes go out in order, so a quick second toggle can't
+overtake the first.
 `ChannelStore.bookmarkList` is the list both apps show, newest first, and the tray counts it
 toward its visibility. Each `ChannelBookmark` carries its message once that page of history
 loads, and until then the row draws a placeholder. `preview(agents:)` is its first line of plain
@@ -361,7 +360,7 @@ optional requester's `handle` beside the system `aps` envelope. Its kinds and ca
 `request` and `completion`; request uses the `reply` text action. The service must match the
 current registration before allowing actions or requesting a widget reload.
 The fixtures are `Tests/Shared/ChannelKitTests/Fixtures/push-request.apns`, `push-completion.apns` and
-`push-activity.apns`. Generic alert fixtures are also accepted for compatibility.
+`push-activity.apns`.
 
 The server supplies the channel name as the alert title and the flattened question as its body,
 using the Mac's `NotificationText` policy: remove known leading mentions, preserve attachment-only
@@ -1825,9 +1824,7 @@ Contrast/Reduce Transparency behavior. Reduce Motion uses the reveal path's nonm
 
 Bookmarks mark user and agent messages to come back to. They belong to the user, and every
 client shares them (see Protocol). System rows can't be bookmarked, and neither can a row that's
-still sending or wasn't sent, since it has no sequence yet. When `ChannelState.bookmarks` is nil
-the server predates bookmarks, so neither app shows any bookmark control, mark, menu item, button
-or list.
+still sending or wasn't sent, since it has no sequence yet.
 
 **Symbols and color.** The outline `bookmark` means Bookmark, a system blue `bookmark.fill` means
 bookmarked, and `bookmark.slash` means Remove Bookmark in menus and swipe actions. It's the New

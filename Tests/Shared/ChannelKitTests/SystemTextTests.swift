@@ -3,12 +3,13 @@ import Testing
 @testable import ChannelKit
 
 struct SystemTextTests {
-    @Test func renderedDetailsKeepTheirFormattingAndPreviewPriority() {
+    @Test func renderedDetailsKeepTheirFormatting() {
         #expect(text(.init(type: "channel_purpose_changed", purpose: " New\n purpose ")) == "Purpose updated New purpose")
         #expect(text(.init(type: "channel_directory_changed", directory: "/a  b\nc")) == "Working directory changed /a  b\nc")
-        #expect(text(.init(type: "preview_changed", previewUrl: "/preview")) == "Preview updated /preview")
-        #expect(text(.init(type: "preview_changed", preview: .init(kind: "screen", screenId: "screen"),
-                          previewUrl: "/old-preview")) == "Preview updated Screen preview")
+        #expect(text(.init(type: "preview_changed", preview: .init(kind: "url", url: "/preview")))
+                == "Preview updated /preview")
+        #expect(text(.init(type: "preview_changed", preview: .init(kind: "screen", screenId: "screen")))
+                == "Preview updated Screen preview")
         #expect(text(.init(type: "artifact_shared", actor: .user, artifact: .init(
             file: .init(kind: "session", path: "plan.md"), title: "Workshop plan")))
                 == "You shared Workshop plan")

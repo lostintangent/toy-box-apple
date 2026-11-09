@@ -141,7 +141,7 @@ struct WaitingRequestTests {
                               model: .init(provider: "new", name: "new"),
                               latestSequence: 99, seenThrough: 98, completedSequence: 97, requestSequence: 96,
                               updatedAt: "2026-10-25T08:00:00Z")
-        changed.previewUrl = "/new-preview"
+        changed.preview = .init(kind: "url", url: "/new-preview")
         let projected = ChannelDetails(changed).applying(to: original, requestSequence: nil)
         changed.tasks = original.tasks
         changed.latestSequence = original.latestSequence

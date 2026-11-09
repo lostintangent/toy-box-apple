@@ -1306,14 +1306,12 @@ struct TranscriptTests {
                                      sender: .agent("lead"), content: .text("Hello"))
         let row = try #require(TranscriptRowBuilder().rows([message], lead: lead, members: []).last)
         let channel = TranscriptRowChannel(agents: [lead], id: "bookmarks", historyStart: 1, api: store.api)
-        func content(bookmarks: Set<Int>?, isConnected: Bool) -> TranscriptRowContent {
+        func content(bookmarks: Set<Int>, isConnected: Bool) -> TranscriptRowContent {
             TranscriptRowContent(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil,
                                  catchUp: nil, store: store, expandedMessageIds: [], bookmarks: bookmarks,
                                  isConnected: isConnected, onSetExpanded: { _, _ in })
         }
         #expect(content(bookmarks: [], isConnected: false) != content(bookmarks: [], isConnected: true))
-        // Without bookmarks, the connection changes nothing the row draws.
-        #expect(content(bookmarks: nil, isConnected: false) == content(bookmarks: nil, isConnected: true))
     }
 
     private func encodedImage(width: Int, height: Int, type: UTType, orientation: Int = 1) throws -> String {

@@ -15,10 +15,9 @@ public struct TranscriptBookmark: Equatable {
         self.change = change
     }
 
-    /// The bookmark of `sequence` in `store`, or nil when its server predates bookmarks.
+    /// The bookmark of `sequence` in `store`.
     @MainActor
-    public init?(sequence: Int, bookmarks: Set<Int>?, isConnected: Bool, store: ChannelStore) {
-        guard let bookmarks else { return nil }
+    public init(sequence: Int, bookmarks: Set<Int>, isConnected: Bool, store: ChannelStore) {
         self.init(isBookmarked: bookmarks.contains(sequence), isEnabled: isConnected) { [weak store] bookmarked in
             Task { await store?.setBookmarked(bookmarked, sequence: sequence) }
         }

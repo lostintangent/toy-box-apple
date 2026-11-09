@@ -32,5 +32,4 @@ replace saved Settings.
 | `bun run demo:perf` | 3292 | The benchmark fixture, started fresh by `bun run benchmark`. `TOY_BOX_PERF_PORT` changes it |
 | Live Toy Box | 3100 | Reading only. Posting or mutating needs the Lead's approval of a specific scratch channel. Leave its process running |
 
-`TOY_BOX_DEMO_BOOKMARKS=empty` starts either demo with no bookmarks, and `unsupported` serves a
-server that predates them, with no `bookmarks` in its snapshot and no bookmark routes.
+`TOY_BOX_DEMO_BOOKMARKS=empty` starts either demo with no bookmarks.

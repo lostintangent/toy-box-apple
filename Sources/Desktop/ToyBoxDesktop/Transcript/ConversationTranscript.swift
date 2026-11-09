@@ -52,7 +52,7 @@ struct ConversationTranscript: View {
         guard let lead = store.roster.first else { return [] }
         return rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
                                unreadAfter: capturedArrivalBoundary ? arrivalUnreadAfter : store.unreadAfter,
-                               filter: interaction.messageView, bookmarks: store.bookmarks ?? [])
+                               filter: interaction.messageView, bookmarks: store.bookmarks)
     }
 
     var viewport: TranscriptViewport { geometry.viewport }
@@ -303,7 +303,7 @@ struct ConversationTranscript: View {
                                            historyStart: store.messages.first?.sequence ?? 0, api: store.api)
         let statusReactions = statusReactions
         let findHighlights = find.highlights
-        let bookmarks = store.bookmarks.map(Set.init)
+        let bookmarks = Set(store.bookmarks)
         let catchUp = interaction.messageView == .all ? catchUp : nil
         let requestChoices = TranscriptRequestChoices(request: store.request, store: store,
                                                       isConnected: store.phase.isConnected)

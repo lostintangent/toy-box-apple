@@ -31,14 +31,12 @@ function demoReplies(): string[] | undefined {
   throw new Error(`TOY_BOX_DEMO_REPLIES must be 0, 2, 4, or short, not "${count}"`);
 }
 
-// TOY_BOX_DEMO_BOOKMARKS=empty starts with no bookmarks, and "unsupported" serves a server that
-// predates them, with no bookmarks in its snapshot and no bookmark routes.
-export function demoBookmarks(seeded: number[]): number[] | undefined {
+// TOY_BOX_DEMO_BOOKMARKS=empty starts with no bookmarks.
+export function demoBookmarks(seeded: number[]): number[] {
   const value = process.env.TOY_BOX_DEMO_BOOKMARKS;
   if (value === undefined) return seeded;
   if (value === 'empty') return [];
-  if (value === 'unsupported') return undefined;
-  throw new Error(`TOY_BOX_DEMO_BOOKMARKS must be empty or unsupported, not "${value}"`);
+  throw new Error(`TOY_BOX_DEMO_BOOKMARKS must be empty, not "${value}"`);
 }
 
 // The fixture stays byte-identical to the reference export, so the demo adds the replies its
@@ -52,8 +50,7 @@ export function loadDemoFixture(): FixtureSnapshot {
     if (replies) message.replies = replies;
     else delete message.replies;
   }
-  const bookmarks = demoBookmarks([9, 15]);
-  if (bookmarks) snapshot.bookmarks = bookmarks;
+  snapshot.bookmarks = demoBookmarks([9, 15]);
   return snapshot;
 }
 
@@ -253,8 +250,7 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
       return;
     }
     const bookmarkPath = `${channelPath}/bookmarks/`;
-    if ((request.method === 'PUT' || request.method === 'DELETE') && pathname.startsWith(bookmarkPath)
-        && Array.isArray(snapshot.bookmarks)) {
+    if ((request.method === 'PUT' || request.method === 'DELETE') && pathname.startsWith(bookmarkPath)) {
       const segment = pathname.slice(bookmarkPath.length);
       const sequence = Number(segment);
       if (!/^[1-9]\d*$/.test(segment) || !Number.isSafeInteger(sequence)) {

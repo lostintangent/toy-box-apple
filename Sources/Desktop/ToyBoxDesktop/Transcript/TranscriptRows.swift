@@ -36,9 +36,9 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     let requestChoices: TranscriptRequestChoices?
     /// This row's expanded messages.
     let expandedMessageIds: Set<String>
-    /// This row's bookmarked sequences, or nil when the server predates bookmarks.
-    let bookmarks: Set<Int>?
-    /// Whether bookmarks can change, only compared when they show.
+    /// This row's bookmarked sequences.
+    let bookmarks: Set<Int>
+    /// Whether bookmarks can change.
     let isConnected: Bool
     let onSetExpanded: (String, Bool) -> Void
     @Environment(ChannelInteraction.self) private var interaction
@@ -47,7 +47,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
          highlightedSequence: Int?, catchUp: TranscriptCatchUp?, store: ChannelStore,
          requestChoices: TranscriptRequestChoices? = nil,
          expandedMessageIds: Set<String>, findHighlights: [Int: TranscriptFindHighlight] = [:],
-         bookmarks: Set<Int>? = nil, isConnected: Bool = true, onSetExpanded: @escaping (String, Bool) -> Void) {
+         bookmarks: Set<Int> = [], isConnected: Bool = true, onSetExpanded: @escaping (String, Bool) -> Void) {
         let messages = row.messages
         self.row = row
         self.channel = channel
@@ -64,10 +64,8 @@ struct TranscriptRowContent: View, @MainActor Equatable {
         self.expandedMessageIds = expandedMessageIds.isEmpty ? [] : expandedMessageIds.filter { id in
             messages.contains { $0.id == id }
         }
-        self.bookmarks = bookmarks.map { bookmarks in
-            bookmarks.isEmpty ? [] : Set(messages.lazy.map(\.sequence).filter(bookmarks.contains))
-        }
-        self.isConnected = self.bookmarks == nil || isConnected
+        self.bookmarks = bookmarks.isEmpty ? [] : Set(messages.lazy.map(\.sequence).filter(bookmarks.contains))
+        self.isConnected = isConnected
         self.onSetExpanded = onSetExpanded
     }
 
@@ -79,7 +77,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
             && lhs.bookmarks == rhs.bookmarks && lhs.isConnected == rhs.isConnected
     }
 
-    private func bookmark(_ sequence: Int) -> TranscriptBookmark? {
+    private func bookmark(_ sequence: Int) -> TranscriptBookmark {
         TranscriptBookmark(sequence: sequence, bookmarks: bookmarks, isConnected: isConnected, store: store)
     }
 

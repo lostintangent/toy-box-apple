@@ -20,7 +20,7 @@ struct ComposerTray: View {
     @ViewState private var bookmarksChannel: ObjectIdentifier?
 
     private var tray: ChannelTray {
-        ChannelTray(artifacts: store.artifacts, tasks: store.tasks, preview: store.details?.resolvedPreview,
+        ChannelTray(artifacts: store.artifacts, tasks: store.tasks, preview: store.details?.preview,
                     bookmarkCount: store.bookmarkList.count)
     }
     private var showArtifacts: Binding<Bool> { presented($artifactsChannel) }

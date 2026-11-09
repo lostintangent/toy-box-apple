@@ -100,12 +100,12 @@ struct StoreSliceTests {
         var state = testState(revision: 1, messages: [testMessage(1)])
         state.lead.status = .init(state: "waiting", text: "Review")
         state.channel.purpose = "Plans"
-        state.channel.previewUrl = "http://localhost:5173"
+        state.channel.preview = .init(kind: "url", url: "http://localhost:5173")
         state.presence = ["test": .init(state: "idle")]
         state.routines = [.init(id: "r1", title: "Daily", schedule: "0 9 * * *", prompt: "Summarize")]
         _ = try store.apply(.init(type: "snapshot", state: state))
         #expect(store.details == ChannelDetails(state.channel))
-        #expect(store.details?.resolvedPreview == state.channel.resolvedPreview)
+        #expect(store.details?.preview == state.channel.preview)
         #expect(store.roster == [ChannelAgent.lead(id: "test", profile: testLeadProfile)])
         #expect(store.agentStatuses == ["test": .init(state: "waiting", text: "Review")])
         #expect(store.presence == state.presence)

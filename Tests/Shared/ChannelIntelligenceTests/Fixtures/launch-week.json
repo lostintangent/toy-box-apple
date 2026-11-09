@@ -8,7 +8,10 @@
    "name": "gpt-5.5"
   },
   "tasks": [],
-  "previewUrl": "/demo-preview",
+  "preview": {
+   "kind": "url",
+   "url": "/demo-preview"
+  },
   "latestSequence": 17,
   "seenThrough": 17,
   "completedSequence": null,
@@ -410,5 +413,6 @@
  ],
  "artifacts": [],
  "routines": [],
- "presence": {}
+ "presence": {},
+ "bookmarks": []
 }
