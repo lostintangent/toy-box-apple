@@ -2862,7 +2862,7 @@ private final class TranscriptHarness {
     }
 
     func confirmSend(_ message: ChannelMessage) throws {
-        let body = Data(#"{"version":1,"message":\#(String(decoding: try JSONEncoder().encode(message), as: UTF8.self))}"#.utf8)
+        let body = try JSONEncoder().encode(message)
         let held = TranscriptServerProtocol.fixtures.withLock { fixtures in
             defer { fixtures[host]?.heldSends = [] }
             return fixtures[host]?.heldSends ?? []
@@ -2935,7 +2935,7 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
             guard let before, let history = fixtures[host]?.history else { return nil }
             let messages = Array(history.filter { $0.sequence < before }.suffix(30))
             let encoded = String(decoding: (try? JSONEncoder().encode(messages)) ?? Data(), as: UTF8.self)
-            return Data(#"{"version":1,"revision":1,"messages":\#(encoded)}"#.utf8)
+            return Data(#"{"revision":1,"messages":\#(encoded)}"#.utf8)
         }
         let sends = method == "POST" && url.lastPathComponent == "messages"
         enum Reply { case stream(Data), page(Data), held, refused, unavailable, missing }

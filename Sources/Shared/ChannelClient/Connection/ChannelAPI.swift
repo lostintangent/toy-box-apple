@@ -4,7 +4,6 @@ import Foundation
 public enum ChannelAPIError: Error, Equatable, LocalizedError, Sendable {
     case invalidServerURL
     case invalidResponse
-    case unsupportedVersion(Int)
     case http(status: Int, message: String)
     case invalidMessage(String)
     case disconnected
@@ -16,7 +15,6 @@ public enum ChannelAPIError: Error, Equatable, LocalizedError, Sendable {
         switch self {
         case .invalidServerURL: "Enter an HTTP or HTTPS server URL."
         case .invalidResponse: "The server returned an invalid response."
-        case .unsupportedVersion(let version): "This server uses unsupported protocol version \(version)."
         case .http(let status, let message): "\(message) (HTTP \(status))"
         case .invalidMessage(let message): message
         case .disconnected: "The channel isn't connected."
@@ -28,7 +26,6 @@ public enum ChannelAPIError: Error, Equatable, LocalizedError, Sendable {
 }
 
 public struct ChannelHistoryPage: Codable, Sendable {
-    public var version: Int
     public var revision: Int
     public var messages: [ChannelMessage]
 }
@@ -172,21 +169,15 @@ public struct ChannelAPI: Sendable {
     }
 
     public func catalog() async throws -> ChannelCatalog {
-        let catalog: ChannelCatalog = try await get(["api", "v1", "channels"])
-        try requireVersion(catalog.version)
-        return catalog
+        try await get(["api", "v1", "channels"])
     }
 
     public func models() async throws -> ModelCatalog {
-        let catalog: ModelCatalog = try await get(["api", "v1", "models"])
-        try requireVersion(catalog.version)
-        return catalog
+        try await get(["api", "v1", "models"])
     }
 
     public func screens() async throws -> ScreenList {
-        let list: ScreenList = try await get(["api", "v1", "screens"])
-        try requireVersion(list.version)
-        return list
+        try await get(["api", "v1", "screens"])
     }
 
     /// A screen's JPEG thumbnail.
@@ -226,9 +217,7 @@ public struct ChannelAPI: Sendable {
     }
 
     public func memberModels(channelId: String, agentId: String) async throws -> ModelCatalog {
-        let catalog: ModelCatalog = try await get(channelPath(channelId) + ["members", agentId, "models"])
-        try requireVersion(catalog.version)
-        return catalog
+        try await get(channelPath(channelId) + ["members", agentId, "models"])
     }
 
     func snapshot(channelId: String) async throws -> ChannelState {
@@ -243,18 +232,14 @@ public struct ChannelAPI: Sendable {
 
     public func history(channelId: String, before: Int) async throws -> ChannelHistoryPage {
         guard before > 0 else { throw ChannelAPIError.invalidMessage("History requires a positive sequence.") }
-        let page: ChannelHistoryPage = try await get(channelPath(channelId) + ["messages"],
-                                                     query: [.init(name: "before", value: String(before))])
-        try requireVersion(page.version)
-        return page
+        return try await get(channelPath(channelId) + ["messages"],
+                             query: [.init(name: "before", value: String(before))])
     }
 
     public func post(channelId: String, id: String = UUID().uuidString, content: String,
                      attachments: [ChannelAttachment] = []) async throws -> ChannelMessage {
         let request = try messageRequest(channelId: channelId, id: id, content: content, attachments: attachments)
-        let result = try await JSONDecoder().decode(MessageResponse.self, from: data(for: request))
-        try requireVersion(result.version)
-        return result.message
+        return try await JSONDecoder().decode(ChannelMessage.self, from: data(for: request))
     }
 
     /// The POST that sends a message, so the outbox can read its answer itself.
@@ -273,10 +258,7 @@ public struct ChannelAPI: Sendable {
 
     /// The message a successful send returned, or nil when its body isn't one.
     static func sentMessage(in data: Data) -> ChannelMessage? {
-        guard let result = try? JSONDecoder().decode(MessageResponse.self, from: data), result.version == 1 else {
-            return nil
-        }
-        return result.message
+        try? JSONDecoder().decode(ChannelMessage.self, from: data)
     }
 
     /// The error a failed response means, with the server's own message when it gives one.
@@ -290,7 +272,6 @@ public struct ChannelAPI: Sendable {
         guard sequence >= 0 else { throw ChannelAPIError.invalidMessage("Read sequence cannot be negative.") }
         let result: ReadResponse = try await command("POST", channelPath(channelId) + ["read"],
                                                      body: ReadInput(sequence: sequence))
-        try requireVersion(result.version)
         return result.seenThrough
     }
 
@@ -302,15 +283,11 @@ public struct ChannelAPI: Sendable {
     }
 
     public func createChannel(_ input: CreateChannelInput) async throws -> Channel {
-        let result: ChannelResponse = try await command("POST", ["api", "v1", "channels"], body: input)
-        try requireVersion(result.version)
-        return result.channel
+        try await command("POST", ["api", "v1", "channels"], body: input)
     }
 
     public func editChannel(id: String, changes: EditChannelInput) async throws -> Channel {
-        let result: ChannelResponse = try await command("PATCH", channelPath(id), body: changes)
-        try requireVersion(result.version)
-        return result.channel
+        try await command("PATCH", channelPath(id), body: changes)
     }
 
     public func deleteChannel(id: String) async throws {
@@ -318,17 +295,12 @@ public struct ChannelAPI: Sendable {
     }
 
     public func createMember(channelId: String, input: CreateMemberInput) async throws -> ChannelAgent {
-        let result: MemberResponse = try await command("POST", channelPath(channelId) + ["members"], body: input)
-        try requireVersion(result.version)
-        return result.member
+        try await command("POST", channelPath(channelId) + ["members"], body: input)
     }
 
     public func editMember(channelId: String, agentId: String,
                            changes: EditMemberInput) async throws -> ChannelAgent {
-        let result: MemberResponse = try await command("PATCH", channelPath(channelId) + ["members", agentId],
-                                                       body: changes)
-        try requireVersion(result.version)
-        return result.member
+        try await command("PATCH", channelPath(channelId) + ["members", agentId], body: changes)
     }
 
     public func removeMember(channelId: String, agentId: String) async throws {
@@ -400,16 +372,9 @@ public struct ChannelAPI: Sendable {
         }
         return (data, response)
     }
-
-    func requireVersion(_ version: Int) throws {
-        guard version == 1 else { throw ChannelAPIError.unsupportedVersion(version) }
-    }
 }
 
 private struct PostInput: Encodable { var id: String; var content: String; var attachments: [ChannelAttachment]? }
 private struct ReadInput: Encodable { var sequence: Int }
 private struct ErrorResponse: Decodable { var error: String }
-private struct MessageResponse: Decodable { var version: Int; var message: ChannelMessage }
-private struct ReadResponse: Decodable { var version: Int; var seenThrough: Int }
-private struct ChannelResponse: Decodable { var version: Int; var channel: Channel }
-private struct MemberResponse: Decodable { var version: Int; var member: ChannelAgent }
+private struct ReadResponse: Decodable { var seenThrough: Int }

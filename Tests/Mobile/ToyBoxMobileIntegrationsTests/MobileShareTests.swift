@@ -309,7 +309,6 @@ private final class ShareHTTPFixture: Sendable {
         init(_ state: State) { value = Mutex(state) }
     }
     private struct PostBody: Decodable { var id: String; var content: String }
-    private struct Accepted: Encodable { var version = 1; var message: ChannelMessage }
 
     let serverURL: String
     let session: URLSession
@@ -344,7 +343,7 @@ private final class ShareHTTPFixture: Sendable {
                 let parts = url.pathComponents
                 if request.httpMethod == "POST", parts.count == 6, parts.last == "read" {
                     state.value.withLock { $0.reads.append(parts[4]) }
-                    return .success((200, Data(#"{"version":1,"seenThrough":16}"#.utf8)))
+                    return .success((200, Data(#"{"seenThrough":16}"#.utf8)))
                 }
                 guard request.httpMethod == "POST", parts.count == 6, parts.last == "messages" else {
                     Issue.record("Unexpected share request: \(request.httpMethod ?? "") \(url.path)")
@@ -354,7 +353,7 @@ private final class ShareHTTPFixture: Sendable {
                 state.value.withLock { $0.posts.append(Post(channel: parts[4], id: body.id, content: body.content)) }
                 let message = ChannelMessage(id: body.id, sequence: 16, timestamp: "2026-10-31T05:00:00Z",
                                              sender: .user, content: .text(body.content))
-                return .success((201, try JSONEncoder().encode(Accepted(message: message))))
+                return .success((201, try JSONEncoder().encode(message)))
             }
         }
     }

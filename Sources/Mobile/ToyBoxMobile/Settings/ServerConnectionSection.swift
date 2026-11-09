@@ -133,7 +133,7 @@ struct ServerConnectionSection: View {
             switch error {
             case .http(let status, _) where status == 401 || status == 403:
                 return "Authorization error: \(error.localizedDescription)"
-            case .invalidResponse, .unsupportedVersion, .invalidEvent:
+            case .invalidResponse, .invalidEvent:
                 return "Protocol error: \(error.localizedDescription)"
             default:
                 return error.localizedDescription

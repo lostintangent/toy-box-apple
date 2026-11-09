@@ -100,7 +100,7 @@ struct ModelSelectionTests {
     }
 
     private func catalog() -> ModelCatalog {
-        .init(version: 1, models: [
+        .init(models: [
             .init(id: "first", name: "First", provider: "copilot"),
             .init(id: "second", name: "Second", provider: "copilot"),
             .init(id: "first", name: "Other First", provider: "other"),

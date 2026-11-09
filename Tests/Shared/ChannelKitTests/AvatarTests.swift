@@ -51,7 +51,7 @@ struct AvatarTests {
 
     @Test func servedLeadProfileControlsUnopenedChannelIdentity() throws {
         let data = Data(#"""
-        {"version":1,"channels":[],"members":[],"working":["channel"],
+        {"channels":[],"members":[],"working":["channel"],
          "lead":{"name":"Guide","role":"A served role.",
                  "avatar":{"mark":"M4 12H20","color":"#1e3a8a","ink":"#facc15"}}}
         """#.utf8)
@@ -67,8 +67,8 @@ struct AvatarTests {
         #expect(try JSONDecoder().decode(ChannelCatalog.self, from: JSONEncoder().encode(catalog)) == catalog)
     }
 
-    @Test(arguments: [#"{"version":1,"channels":[],"members":[]}"#,
-                      #"{"version":1,"channels":[],"members":[],"lead":null}"#])
+    @Test(arguments: [#"{"channels":[],"members":[]}"#,
+                      #"{"channels":[],"members":[],"lead":null}"#])
     func absentCatalogLeadIsAProtocolError(json: String) {
         #expect(throws: DecodingError.self) {
             try JSONDecoder().decode(ChannelCatalog.self, from: Data(json.utf8))
@@ -76,7 +76,7 @@ struct AvatarTests {
     }
 
     @Test func malformedPresentLeadIsNotSilentlyDropped() {
-        let data = Data(#"{"version":1,"channels":[],"members":[],"lead":{"name":"Lead"}}"#.utf8)
+        let data = Data(#"{"channels":[],"members":[],"lead":{"name":"Lead"}}"#.utf8)
         #expect(throws: DecodingError.self) { try JSONDecoder().decode(ChannelCatalog.self, from: data) }
     }
 

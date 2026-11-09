@@ -10,7 +10,7 @@ export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snap
     const push = createDemoPushRoutes();
     const catalog = createCatalogRoute(() => {
         const { lead: { name, role, avatar }, channel, request, members } = demo.snapshot();
-        return { version: 1, lead: { name, role, avatar }, channels: [catalogEntry(channel, request)], members };
+        return { lead: { name, role, avatar }, channels: [catalogEntry(channel, request)], members };
     });
     demo.onChange(catalog.publish);
     const handlers = demo.server.listeners("request");
@@ -42,7 +42,7 @@ export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snap
             const model = snapshot.channel.model;
             response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
             response.end(JSON.stringify({
-                version: 1, provider: model.provider, defaultModel: model,
+                provider: model.provider, defaultModel: model,
                 models: [{ id: model.name, name: model.name, provider: model.provider }],
             }));
             return;

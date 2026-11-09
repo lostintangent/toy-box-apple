@@ -57,7 +57,7 @@ export function writeHistoryPage(response: Response, url: URL, history: Message[
         "Content-Type": "application/json", ...(valid ? { "Cache-Control": "no-store" } : {}),
     });
     response.end(JSON.stringify(valid ? {
-        version: 1, revision,
+        revision,
         messages: history.filter(message => message.sequence < before).slice(-historyPageSize),
     } : { error: "Invalid Channel request." }));
 }

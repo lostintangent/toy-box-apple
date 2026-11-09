@@ -55,7 +55,6 @@ struct HistoryFixtureTests {
             #expect((response as? HTTPURLResponse)?.statusCode == 200)
             #expect((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Cache-Control") == "no-store")
             let page = try JSONDecoder().decode(ChannelHistoryPage.self, from: data)
-            #expect(page.version == 1)
             #expect(page.revision == revision)
             #expect(page.messages.map(\.sequence) == Array(281...380))
         }

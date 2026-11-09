@@ -109,10 +109,8 @@ public extension ChannelAPI {
         var request = URLRequest(url: endpoint(["api", "v1", "channels"]),
                                  cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: heartbeatTimeout)
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        let reader = SSEReader<ChannelCatalogEvent>(session: streamSession, request: request, arrivals: nil) { event in
-            if case .snapshot(let catalog) = event { try requireVersion(catalog.version) }
-            return false
-        }
+        let reader = SSEReader<ChannelCatalogEvent>(session: streamSession, request: request,
+                                                    arrivals: nil) { _ in false }
         return AsyncThrowingStream { try await reader.next() }
     }
 }

@@ -32,7 +32,7 @@ struct ManagementReconciliationTests {
     @Test func clearOverrideSendsNullAndReceiptAndEventRemoveTheModel() async throws {
         let memberData = Data(#"{"id":"member","name":"Ada","channelId":"test"}"#.utf8)
         let mock = MockTransport { _, _ in
-            MockResponse(body: Data(#"{"version":1,"member":{"id":"member","name":"Ada","channelId":"test"}}"#.utf8))
+            MockResponse(body: Data(#"{"id":"member","name":"Ada","channelId":"test"}"#.utf8))
         }
         let api = try mock.api()
         let receipt = try await api.editMember(channelId: "test", agentId: "member", changes: .init(model: .clear))

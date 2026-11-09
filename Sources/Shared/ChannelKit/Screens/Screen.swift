@@ -16,7 +16,6 @@ public struct Screen: Codable, Hashable, Identifiable, Sendable {
 
 /// Everything the host can share: every display, and its on-screen windows.
 public struct ScreenList: Codable, Equatable, Sendable {
-    public var version: Int
     public var displays: [Screen]
     public var windows: [Screen]
 }

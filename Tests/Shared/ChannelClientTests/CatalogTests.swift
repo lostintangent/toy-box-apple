@@ -391,7 +391,7 @@ struct CatalogTests {
     @Test func catalogMayOmitActivityButAlwaysCarriesALead() throws {
         let catalog = try JSONDecoder().decode(ChannelCatalog.self,
                                               from: Data(#"""
-            {"version":1,"channels":[],"members":[],
+            {"channels":[],"members":[],
              "lead":{"name":"Lead","role":"Test channel coordinator.",
                      "avatar":{"mark":"M4 12H20","color":"#123456"}}}
             """#.utf8))
@@ -402,7 +402,7 @@ struct CatalogTests {
 
     @Test @MainActor func refreshReplacesTheServedLeadProfile() async throws {
         let response = Data(#"""
-        {"version":1,"channels":[],"members":[],"working":[],
+        {"channels":[],"members":[],"working":[],
          "lead":{"name":"Guide","role":"A served role.",
                  "avatar":{"mark":"M4 12H20","color":"#1e3a8a","ink":"#facc15"}}}
         """#.utf8)
@@ -426,7 +426,7 @@ struct CatalogTests {
                                          avatar: .init(mark: "M4 12H20", color: "#1e3a8a", ink: "#facc15"))
         let mock = MockTransport { _, count in
             if count == 1 { return try .json(ChannelCatalog(lead: profile)) }
-            return MockResponse(body: Data(#"{"version":1,"channels":[],"members":[],"lead":{}}"#.utf8))
+            return MockResponse(body: Data(#"{"channels":[],"members":[],"lead":{}}"#.utf8))
         }
         let store = ChannelCatalogStore(api: try mock.api())
         await store.refresh()
@@ -442,7 +442,7 @@ struct CatalogTests {
     func memberModelsUseTheScopedRouteWithOrWithoutChoices(hasChoices: Bool) async throws {
         let choices = hasChoices ? #"{"id":"auto","name":"Auto","provider":"copilot"}"# : ""
         let body = Data("""
-        {"version":1,"provider":"copilot","models":[\(choices)],"defaultModel":null}
+        {"provider":"copilot","models":[\(choices)],"defaultModel":null}
         """.utf8)
         let mock = MockTransport { _, _ in
             MockResponse(body: body)
@@ -458,7 +458,7 @@ struct CatalogTests {
     @Test func globalModelsKeepTheProvidersWireContractAndEndpoint() async throws {
         let mock = MockTransport { _, _ in
             MockResponse(body: Data(#"""
-            {"version":1,"models":[{"id":"gpt-6.1-sol","name":"GPT-6.1 Sol","provider":"copilot",
+            {"models":[{"id":"gpt-6.1-sol","name":"GPT-6.1 Sol","provider":"copilot",
               "providerName":"GitHub Copilot","supportedReasoningEfforts":["high","xhigh"],
               "supportedContextTiers":[{"name":"default","tokenWindow":128000}]}],
              "defaultModel":{"provider":"copilot","name":"gpt-6.1-sol","reasoningEffort":"xhigh","contextTier":"default"}}

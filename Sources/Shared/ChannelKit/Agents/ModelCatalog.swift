@@ -29,7 +29,6 @@ public struct ProviderModel: Codable, Identifiable, Sendable {
 }
 
 public struct ModelCatalog: Codable, Sendable {
-    public var version: Int
     public var models: [ProviderModel]
     public var defaultModel: ModelConfiguration?
     public var provider: String?
