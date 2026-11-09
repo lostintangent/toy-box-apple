@@ -130,7 +130,8 @@ Connection. Three invariants hold:
 
 Send, management and read marking wait for `isConnected`. A read write belongs to the store, so
 cancelling the reader that started it neither interrupts it nor reports an error. A later read
-joins that write, which sends the newest position before it finishes. Notices, agent status and working
+joins that write, which sends the newest position before it finishes. A failed read shows nothing,
+since marking read is never something you asked to save, and the next read sends it again. Notices, agent status and working
 presence change on `isUnavailable` (failed or deleted), never on a view timer. The outbox, Retry
 and `reconcileManagementWrite` are delivery, not connection, and a handed-off channel that
 couldn't be opened is Handoff's `missing`.
