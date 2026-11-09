@@ -12,7 +12,7 @@ Pick the cheapest evidence that proves the change, then read its reference befor
 | The code compiles | `DEVELOPER_DIR=/Library/Developer/CommandLineTools swift build --scratch-path /tmp/tbm-<you>` | |
 | Mac layout at a size or appearance | `bun run snapshot` | [The Mac app](references/mac.md#snapshots) |
 | Mac materials, selection, scroll edges, interaction or feel | Computer Use on Toy Box Test, from `bun run validate` | [The Mac app](references/mac.md#computer-use) |
-| A Mac hover or menu | A snapshot state that lights it, or the menu's test | [The Mac app](references/mac.md#computer-use) |
+| A Mac hover or menu | A snapshot state that lights a hover. A menu rests on review and the user's check | [The Mac app](references/mac.md#computer-use) |
 | Siri on the Mac | `bun run development` | [The Mac app](references/mac.md#development-signed-build) |
 | Phone layout, a pose or a flow | `bun run simulator --screenshot`, or a drive script | [The iPhone](references/iphone.md) |
 | Speed | `bun run benchmark`, against main | [Benchmarks](references/benchmarks.md) |

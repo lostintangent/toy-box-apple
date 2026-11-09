@@ -35,8 +35,8 @@ in a real window.
 - One agent at a time can arm Computer Use's Escape stop. Reset your session with `exec_js_reset`
   when you finish, and say so, so the next agent can start.
 - It can't move the pointer, so nothing hovers, and its captures show only the app's window, so a
-  menu never appears. Prove a hover with a snapshot state that lights it, and a menu with its test,
-  and name the user's check in the release as what's left.
+  menu never appears. Prove a hover with a snapshot state that lights it. A menu rests on review,
+  so name the user's check in the release as what's left.
 - Quit your instance with `kill <pid>` when you finish.
 
 ## Launching your own build
