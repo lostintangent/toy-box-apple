@@ -10,7 +10,7 @@ export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snap
     const push = createDemoPushRoutes();
     const catalog = createCatalogRoute(() => {
         const { lead: { name, role, avatar }, channel, request, members } = demo.snapshot();
-        return { lead: { name, role, avatar }, channels: [catalogEntry(channel, request)], members };
+        return { lead: { name, role, avatar }, channels: [catalogEntry(channel, request)], members, working: [] };
     });
     demo.onChange(catalog.publish);
     const handlers = demo.server.listeners("request");

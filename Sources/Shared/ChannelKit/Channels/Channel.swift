@@ -8,13 +8,12 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
     public var model: ModelConfiguration
     public var tasks: [ChannelTask]
     public var preview: ChannelPreview?
-    public var previewUrl: String?
     public var latestSequence: Int
     public var seenThrough: Int
     public var completedSequence: Int?
     public var requestSequence: Int?
     /// The waiting request's message, without reactions, as the channel list carries it. A
-    /// channel's snapshot keeps its request beside the channel instead, and older servers leave it out.
+    /// channel's snapshot keeps its request beside the channel instead.
     public var request: ChannelMessage?
     public var updatedAt: String
 
@@ -38,12 +37,13 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, purpose, directory, model, tasks, preview, previewUrl, latestSequence, seenThrough,
+        case id, name, purpose, directory, model, tasks, preview, latestSequence, seenThrough,
              completedSequence, requestSequence, request, updatedAt
     }
 
     /// The channel list leaves out `tasks`, which only a channel's snapshot carries, so they decode as
-    /// empty when missing.
+    /// empty when missing. Only a snapshot's channel leaves out `request`, and the sequences are always
+    /// present, null when there's none.
     public init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         self.init(id: try values.decode(String.self, forKey: .id),
@@ -55,15 +55,27 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
                   preview: try values.decodeIfPresent(ChannelPreview.self, forKey: .preview),
                   latestSequence: try values.decode(Int.self, forKey: .latestSequence),
                   seenThrough: try values.decode(Int.self, forKey: .seenThrough),
-                  completedSequence: try values.decodeIfPresent(Int.self, forKey: .completedSequence),
-                  requestSequence: try values.decodeIfPresent(Int.self, forKey: .requestSequence),
+                  completedSequence: try values.decode(Int?.self, forKey: .completedSequence),
+                  requestSequence: try values.decode(Int?.self, forKey: .requestSequence),
                   request: try values.decodeIfPresent(ChannelMessage.self, forKey: .request),
                   updatedAt: try values.decode(String.self, forKey: .updatedAt))
-        previewUrl = try values.decodeIfPresent(String.self, forKey: .previewUrl)
     }
 
-    public var resolvedPreview: ChannelPreview? {
-        preview ?? previewUrl.map { ChannelPreview(kind: "url", url: $0) }
+    public func encode(to encoder: any Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(name, forKey: .name)
+        try values.encodeIfPresent(purpose, forKey: .purpose)
+        try values.encodeIfPresent(directory, forKey: .directory)
+        try values.encode(model, forKey: .model)
+        try values.encode(tasks, forKey: .tasks)
+        try values.encodeIfPresent(preview, forKey: .preview)
+        try values.encode(latestSequence, forKey: .latestSequence)
+        try values.encode(seenThrough, forKey: .seenThrough)
+        try values.encode(completedSequence, forKey: .completedSequence)
+        try values.encode(requestSequence, forKey: .requestSequence)
+        try values.encodeIfPresent(request, forKey: .request)
+        try values.encode(updatedAt, forKey: .updatedAt)
     }
 
     public static func nameError(_ name: String) -> String? {

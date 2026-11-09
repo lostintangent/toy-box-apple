@@ -54,6 +54,7 @@ const catalog = createCatalogRoute(() => {
         lead: { name, role, avatar },
         channels: snapshots.map(({ channel, request }) => catalogEntry(channel, request)),
         members: snapshots.flatMap(snapshot => snapshot.members),
+        working: [],
     };
 });
 for (const demo of Object.values(demos)) demo.onChange(catalog.publish);

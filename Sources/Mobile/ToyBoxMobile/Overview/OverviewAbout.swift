@@ -13,7 +13,7 @@ struct OverviewAboutSection: View {
     /// Whether the headerless opening has a purpose, folder or preview to show. Without one it is
     /// omitted, and Team opens the list.
     static func hasContent(_ details: ChannelDetails?) -> Bool {
-        purpose(of: details) != nil || directory(of: details) != nil || details?.resolvedPreview != nil
+        purpose(of: details) != nil || directory(of: details) != nil || details?.preview != nil
     }
 
     private static func purpose(of details: ChannelDetails?) -> String? {
@@ -27,7 +27,7 @@ struct OverviewAboutSection: View {
     var body: some View {
         let purpose = Self.purpose(of: store.details)
         let directory = Self.directory(of: store.details)
-        let preview = store.details?.resolvedPreview
+        let preview = store.details?.preview
         if Self.hasContent(store.details) {
             Section {
                 VStack(alignment: .leading, spacing: 16) {

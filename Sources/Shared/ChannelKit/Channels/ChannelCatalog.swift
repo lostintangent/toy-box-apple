@@ -21,7 +21,7 @@ public struct ChannelCatalog: Codable, Equatable, Sendable {
         self.init(lead: try values.decode(ChannelLeadProfile.self, forKey: .lead),
                   channels: try values.decode([Channel].self, forKey: .channels),
                   members: try values.decode([ChannelAgent].self, forKey: .members),
-                  working: try values.decodeIfPresent([String].self, forKey: .working) ?? [])
+                  working: try values.decode([String].self, forKey: .working))
     }
 }
 

@@ -223,7 +223,7 @@ struct ConversationView: View {
         guard let lead = store.roster.first else { return [] }
         let rows = rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
                                    unreadAfter: capturedArrival ? arrivalUnreadAfter : store.unreadAfter,
-                                   filter: interaction.messageView, bookmarks: store.bookmarks ?? [])
+                                   filter: interaction.messageView, bookmarks: store.bookmarks)
         return transcriptItems(rows)
     }
 
@@ -234,7 +234,7 @@ struct ConversationView: View {
         let card = interaction.messageView == .all ? catchUp.map { (session: $0, store: store) } : nil
         let requestChoices = TranscriptRequestChoices(request: store.request, store: store,
                                                       isConnected: store.phase.isConnected)
-        let bookmarks = store.bookmarks.map(Set.init)
+        let bookmarks = Set(store.bookmarks)
         let isConnected = store.phase.isConnected
         let findMatches = find.isPresented
             ? Dictionary(uniqueKeysWithValues: find.matches.map { ($0.sequence, $0.sequence == find.selectedSequence) })
@@ -752,7 +752,7 @@ private struct TranscriptFloatingAccessories: View {
     private var trailing: Trailing? {
         if showsBookmarks { return .bookmarks }
         if showsJumpToLatest { return .jumpToLatest }
-        if store.bookmarks != nil, !store.bookmarkList.isEmpty { return .bookmarks }
+        if !store.bookmarkList.isEmpty { return .bookmarks }
         return nil
     }
 

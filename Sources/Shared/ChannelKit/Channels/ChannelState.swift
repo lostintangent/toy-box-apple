@@ -10,9 +10,8 @@ public struct ChannelState: Codable, Equatable, Sendable {
     public var artifacts: [ChannelArtifact]
     public var routines: [ChannelRoutine]
     public var presence: [String: ChannelAgentPresence]
-    /// The sequences of the messages the user bookmarked, oldest first and private to them. Nil when
-    /// the server predates bookmarks, so the apps hide them.
-    public var bookmarks: [Int]?
+    /// The sequences of the messages the user bookmarked, oldest first and private to them.
+    public var bookmarks: [Int]
 
     public var agents: [ChannelAgent] { [lead] + members }
 
@@ -20,7 +19,7 @@ public struct ChannelState: Codable, Equatable, Sendable {
                 members: [ChannelAgent] = [], messages: [ChannelMessage] = [],
                 request: ChannelMessage? = nil, artifacts: [ChannelArtifact] = [],
                 routines: [ChannelRoutine] = [], presence: [String: ChannelAgentPresence] = [:],
-                bookmarks: [Int]? = nil) {
+                bookmarks: [Int] = []) {
         self.revision = revision
         self.channel = channel
         self.lead = lead
@@ -34,9 +33,9 @@ public struct ChannelState: Codable, Equatable, Sendable {
     }
 
     /// Bookmarks or unbookmarks a message as the server does, keeping the list in order without
-    /// repeats. A server without bookmarks keeps none.
+    /// repeats.
     public mutating func setBookmarked(_ bookmarked: Bool, sequence: Int) {
-        guard let current = bookmarks, current.contains(sequence) != bookmarked else { return }
-        bookmarks = bookmarked ? (current + [sequence]).sorted() : current.filter { $0 != sequence }
+        guard bookmarks.contains(sequence) != bookmarked else { return }
+        bookmarks = bookmarked ? (bookmarks + [sequence]).sorted() : bookmarks.filter { $0 != sequence }
     }
 }

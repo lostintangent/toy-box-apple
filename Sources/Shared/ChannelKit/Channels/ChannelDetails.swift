@@ -8,7 +8,6 @@ public struct ChannelDetails: Equatable, Sendable {
     public var directory: String?
     public var model: ModelConfiguration
     public var preview: ChannelPreview?
-    public var previewUrl: String?
 
     public init(_ channel: Channel) {
         id = channel.id
@@ -17,11 +16,6 @@ public struct ChannelDetails: Equatable, Sendable {
         directory = channel.directory
         model = channel.model
         preview = channel.preview
-        previewUrl = channel.previewUrl
-    }
-
-    public var resolvedPreview: ChannelPreview? {
-        preview ?? previewUrl.map { ChannelPreview(kind: "url", url: $0) }
     }
 
     public func applying(to channel: Channel, requestSequence: Int?) -> Channel {
@@ -31,7 +25,6 @@ public struct ChannelDetails: Equatable, Sendable {
         live.directory = directory
         live.model = model
         live.preview = preview
-        live.previewUrl = previewUrl
         live.requestSequence = requestSequence
         return live
     }

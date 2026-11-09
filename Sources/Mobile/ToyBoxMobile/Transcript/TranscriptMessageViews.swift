@@ -26,7 +26,7 @@ struct TranscriptItemView: View, @MainActor Equatable {
     var catchUp: (session: TranscriptCatchUpSession, store: ChannelStore)?
     /// The pending request's suggested replies, when it's this item.
     var choices: TranscriptRequestChoices?
-    /// The message's bookmark, nil for system rows and servers that predate bookmarks.
+    /// The message's bookmark, nil for system rows.
     var bookmark: TranscriptBookmark?
     var onChoose: (String) -> Void = { _ in }
     var setExpanded: (Bool) -> Void = { _ in }
@@ -672,7 +672,7 @@ struct TranscriptSystemDetails: View {
         if let name = system.name { details.append(("Name", name)) }
         if let purpose = system.purpose { details.append(("Purpose", purpose)) }
         if let directory = system.directory { details.append(("Folder", directory)) }
-        if let preview = system.preview ?? system.previewUrl.map({ ChannelPreview(kind: "url", url: $0) }) {
+        if let preview = system.preview {
             details.append(("Preview", preview.kind == "screen" ? "Screen" : preview.url ?? preview.kind))
         }
         if let artifact = system.artifact { details.append(("Artifact", artifact.title)) }

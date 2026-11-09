@@ -7,17 +7,6 @@ import Testing
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct BookmarkTests {
-    @Test func aServerWithoutBookmarksHidesThemAndIsNeverAsked() async throws {
-        let mock = MockTransport { _, _ in MockResponse(status: 204) }
-        let store = try connectedStore(mock, bookmarks: nil)
-        #expect(store.bookmarks == nil)
-        #expect(store.bookmarkList.isEmpty)
-        await store.setBookmarked(true, sequence: 2)
-        #expect(store.bookmarks == nil)
-        #expect(store.bookmarkFailure == nil)
-        #expect(mock.requests.isEmpty)
-    }
-
     /// The change shows while it's written, and stays until the stream echoes it, in either order.
     @Test func aBookmarkShowsAtOnceAndTheEchoConfirmsIt() async throws {
         let mock = MockTransport { _, _ in MockResponse(status: 204, keepOpen: true) }
@@ -106,7 +95,7 @@ struct BookmarkTests {
     }
 
     /// A store connected to a channel with messages 1 to 3, as if its stream had just opened.
-    private func connectedStore(_ mock: MockTransport, bookmarks: [Int]?) throws -> ChannelStore {
+    private func connectedStore(_ mock: MockTransport, bookmarks: [Int]) throws -> ChannelStore {
         let store = ChannelStore(id: "test", api: try mock.api())
         var state = testState(revision: 10, messages: [testMessage(1), testMessage(2), testMessage(3)])
         state.bookmarks = bookmarks

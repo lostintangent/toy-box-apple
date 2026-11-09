@@ -388,14 +388,13 @@ struct CatalogTests {
         #expect(mock.requests.count == 1)
     }
 
-    @Test func catalogMayOmitActivityButAlwaysCarriesALead() throws {
+    @Test func catalogAlwaysCarriesALead() throws {
         let catalog = try JSONDecoder().decode(ChannelCatalog.self,
                                               from: Data(#"""
-            {"channels":[],"members":[],
+            {"channels":[],"members":[],"working":[],
              "lead":{"name":"Lead","role":"Test channel coordinator.",
                      "avatar":{"mark":"M4 12H20","color":"#123456"}}}
             """#.utf8))
-        #expect(catalog.working.isEmpty)
         #expect(catalog.lead.name == "Lead")
         #expect(catalog.lead.avatar.ink == nil)
     }
@@ -426,7 +425,7 @@ struct CatalogTests {
                                          avatar: .init(mark: "M4 12H20", color: "#1e3a8a", ink: "#facc15"))
         let mock = MockTransport { _, count in
             if count == 1 { return try .json(ChannelCatalog(lead: profile)) }
-            return MockResponse(body: Data(#"{"channels":[],"members":[],"lead":{}}"#.utf8))
+            return MockResponse(body: Data(#"{"channels":[],"members":[],"working":[],"lead":{}}"#.utf8))
         }
         let store = ChannelCatalogStore(api: try mock.api())
         await store.refresh()

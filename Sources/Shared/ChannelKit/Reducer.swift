@@ -102,7 +102,6 @@ extension ChannelState {
                         next.channel.directory = content.directory
                     case "preview_changed":
                         next.channel.preview = content.preview
-                        next.channel.previewUrl = content.previewUrl
                     case "tasks_completed":
                         next.channel.completedSequence = message.sequence
                     case "member_joined":

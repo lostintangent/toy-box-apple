@@ -15,15 +15,4 @@ public struct ChannelArtifact: Codable, Equatable, Identifiable, Sendable {
         self.sharedAt = sharedAt
         self.url = url
     }
-
-    private enum CodingKeys: String, CodingKey { case id, file, title, sharedAt, url }
-
-    public init(from decoder: any Decoder) throws {
-        let values = try decoder.container(keyedBy: CodingKeys.self)
-        let file = try values.decode(WorkspaceFile.self, forKey: .file)
-        self.init(id: try values.decodeIfPresent(String.self, forKey: .id),
-                  file: file, title: try values.decode(String.self, forKey: .title),
-                  sharedAt: try values.decodeIfPresent(String.self, forKey: .sharedAt),
-                  url: try values.decodeIfPresent(String.self, forKey: .url))
-    }
 }

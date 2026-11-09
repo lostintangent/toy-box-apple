@@ -216,7 +216,7 @@ private struct OverviewAbout: View {
                     .disabled(!store.phase.isConnected)
                     .help(store.phase.isUnavailable ? "Available when the channel connects" : "Edit Channel")
             }
-            let preview = details.resolvedPreview
+            let preview = details.preview
             if details.directory != nil || preview != nil {
                 VStack(alignment: .leading, spacing: 0) {
                     if let directory = details.directory, !directory.isEmpty {

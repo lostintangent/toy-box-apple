@@ -98,8 +98,8 @@ public final class ChannelStore {
     public private(set) var artifactShares: [String: ChannelArtifact.Share] = [:]
     public private(set) var routines: [ChannelRoutine] = []
     /// The sequences of the messages the user bookmarked, oldest first, including any change still on
-    /// its way to the server. Nil when the server predates bookmarks, so views hide them.
-    public private(set) var bookmarks: [Int]?
+    /// its way to the server.
+    public private(set) var bookmarks: [Int] = []
     /// The bookmarks list, newest first, each with its message once that page of history loads.
     /// Opening the list loads through its last entry, the oldest, with `loadHistory(through:)`.
     public private(set) var bookmarkList: [ChannelBookmark] = []
@@ -415,7 +415,6 @@ public final class ChannelStore {
     /// Writes run in order, each sending its message's latest change, so the server ends where the
     /// user's last change left it.
     public func setBookmarked(_ bookmarked: Bool, sequence: Int) async {
-        guard state?.bookmarks != nil else { return }
         guard phase.isConnected else {
             bookmarkFailure = .init(sequence: sequence, isRemoval: !bookmarked,
                                     error: ChannelAPIError.disconnected.localizedDescription)
@@ -456,8 +455,8 @@ public final class ChannelStore {
     private func syncBookmarks() {
         var shown = state
         for (sequence, bookmarked) in bookmarkChanges { shown?.setBookmarked(bookmarked, sequence: sequence) }
-        bookmarks = shown?.bookmarks
-        bookmarkList = ChannelBookmark.list(shown?.bookmarks ?? [], in: messages)
+        bookmarks = shown?.bookmarks ?? []
+        bookmarkList = ChannelBookmark.list(bookmarks, in: messages)
     }
 
     func apply(_ event: ChannelObservationEvent) throws -> Bool {

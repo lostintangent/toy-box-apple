@@ -4,15 +4,17 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 type Entity = { id: string; channelId?: string };
-type Catalog = { channels: Entity[]; members: Entity[] };
+type Catalog = { channels: Entity[]; members: Entity[]; working: string[] };
 // The perf fixture's channels share members, so a member is one agent in one channel.
 const memberKey = (member: Entity) => JSON.stringify([member.channelId, member.id]);
 
-/** A channel as the catalog lists it, with its pending request, which leaves out reactions. */
+/** A channel as the catalog lists it, without the tasks only its snapshot carries, and with its pending
+ *  request, which leaves out reactions. */
 export function catalogEntry(channel: Entity, request: object | null) {
-    if (!request) return { ...channel, request: null };
+    const { tasks: _tasks, ...entry } = channel as Entity & { tasks?: unknown };
+    if (!request) return { ...entry, request: null };
     const { reactions: _, ...listed } = request as { reactions?: unknown };
-    return { ...channel, request: listed };
+    return { ...entry, request: listed };
 }
 
 export function createCatalogRoute(read: () => Catalog) {

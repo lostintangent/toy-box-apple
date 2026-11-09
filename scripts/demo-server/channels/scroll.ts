@@ -80,7 +80,8 @@ export function createScrollFixture(source: Snapshot, { now, origin }: { now: nu
     Object.assign(snapshot.channel, {
         name: "Scroll demo", purpose: "A long channel of rich messages for the scroll benchmark.",
         latestSequence: scrollMessageCount, seenThrough: scrollMessageCount, requestSequence: null,
-        completedSequence: null, updatedAt: new Date(now).toISOString(), previewUrl: `${origin}/demo-preview`,
+        completedSequence: null, updatedAt: new Date(now).toISOString(),
+        preview: { kind: "url", url: `${origin}/demo-preview` },
     });
     snapshot.revision = scrollMessageCount;
     snapshot.messages = history.slice(-pageSize);

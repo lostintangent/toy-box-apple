@@ -22,7 +22,8 @@ struct ChannelCatalogTests {
         #expect(try event(#"{"type":"working","working":["a","b"]}"#) == .working(["a", "b"]))
         let upserted = try event("""
             {"type":"channel.upserted","channel":{"id":"c","name":"C","model":{"provider":"p","name":"m"},
-             "tasks":[],"latestSequence":0,"seenThrough":0,"updatedAt":"2026-10-01T00:00:00Z","revision":7}}
+             "tasks":[],"latestSequence":0,"seenThrough":0,"completedSequence":null,"requestSequence":null,
+             "updatedAt":"2026-10-01T00:00:00Z","revision":7,"request":null}}
             """)
         #expect(upserted == .channelUpserted(channel("c", updatedAt: "2026-10-01T00:00:00Z", name: "C")))
         #expect(try event(#"{"type":"channel.deleted","channelId":"c"}"#) == .channelDeleted(channelId: "c"))
@@ -38,9 +39,9 @@ struct ChannelCatalogTests {
     /// waiting request without reactions.
     @Test func entriesDecodeWithoutTasksAndWithTheirRequest() throws {
         let request = #"{"id":"m4","sequence":4,"timestamp":"2026-10-01T00:00:00Z","sender":{"type":"agent","agentId":"c"},"content":"Ship it?","request":true,"replies":["Yes","Not yet"]}"#
-        let entry = #"{"id":"c","name":"C","model":{"provider":"p","name":"m"},"latestSequence":4,"seenThrough":2,"requestSequence":4,"updatedAt":"2026-10-01T00:00:00Z","revision":3,"request":\#(request)}"#
+        let entry = #"{"id":"c","name":"C","model":{"provider":"p","name":"m"},"latestSequence":4,"seenThrough":2,"completedSequence":null,"requestSequence":4,"updatedAt":"2026-10-01T00:00:00Z","revision":3,"request":\#(request)}"#
         let catalog = try JSONDecoder().decode(ChannelCatalog.self, from: Data("""
-            {"channels":[\(entry)],"members":[],
+            {"channels":[\(entry)],"members":[],"working":[],
              "lead":{"name":"Lead","role":"Coordinates.","avatar":{"mark":"M4 12H20","color":"#123456"}}}
             """.utf8))
         var expected = channel("c", updatedAt: "2026-10-01T00:00:00Z", name: "C")

@@ -11,10 +11,11 @@ export type Message = {
     sender: { type: string; agentId?: string }; content: string; request?: boolean; replies?: string[];
     attachments?: { name: string; url: string }[];
 };
-export type Snapshot = Omit<typeof fixture, "lead" | "members" | "messages" | "request" | "channel" | "presence"> & {
+export type Snapshot = Omit<typeof fixture, "lead" | "members" | "messages" | "request" | "channel" | "presence"
+    | "bookmarks"> & {
     lead: Agent; members: Agent[]; messages: Message[]; request: Message | null;
     presence: Record<string, Status>;
-    bookmarks?: number[];
+    bookmarks: number[];
     channel: Omit<typeof fixture.channel, "requestSequence" | "completedSequence"> & {
         requestSequence: number | null; completedSequence: number | null;
     };

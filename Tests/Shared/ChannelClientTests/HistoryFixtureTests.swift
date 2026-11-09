@@ -90,10 +90,10 @@ struct HistoryFixtureTests {
         let revision = try #require(store.state?.revision)
         // Waits only for the change itself, which the stream echoes even after earlier runs.
         await store.setBookmarked(false, sequence: 250)
-        try await eventually { store.state?.bookmarks?.contains(250) == false }
+        try await eventually { store.state?.bookmarks.contains(250) == false }
         #expect(store.bookmarks == [466])
         await store.setBookmarked(true, sequence: 250)
-        try await eventually { store.state?.bookmarks?.contains(250) == true }
+        try await eventually { store.state?.bookmarks.contains(250) == true }
         #expect(store.state?.revision == revision + 2)
         await store.setBookmarked(true, sequence: 1)
         #expect(store.bookmarkFailure?.error == "Bookmark a user or agent message in this Channel. (HTTP 422)")

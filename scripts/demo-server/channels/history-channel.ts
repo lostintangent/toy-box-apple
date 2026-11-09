@@ -35,15 +35,13 @@ export function createHistoryFixture(source: Snapshot, { now, origin }: { now: n
         name: "History demo", purpose: "An isolated long-history fixture for native paging, unread landing and read receipts.",
         latestSequence: historyMessageCount, seenThrough: 450, requestSequence: historyMessageCount,
         completedSequence: null, updatedAt: new Date(now).toISOString(),
-        previewUrl: `${origin}/demo-preview`,
+        preview: { kind: "url", url: `${origin}/demo-preview` },
     });
     snapshot.revision = historyMessageCount;
     snapshot.messages = history.slice(-historyPageSize);
     snapshot.request = request;
     // 250 is an agent message two pages back, and 466 is in the snapshot.
-    const bookmarks = demoBookmarks([250, 466]);
-    if (bookmarks) snapshot.bookmarks = bookmarks;
-    else delete snapshot.bookmarks;
+    snapshot.bookmarks = demoBookmarks([250, 466]);
     if (snapshot.lead.status?.wakeAt) snapshot.lead.status.wakeAt = new Date(now + 10 * 60_000).toISOString();
     return { snapshot, history };
 }

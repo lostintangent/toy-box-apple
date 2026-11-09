@@ -15,7 +15,7 @@ const channelID = historyChannelID;
 const demo = createDemoServer(snapshot, now, history);
 const catalog = createCatalogRoute(() => {
     const { lead: { name, role, avatar }, channel, request, members } = demo.snapshot();
-    return { lead: { name, role, avatar }, channels: [catalogEntry(channel, request)], members };
+    return { lead: { name, role, avatar }, channels: [catalogEntry(channel, request)], members, working: [] };
 });
 demo.onChange(catalog.publish);
 const handlers = demo.server.listeners("request");
