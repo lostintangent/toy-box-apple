@@ -57,7 +57,7 @@ struct ServerConnectionProbeTests {
 
     @Test func missingLeadRemainsAProtocolFailure() async throws {
         let mock = MockTransport { _, _ in
-            MockResponse(body: Data(#"{"version":1,"channels":[],"members":[]}"#.utf8))
+            MockResponse(body: Data(#"{"channels":[],"members":[]}"#.utf8))
         }
         let api = try mock.api()
         let probe = ServerConnectionProbe(address: api.baseURL.absoluteString, session: api.session)

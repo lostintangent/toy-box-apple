@@ -74,9 +74,9 @@ struct ManagementTests {
             let body: String
             switch status {
             case 200:
-                body = ##"{"version":1,"channels":[],"members":[],"working":[],"lead":{"name":"Lead","role":"Coordinates the channel.","avatar":{"mark":"M12 3L15 9L21 10L16.5 14.5L18 21L12 18L6 21L7.5 14.5L3 10L9 9Z","color":"#1E3A8A","ink":"#FACC15"}}}"##
+                body = ##"{"channels":[],"members":[],"working":[],"lead":{"name":"Lead","role":"Coordinates the channel.","avatar":{"mark":"M12 3L15 9L21 10L16.5 14.5L18 21L12 18L6 21L7.5 14.5L3 10L9 9Z","color":"#1E3A8A","ink":"#FACC15"}}}"##
             case 201:
-                body = #"{"version":1,"member":{"id":"moss","name":"Moss"}}"#
+                body = #"{"id":"moss","name":"Moss"}"#
             default:
                 body = #"{"error":"Management failed."}"#
             }

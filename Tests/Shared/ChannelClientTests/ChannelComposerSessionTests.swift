@@ -38,8 +38,7 @@ struct ChannelComposerSessionTests {
         let mock = ChannelOutboxTests.transport(served) { number, request in
             struct Body: Decodable { var id: String }
             let id = try JSONDecoder().decode(Body.self, from: requestBody(request)).id
-            var response = try MockResponse.json(ChannelOutboxTests.SentResponse(
-                message: ChannelOutboxTests.userMessage(id: id, sequence: number)))
+            var response = try MockResponse.json(ChannelOutboxTests.userMessage(id: id, sequence: number))
             response.keepOpen = true
             return response
         }

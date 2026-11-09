@@ -15,7 +15,7 @@ struct ChannelCatalogTests {
 
     @Test func eventsDecodeTheServersShapes() throws {
         let snapshot = try event("""
-            {"type":"snapshot","catalog":{"version":1,"channels":[],"members":[],"working":["a"],
+            {"type":"snapshot","catalog":{"channels":[],"members":[],"working":["a"],
              "lead":{"name":"Lead","role":"Coordinates.","avatar":{"mark":"M4 12H20","color":"#123456"}}}}
             """)
         #expect(snapshot == .snapshot(ChannelCatalog(lead: lead, working: ["a"])))
@@ -40,7 +40,7 @@ struct ChannelCatalogTests {
         let request = #"{"id":"m4","sequence":4,"timestamp":"2026-10-01T00:00:00Z","sender":{"type":"agent","agentId":"c"},"content":"Ship it?","request":true,"replies":["Yes","Not yet"]}"#
         let entry = #"{"id":"c","name":"C","model":{"provider":"p","name":"m"},"latestSequence":4,"seenThrough":2,"requestSequence":4,"updatedAt":"2026-10-01T00:00:00Z","revision":3,"request":\#(request)}"#
         let catalog = try JSONDecoder().decode(ChannelCatalog.self, from: Data("""
-            {"version":1,"channels":[\(entry)],"members":[],
+            {"channels":[\(entry)],"members":[],
              "lead":{"name":"Lead","role":"Coordinates.","avatar":{"mark":"M4 12H20","color":"#123456"}}}
             """.utf8))
         var expected = channel("c", updatedAt: "2026-10-01T00:00:00Z", name: "C")

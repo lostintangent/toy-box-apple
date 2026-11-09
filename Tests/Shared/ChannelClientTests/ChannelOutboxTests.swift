@@ -99,7 +99,7 @@ struct ChannelOutboxTests {
                 struct Read: Codable { var sequence: Int }
                 let read = try JSONDecoder().decode(Read.self, from: requestBody(request))
                 served.reads.withLock { $0.append(read.sequence) }
-                var response = try MockResponse.json(["version": 1, "seenThrough": read.sequence])
+                var response = try MockResponse.json(["seenThrough": read.sequence])
                 response.keepOpen = served.holdsReads.withLock { $0 }
                 return response
             }
@@ -153,7 +153,7 @@ struct ChannelOutboxTests {
         let served = Served(Self.catalog())
         let mock = Self.transport(served) { number, request in
             if number == 1 { throw URLError(.cannotConnectToHost) }
-            return try .json(["version": 1])
+            return MockResponse(status: 201)
         }
         let outbox = outbox(folder, clock: clock)
         let catalog = try await catalog(mock, outbox: outbox)
@@ -186,7 +186,7 @@ struct ChannelOutboxTests {
         let mock = Self.transport(served) { number, request in
             struct Body: Decodable { var id: String }
             let id = try JSONDecoder().decode(Body.self, from: requestBody(request)).id
-            return try .json(SentResponse(message: Self.userMessage(id: id, sequence: 5 + number)))
+            return try .json(Self.userMessage(id: id, sequence: 5 + number))
         }
         let outbox = outbox(folder, clock: clock)
         let catalog = try await catalog(mock, outbox: outbox)
@@ -215,7 +215,7 @@ struct ChannelOutboxTests {
         let mock = Self.transport(served, streamsCatalog: true) { _, request in
             struct Body: Decodable { var id: String }
             let id = try JSONDecoder().decode(Body.self, from: requestBody(request)).id
-            var response = try MockResponse.json(SentResponse(message: Self.userMessage(id: id, sequence: 6)))
+            var response = try MockResponse.json(Self.userMessage(id: id, sequence: 6))
             response.keepOpen = changeFirst
             return response
         }
@@ -251,17 +251,12 @@ struct ChannelOutboxTests {
         #expect(catalog.channels.first?.attention == .unread, "Someone's message after it shows")
     }
 
-    struct SentResponse: Encodable {
-        var version = 1
-        var message: ChannelMessage
-    }
-
     @Test func aRelaunchSendsWhatTheLastRunSaved() async throws {
         let folder = Self.folder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let clock = TestClock()
         let served = Served(Self.catalog())
-        let mock = Self.transport(served) { _, _ in try .json(["version": 1]) }
+        let mock = Self.transport(served) { _, _ in MockResponse(status: 201) }
         let server = try mock.api().baseURL
 
         let first = outbox(folder, clock: clock)
@@ -281,7 +276,7 @@ struct ChannelOutboxTests {
         let served = Served(Self.catalog())
         // A 409, for an ID another channel has, refuses like any other 4xx.
         let mock = Self.transport(served) { number, _ in
-            number <= 2 ? Self.failure(number == 1 ? 409 : 422) : try .json(["version": 1])
+            number <= 2 ? Self.failure(number == 1 ? 409 : 422) : MockResponse(status: 201)
         }
         let outbox = outbox(folder, clock: clock)
         let catalog = try await catalog(mock, outbox: outbox)
@@ -343,7 +338,7 @@ struct ChannelOutboxTests {
         let mock = Self.transport(served) { _, request in
             struct Body: Decodable { var id: String }
             let id = try JSONDecoder().decode(Body.self, from: requestBody(request)).id
-            var response = try MockResponse.json(SentResponse(message: echo(id)), status: 201)
+            var response = try MockResponse.json(echo(id), status: 201)
             response.keepOpen = streamFirst
             return response
         }
@@ -379,7 +374,7 @@ struct ChannelOutboxTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let clock = TestClock()
         let served = Served(Self.catalog([Self.channel("test"), Self.channel("other")]))
-        let mock = Self.transport(served) { number, _ in number == 1 ? Self.failure(500) : try .json(["version": 1]) }
+        let mock = Self.transport(served) { number, _ in number == 1 ? Self.failure(500) : MockResponse(status: 201) }
         let outbox = outbox(folder, clock: clock)
         let catalog = try await catalog(mock, outbox: outbox)
 
@@ -439,7 +434,7 @@ struct ChannelOutboxTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let clock = TestClock()
         let served = Served(Self.catalog([Self.channel(request: 5)]))
-        let mock = Self.transport(served) { number, _ in number == 1 ? Self.failure(422) : try .json(["version": 1]) }
+        let mock = Self.transport(served) { number, _ in number == 1 ? Self.failure(422) : MockResponse(status: 201) }
         let outbox = outbox(folder, clock: clock)
         let catalog = try await catalog(mock, outbox: outbox)
         #expect(catalog.waitingRequests().map(\.sequence) == [5])
@@ -473,9 +468,9 @@ struct ChannelOutboxTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let clock = TestClock()
         let current = Served(Self.catalog())
-        let currentMock = Self.transport(current) { _, _ in try .json(["version": 1]) }
+        let currentMock = Self.transport(current) { _, _ in MockResponse(status: 201) }
         let other = Served(Self.catalog())
-        let otherMock = Self.transport(other) { _, _ in try .json(["version": 1]) }
+        let otherMock = Self.transport(other) { _, _ in MockResponse(status: 201) }
         let outbox = outbox(folder, clock: clock)
         let currentCatalog = try await catalog(currentMock, outbox: outbox)
 
@@ -516,7 +511,7 @@ struct ChannelOutboxTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let clock = TestClock()
         let served = Served(Self.catalog())
-        let mock = Self.transport(served) { number, _ in number == 1 ? Self.failure(500) : try .json(["version": 1]) }
+        let mock = Self.transport(served) { number, _ in number == 1 ? Self.failure(500) : MockResponse(status: 201) }
 
         let earlier = outbox(folder, clock: clock)
         let waiting = await earlier.send("From the app", to: "test", on: try mock.api().baseURL)

@@ -170,7 +170,6 @@ struct NeedsYouCardsTests {
         var content: String
     }
     private struct Body: Decodable { var id: String; var content: String }
-    private struct Envelope: Encodable { var version = 1; var message: ChannelMessage }
     private final class Log: Sendable { let posts = Mutex<[Post]>([]) }
 
     let mock: MockTransport
@@ -237,7 +236,7 @@ struct NeedsYouCardsTests {
     nonisolated static func accepted(_ post: Post, keepOpen: Bool = false) throws -> MockResponse {
         let message = ChannelMessage(id: post.id, sequence: 90, timestamp: "2026-11-07T11:00:00Z",
                                      sender: .user, content: .text(post.content))
-        var response = try MockResponse.json(Envelope(message: message), status: 201)
+        var response = try MockResponse.json(message, status: 201)
         response.keepOpen = keepOpen
         return response
     }

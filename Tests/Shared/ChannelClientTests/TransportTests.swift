@@ -16,11 +16,7 @@ struct TransportTests {
         let reference = ChannelAttachment(name: "Stored image.png", url: "/api/serve/test/Stored%20image.png")
         let message = ChannelMessage(id: id, sequence: 1, timestamp: "2026-10-01T00:00:00Z",
                                      sender: .user, content: .text(trimmed), attachments: [reference])
-        let receipt: JSONValue = .object([
-            "version": .number(1),
-            "message": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(message))
-        ])
-        let mock = MockTransport { _, _ in try .json(receipt) }
+        let mock = MockTransport { _, _ in try .json(message) }
         let api = try mock.api()
         let posted = try await api.post(
             channelId: "test", id: id, content: content,
@@ -49,11 +45,9 @@ struct TransportTests {
                 return MockResponse(status: 204)
             }
             if request.url?.path.contains("/members") == true {
-                return try .json(["version": JSONValue.number(1),
-                                  "member": JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(member))])
+                return try .json(member)
             }
-            return try .json(["version": JSONValue.number(1),
-                              "channel": JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(channel))])
+            return try .json(channel)
         }
         let api = try mock.api()
         _ = try await api.createChannel(.init(name: "Test", model: channel.model))
@@ -66,12 +60,6 @@ struct TransportTests {
         try await api.deleteChannel(id: "test")
         #expect(mock.requests.map(\.httpMethod) == ["POST", "PATCH", "POST", "PATCH", "POST", "DELETE", "DELETE", "DELETE"])
         #expect(mock.requests[4].url?.path == "/api/v1/channels/test/routines/daily/run")
-    }
-
-    @Test func unknownProtocolVersionFailsClearly() async throws {
-        let mock = MockTransport { _, _ in try .json(ChannelCatalog(lead: testLeadProfile, version: 99)) }
-        let api = try mock.api()
-        await #expect(throws: ChannelAPIError.unsupportedVersion(99)) { try await api.catalog() }
     }
 
     @Test func malformedKnownEventFailsInsteadOfGoingLive() async throws {
@@ -244,7 +232,7 @@ struct TransportTests {
         let initial = testState(revision: 10, messages: [testMessage(100)])
         let mock = MockTransport { request, _ in
             if request.url?.path.hasSuffix("/messages") == true {
-                return try .json(ChannelHistoryPage(version: 1, revision: 99,
+                return try .json(ChannelHistoryPage(revision: 99,
                                                      messages: [testMessage(99), testMessage(100, text: "Stale")]))
             }
             return try .stream([.init(type: "snapshot", state: initial)])
@@ -264,7 +252,7 @@ struct TransportTests {
         let initial = testState(revision: 10, messages: [testMessage(100)])
         let mock = MockTransport { request, _ in
             if request.url?.path.hasSuffix("/messages") == true {
-                return try .json(ChannelHistoryPage(version: 1, revision: 10, messages: [testMessage(100)]))
+                return try .json(ChannelHistoryPage(revision: 10, messages: [testMessage(100)]))
             }
             return try .stream([.init(type: "snapshot", state: initial)])
         }
@@ -283,7 +271,7 @@ struct TransportTests {
         let mock = MockTransport { request, _ in
             if request.url?.path.hasSuffix("/messages") == true {
                 let before = Int(request.url?.query?.replacingOccurrences(of: "before=", with: "") ?? "") ?? 0
-                return try .json(ChannelHistoryPage(version: 1, revision: 10,
+                return try .json(ChannelHistoryPage(revision: 10,
                                                      messages: [testMessage(before - 2), testMessage(before - 1)]))
             }
             return try .stream([.init(type: "snapshot", state: initial)])
@@ -317,7 +305,7 @@ struct TransportTests {
     @Test @MainActor func loadingHistoryThroughASequenceStopsWhenASnapshotReplacesItsHistory() async throws {
         let mock = MockTransport { _, count in
             var page = try MockResponse.json(ChannelHistoryPage(
-                version: 1, revision: 10, messages: count == 1 ? [testMessage(98), testMessage(99)] : []))
+                revision: 10, messages: count == 1 ? [testMessage(98), testMessage(99)] : []))
             page.keepOpen = count == 1
             return page
         }
@@ -334,7 +322,7 @@ struct TransportTests {
 
     @Test @MainActor func loadingHistoryThroughASequenceJoinsAPageAlreadyLoading() async throws {
         let mock = MockTransport { _, count in
-            var page = try MockResponse.json(ChannelHistoryPage(version: 1, revision: 10, messages: [testMessage(100)]))
+            var page = try MockResponse.json(ChannelHistoryPage(revision: 10, messages: [testMessage(100)]))
             page.keepOpen = count == 1
             return page
         }
@@ -364,7 +352,7 @@ struct TransportTests {
         let snapshot = initial
         let mock = MockTransport { request, _ in
             if request.httpMethod == "POST" {
-                return MockResponse(body: Data(#"{"version":1,"seenThrough":2}"#.utf8))
+                return MockResponse(body: Data(#"{"seenThrough":2}"#.utf8))
             }
             return try .stream([.init(type: "snapshot", state: snapshot)])
         }
@@ -418,7 +406,7 @@ struct TransportTests {
     @MainActor private func heldReadStore() throws -> (MockTransport, ChannelStore) {
         let mock = MockTransport { request, count in
             let sequence = try JSONDecoder().decode([String: Int].self, from: requestBody(request))["sequence"] ?? 0
-            var response = MockResponse(body: Data(#"{"version":1,"seenThrough":\#(sequence)}"#.utf8))
+            var response = MockResponse(body: Data(#"{"seenThrough":\#(sequence)}"#.utf8))
             response.keepOpen = count == 1
             return response
         }

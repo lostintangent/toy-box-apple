@@ -122,7 +122,7 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
     const url = new URL(request.url ?? '/', 'http://localhost');
     const pathname = url.pathname;
     if (request.method === 'GET' && pathname === '/api/v1/channels') {
-      return json(response, 200, { version: 1, channels: [snapshot.channel], members: snapshot.members });
+      return json(response, 200, { channels: [snapshot.channel], members: snapshot.members });
     }
     if (request.method === 'GET' && pathname.startsWith('/api/watch/')) {
       const url = pathname.replace('/api/watch/', '/api/serve/');
@@ -181,7 +181,7 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
             publish({ type: 'read', revision: snapshot.revision,
               seenThrough: snapshot.channel.seenThrough });
           }
-          json(response, 200, { version: 1, seenThrough: snapshot.channel.seenThrough });
+          json(response, 200, { seenThrough: snapshot.channel.seenThrough });
           return;
         }
         const uploads = body?.attachments ?? [];
@@ -195,7 +195,7 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
           json(response, 400, { error: 'Expected a user message with id and content.' }); return;
         }
         const stored = storedMessages.get(body.id);
-        if (stored) { json(response, 201, { version: 1, message: stored }); return; }
+        if (stored) { json(response, 201, stored); return; }
         const timestamp = new Date().toISOString();
         const sequence = snapshot.channel.latestSequence + 1;
         // Like the server, each upload becomes a file named by its type, echoed in the order sent.
@@ -218,7 +218,7 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
         Object.assign(snapshot.channel, { latestSequence: sequence, requestSequence: null, updatedAt: timestamp });
         snapshot.request = null;
         publish({ type: 'message', revision: snapshot.revision, message });
-        json(response, 201, { version: 1, message });
+        json(response, 201, message);
       } catch { json(response, 400, { error: 'Invalid JSON message.' }); }
       return;
     }

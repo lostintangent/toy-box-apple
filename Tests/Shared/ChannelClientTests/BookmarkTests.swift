@@ -89,7 +89,7 @@ struct BookmarkTests {
     @Test func theListShowsChangesAtOnceAndFillsInAsHistoryLoads() async throws {
         let mock = MockTransport { request, _ in
             guard request.url?.path.hasSuffix("/messages") == true else { return MockResponse(status: 204) }
-            return try .json(ChannelHistoryPage(version: 1, revision: 10, messages: (1...4).map { testMessage($0) }))
+            return try .json(ChannelHistoryPage(revision: 10, messages: (1...4).map { testMessage($0) }))
         }
         let store = ChannelStore(id: "test", api: try mock.api())
         var state = testState(revision: 10, messages: [testMessage(5), testMessage(6, text: "Newest")])
