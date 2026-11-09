@@ -1846,9 +1846,7 @@ text, or to end 8 points before it on the user's side, even beyond the bubble.
 
 **Hover feedback.** Each button highlights under the pointer like an accessory-bar button: a
 6-point continuous rounded hover fill, concentric with the toolbar, and its symbol turns from secondary to primary ink. The fill
-fades over 120 ms. Full Keyboard Access draws the system focus ring on the focused button. One
-small button style draws this for the whole toolbar, as `TokenCapsuleButtonStyle` does for the
-sidebar's capsule. Help reads "Reply to Ada", "Copy Message", "Bookmark" or "Remove Bookmark".
+fades over 120 ms. Full Keyboard Access draws the system focus ring on the focused button. Help reads "Reply to Ada", "Copy Message", "Bookmark" or "Remove Bookmark".
 
 **Mac at rest.** A bookmarked message keeps a chip showing when it isn't hovered: the toolbar
 with only its blue bookmark, 28 x 24, exactly where the bookmark sits in the full toolbar.
