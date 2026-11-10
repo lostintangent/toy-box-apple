@@ -67,8 +67,12 @@ struct SidebarErrorBlock: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(heading, systemImage: "wifi.exclamationmark")
-                .font(.caption.weight(.medium))
+            // Not a Label, which a sidebar list would restyle as a row's icon and title.
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "wifi.exclamationmark").accessibilityHidden(true)
+                Text(heading)
+            }
+            .font(.caption.weight(.medium))
             Text(error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -262,6 +262,8 @@ private struct SidebarServerHeader: View {
             SidebarStatusDot(footer: footer, spinning: showsSpinner)
             Text(catalog.name).lineLimit(1).truncationMode(.middle)
         }
+        // Section headers start 14 points in, so this puts the dot on the footer's 20-point edge.
+        .padding(.leading, 6)
         .modifier(SpinnerDelay(busy: busy, spinning: $showsSpinner))
         .help(footer.help(address))
         .accessibilityElement(children: .ignore)

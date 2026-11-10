@@ -505,8 +505,9 @@ private struct ChannelSidebarServerHeader: View {
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
             }
-            .font(.headline)
-            .foregroundStyle(.primary)
+            .font(.title3.bold())
+            // A section header draws in its own secondary style, which `.primary` would follow.
+            .foregroundStyle(Color.primary)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
