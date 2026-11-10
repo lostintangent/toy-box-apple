@@ -1,4 +1,5 @@
 import ChannelClient
+import ChannelKit
 import SwiftUI
 import ToyBoxUI
 import UIKit
@@ -160,19 +161,19 @@ extension View {
     /// Holds the list under its card. While the card is lifted, the list stops scrolling, leaves
     /// VoiceOver to the card and lets its dimmed rows ignore taps. `card` draws over the list from the
     /// list's frame in global space. The card ends through `end` when anything in `context` changes,
-    /// the app leaves the foreground or the card's channel leaves `channelIDs`.
-    func cardList<Card: View>(isLifted: Bool, channelID: String?, channelIDs: [String],
+    /// the app leaves the foreground or the card's channel leaves `targets`.
+    func cardList<Card: View>(isLifted: Bool, target: ChannelTarget?, targets: [ChannelTarget],
                               endsWhenChanging context: [AnyHashable?], end: @escaping @MainActor () -> Void,
                               @ViewBuilder card: @escaping (_ list: CGRect) -> Card) -> some View {
-        modifier(CardList(isLifted: isLifted, channelID: channelID, channelIDs: channelIDs, context: context,
+        modifier(CardList(isLifted: isLifted, target: target, targets: targets, context: context,
                           end: end, card: card))
     }
 }
 
 private struct CardList<Card: View>: ViewModifier {
     let isLifted: Bool
-    let channelID: String?
-    let channelIDs: [String]
+    let target: ChannelTarget?
+    let targets: [ChannelTarget]
     let context: [AnyHashable?]
     let end: @MainActor () -> Void
     let card: (CGRect) -> Card
@@ -193,7 +194,7 @@ private struct CardList<Card: View>: ViewModifier {
                 }
             }
             .onChange(of: context) { end() }
-            .onChange(of: channelID.map { !channelIDs.contains($0) } ?? false) { _, isGone in
+            .onChange(of: target.map { !targets.contains($0) } ?? false) { _, isGone in
                 if isGone { end() }
             }
             .onChange(of: scenePhase) { _, phase in
