@@ -279,6 +279,9 @@ struct OverviewPurpose: View {
                         NSPasteboard.general.setString(purpose, forType: .string)
                     }
                 }
+                // Only truncated text needs the full purpose as its label. Selectable text already
+                // reads as the purpose, and a label around its text view recurses after a switch.
+                .accessibilityLabel(purpose)
             } else {
                 label.textSelection(.enabled)
             }
@@ -289,7 +292,6 @@ struct OverviewPurpose: View {
             expanded.toggle()
             return .handled
         })
-        .accessibilityLabel(purpose)
         .accessibilityActions {
             if truncated != nil || collapsible {
                 Button(expanded ? "Show Less" : "Show More") { expanded.toggle() }
