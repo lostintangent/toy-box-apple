@@ -18,6 +18,7 @@
 
 ### Bugs/Polish
 
+- Toy Box no longer quits unexpectedly when you switch channels while VoiceOver or another app that reads the screen is running.
 - When Toy Box can't reach your server, the sidebar now simply says so, without buttons to press, since it keeps trying on its own and clicking your server's address still opens Settings.
 
 ## Mac 0.1.29
