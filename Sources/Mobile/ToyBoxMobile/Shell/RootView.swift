@@ -11,7 +11,8 @@ struct RootView: View {
     @ViewState private var management = ManagementPresenter()
     @ViewState private var overview = Overview()
     @ViewState private var managementSessions = ManagementSessions()
-    @ViewState private var columnVisibility = NavigationSplitViewVisibility.automatic
+    /// Never `.automatic`, which would let the split view pick the list for each posture.
+    @ViewState private var columnVisibility = NavigationSplitViewVisibility.all
     @ViewState private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
     @ViewState private var isScreenUp = false
     @FocusState private var isSearchFocused: Bool
@@ -173,6 +174,11 @@ struct RootView: View {
                 ContentUnavailableView("Choose a channel", systemImage: "bubble.left.and.bubble.right",
                                        description: Text("Open a channel from the list to join the conversation."))
             }
+        }
+        // Unfolding shows what the folded phone showed, the channel alone or the list. Set as the size
+        // class changes, the split view expands straight to it.
+        .onChange(of: sizeClass) { _, sizeClass in
+            if sizeClass == .regular { columnVisibility = preferredCompactColumn == .detail ? .detailOnly : .all }
         }
     }
 
