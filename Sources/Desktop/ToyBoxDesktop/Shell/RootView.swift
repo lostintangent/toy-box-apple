@@ -176,12 +176,20 @@ struct RootView: View {
             model.catalog?.startPolling()
             await model.notifications.refreshAuthorization()
         }
+        // A window with nothing to restore opens on the launch's channel once the servers say
+        // which one lists it, unless a choice or a Handoff came first.
+        .task {
+            guard let launchTarget = model.launchTarget, let target = await launchTarget.value,
+                  selection == nil, handoff.phase == .idle, model.catalogs.first(at: target.serverURL) != nil
+            else { return }
+            selection = target
+        }
         .onAppear {
             let launchChannelID = model.takeLaunchChannelID()
             if selection == nil {
                 selection = model.launchOptions.isSnapshot ? initialChannel
-                    : restoredSelection.flatMap(ChannelTarget.init(identifier:))
-                        ?? initialChannel ?? launchChannelID.flatMap { model.target($0) }
+                    : restoredSelection.flatMap(ChannelTarget.init(identifier:)) ?? initialChannel
+                        ?? (model.launchTarget == nil ? launchChannelID.flatMap { model.target($0) } : nil)
             }
             columnVisibility = model.launchOptions.isSnapshot || sidebarVisible ? .all : .detailOnly
             #if DEBUG

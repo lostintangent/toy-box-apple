@@ -84,15 +84,16 @@ final class WindowSnapshot {
     }
 
     private func prepare(model: AppModel) async throws {
-        guard let id = options.channelID else { throw LaunchArgumentError("No channel selected") }
+        guard let id = options.channelID, let launchTarget = model.launchTarget else {
+            throw LaunchArgumentError("No channel selected")
+        }
+        if let error = model.configurationError { throw LaunchArgumentError(error) }
+        guard let target = await launchTarget.value, let catalog = model.catalogs.first(at: target.serverURL) else {
+            throw LaunchArgumentError(model.catalogs.lazy.compactMap(\.phase.message).first ?? "No server lists \(id)")
+        }
         let deadline = Date.now.addingTimeInterval(25)
         while Date.now < deadline {
-            if let error = model.configurationError { throw LaunchArgumentError(error) }
-            if let catalog = model.catalog, let error = catalog.phase.message, catalog.lastRefreshedAt == nil {
-                throw LaunchArgumentError(error)
-            }
-            if let store = model.catalog?.channel(id: id),
-               store.phase.isConnected || options.snapshotState == "handoff-unavailable" {
+            if catalog.channel(id: id).phase.isConnected || options.snapshotState == "handoff-unavailable" {
                 // At launch SwiftUI briefly restores the split view's saved height as the window's
                 // minimum, which can clamp the first resize, so the size is applied again here.
                 applyRequestedSize()
@@ -109,12 +110,12 @@ final class WindowSnapshot {
                 }
                 return
             }
-            if let phase = model.catalog?.channel(id: id).phase, phase == .deleted {
+            if catalog.channel(id: id).phase == .deleted {
                 throw LaunchArgumentError("The selected channel was deleted")
             }
             try await Task.sleep(for: .milliseconds(50))
         }
-        let detail = model.catalog?.channel(id: id).phase.message ?? "No live channel snapshot arrived"
+        let detail = catalog.channel(id: id).phase.message ?? "No live channel snapshot arrived"
         throw LaunchArgumentError("Timed out: \(detail)")
     }
 
