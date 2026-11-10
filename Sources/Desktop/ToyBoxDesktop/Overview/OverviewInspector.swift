@@ -209,7 +209,9 @@ private struct OverviewAbout: View {
             if let purpose = details.purpose, !purpose.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 OverviewPurpose(purpose: purpose, visit: visit)
             } else {
-                Button("Add a purpose…") { management.present(.editChannel(channelId: store.id)) }
+                Button("Add a purpose…") {
+                    if let target = store.target { management.present(.editChannel(target)) }
+                }
                     .buttonStyle(.plain)
                     .font(.system(size: 13 * textScale))
                     .foregroundStyle(.secondary)

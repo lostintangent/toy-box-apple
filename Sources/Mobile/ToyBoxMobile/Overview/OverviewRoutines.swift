@@ -137,8 +137,8 @@ struct OverviewRoutineRow: View {
     private func toggle() { state.expanded.toggle() }
 
     private func delete() {
-        guard canDelete else { return }
-        management.present(.deleteRoutine(channelId: store.id, routineId: routine.id))
+        guard canDelete, let target = store.target else { return }
+        management.present(.deleteRoutine(target, routineId: routine.id))
     }
 
     private func run() {

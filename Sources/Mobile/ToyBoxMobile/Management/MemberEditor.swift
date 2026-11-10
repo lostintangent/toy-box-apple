@@ -39,7 +39,7 @@ struct MemberEditor: View {
         !nextName.isEmpty && violation == nil && changed && !saving && !recovery.blocksWrites && store.phase.isConnected
     }
     private var catalog: ChannelCatalogStore? {
-        app.catalog === session.catalog ? session.catalog : nil
+        app.catalogs.contains { $0 === session.catalog } ? session.catalog : nil
     }
     private var refreshedMember: ChannelAgent? {
         guard let member else { return nil }
@@ -92,7 +92,7 @@ struct MemberEditor: View {
             if let member {
                 Section {
                     Button("Remove from Channel", systemImage: "person.badge.minus", role: .destructive) {
-                        removal = .removeMember(channelId: channel.id, agentId: member.id)
+                        if let target = store.target { removal = .removeMember(target, agentId: member.id) }
                     }
                     .disabled(recovery.blocksWrites || !store.phase.isConnected)
                 }
@@ -153,7 +153,7 @@ struct MemberEditor: View {
                 } else {
                     _ = try await api.createMember(
                         channelId: channel.id, input: .init(name: nextName, role: nextRole.isEmpty ? nil : nextRole, model: model))
-                    if isCurrent { presenter.finishAddingMember(channelId: channel.id) }
+                    if isCurrent, let target = store.target { presenter.finishAddingMember(target) }
                 }
                 await catalog?.refresh()
             } catch {

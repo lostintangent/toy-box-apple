@@ -110,7 +110,7 @@ struct OverviewTests {
         try withModel { app in
             let catalog = try #require(app.catalog)
             let sessions = ManagementSessions()
-            let flow = ManagementFlow.addMember(channelId: "channel", name: "Initial")
+            let flow = try ManagementFlow.addMember(#require(catalog.target("channel")), name: "Initial")
             let draft = sessions.session(for: flow, catalog: catalog)
             draft.name = "Edited"
             draft.role = "First line\nSecond line"
@@ -867,7 +867,7 @@ struct OverviewTests {
                 "Actions: \(online.actions.map(\.name))")
         let delete = try #require(online.actions.first { $0.name == "Delete Routine" })
         #expect(online.perform(delete))
-        #expect(presenter.flow == .deleteRoutine(channelId: "channel", routineId: "routine"))
+        #expect(try presenter.flow == .deleteRoutine(#require(store.target), routineId: "routine"))
     }
 
     @Test func routineRowTogglesLikeATaskParentAndSpeaksItsSchedule() async throws {
@@ -1316,11 +1316,12 @@ struct OverviewTests {
             let catalog = try #require(app.catalog)
             let sessions = ManagementSessions()
             let presenter = ManagementPresenter()
-            let editing = ManagementFlow.editMember(channelId: "channel", agentId: "agent")
+            let target = try #require(catalog.target("channel"))
+            let editing = ManagementFlow.editMember(target, agentId: "agent")
             presenter.present(editing)
             let editor = sessions.session(for: editing, catalog: catalog)
             editor.name = "Unsaved name"
-            let removal = sessions.session(for: .removeMember(channelId: "channel", agentId: "agent"), catalog: catalog)
+            let removal = sessions.session(for: .removeMember(target, agentId: "agent"), catalog: catalog)
             #expect(removal !== editor && removal.deletionStep == .confirm)
             #expect(sessions.session(for: editing, catalog: catalog) === editor)
             #expect(sessions.isCurrent(editor, app: app, presenter: presenter) && editor.name == "Unsaved name")
@@ -1335,6 +1336,32 @@ struct OverviewTests {
         }
     }
 
+    @Test func managementSessionsBelongToTheirOwnServer() throws {
+        try withModel { app in
+            let first = try #require(app.catalog)
+            let second = try app.addServer("https://second.example")
+            let sessions = ManagementSessions()
+            let presenter = ManagementPresenter()
+            let editing = try ManagementFlow.editChannel(#require(second.target("channel")))
+            presenter.present(editing)
+            let editor = sessions.session(for: editing, catalog: second)
+            try app.changeAddress(of: first, to: "https://moved.example")
+            #expect(sessions.isCurrent(editor, app: app, presenter: presenter))
+            app.removeServer(second)
+            #expect(!sessions.isCurrent(editor, app: app, presenter: presenter))
+
+            // New Channel's Server menu moves its session, so the entries stay.
+            let third = try app.addServer("https://third.example")
+            let creating = ManagementFlow.newChannel(server: app.serverURL)
+            presenter.present(creating)
+            let draft = sessions.session(for: creating, catalog: try #require(app.catalog))
+            draft.name = "Workshop"
+            draft.catalog = third
+            #expect(sessions.session(for: creating, catalog: try #require(app.catalog)) === draft)
+            #expect(sessions.isCurrent(draft, app: app, presenter: presenter) && draft.api.baseURL == third.api.baseURL)
+        }
+    }
+
     @Test(arguments: ["remains", "gone", "unreachable"])
     func anUncertainDeleteChecksTheServerBeforeOfferingAnother(server: String) async throws {
         let host = "delete-\(UUID().uuidString).invalid"
@@ -1343,7 +1370,8 @@ struct OverviewTests {
         configuration.protocolClasses = [UncertainDeletionProtocol.self]
         let api = try ChannelAPI(serverURL: "https://\(host)", session: URLSession(configuration: configuration))
         let catalog = ChannelCatalogStore(api: api)
-        let session = ManagementSession(flow: .deleteRoutine(channelId: "channel", routineId: "routine"),
+        let session = ManagementSession(flow: .deleteRoutine(try #require(catalog.target("channel")),
+                                                             routineId: "routine"),
                                         catalog: catalog)
         func requests() -> [String] { UncertainDeletionProtocol.requests.withLock { $0[host] ?? [] } }
 
@@ -1680,7 +1708,7 @@ struct ChannelFollowTests {
         let activity = try #require(fixture.activities.first)
         let content = activity.content
         fixture.date.addTimeInterval(60)
-        fixture.controller.stop(channelID: fixture.store.id)
+        fixture.controller.stop(fixture.store)
         await fixture.wait { !activity.endings.isEmpty && fixture.completedUnregistrations == 1 }
         #expect(activity.endings == [content])
         #expect(fixture.controller.state(for: fixture.store) == .unavailable(nil))
@@ -1697,7 +1725,7 @@ struct ChannelFollowTests {
         await fixture.wait { activity.tokenStreamsStarted == 1 }
         fixture.controller.shutdown()
         fixture.controller = fixture.makeController()
-        fixture.controller.configure(registration: nil, isRegistrationReady: false, catalog: fixture.catalog)
+        fixture.controller.configure(servers: [.init(catalog: fixture.catalog)])
         #expect(activity.endings.isEmpty)
         fixture.configure(ready: false)
         await fixture.wait { activity.tokenStreamsStarted == 2 }
@@ -1875,7 +1903,7 @@ struct ChannelFollowTests {
         try fixture.apply()
         #expect(fixture.controller.state(for: fixture.store) == .available)
         #expect(fixture.activities.count == 1)
-        fixture.controller.configure(registration: nil, isRegistrationReady: false, catalog: nil)
+        fixture.controller.configure(servers: [])
         await fixture.wait { activity.endings.count == 1 }
         #expect(activity.endings.last?.ending == ending)
     }
@@ -1887,7 +1915,7 @@ struct ChannelFollowTests {
         let activity = try #require(fixture.activities.first)
         let content = activity.content
         fixture.heldMethod = "DELETE"
-        fixture.controller.configure(registration: nil, isRegistrationReady: false, catalog: nil)
+        fixture.controller.configure(servers: [])
         await fixture.wait { !activity.endings.isEmpty && !fixture.pending.isEmpty }
         #expect(fixture.completedUnregistrations == 0)
         #expect(activity.endings == [content])
@@ -1914,7 +1942,7 @@ struct ChannelFollowTests {
         fixture.heldMethod = "PUT"
         let oldStart = Task { await fixture.controller.follow(fixture.store) }
         await fixture.wait { fixture.pending.count == 1 }
-        fixture.controller.stop(channelID: fixture.store.id)
+        fixture.controller.stop(fixture.store)
         let nextStart = Task { await fixture.controller.follow(fixture.store) }
         await fixture.wait { fixture.activities.count == 2 }
         fixture.releaseWrites()
@@ -1925,15 +1953,64 @@ struct ChannelFollowTests {
         #expect(!fixture.controller.startFailed)
     }
 
+    @Test func eachServerFollowsWithItsOwnRegistrationAndRemovingOneEndsOnlyItsActivity() async throws {
+        let fixture = try FollowFixture()
+        defer { fixture.close() }
+        let other = try fixture.addServer()
+        await fixture.controller.follow(fixture.store)
+        await fixture.controller.follow(other.store)
+        #expect(fixture.requests.map(\.registrationID)
+            == [fixture.registration.registrationID, other.registration.registrationID])
+        #expect(fixture.controller.state(for: fixture.store) == .following)
+        #expect(fixture.controller.state(for: other.store) == .following)
+        let (kept, removed) = (fixture.activities[0], fixture.activities[1])
+
+        fixture.others = []
+        fixture.configure()
+        await fixture.wait { !removed.endings.isEmpty && fixture.completedUnregistrations == 1 }
+        #expect(fixture.requests.last?.method == "DELETE")
+        #expect(fixture.requests.last?.registrationID == other.registration.registrationID)
+        #expect(kept.endings.isEmpty)
+        #expect(fixture.controller.state(for: fixture.store) == .following)
+        #expect(fixture.controller.state(for: other.store) == .unavailable(nil))
+    }
+
+    @Test func restorationKeepsAServersActivitiesUntilItsRegistrationLoads() async throws {
+        let fixture = try FollowFixture()
+        defer { fixture.close() }
+        let other = try fixture.addServer()
+        await fixture.controller.follow(fixture.store)
+        await fixture.controller.follow(other.store)
+        let orphan = FollowActivity(
+            attributes: .init(channelID: "removed", channelName: "Removed", registrationID: UUID().uuidString,
+                              startedAt: fixture.originalDate),
+            content: try #require(fixture.activities.first).content, token: nil)
+        fixture.activities.append(orphan)
+
+        fixture.controller.shutdown()
+        fixture.controller = fixture.makeController()
+        fixture.others[0].registration = nil
+        fixture.configure()
+        #expect(fixture.controller.state(for: fixture.store) == .following)
+        #expect(fixture.controller.state(for: other.store) == .unavailable(nil))
+        #expect(fixture.activities.allSatisfy { $0.endings.isEmpty })
+
+        fixture.others[0].registration = other.registration
+        fixture.configure()
+        #expect(fixture.controller.state(for: other.store) == .following)
+        await fixture.wait { !orphan.endings.isEmpty }
+        #expect(fixture.activities.filter { !$0.endings.isEmpty }.count == 1)
+    }
+
     @Test func reconnectingTheSameServerKeepsTheActivityAndItsOriginalStart() async throws {
         let fixture = try FollowFixture()
         defer { fixture.close() }
         await fixture.controller.follow(fixture.store)
         let activity = try #require(fixture.activities.first)
         let replacement = ChannelCatalogStore(api: fixture.catalog.api)
-        fixture.controller.configure(
-            registration: fixture.registration, isRegistrationReady: true, catalog: replacement
-        )
+        fixture.controller.configure(servers: [.init(
+            catalog: replacement, registration: fixture.registration, isRegistrationReady: true
+        )])
         #expect(fixture.controller.state(for: replacement.channel(id: fixture.store.id)) == .following)
         #expect(activity.endings.isEmpty)
         #expect(activity.attributes.startedAt == fixture.originalDate)
@@ -2010,6 +2087,7 @@ private final class FollowFixture {
     var activities: [FollowActivity] = []
     var missingToken = false
     var controller: ChannelFollowController!
+    var others: [ChannelFollowController.Server] = []
     var date: Date
     var requests: [Write] = []
     var pending: [CheckedContinuation<Void, Error>] = []
@@ -2049,10 +2127,22 @@ private final class FollowFixture {
     }
 
     func configure(ready: Bool = true, registrationError: String? = nil) {
-        controller.configure(
-            registration: registration, isRegistrationReady: ready, catalog: catalog,
+        controller.configure(servers: [.init(
+            catalog: catalog, registration: registration, isRegistrationReady: ready,
             registrationError: registrationError
-        )
+        )] + others)
+    }
+
+    /// Adds a second server, ready, whose catalog lists a channel with this one's ID.
+    func addServer() throws -> (store: ChannelStore, registration: MobilePushRegistration) {
+        let address = "https://other-\(suite).invalid"
+        let catalog = ChannelCatalogStore(api: try ChannelAPI(serverURL: address))
+        let registration = MobilePushRegistration(serverURL: address, registrationID: UUID().uuidString)
+        others.append(.init(catalog: catalog, registration: registration, isRegistrationReady: true))
+        configure()
+        let other = catalog.channel(id: store.id)
+        try apply(to: other)
+        return (other, registration)
     }
 
     func apply(tasks: [ChannelTask] = [.init(id: "root", title: "Work")], to store: ChannelStore? = nil) throws {

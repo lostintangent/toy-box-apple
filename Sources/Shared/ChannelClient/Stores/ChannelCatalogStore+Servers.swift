@@ -65,6 +65,11 @@ extension ChannelCatalogStore {
 
     /// How Settings saves this server.
     public var saved: Saved { .init(url: api.baseURL.absoluteString, name: name) }
+
+    /// One of this server's channels.
+    public func target(_ channelID: String) -> ChannelTarget? {
+        ChannelTarget(serverURL: api.baseURL.absoluteString, channelID: channelID)
+    }
 }
 
 extension [ChannelCatalogStore] {

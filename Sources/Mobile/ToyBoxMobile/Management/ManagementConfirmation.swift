@@ -56,9 +56,11 @@ extension ManagementSession {
         defer { pending = false }
         do {
             switch flow {
-            case .deleteChannel(let id): try await api.deleteChannel(id: id)
-            case .removeMember(let id, let agentID): try await api.removeMember(channelId: id, agentId: agentID)
-            case .deleteRoutine(let id, let routineID): try await api.deleteRoutine(channelId: id, routineId: routineID)
+            case .deleteChannel(let target): try await api.deleteChannel(id: target.channelID)
+            case .removeMember(let target, let agentID):
+                try await api.removeMember(channelId: target.channelID, agentId: agentID)
+            case .deleteRoutine(let target, let routineID):
+                try await api.deleteRoutine(channelId: target.channelID, routineId: routineID)
             default: throw ChannelAPIError.invalidMessage("This management action is unavailable.")
             }
             return true
@@ -87,13 +89,17 @@ struct ManagementConfirmation: ViewModifier {
     @Environment(ManagementSessions.self) private var sessions: ManagementSessions?
 
     private var deletion: ManagementFlow? { flow?.isDeletion == true ? flow : nil }
-    private var copy: (verb: String, noun: String, action: String, outcome: String) { (deletion ?? .newChannel).deletionCopy }
+    private var copy: (verb: String, noun: String, action: String, outcome: String) {
+        (deletion ?? .newChannel(server: "")).deletionCopy
+    }
+    /// The deletion's server.
+    private var catalog: ChannelCatalogStore? { app.flatMap { deletion?.catalog(in: $0.catalogs) } }
     /// Agents and routines are deleted from their channel's screens, which hold its store.
-    private var store: ChannelStore? { deletion?.channelId.flatMap { app?.catalog?.existingChannel(id: $0) } }
+    private var store: ChannelStore? { deletion?.channelId.flatMap { catalog?.existingChannel(id: $0) } }
     /// The target's name, or nil once it's gone.
     private var target: String? {
         switch deletion {
-        case .deleteChannel(let id): app?.catalog?.channels.first { $0.id == id }?.name
+        case .deleteChannel(let target): catalog?.channels.first { $0.id == target.channelID }?.name
         case .removeMember(_, let id): store?.roster.dropFirst().first { $0.id == id }?.name
         case .deleteRoutine(_, let id): store?.routines.first { $0.id == id }?.title
         default: nil
@@ -101,7 +107,7 @@ struct ManagementConfirmation: ViewModifier {
     }
     private var canDelete: Bool {
         guard target != nil else { return false }
-        if case .deleteChannel = deletion { return app?.canManageChannels == true }
+        if case .deleteChannel = deletion { return app?.isActive == true && catalog?.phase == .connected }
         return store?.phase.isConnected == true
     }
     private var consequence: String {
@@ -117,7 +123,7 @@ struct ManagementConfirmation: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        let session = deletion.flatMap { flow in app?.catalog.flatMap { sessions?.session(for: flow, catalog: $0) } }
+        let session = deletion.flatMap { flow in catalog.flatMap { sessions?.session(for: flow, catalog: $0) } }
         let step = session?.deletionStep
         let text = text(step)
         // Every answer changes the session or the flow at once, so the alert never re-reads its old step.

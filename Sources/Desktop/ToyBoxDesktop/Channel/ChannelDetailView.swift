@@ -210,14 +210,18 @@ struct ChannelDetailView: View {
         .pickerStyle(.inline)
         .labelsHidden()
         Divider()
-        Button("New Channel…", systemImage: "plus") { management.present(.newChannel) }
+        Button("New Channel…", systemImage: "plus") {
+            management.present(.newChannel(server: store.api.baseURL.absoluteString))
+        }
         Divider()
-        Button("Edit Channel…", systemImage: "pencil") { management.present(.editChannel(channelId: store.id)) }
-            .disabled(!store.phase.isConnected)
+        Button("Edit Channel…", systemImage: "pencil") {
+            if let target = store.target { management.present(.editChannel(target)) }
+        }
+        .disabled(!store.phase.isConnected)
         Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { model.openInToyBox(channelID: store.id) }
         Divider()
         Button("Delete Channel…", systemImage: "trash", role: .destructive) {
-            management.present(.deleteChannel(channelId: store.id))
+            if let target = store.target { management.present(.deleteChannel(target)) }
         }
         .disabled(!store.phase.isConnected)
     }

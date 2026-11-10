@@ -185,6 +185,10 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
         isLoading = true
         error = nil
         defer { isLoading = false }
+        // A new channel's model, chosen on another server, waits for this server's models, and
+        // stays only if they offer it.
+        let carried = allowsInheritance || initialModel != nil ? nil : model
+        if carried != nil { model = nil }
         do {
             let result: ModelCatalog
             if let memberScope {
@@ -194,6 +198,10 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
                 result = try await api.models()
             }
             catalog = result
+            if let carried, ChannelModelSelection(model: carried, catalog: result, provider: provider,
+                                                  scope: .channel).selected != nil {
+                model = carried
+            }
             if let defaultModel = selectionPolicy.defaultModel {
                 model = defaultModel
             }

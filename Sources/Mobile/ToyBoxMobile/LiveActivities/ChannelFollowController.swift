@@ -7,22 +7,47 @@ import ToyBoxMobileIntegrations
 
 @MainActor @Observable
 final class ChannelFollowController {
+    /// A server as Follow sees it: its catalog and its own push registration.
+    struct Server: Equatable {
+        let catalog: ChannelCatalogStore
+        var registration: MobilePushRegistration?
+        var isRegistrationReady = false
+        var registrationError: String?
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.catalog === rhs.catalog && lhs.registration == rhs.registration
+                && lhs.isRegistrationReady == rhs.isRegistrationReady && lhs.registrationError == rhs.registrationError
+        }
+
+        @MainActor fileprivate var address: String? {
+            ChannelWaitingRequest.normalizedServer(catalog.api.baseURL.absoluteString)
+        }
+
+        /// The registration, once it's this server's.
+        @MainActor fileprivate var current: MobilePushRegistration? {
+            guard let registration, let address,
+                  ChannelWaitingRequest.normalizedServer(registration.serverURL) == address else { return nil }
+            return registration
+        }
+
+        @MainActor fileprivate var isReady: Bool { isRegistrationReady && current != nil }
+    }
+
     var startFailed = false
 
-    private var entries: [String: Follow] = [:]
-    private var starting: Set<String> = []
+    /// Each server by its normalized address.
+    private var servers: [String: Server] = [:]
+    private var entries: [ChannelTarget: Follow] = [:]
+    private var starting: Set<ChannelTarget> = []
     @ObservationIgnored private let client: ChannelActivityClient
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private let registerActivity: @MainActor (ChannelStore, String, PushSubscription) async throws -> Void
     @ObservationIgnored private let unregisterActivity: @MainActor (ChannelStore, String) async throws -> Void
-    private var registration: MobilePushRegistration?
-    private var isRegistrationReady = false
-    private var registrationError: String?
-    private var catalog: ChannelCatalogStore?
-    @ObservationIgnored private var writes: [String: Task<Void, Error>] = [:]
+    @ObservationIgnored private var writes: [ChannelTarget: Task<Void, Error>] = [:]
     @ObservationIgnored private let logger = Logger(subsystem: "dev.toybox.mobile", category: "Follow")
 
     private final class Follow {
+        let target: ChannelTarget
         let activity: any ChannelActivitySession
         let store: ChannelStore
         let registration: MobilePushRegistration
@@ -30,7 +55,9 @@ final class ChannelFollowController {
         var registeredToken: Data?
         var jobs: [Task<Void, Never>] = []
 
-        init(activity: any ChannelActivitySession, store: ChannelStore, registration: MobilePushRegistration) {
+        init(target: ChannelTarget, activity: any ChannelActivitySession, store: ChannelStore,
+             registration: MobilePushRegistration) {
+            self.target = target
             self.activity = activity
             self.store = store
             self.registration = registration
@@ -59,60 +86,84 @@ final class ChannelFollowController {
         self.unregisterActivity = unregisterActivity
     }
 
-    func configure(registration: MobilePushRegistration?, isRegistrationReady: Bool, catalog: ChannelCatalogStore?,
-                   registrationError: String? = nil) {
-        self.registrationError = registrationError
-        let changed = self.registration != registration || self.catalog !== catalog
-        let becameReady = isRegistrationReady && (!self.isRegistrationReady || changed)
-        if changed {
-            let registrationChanged = self.registration != nil
-                && self.registration?.registrationID != registration?.registrationID
-            let serverChanged = self.catalog != nil && self.catalog?.api.baseURL != catalog?.api.baseURL
-            if registrationChanged || serverChanged {
-                let tracked = Set(entries.values.map { $0.activity.id })
-                for entry in Array(entries.values) { finish(entry) }
-                for activity in client.activities() where !tracked.contains(activity.id) {
-                    Task { await activity.end(activity.content) }
-                }
-            } else {
-                shutdown()
-            }
-            starting = []
-            self.registration = registration
-            self.catalog = catalog
+    /// Takes every server's catalog and registration. Removing a server, replacing its registration or
+    /// respelling its address ends only that server's follows.
+    func configure(servers list: [Server]) {
+        var next: [String: Server] = [:]
+        for server in list {
+            guard let address = server.address, next[address] == nil else { continue }
+            next[address] = server
         }
-        self.isRegistrationReady = isRegistrationReady
-        if changed { restore() }
-        if becameReady, let registration = currentRegistration {
+        let previous = servers
+        guard next != previous else { return }
+        var ended: [Server] = []
+        var changed: Set<String> = []
+        for (address, old) in previous {
+            let new = next[address]
+            if new?.catalog.api.baseURL != old.catalog.api.baseURL
+                || (old.registration != nil && old.registration?.registrationID != new?.registration?.registrationID) {
+                ended.append(old)
+                changed.insert(address)
+            } else if new?.catalog !== old.catalog || new?.registration != old.registration {
+                changed.insert(address)
+            }
+        }
+        changed.formUnion(next.keys.filter { previous[$0] == nil })
+
+        let tracked = Set(entries.values.map { $0.activity.id })
+        for old in ended {
+            for entry in Array(entries.values) where entry.target.serverURL == old.address { finish(entry) }
+            for activity in client.activities() where !tracked.contains(activity.id)
+                && activity.attributes.registrationID == old.registration?.registrationID {
+                Task { await activity.end(activity.content) }
+            }
+        }
+        for entry in Array(entries.values) where changed.contains(entry.target.serverURL) {
+            entry.cancel()
+            entries[entry.target] = nil
+        }
+        starting = starting.filter { !changed.contains($0.serverURL) }
+        servers = next
+        if !changed.isEmpty { restore() }
+        for (address, server) in next where server.isRegistrationReady
+            && (previous[address]?.isRegistrationReady != true || changed.contains(address)) {
+            guard let registration = server.current else { continue }
             Task { [weak self] in await self?.registerCurrentTokens(for: registration) }
         }
     }
 
     func state(for store: ChannelStore) -> ChannelFollowAction.Status {
-        if starting.contains(store.id) { return .starting }
-        if entries[store.id] != nil { return .following }
-        guard catalog?.api.baseURL == store.api.baseURL else { return .unavailable(nil) }
+        guard let target = store.target else { return .unavailable(nil) }
+        if starting.contains(target) { return .starting }
+        if entries[target] != nil { return .following }
+        guard let server = servers[target.serverURL], server.catalog.api.baseURL == store.api.baseURL else {
+            return .unavailable(nil)
+        }
         if store.phase == .deleted { return .unavailable(.deleted) }
         if case .failed = store.phase { return .unavailable(.unreachable) }
         guard store.phase.isConnected, let state = store.state else { return .unavailable(nil) }
         let progress = state.channel.tasks.progress
         guard progress.total > progress.done else { return .unavailable(.noTasksInProgress) }
-        guard isRegistrationReady, currentRegistration != nil else {
-            return .unavailable(registrationError == nil ? nil : .pushNotSetUp)
+        guard server.isReady else {
+            return .unavailable(server.registrationError == nil ? nil : .pushNotSetUp)
         }
         return .available
     }
 
     func follow(_ store: ChannelStore) async {
-        guard state(for: store) == .available, let registration = currentRegistration else { return }
-        starting.insert(store.id)
+        guard state(for: store) == .available, let target = store.target,
+              let registration = servers[target.serverURL]?.current else { return }
+        starting.insert(target)
         var entry: Follow?
         do {
-            for activity in client.activities() where activity.attributes.channelID == store.id {
+            for activity in client.activities()
+                where activity.attributes.channelID == store.id
+                && activity.attributes.registrationID == registration.registrationID {
                 await activity.end(activity.content)
             }
-            guard isRegistrationReady, self.registration == registration, self.catalog?.api.baseURL == store.api.baseURL,
-                  starting.contains(store.id), store.phase.isConnected, let state = store.state,
+            guard let server = servers[target.serverURL], server.isReady, server.current == registration,
+                  server.catalog.api.baseURL == store.api.baseURL,
+                  starting.contains(target), store.phase.isConnected, let state = store.state,
                   state.channel.tasks.progress.done < state.channel.tasks.count
             else { throw Failure.obsolete }
             let date = now()
@@ -121,20 +172,21 @@ final class ChannelFollowController {
                       registrationID: registration.registrationID, startedAt: date),
                 .init(state: state, updatedAt: date)
             )
-            let follow = Follow(activity: activity, store: store, registration: registration)
+            let follow = Follow(target: target, activity: activity, store: store, registration: registration)
             entry = follow
-            entries[store.id] = follow
+            entries[target] = follow
             monitor(follow)
             follow.token = try await Self.firstToken(activity)
             try await register(follow)
             try requireCurrent(follow)
-            starting.remove(store.id)
+            starting.remove(target)
             monitorTokens(follow)
         } catch {
-            let current = entry.map(isCurrent) ?? (self.registration == registration && starting.contains(store.id))
+            let current = entry.map(isCurrent)
+                ?? (servers[target.serverURL]?.current == registration && starting.contains(target))
             if let entry, isCurrent(entry) { finish(entry) }
             if current {
-                starting.remove(store.id)
+                starting.remove(target)
                 startFailed = true
                 logger.error("Could not follow a channel: \(error.localizedDescription)")
             }
@@ -145,8 +197,8 @@ final class ChannelFollowController {
         await registerCurrentTokens(for: registration, force: true)
     }
 
-    func stop(channelID: String) {
-        guard let entry = entries[channelID] else { return }
+    func stop(_ store: ChannelStore) {
+        guard let target = store.target, let entry = entries[target] else { return }
         finish(entry)
     }
 
@@ -156,29 +208,26 @@ final class ChannelFollowController {
         starting = []
     }
 
-    private var currentRegistration: MobilePushRegistration? {
-        guard let registration, let catalog,
-              ChannelWaitingRequest.normalizedServer(registration.serverURL)
-                == ChannelWaitingRequest.normalizedServer(catalog.api.baseURL.absoluteString)
-        else { return nil }
-        return registration
-    }
-
+    /// Restores each active Activity to its server's follow. An Activity whose registration no server
+    /// has ends, but only once every server knows its registration, so one still loading keeps its own.
     private func restore() {
-        guard let registration = currentRegistration, let catalog else { return }
+        let known = !servers.isEmpty && servers.values.allSatisfy { $0.current != nil }
         for activity in client.activities() {
-            guard activity.attributes.registrationID == registration.registrationID else {
-                removeUnrestorable(activity)
+            guard let server = servers.values.first(where: {
+                $0.current?.registrationID == activity.attributes.registrationID
+            }), let registration = server.current else {
+                if known { removeUnrestorable(activity) }
                 continue
             }
             guard activity.isActive else { continue }
-            guard entries[activity.attributes.channelID] == nil else {
-                removeUnrestorable(activity)
+            let store = server.catalog.channel(id: activity.attributes.channelID)
+            guard let target = store.target else { continue }
+            if let entry = entries[target] {
+                if entry.activity.id != activity.id { removeUnrestorable(activity) }
                 continue
             }
-            let store = catalog.channel(id: activity.attributes.channelID)
-            let entry = Follow(activity: activity, store: store, registration: registration)
-            entries[store.id] = entry
+            let entry = Follow(target: target, activity: activity, store: store, registration: registration)
+            entries[target] = entry
             monitor(entry)
             monitorTokens(entry)
         }
@@ -215,9 +264,10 @@ final class ChannelFollowController {
     }
 
     private func registerCurrentTokens(for registration: MobilePushRegistration, force: Bool = false) async {
-        guard isRegistrationReady, registration == currentRegistration else { return }
+        guard let address = ChannelWaitingRequest.normalizedServer(registration.serverURL),
+              let server = servers[address], server.isReady, server.current == registration else { return }
         for entry in Array(entries.values)
-            where entry.registration == registration && !starting.contains(entry.store.id) {
+            where entry.registration == registration && !starting.contains(entry.target) {
             await registerExisting(entry, force: force)
         }
     }
@@ -225,7 +275,7 @@ final class ChannelFollowController {
     private func registerExisting(_ entry: Follow, token: Data? = nil, force: Bool = false) async {
         guard isCurrent(entry) else { return }
         entry.token = entry.activity.pushToken ?? token ?? entry.token
-        guard isRegistrationReady, entry.token != nil else { return }
+        guard servers[entry.target.serverURL]?.isRegistrationReady == true, entry.token != nil else { return }
         do {
             try await register(entry, force: force)
         } catch {
@@ -236,9 +286,11 @@ final class ChannelFollowController {
     }
 
     private func register(_ entry: Follow, force: Bool = false) async throws {
-        let write = enqueueWrite(channelID: entry.store.id) {
+        let write = enqueueWrite(target: entry.target) {
             try self.requireCurrent(entry)
-            guard self.isRegistrationReady else { throw Failure.registrationPending }
+            guard self.servers[entry.target.serverURL]?.isRegistrationReady == true else {
+                throw Failure.registrationPending
+            }
             guard let token = entry.activity.pushToken ?? entry.token, !token.isEmpty else {
                 throw Failure.missingToken
             }
@@ -264,21 +316,22 @@ final class ChannelFollowController {
     private func forget(_ entry: Follow) {
         guard isCurrent(entry) else { return }
         entry.cancel()
-        entries[entry.store.id] = nil
-        starting.remove(entry.store.id)
+        entries[entry.target] = nil
+        starting.remove(entry.target)
     }
 
-    private func isCurrent(_ entry: Follow) -> Bool { entries[entry.store.id] === entry }
+    private func isCurrent(_ entry: Follow) -> Bool { entries[entry.target] === entry }
 
     private func requireCurrent(_ entry: Follow) throws {
         try Task.checkCancellation()
-        guard isCurrent(entry), registration == entry.registration, entry.activity.isActive else {
+        guard isCurrent(entry), servers[entry.target.serverURL]?.current == entry.registration,
+              entry.activity.isActive else {
             throw Failure.obsolete
         }
     }
 
     private func deleteRegistration(_ entry: Follow) {
-        let task = enqueueWrite(channelID: entry.store.id) {
+        let task = enqueueWrite(target: entry.target) {
             try await self.unregisterActivity(entry.store, entry.registration.registrationID)
         }
         Task {
@@ -287,14 +340,14 @@ final class ChannelFollowController {
         }
     }
 
-    private func enqueueWrite(channelID: String,
+    private func enqueueWrite(target: ChannelTarget,
                               operation: @escaping @MainActor () async throws -> Void) -> Task<Void, Error> {
-        let previous = writes[channelID]
+        let previous = writes[target]
         let task = Task {
             if let previous { _ = await previous.result }
             try await operation()
         }
-        writes[channelID] = task
+        writes[target] = task
         return task
     }
 

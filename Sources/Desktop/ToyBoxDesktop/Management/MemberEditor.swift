@@ -4,11 +4,11 @@ import SwiftUI
 import ToyBoxUI
 
 struct MemberEditor: View {
-    @Environment(AppModel.self) private var app
     let channel: ChannelDetails
     @ViewState private var member: ChannelAgent?
     let store: ChannelStore
-    let api: ChannelAPI
+    /// The channel's server.
+    let catalog: ChannelCatalogStore
     let presenter: ManagementPresenter
     @ViewState private var name: String
     @ViewState private var role: String
@@ -18,11 +18,11 @@ struct MemberEditor: View {
     @FocusState private var nameFocused: Bool
 
     init(channel: ChannelDetails, member: ChannelAgent?, initialName: String, store: ChannelStore,
-         api: ChannelAPI, presenter: ManagementPresenter) {
+         catalog: ChannelCatalogStore, presenter: ManagementPresenter) {
         self.channel = channel
         _member = ViewState(initialValue: member)
         self.store = store
-        self.api = api
+        self.catalog = catalog
         self.presenter = presenter
         _name = ViewState(initialValue: initialName)
         _role = ViewState(initialValue: member?.role ?? "")
@@ -86,7 +86,7 @@ struct MemberEditor: View {
                 ManagementFooter(help: [identityHelp], violation: nameViolation ?? roleViolation)
             }
             ModelSelectionFields(
-                model: $model, api: api, provider: member?.model?.provider, allowsInheritance: true,
+                model: $model, api: catalog.api, provider: member?.model?.provider, allowsInheritance: true,
                 memberScope: member.map { (channel.id, $0.id) },
                 help: member.map { ["Model changes apply the next time \($0.name) works. Its history is kept."] } ?? [])
         } notices: {
@@ -101,7 +101,7 @@ struct MemberEditor: View {
         } buttons: {
             if let member {
                 Button("Remove from Channel\u{2026}", role: .destructive) {
-                    presenter.present(.removeMember(channelId: channel.id, agentId: member.id))
+                    if let target = store.target { presenter.present(.removeMember(target, agentId: member.id)) }
                 }
                 .disabled(recovery.blocksWrites || !store.phase.isConnected)
             }
@@ -133,19 +133,19 @@ struct MemberEditor: View {
             defer { isSaving = false }
             do {
                 if let member {
-                    _ = try await api.editMember(
+                    _ = try await catalog.api.editMember(
                         channelId: channel.id, agentId: member.id,
                         changes: .init(name: nextName == member.name ? nil : nextName,
                                        role: nextRole == (member.role ?? "") ? nil : nextRole,
                                        model: model == member.model ? nil : model.map { .set($0) } ?? .clear))
                     presenter.flow = nil
                 } else {
-                    _ = try await api.createMember(
+                    _ = try await catalog.api.createMember(
                         channelId: channel.id,
                         input: .init(name: nextName, role: nextRole.isEmpty ? nil : nextRole, model: model))
-                    presenter.finishAddingMember(channelId: channel.id)
+                    if let target = store.target { presenter.finishAddingMember(target) }
                 }
-                await app.catalog?.refresh()
+                await catalog.refresh()
             } catch {
                 if recovery.record(error) { await checkCurrentState() }
             }
@@ -153,7 +153,7 @@ struct MemberEditor: View {
     }
 
     private func checkCurrentState() async {
-        await recovery.check(catalog: app.catalog, channelId: channel.id) { current in
+        await recovery.check(catalog: catalog, channelId: channel.id) { current in
             if current.channelWasDeleted {
                 return "The channel is no longer present on the server. No further member changes are available."
             }

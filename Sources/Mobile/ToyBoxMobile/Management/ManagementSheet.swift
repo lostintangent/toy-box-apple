@@ -11,12 +11,14 @@ struct ManagementSheet: View {
     @Environment(ManagementSessions.self) private var sessions
     @ViewState private var store: ChannelStore?
 
+    private var catalog: ChannelCatalogStore? { flow.catalog(in: app.catalogs) }
+
     var body: some View {
         NavigationStack {
             Group {
-                if let catalog = app.catalog {
+                if let catalog {
                     let session = sessions.session(for: flow, catalog: catalog)
-                    if flow == .newChannel {
+                    if flow.isNewChannel {
                         ChannelEditor(store: nil, presenter: presenter, session: session, host: host)
                     } else if let store, let channel = store.details {
                         if session.hasLoaded {
@@ -53,8 +55,9 @@ struct ManagementSheet: View {
             .listSectionSpacing(24)
             .navigationBarTitleDisplayMode(.inline)
         }
-        .task(id: flow.channelId) {
-            guard let channelId = flow.channelId, let catalog = app.catalog else { return }
+        .task(id: catalog.map(ObjectIdentifier.init)) {
+            guard let channelId = flow.channelId, let catalog else { return }
+            if let store { app.release(store) }
             let connection = catalog.channel(id: channelId)
             store = connection
             app.hold(connection)
@@ -63,7 +66,11 @@ struct ManagementSheet: View {
             if let store { app.release(store) }
             store = nil
         }
-        .onChange(of: app.serverURL) { _, _ in presenter.flow = nil }
+        // The sheet closes when Settings removes its server or gives it a new address.
+        .onChange(of: app.catalogs.map(ObjectIdentifier.init)) { _, servers in
+            guard let session = sessions.current, session.flow == flow else { return }
+            if !servers.contains(ObjectIdentifier(session.catalog)) { presenter.flow = nil }
+        }
     }
 
     @ViewBuilder

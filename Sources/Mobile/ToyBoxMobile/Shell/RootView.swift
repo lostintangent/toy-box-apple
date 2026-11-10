@@ -83,7 +83,9 @@ struct RootView: View {
             if flow == nil { managementSessions.reset() }
         }
         .onChange(of: management.createdChannel?.token) { _, token in
-            if token != nil, let created = management.createdChannel {
+            // The list selects only the first server's channels until it groups every server.
+            if token != nil, let created = management.createdChannel, let target = created.target,
+               model.catalogs.first(at: target.serverURL) === model.catalog {
                 model.selectedChannelID = created.channel.id
             }
         }
@@ -235,7 +237,7 @@ struct RootView: View {
             },
             findInChannel: conversation.map { interaction in { interaction.findInChannel() } },
             findNext: conversation.map { interaction in { interaction.findNext($0) } },
-            newChannel: model.canCreateChannel ? { management.present(.newChannel) } : nil,
+            newChannel: model.canCreateChannel ? { management.present(.newChannel(server: model.serverURL)) } : nil,
             openInToyBox: store.flatMap { store in
                 model.channelURL(channelID: store.id) == nil ? nil : { model.openInToyBox(channelID: store.id) }
             },

@@ -10,7 +10,8 @@ enum ManagementField: Hashable {
 @MainActor @Observable
 final class ManagementSession {
     let flow: ManagementFlow
-    let catalog: ChannelCatalogStore
+    /// The channel's server, or the one New Channel creates on, which its Server menu changes.
+    var catalog: ChannelCatalogStore
     var channel: ChannelDetails?
     var member: ChannelAgent?
     var name = ""
@@ -33,7 +34,7 @@ final class ManagementSession {
         self.flow = flow
         self.catalog = catalog
         if case .addMember(_, let name) = flow { self.name = name }
-        if flow == .newChannel { hasLoaded = true }
+        if flow.isNewChannel { hasLoaded = true }
     }
 
     func load(channel: ChannelDetails, member: ChannelAgent?) {
@@ -62,16 +63,17 @@ final class ManagementSessions {
     /// A deletion's session sits beside the editor's, so removing an agent from Edit Agent never replaces it.
     @ObservationIgnored private var deletion: ManagementSession?
 
+    /// A flow's session. New Channel keeps its own, whichever server its menu picked.
     func session(for flow: ManagementFlow, catalog: ChannelCatalogStore) -> ManagementSession {
-        if let existing = flow.isDeletion ? deletion : current,
-           existing.flow == flow, existing.catalog === catalog { return existing }
+        if let existing = flow.isDeletion ? deletion : current, existing.flow == flow,
+           flow.isNewChannel || existing.catalog === catalog { return existing }
         let session = ManagementSession(flow: flow, catalog: catalog)
         if flow.isDeletion { deletion = session } else { current = session }
         return session
     }
 
     func isCurrent(_ session: ManagementSession, app: AppModel, presenter: ManagementPresenter) -> Bool {
-        current === session && app.catalog === session.catalog && presenter.flow == session.flow
+        current === session && presenter.flow == session.flow && app.catalogs.contains { $0 === session.catalog }
     }
 
     func cancel(_ session: ManagementSession, presenter: ManagementPresenter) {

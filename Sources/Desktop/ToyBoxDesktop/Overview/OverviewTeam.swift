@@ -42,13 +42,13 @@ struct OverviewTeamList: View {
                 let isLead = agent.id == roster.first?.id
                 OverviewAgentRow(agent: agent, key: entry.key, presence: presence[agent.id], isLead: isLead,
                                  model: isLead ? agent.model ?? store.details?.model : agent.model,
-                                 channelId: store.id, isConnected: isConnected, isAvailable: isAvailable)
+                                 target: store.target, isConnected: isConnected, isAvailable: isAvailable)
             }
             if showsOnlyWorking, !roster.isEmpty, shown.isEmpty {
                 OverviewEmptyText(ChannelOverviewFilter.noWorkingAgentsText(isAvailable: isAvailable))
             }
             OverviewAddAgentRow(isConnected: isConnected, isAvailable: isAvailable) {
-                management.present(.addMember(channelId: store.id, name: ""))
+                if let target = store.target { management.present(.addMember(target, name: "")) }
             }
         }
     }
@@ -67,7 +67,7 @@ struct OverviewAgentRow: View {
     let presence: ChannelAgentPresence?
     let isLead: Bool
     let model: ModelConfiguration?
-    let channelId: String
+    let target: ChannelTarget?
     /// Enables member management.
     let isConnected: Bool
     /// Shows the last reported presence, which stays through a reconnect.
@@ -144,11 +144,11 @@ struct OverviewAgentRow: View {
         if !isLead {
             Divider()
             Button("Edit Agent…") {
-                management.present(.editMember(channelId: channelId, agentId: agent.id))
+                if let target { management.present(.editMember(target, agentId: agent.id)) }
             }
             .disabled(!isConnected)
             Button("Remove Agent…", role: .destructive) {
-                management.present(.removeMember(channelId: channelId, agentId: agent.id))
+                if let target { management.present(.removeMember(target, agentId: agent.id)) }
             }
             .disabled(!isConnected)
         }

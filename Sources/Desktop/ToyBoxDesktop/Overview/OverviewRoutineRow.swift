@@ -120,7 +120,7 @@ struct OverviewRoutineRow: View {
         Button("Run Now", action: run).disabled(!canRun)
         Divider()
         Button("Delete Routine…", role: .destructive) {
-            management.present(.deleteRoutine(channelId: store.id, routineId: routine.id))
+            if let target = store.target { management.present(.deleteRoutine(target, routineId: routine.id)) }
         }
         .disabled(isRunning || !store.phase.isConnected)
     }

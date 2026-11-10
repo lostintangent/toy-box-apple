@@ -124,7 +124,9 @@ struct ChannelSidebar: View {
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     if !talk.isLifted {
                                         Button(role: .destructive) {
-                                            management.present(.deleteChannel(channelId: channel.id))
+                                            if let target = model.catalog?.target(channel.id) {
+                                                management.present(.deleteChannel(target))
+                                            }
                                         } label: {
                                             Label("Delete", systemImage: "trash")
                                         }
@@ -267,7 +269,7 @@ struct ChannelSidebar: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("New Channel", systemImage: "plus") { management.present(.newChannel) }
+                Button("New Channel", systemImage: "plus") { management.present(.newChannel(server: model.serverURL)) }
                     .disabled(!canCreate)
             }
             ToolbarSpacer(.fixed, placement: .primaryAction)
@@ -340,7 +342,7 @@ struct ChannelSidebar: View {
                 ContentUnavailableView {
                     Label("Your channels live here", systemImage: "bubble.left.and.bubble.right")
                 } actions: {
-                    Button("New Channel") { management.present(.newChannel) }
+                    Button("New Channel") { management.present(.newChannel(server: model.serverURL)) }
                         .frame(minHeight: 44)
                         .disabled(!canCreate)
                 }
@@ -368,12 +370,12 @@ struct ChannelSidebar: View {
         }
         Divider()
         Button("Edit Channel", systemImage: "pencil") {
-            management.present(.editChannel(channelId: channel.id))
+            if let target = model.catalog?.target(channel.id) { management.present(.editChannel(target)) }
         }
         .disabled(!model.canManageChannels)
         Divider()
         Button("Delete Channel", systemImage: "trash", role: .destructive) {
-            management.present(.deleteChannel(channelId: channel.id))
+            if let target = model.catalog?.target(channel.id) { management.present(.deleteChannel(target)) }
         }
         .disabled(!model.canManageChannels)
     }

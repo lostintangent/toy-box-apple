@@ -7,8 +7,11 @@ struct ChannelEditor: View {
     @Environment(AppModel.self) private var app
     @ViewState private var channel: ChannelDetails?
     let store: ChannelStore?
-    let api: ChannelAPI
+    /// The channel's server, or the one New Channel opened on.
+    private let openingCatalog: ChannelCatalogStore
     let presenter: ManagementPresenter
+    /// The address New Channel creates on, which its Server menu changes.
+    @ViewState private var server: String
     @ViewState private var name: String
     @ViewState private var purpose: String
     @ViewState private var directory: String
@@ -17,10 +20,12 @@ struct ChannelEditor: View {
     @ViewState private var recovery = ChannelManagementWriteRecovery()
     @FocusState private var nameFocused: Bool
 
-    init(channel: ChannelDetails?, store: ChannelStore?, api: ChannelAPI, presenter: ManagementPresenter) {
+    init(channel: ChannelDetails?, store: ChannelStore?, catalog: ChannelCatalogStore,
+         presenter: ManagementPresenter) {
         _channel = ViewState(initialValue: channel)
         self.store = store
-        self.api = api
+        openingCatalog = catalog
+        _server = ViewState(initialValue: catalog.api.baseURL.absoluteString)
         self.presenter = presenter
         _name = ViewState(initialValue: channel?.name ?? "")
         _purpose = ViewState(initialValue: channel?.purpose ?? "")
@@ -28,6 +33,12 @@ struct ChannelEditor: View {
         _model = ViewState(initialValue: channel?.model)
     }
 
+    /// The server this sheet writes to. A chosen server that Settings removes falls back to the
+    /// one the sheet opened on.
+    private var catalog: ChannelCatalogStore { app.catalogs.first(at: server) ?? openingCatalog }
+    private var serverSelection: Binding<String> {
+        Binding { catalog.api.baseURL.absoluteString } set: { server = $0 }
+    }
     private var nextName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var nextPurpose: String { purpose.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var nextDirectory: String { directory.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -64,6 +75,16 @@ struct ChannelEditor: View {
         ) {
             ManagementChannelMark()
         } fields: {
+            if channel == nil, app.catalogs.count > 1 {
+                Section {
+                    Picker("Server", selection: serverSelection) {
+                        ForEach(app.catalogs, id: \.api.baseURL) { catalog in
+                            Text(catalog.name).tag(catalog.api.baseURL.absoluteString)
+                        }
+                    }
+                    .disabled(recovery.state != nil)
+                }
+            }
             Section {
                 TextField("Name", text: $name, prompt: Text("Required"))
                     .focused($nameFocused)
@@ -81,7 +102,8 @@ struct ChannelEditor: View {
                 }
             }
             ModelSelectionFields(
-                model: $model, api: api, provider: channel?.model.provider, allowsInheritance: false,
+                model: $model, openingModel: channel?.model, api: catalog.api,
+                provider: channel?.model.provider, allowsInheritance: false,
                 title: "Lead model",
                 help: [channel == nil
                        ? "A folder on the server. Leave it empty for a discussion-only channel."
@@ -103,6 +125,8 @@ struct ChannelEditor: View {
                     }
                 }
             }
+            // Another server's models load fresh.
+            .id(ObjectIdentifier(catalog))
         } notices: {
             ManagementConnectionNotice(store: store)
             if let error = recovery.error { ManagementError(message: error) }
@@ -137,6 +161,8 @@ struct ChannelEditor: View {
 
     private func submit() {
         guard canSave, let model else { return }
+        let catalog = catalog
+        let api = catalog.api
         isSaving = true
         recovery.clearError()
         Task {
@@ -155,9 +181,9 @@ struct ChannelEditor: View {
                     let created = try await api.createChannel(
                         .init(name: nextName, purpose: nextPurpose.isEmpty ? nil : nextPurpose,
                               directory: path.isEmpty ? nil : path, model: model))
-                    presenter.didCreate(created)
+                    presenter.didCreate(created, on: api.baseURL.absoluteString)
                 }
-                await app.catalog?.refresh()
+                await catalog.refresh()
             } catch {
                 if recovery.record(error) { await checkCurrentState() }
             }
@@ -165,7 +191,7 @@ struct ChannelEditor: View {
     }
 
     private func checkCurrentState() async {
-        await recovery.check(catalog: app.catalog, channelId: channel?.id) { current in
+        await recovery.check(catalog: catalog, channelId: channel?.id) { current in
             if current.channelWasDeleted {
                 return "The channel is no longer present on the server. No further save is available."
             }

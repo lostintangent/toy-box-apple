@@ -3,42 +3,63 @@ import ChannelKit
 import Foundation
 import Observation
 
-/// One entry point for every management sheet and confirmation.
+/// One entry point for every management sheet and confirmation. Each flow writes to one server: a
+/// channel's own, or the one New Channel starts on.
 public enum ManagementFlow: Identifiable, Equatable {
-    case newChannel
-    case editChannel(channelId: String)
-    case deleteChannel(channelId: String)
-    case addMember(channelId: String, name: String)
-    case editMember(channelId: String, agentId: String)
-    case removeMember(channelId: String, agentId: String)
-    case deleteRoutine(channelId: String, routineId: String)
+    /// A new channel, starting on the server at this address. The sheet can pick another.
+    case newChannel(server: String)
+    case editChannel(ChannelTarget)
+    case deleteChannel(ChannelTarget)
+    case addMember(ChannelTarget, name: String)
+    case editMember(ChannelTarget, agentId: String)
+    case removeMember(ChannelTarget, agentId: String)
+    case deleteRoutine(ChannelTarget, routineId: String)
 
     public var id: String {
         switch self {
         case .newChannel: "new-channel"
-        case .editChannel(let channelId): "edit-channel-\(channelId)"
-        case .deleteChannel(let channelId): "delete-channel-\(channelId)"
-        case .addMember(let channelId, let name): "add-member-\(channelId)-\(name)"
-        case .editMember(let channelId, let agentId): "edit-member-\(channelId)-\(agentId)"
-        case .removeMember(let channelId, let agentId): "remove-member-\(channelId)-\(agentId)"
-        case .deleteRoutine(let channelId, let routineId): "delete-routine-\(channelId)-\(routineId)"
+        case .editChannel(let target): "edit-channel-\(target.identifier)"
+        case .deleteChannel(let target): "delete-channel-\(target.identifier)"
+        case .addMember(let target, let name): "add-member-\(target.identifier)-\(name)"
+        case .editMember(let target, let agentId): "edit-member-\(target.identifier)-\(agentId)"
+        case .removeMember(let target, let agentId): "remove-member-\(target.identifier)-\(agentId)"
+        case .deleteRoutine(let target, let routineId): "delete-routine-\(target.identifier)-\(routineId)"
         }
     }
 
-    public var channelId: String? {
+    /// The channel this flow manages, or nil for a new one.
+    public var target: ChannelTarget? {
         switch self {
         case .newChannel: nil
-        case .editChannel(let channelId), .deleteChannel(let channelId),
-             .addMember(let channelId, _), .editMember(let channelId, _),
-             .removeMember(let channelId, _), .deleteRoutine(let channelId, _): channelId
+        case .editChannel(let target), .deleteChannel(let target), .addMember(let target, _),
+             .editMember(let target, _), .removeMember(let target, _), .deleteRoutine(let target, _): target
         }
+    }
+
+    public var channelId: String? { target?.channelID }
+
+    /// The address of the server this flow writes to.
+    public var server: String {
+        if case .newChannel(let server) = self { return server }
+        return target?.serverURL ?? ""
+    }
+
+    public var isNewChannel: Bool {
+        if case .newChannel = self { return true }
+        return false
+    }
+
+    /// The catalog of the server this flow writes to. New Channel starts on the first server when
+    /// its own is gone, but a channel whose server is gone has nowhere to write.
+    @MainActor public func catalog(in catalogs: [ChannelCatalogStore]) -> ChannelCatalogStore? {
+        catalogs.first(at: server) ?? (isNewChannel ? catalogs.first : nil)
     }
 }
 
 @MainActor @Observable
 public final class ManagementPresenter {
     public var flow: ManagementFlow?
-    public private(set) var createdChannel: (channel: Channel, token: UUID)?
+    public private(set) var createdChannel: (channel: Channel, target: ChannelTarget?, token: UUID)?
     @ObservationIgnored private var creatingMentions: Set<String> = []
     @ObservationIgnored private var uncertainMentions: Set<String> = []
 
@@ -46,13 +67,14 @@ public final class ManagementPresenter {
 
     public func present(_ flow: ManagementFlow) { self.flow = flow }
 
-    public func didCreate(_ channel: Channel) {
-        createdChannel = (channel, UUID())
+    /// Selects a channel New Channel created on the server at `server`.
+    public func didCreate(_ channel: Channel, on server: String) {
+        createdChannel = (channel, ChannelTarget(serverURL: server, channelID: channel.id), UUID())
         flow = nil
     }
 
-    public func finishAddingMember(channelId: String) {
-        if case .addMember(let presentedChannelId, _) = flow, presentedChannelId == channelId {
+    public func finishAddingMember(_ target: ChannelTarget) {
+        if case .addMember(let presented, _) = flow, presented == target {
             flow = nil
         }
     }

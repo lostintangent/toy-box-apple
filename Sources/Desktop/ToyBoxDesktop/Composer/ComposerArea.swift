@@ -350,7 +350,7 @@ private struct ChannelComposer: View {
                                             name: name, store: store,
                                             catalog: app.catalogs.first(at: store.api.baseURL.absoluteString))
                                     }, edit: { agent in
-                                        management.present(.editMember(channelId: store.id, agentId: agent.id))
+                                        if let target = store.target { management.present(.editMember(target, agentId: agent.id)) }
                                     }) : .disabled, snapshot: snapshot,
                                     dictation: dictation)
                     .frame(height: inputHeight)

@@ -331,18 +331,22 @@ final class AppModel {
             _ = notifications.currentRegistration
             _ = notifications.isRegistrationReady
             _ = notifications.registrationError
-            _ = catalog
+            _ = catalogs
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeFollowing() }
         }
         configureFollowing()
     }
 
+    /// Every server's channels can be followed once its push registration is ready. Push registers
+    /// only the first server so far.
     private func configureFollowing() {
-        following.configure(
-            registration: notifications.currentRegistration, isRegistrationReady: notifications.isRegistrationReady,
-            catalog: catalog, registrationError: notifications.registrationError
-        )
+        following.configure(servers: catalogs.enumerated().map { index, catalog in
+            index > 0 ? .init(catalog: catalog) : .init(
+                catalog: catalog, registration: notifications.currentRegistration,
+                isRegistrationReady: notifications.isRegistrationReady,
+                registrationError: notifications.registrationError)
+        })
     }
 
     private func observeIntegrations(generation: UUID) {
