@@ -10,7 +10,7 @@ struct MenuBarInbox: View {
     @ViewState private var inbox = MenuBarInboxRequests()
     @ViewState private var isPresented = false
     @ViewState private var presentationID = UUID()
-    @ViewState private var expandedChannelID: String?
+    @ViewState private var expandedChannel: ChannelTarget?
     @ViewState private var replySession: AuxiliaryComposerSession?
     @ViewState private var holdsReplyConnection = false
     @ViewState private var replyError: String?
@@ -29,8 +29,8 @@ struct MenuBarInbox: View {
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bodyHeight = $0 }
                 }
                 .frame(height: min(bodyHeight, max(maximumHeight - 81, 0)))
-                .onChange(of: expandedChannelID) { _, id in
-                    if let id { proxy.scrollTo("reply-\(id)", anchor: .bottom) }
+                .onChange(of: expandedChannel) { _, target in
+                    if let target { proxy.scrollTo("reply-\(target.identifier)", anchor: .bottom) }
                 }
             }
             Divider()
@@ -49,19 +49,19 @@ struct MenuBarInbox: View {
             guard isPresented else { return }
             inbox.update(status)
             if let session = replySession,
-               let request = inbox.requests.first(where: { $0.id == session.store.id }),
+               let request = inbox.requests.first(where: { $0.id == session.store.target }),
                request.state == .answered || request.state == .newerRequest {
                 session.invalidateRequest(replacementSequence: status.waiting.first { $0.id == request.id }?.sequence)
             }
         }
-        .onChange(of: model.serverURL) { _, _ in
+        .onChange(of: model.catalogs.map(\.api.baseURL)) { _, _ in
             close()
             collapseReply()
         }
         .onAppear { presentationChanged(true) }
         .onDisappear { presentationChanged(false) }
         .onExitCommand {
-            if expandedChannelID != nil { collapseReply() }
+            if expandedChannel != nil { collapseReply() }
             else { close() }
         }
         .accessibilityLabel("Toy Box inbox")
@@ -78,7 +78,7 @@ struct MenuBarInbox: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Offline. Requests may be out of date.")
                             .font(.system(size: 12))
-                            .help(model.catalog?.phase.message ?? "Can't connect to \(host)")
+                            .help(failureMessage ?? "Can't connect to \(host)")
                         Button("Retry") { model.refreshCatalog() }
                             .controlSize(.small)
                     }
@@ -95,9 +95,9 @@ struct MenuBarInbox: View {
                     working(status.workingSection)
                 }
                 if inbox.requests.isEmpty && status.working.isEmpty {
-                    if model.catalog?.isLoaded == false && status.unreachableHost == nil {
+                    if model.catalogs.contains(where: { !$0.isLoaded }) && status.unreachableHost == nil {
                         Text("Connecting…").font(.system(size: 13)).foregroundStyle(.secondary)
-                    } else if model.catalog?.channels.isEmpty == true && status.unreachableHost == nil {
+                    } else if model.catalogs.allSatisfy(\.channels.isEmpty) && status.unreachableHost == nil {
                         empty(title: "No channels yet", detail: "Open Toy Box to create one.")
                     } else if status.unreachableHost == nil {
                         Text("Your Team").font(.system(size: 15, weight: .semibold))
@@ -106,6 +106,19 @@ struct MenuBarInbox: View {
                 }
             }
         }
+    }
+
+    /// Why the one server that can't be reached failed. Several name themselves in the status.
+    private var failureMessage: String? {
+        let messages = model.catalogs.compactMap(\.phase.message)
+        return messages.count == 1 ? messages[0] : nil
+    }
+
+    /// The item's server, while it still lists the item's channel.
+    private func catalog(listing item: MenuBarStatus.Item) -> ChannelCatalogStore? {
+        guard let catalog = model.catalogs.first(at: item.target.serverURL),
+              catalog.channels.contains(where: { $0.id == item.target.channelID }) else { return nil }
+        return catalog
     }
 
     private var waiting: some View {
@@ -154,7 +167,7 @@ struct MenuBarInbox: View {
                         Button("Open Channel") { open(item) }.controlSize(.small)
                     }
                 }
-                if expandedChannelID == item.id {
+                if expandedChannel == item.target {
                     if let replySession {
                         AuxiliaryComposer(
                             session: replySession, style: .reply, isPresented: isPresented,
@@ -163,10 +176,12 @@ struct MenuBarInbox: View {
                             onOpenChannel: { open(item) },
                             onDismiss: collapseReply
                         )
-                        .id("reply-\(item.id)")
+                        .id("reply-\(item.target.identifier)")
                     }
                 } else if request.canReply {
-                    if let choices = request.choices(isConnected: model.catalog?.phase.failure == nil) {
+                    if let choices = request.choices(
+                        isConnected: model.catalogs.first(at: item.target.serverURL).map { $0.phase.failure == nil } ?? false
+                    ) {
                         self.choices(item, choices)
                     }
                     Button {
@@ -203,7 +218,7 @@ struct MenuBarInbox: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(section.items) { item in
                 Button {
-                    closeThen { model.activate(channelID: item.id) }
+                    closeThen { model.activate(item.target) }
                 } label: {
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 3) {
@@ -220,7 +235,7 @@ struct MenuBarInbox: View {
             }
             if section.overflow > 0 {
                 Button("Open \(section.overflow) more working channels…") {
-                    closeThen { model.activate(channelID: nil) }
+                    closeThen { model.activate(nil) }
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 11))
@@ -247,7 +262,7 @@ struct MenuBarInbox: View {
             }
             .buttonStyle(.plain)
             HStack {
-                Button("Open Toy Box") { closeThen { model.activate(channelID: nil) } }
+                Button("Open Toy Box") { closeThen { model.activate(nil) } }
                     .buttonStyle(.plain)
                     .frame(height: 32)
                 Spacer()
@@ -294,23 +309,23 @@ struct MenuBarInbox: View {
             replyError = "Request preview unavailable. Open the channel to review it."
             return
         }
-        guard let catalog = model.catalog, catalog.channels.contains(where: { $0.id == item.id }) else {
+        guard let catalog = catalog(listing: item) else {
             replyError = "This channel is no longer available. Your draft is saved."
             return
         }
-        let store = catalog.channel(id: item.id)
+        let store = catalog.channel(id: item.target.channelID)
         collapseReply()
         replyError = nil
         replySession = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: sequence), requester: requester,
-                                                isConnected: { [weak model] in model?.catalog?.phase.failure == nil })
+                                                isConnected: { [weak catalog] in catalog?.phase.failure == nil })
         model.hold(store)
         holdsReplyConnection = true
-        expandedChannelID = item.id
+        expandedChannel = item.target
     }
 
     private func collapseReply() {
         releaseReplyConnection()
-        expandedChannelID = nil
+        expandedChannel = nil
         replySession = nil
     }
 
@@ -322,10 +337,11 @@ struct MenuBarInbox: View {
 
     /// The reply is saved, so the row turns Replied and the editor folds away, or the channel opens.
     private func confirmedReply(_ confirmation: AuxiliaryComposerSession.Confirmation, to item: MenuBarStatus.Item) {
-        guard let replySession, model.serverURL == replySession.store.api.baseURL.absoluteString else { return }
-        inbox.record(item.id, .replied)
+        guard let replySession, model.catalogs.contains(where: { $0.api.baseURL == replySession.store.api.baseURL })
+        else { return }
+        inbox.record(item.target, .replied)
         if confirmation.opensChannel {
-            closeThen { model.activate(channelID: item.id) }
+            closeThen { model.activate(item.target) }
         } else {
             collapseReply()
         }
@@ -334,18 +350,18 @@ struct MenuBarInbox: View {
     /// Sends a choice the way a notification's choice does: its label, saved to the outbox, which
     /// delivers it and keeps a failure in the channel. The row turns Replied at once.
     private func sendChoice(_ choice: String, to item: MenuBarStatus.Item) {
-        guard let catalog = model.catalog, catalog.channels.contains(where: { $0.id == item.id }),
+        guard let catalog = catalog(listing: item),
               let content = ChannelNotification.Reply(choice, to: nil)?.content else {
             replyError = "This channel is no longer available."
             return
         }
-        inbox.record(item.id, .replied)
-        let outbox = model.outbox, server = catalog.api.baseURL
-        Task { await outbox.send(content, to: item.id, on: server, answering: item.sequence) }
+        inbox.record(item.target, .replied)
+        let outbox = model.outbox, server = catalog.api.baseURL, channelID = item.target.channelID
+        Task { await outbox.send(content, to: channelID, on: server, answering: item.sequence) }
     }
 
     private func open(_ item: MenuBarStatus.Item) {
-        closeThen { model.activate(channelID: item.id, sequence: item.sequence) }
+        closeThen { model.activate(item.target, sequence: item.sequence) }
     }
 
     private func openSettingsWindow() {

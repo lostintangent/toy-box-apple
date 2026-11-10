@@ -235,8 +235,10 @@ struct SettingsView: View {
                            displayedComponents: .hourAndMinute)
                     .accessibilityLabel("Deliver at")
                     .disabled(!notificationsEnabled || !morningDigestEnabled)
-                if MorningDigest.canTest(bundleID: Bundle.main.bundleIdentifier,
-                                         options: model.launchOptions, server: model.serverURL) {
+                if model.catalogs.contains(where: {
+                    MorningDigest.canTest(bundleID: Bundle.main.bundleIdentifier, options: model.launchOptions,
+                                          server: $0.api.baseURL.absoluteString)
+                }) {
                     Button("Send Test Digest") { Task { await model.morningDigest?.sendTest() } }
                         .disabled(model.morningDigest?.isRunning == true)
                 }

@@ -34,7 +34,7 @@ struct RequestSpotlightTests {
         var unquoted = item(sequence: 11)
         unquoted.quote = nil
         let entries = [healthy, removedRequester, unquoted].compactMap {
-            WaitingRequestEntry(item: $0, serverURL: "https://server.test")
+            WaitingRequestEntry(item: $0)
         }
         #expect(entries.map(\.id) == [try entry().id])
     }
@@ -100,12 +100,12 @@ struct RequestSpotlightTests {
         #expect(fake.operations.count == 2 && renders == 1)
         var renamed = item()
         renamed.name = "Workshop"
-        let nameChange = try #require(WaitingRequestEntry(item: renamed, serverURL: "https://server.test"))
+        let nameChange = try #require(WaitingRequestEntry(item: renamed))
         spotlight.update(.init(server: "server", entries: [nameChange]))
         await spotlight.settle()
         #expect(fake.operations.last == .add([entry.id]) && renders == 1)
         renamed.agent?.avatar?.color = "#008800"
-        let avatarChange = try #require(WaitingRequestEntry(item: renamed, serverURL: "https://server.test"))
+        let avatarChange = try #require(WaitingRequestEntry(item: renamed))
         spotlight.update(.init(server: "server", entries: [avatarChange]))
         await spotlight.settle()
         #expect(fake.operations.last == .add([entry.id]) && renders == 2)
@@ -197,8 +197,10 @@ struct RequestSpotlightTests {
         #expect(fixture.sent.map(\.text) == ["@new-name Hello"])
     }
 
-    private func item(sequence: Int = 8, agentName: String = "Lead") -> MenuBarStatus.Item {
-        .init(id: "studio", name: "Studio", subtitle: "Lead needs your reply",
+    private func item(server: String = "https://server.test", sequence: Int = 8,
+                      agentName: String = "Lead") -> MenuBarStatus.Item {
+        .init(target: ChannelTarget(serverURL: server, channelID: "studio")!, name: "Studio",
+              subtitle: "Lead needs your reply",
               agent: .init(id: "lead", name: agentName,
                            avatar: .init(mark: "M4 4L20 20M4 20L20 4", color: "#0891b2")),
               sequence: sequence, quote: "Should we ship the caf\u{00e9} layout?", requestedAt: .distantPast)
@@ -206,7 +208,7 @@ struct RequestSpotlightTests {
 
     private func entry(server: String = "https://server.test", sequence: Int = 8,
                        agentName: String = "Lead") throws -> WaitingRequestEntry {
-        try #require(WaitingRequestEntry(item: item(sequence: sequence, agentName: agentName), serverURL: server))
+        try #require(WaitingRequestEntry(item: item(server: server, sequence: sequence, agentName: agentName)))
     }
 }
 

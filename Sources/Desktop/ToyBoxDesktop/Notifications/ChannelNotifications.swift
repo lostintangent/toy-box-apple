@@ -16,26 +16,30 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     private(set) var authorization: UNAuthorizationStatus = .notDetermined
     private(set) var error: String?
     @ObservationIgnored var onActivate: ((Activation) -> Void)?
-    /// Finds a request's message in the channel list.
-    @ObservationIgnored var resolveRequest: ((Channel, Int) -> ChannelRequestMessage?)?
+    /// Finds a request's message in its server's channel list.
+    @ObservationIgnored var resolveRequest: ((Channel, Int, String) -> ChannelRequestMessage?)?
     /// Saves a reply to the outbox, which delivers it to its server now or once that's current again.
     @ObservationIgnored var send: ((NotificationReply) async -> Void)?
-    @ObservationIgnored private var policy = Policy()
-    @ObservationIgnored private var current: Current?
-    @ObservationIgnored private var withdrawn: Current?
+    /// Each server's state, by its address as the app saved it.
+    @ObservationIgnored private var servers: [String: Server] = [:]
     @ObservationIgnored private let center = UNUserNotificationCenter.current()
     @ObservationIgnored private let replyCategories = ReplyCategoryPublisher(base: ChannelNotifications.baseCategories())
 
-    /// What the catalog last said, which decides what's delivered and what's withdrawn.
+    private struct Server {
+        var policy = Policy()
+        var current: Current?
+        var withdrawn: Current?
+    }
+
+    /// What a server's catalog last said, which decides what's delivered and what's withdrawn.
     private struct Current {
         var channels: [Channel]
         var activeChannelID: String?
-        var serverURL: String
 
         /// Only these change what withdrawal removes, so a poll that changes nothing else doesn't
         /// ask Notification Center for its delivered notifications again.
         func withdrawsLike(_ other: Current?) -> Bool {
-            guard let other, serverURL == other.serverURL, activeChannelID == other.activeChannelID,
+            guard let other, activeChannelID == other.activeChannelID,
                   channels.count == other.channels.count else { return false }
             return zip(channels, other.channels).allSatisfy {
                 $0.id == $1.id && $0.requestSequence == $1.requestSequence && $0.seenThrough == $1.seenThrough
@@ -72,26 +76,36 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    func reset() {
-        policy = Policy()
+    /// Forgets a server that's removed or moved, and withdraws what it delivered.
+    func forget(_ serverURL: String) {
+        servers[serverURL] = nil
+        Task {
+            let delivered = await center.deliveredNotifications().compactMap {
+                Self.delivered(identifier: $0.request.identifier, userInfo: $0.request.content.userInfo)
+            }
+            let identifiers = delivered.filter { $0.scope == serverURL }.map(\.identifier)
+            if !identifiers.isEmpty { center.removeDeliveredNotifications(withIdentifiers: identifiers) }
+        }
     }
 
     func update(channels: [Channel], activeChannelID: String?, serverURL: String) {
-        current = Current(channels: channels, activeChannelID: activeChannelID, serverURL: serverURL)
-        let events = policy.events(
+        var server = servers[serverURL] ?? Server()
+        server.current = Current(channels: channels, activeChannelID: activeChannelID)
+        let events = server.policy.events(
             channels: channels, activeChannelID: activeChannelID,
             enabled: UserDefaults.standard.bool(forKey: "notificationsEnabled"),
             requests: UserDefaults.standard.object(forKey: "requestNotifications") as? Bool != false,
             completions: UserDefaults.standard.bool(forKey: "completionNotifications")
         )
+        servers[serverURL] = server
         for event in events {
             deliver(event, serverURL: serverURL)
         }
-        withdrawStale()
+        withdrawStale(serverURL)
     }
 
     private func deliver(_ event: Event, serverURL: String) {
-        let request = event.kind == .request ? resolveRequest?(event.channel, event.sequence) : nil
+        let request = event.kind == .request ? resolveRequest?(event.channel, event.sequence, serverURL) : nil
         Task {
             if let labels = request?.message.suggestedReplies, !labels.isEmpty {
                 await replyCategories.publish(adding: ReplyCategories.category(labels: labels))
@@ -100,7 +114,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
                 identifier: "\(serverURL):\(event.channel.id):\(event.kind.rawValue):\(event.sequence)",
                 content: Self.content(for: event, serverURL: serverURL, request: request), trigger: nil))
             // A request answered while it was being added is withdrawn as soon as it lands.
-            withdrawStale(force: true)
+            withdrawStale(serverURL, force: true)
         }
     }
 
@@ -140,12 +154,13 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         catch { self.error = error.localizedDescription }
     }
 
-    func deliverMorningDigest(_ digest: MorningDigest.Content, serverURL: String, identifier: String) async throws {
-        guard let content = Self.morningDigestContent(digest, serverURL: serverURL) else { return }
+    func deliverMorningDigest(_ digest: MorningDigest.Content, identifier: String) async throws {
+        guard let content = Self.morningDigestContent(digest) else { return }
         try await center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
     }
 
-    static func morningDigestContent(_ digest: MorningDigest.Content, serverURL: String) -> UNNotificationContent? {
+    /// Opens the busiest channel, on its own server.
+    static func morningDigestContent(_ digest: MorningDigest.Content) -> UNNotificationContent? {
         guard let busiest = digest.busiest else { return nil }
         let content = UNMutableNotificationContent()
         content.title = "Morning digest"
@@ -153,20 +168,21 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         content.categoryIdentifier = MorningDigest.category
         content.threadIdentifier = MorningDigest.category
         content.userInfo = ["channelID": busiest.channelID, "channelName": busiest.name,
-                            "kind": MorningDigest.category, "serverURL": serverURL]
+                            "kind": MorningDigest.category, "serverURL": busiest.serverURL]
         return content
     }
 
-    private func withdrawStale(force: Bool = false) {
-        guard let current, force || !current.withdrawsLike(withdrawn) else { return }
-        withdrawn = current
+    private func withdrawStale(_ serverURL: String, force: Bool = false) {
+        guard let current = servers[serverURL]?.current,
+              force || !current.withdrawsLike(servers[serverURL]?.withdrawn) else { return }
+        servers[serverURL]?.withdrawn = current
         Task {
             let delivered = await center.deliveredNotifications().compactMap {
                 Self.delivered(identifier: $0.request.identifier, userInfo: $0.request.content.userInfo)
             }
-            guard let current = self.current else { return }
+            guard let current = self.servers[serverURL]?.current else { return }
             let stale = ChannelNotification.Delivered.stale(delivered, channels: current.channels,
-                                                  scope: current.serverURL,
+                                                  scope: serverURL,
                                                   activeChannelID: current.activeChannelID)
             if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
         }
@@ -189,8 +205,8 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func presentation(kind: String?, channelID: String?, serverURL: String?) -> UNNotificationPresentationOptions {
-        let isActive = current.map { $0.serverURL == serverURL && $0.activeChannelID != nil
-            && $0.activeChannelID == channelID } ?? false
+        let active = serverURL.flatMap { servers[$0]?.current?.activeChannelID }
+        let isActive = active != nil && active == channelID
         return NotificationPresentation.options(kind: kind, isActiveChannel: isActive)
     }
 

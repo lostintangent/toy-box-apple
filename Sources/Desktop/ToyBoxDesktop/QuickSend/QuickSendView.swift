@@ -28,7 +28,8 @@ struct QuickSendView: View {
     }
     private var replyItem: MenuBarStatus.Item? {
         guard let target = model.quickSend.replyTarget else { return nil }
-        return model.menuBarStatus.waiting.first { $0.id == target.channelID }
+        let channel = ChannelTarget(serverURL: target.serverURL, channelID: target.channelID)
+        return model.menuBarStatus.waiting.first { $0.target == channel }
     }
     private var showsHeader: Bool { session != nil || !channels.isEmpty }
     private var channelName: String {
@@ -164,14 +165,15 @@ struct QuickSendView: View {
                     .foregroundStyle(.secondary)
                 Button("Open Channel") {
                     model.quickSend.dismiss()
-                    model.activate(channelID: target.channelID, sequence: target.sequence)
+                    model.activate(ChannelTarget(serverURL: target.serverURL, channelID: target.channelID),
+                                   sequence: target.sequence)
                 }
             } else if model.catalog?.isLoaded == true, channels.isEmpty {
                 Text("No channels yet").font(.system(size: 15, weight: .semibold))
                 Text("Open Toy Box to create one.").foregroundStyle(.secondary)
                 Button("Open Toy Box") {
                     model.quickSend.dismiss()
-                    model.activate(channelID: nil)
+                    model.activate(nil)
                 }
             } else if let error = model.catalog?.phase.message {
                 Text("Offline.").font(.system(size: 15, weight: .semibold))
@@ -340,7 +342,7 @@ struct QuickSendView: View {
     private func open(_ session: AuxiliaryComposerSession) {
         guard model.api?.baseURL == session.store.api.baseURL else { return }
         model.quickSend.dismiss()
-        model.activate(channelID: session.store.id)
+        model.activate(session.store.target)
     }
 
     /// The message is saved, so the panel closes at once, or opens its channel for Command-Return.

@@ -104,7 +104,7 @@ struct ToyBoxDesktopApp: App {
     }
 
     private func configureWindowActions() {
-        model.openChannelWindow = { openWindow(value: ChannelWindowValue(channelID: $0)) }
+        model.openChannelWindow = { openWindow(value: ChannelWindowValue($0)) }
         model.openMainWindow = { openWindow(id: "channels") }
         appDelegate.openChannelWindow = { openWindow(id: "channels") }
         appDelegate.openStartupWindow = { updateStartupWindow(phase: scenePhase) }
@@ -143,12 +143,6 @@ struct ChannelWindowValue: Codable, Hashable {
     /// The channel's server. Windows saved before several servers name none, and open on the first.
     let serverURL: String?
     let windowID: UUID
-
-    init(channelID: String) {
-        self.channelID = channelID
-        serverURL = nil
-        windowID = UUID()
-    }
 
     init(_ channel: ChannelTarget) {
         channelID = channel.channelID

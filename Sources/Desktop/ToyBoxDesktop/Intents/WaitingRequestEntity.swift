@@ -12,8 +12,9 @@ struct WaitingRequestEntry: Equatable, Sendable {
     let channelName: String
     let requestedAt: Date?
 
-    init?(item: MenuBarStatus.Item, serverURL: String) {
-        guard let request = ChannelWaitingRequest(serverURL: serverURL, channelID: item.id, sequence: item.sequence,
+    init?(item: MenuBarStatus.Item) {
+        guard let request = ChannelWaitingRequest(serverURL: item.target.serverURL, channelID: item.target.channelID,
+                                                sequence: item.sequence,
                                                 question: item.quote, agent: item.agent, channelName: item.name,
                                                 requestedAt: item.requestedAt) else { return nil }
         let link = NeedsYouRequestLink(serverURL: request.id.serverURL, channelID: request.id.channelID,

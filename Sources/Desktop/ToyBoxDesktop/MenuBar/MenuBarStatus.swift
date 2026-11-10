@@ -28,7 +28,7 @@ struct MenuBarStatus: Equatable {
     enum State: Equatable { case waiting, working, idle, disconnected }
 
     struct Item: Equatable, Identifiable {
-        var id: String
+        var target: ChannelTarget
         var name: String
         var subtitle: String
         /// The requester for a waiting channel, the first working agent for a working one.
@@ -40,6 +40,8 @@ struct MenuBarStatus: Equatable {
         var agents: [ChannelAgent] = []
         /// The request's suggested replies, in the lead's order.
         var replies: [String] = []
+
+        var id: ChannelTarget { target }
     }
 
     struct Section: Equatable {
@@ -49,6 +51,7 @@ struct MenuBarStatus: Equatable {
 
     /// One channel as the sidebar sees it.
     struct Input {
+        var target: ChannelTarget
         var channel: Channel
         /// Lead first, as the sidebar row's avatar stack orders them.
         var working: [ChannelAgent]
@@ -61,7 +64,7 @@ struct MenuBarStatus: Equatable {
     var waiting: [Item] = []
     var working: [Item] = []
     var workingAgents = 0
-    /// The catalog's host while it can't be reached.
+    /// The servers that can't be reached, by name.
     var unreachableHost: String?
 
     init(waiting: [Item] = [], working: [Item] = [], workingAgents: Int = 0, unreachableHost: String? = nil) {
@@ -77,19 +80,20 @@ struct MenuBarStatus: Equatable {
         self.requests = requests
         self.unreachableHost = unreachableHost
         workingAgents = inputs.reduce(0) { $0 + $1.working.count }
-        waiting = requests.map { entry in
+        waiting = requests.compactMap { entry in
+            guard let target = entry.target else { return nil }
             let requester = entry.request?.requester
-            return Item(id: entry.channel.id, name: entry.channel.name,
+            return Item(target: target, name: entry.channel.name,
                         subtitle: requester.map { ChannelNotification.Content.subtitle(requester: $0.name) } ?? ChannelNotification.Content.needsReply,
                         agent: requester, sequence: entry.sequence, quote: entry.request?.quote,
                         requestedAt: entry.requestedAt, replies: entry.request?.message.suggestedReplies ?? [])
         }
-        let waitingIDs = Set(waiting.map(\.id))
-        working = inputs.filter { !waitingIDs.contains($0.channel.id) && !$0.working.isEmpty }
+        let waitingTargets = Set(waiting.map(\.target))
+        working = inputs.filter { !waitingTargets.contains($0.target) && !$0.working.isEmpty }
             .map { input in (input, (try? Date(input.channel.updatedAt, strategy: .iso8601)) ?? .distantPast) }
             .sorted { $0.1 > $1.1 }
             .map { input, _ in
-                Item(id: input.channel.id, name: input.channel.name,
+                Item(target: input.target, name: input.channel.name,
                      subtitle: Self.workingSubtitle(input.working.map(\.name)), agent: input.working.first,
                      agents: input.working)
             }

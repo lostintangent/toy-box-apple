@@ -1,4 +1,5 @@
 import ChannelClient
+import ChannelKit
 import Foundation
 import ToyBoxUI
 
@@ -35,8 +36,8 @@ struct MenuBarInboxRequests: Equatable {
 
     /// Sets a request's row state. A replied row keeps it until the next opening, so nothing slides out
     /// from under the pointer.
-    mutating func record(_ channelID: String, _ status: Request.Status) {
-        guard let index = requests.firstIndex(where: { $0.id == channelID }) else { return }
+    mutating func record(_ target: ChannelTarget, _ status: Request.Status) {
+        guard let index = requests.firstIndex(where: { $0.id == target }) else { return }
         requests[index].state = status
     }
 
@@ -63,7 +64,7 @@ struct MenuBarInboxRequests: Equatable {
 
         var item: MenuBarStatus.Item
         var state: Status = .waiting
-        var id: String { item.id }
+        var id: ChannelTarget { item.id }
         var canReply: Bool { state == .waiting && item.quote != nil && item.agent != nil && item.sequence != nil }
         var canChoose: Bool { state == .waiting && !item.replies.isEmpty }
 

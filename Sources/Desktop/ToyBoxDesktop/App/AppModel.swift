@@ -45,7 +45,7 @@ final class AppModel {
     let menuBar = MenuBarPresence()
     var navigationRequest: ChannelNavigationRequest?
     var newChannelRequest: UUID?
-    @ObservationIgnored var openChannelWindow: ((String) -> Void)?
+    @ObservationIgnored var openChannelWindow: ((ChannelTarget) -> Void)?
     @ObservationIgnored var openMainWindow: (() -> Void)?
     @ObservationIgnored private var unhideObserver: NSObjectProtocol?
     @ObservationIgnored let connections = ChannelConnections()
@@ -97,17 +97,18 @@ final class AppModel {
             catch { failure = error; return nil }
         }
         if catalogs.isEmpty { configurationError = failure?.localizedDescription }
-        firstServerDidChange()
+        serversDidChange()
         if !launchOptions.isSnapshot { launchChannelID = launchChannel.channelID(serverURL: self.serverURL) }
         notifications.onActivate = { [weak self] activation in
-            guard let self, self.serverURL == activation.serverURL else { return }
-            self.activate(channelID: activation.channel.channelID, sequence: activation.channel.sequence)
+            self?.activate(ChannelTarget(serverURL: activation.serverURL, channelID: activation.channel.channelID),
+                           sequence: activation.channel.sequence)
         }
         notifications.send = { [weak self] reply in
             await self?.outbox.send(reply.content, to: reply.channelID, on: reply.server, answering: reply.request)
         }
-        notifications.resolveRequest = { [weak self] channel, sequence in
-            self?.catalog?.waitingRequests().first { $0.channel.id == channel.id && $0.sequence == sequence }?.request
+        notifications.resolveRequest = { [weak self] channel, sequence, server in
+            self?.catalogs.first(at: server)?.waitingRequests()
+                .first { $0.channel.id == channel.id && $0.sequence == sequence }?.request
         }
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
             applicationObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) {
@@ -121,27 +122,28 @@ final class AppModel {
         }
         if showsMenuBarExtra { observeMenuBarActivity() }
         morningDigest = MorningDigest(host: .init(
-            server: { [weak self] in self?.serverURL ?? "" },
+            servers: { [weak self] in self?.catalogs.map(\.api.baseURL.absoluteString) ?? [] },
             authorized: { [weak self] in
                 guard let notifications = self?.notifications else { return false }
                 await notifications.refreshAuthorization()
                 return notifications.authorization == .authorized || notifications.authorization == .provisional
             },
-            build: { [weak self] window in
-                guard let api = self?.api else { throw ChannelAPIError.invalidServerURL }
+            build: { [weak self] server, window in
+                guard let api = self?.catalogs.first(at: server)?.api else { throw ChannelAPIError.invalidServerURL }
                 return try await MorningDigest.build(
                     api: api, window: window,
                     summarizes: IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages),
                     intelligence: LiveChannelIntelligence.shared
                 )
             },
-            deliver: { [weak self] content, server, identifier in
+            deliver: { [weak self] content, identifier in
                 guard let notifications = self?.notifications else { throw ChannelAPIError.disconnected }
-                try await notifications.deliverMorningDigest(content, serverURL: server, identifier: identifier)
+                try await notifications.deliverMorningDigest(content, identifier: identifier)
             }
         ), allowed: MorningDigest.isAllowed(launchOptions, bundleID: Bundle.main.bundleIdentifier),
-           testAllowed: MorningDigest.canTest(bundleID: Bundle.main.bundleIdentifier,
-                                              options: launchOptions, server: serverURL))
+           testAllowed: catalogs.contains { MorningDigest.canTest(bundleID: Bundle.main.bundleIdentifier,
+                                                                  options: launchOptions,
+                                                                  server: $0.api.baseURL.absoluteString) })
         morningDigest?.start()
     }
 
@@ -150,10 +152,6 @@ final class AppModel {
     }
 
     var api: ChannelAPI? { catalog?.api }
-
-    /// The first server's open channels, which the Dock, notifications and the menu bar read until
-    /// they span every server.
-    var openChannelIDs: Set<String> { openChannelIDs(on: catalog) }
 
     /// The key window's channel when it's on the first server.
     var activeChannelID: String? {
@@ -242,26 +240,24 @@ final class AppModel {
         catalog.outbox = nil
         connections.disconnectAll(in: catalog)
         composerSessions = composerSessions.filter { $0.value.store.api.baseURL != catalog.api.baseURL }
+        notifications.forget(catalog.api.baseURL.absoluteString)
     }
 
     private func updateServers(_ change: (inout [ChannelCatalogStore]) -> Void) {
-        let first = catalog
         change(&catalogs)
         if savesServers { ChannelCatalogStore.Saved.save(catalogs.map(\.saved), to: .standard) }
-        if catalog !== first { firstServerDidChange() }
+        serversDidChange()
     }
 
-    /// Everything outside Settings shows the first server, so a new first server starts it over.
-    private func firstServerDidChange() {
+    private func serversDidChange() {
+        // Quick Send still shows only the first server.
         if let address = catalog?.api.baseURL.absoluteString, address != serverURL {
             quickSend.dismiss()
             serverURL = address
         }
-        notifications.reset()
-        dockAttention.reset()
         catalogGeneration = UUID()
         observeCatalog(generation: catalogGeneration)
-        widgetSnapshots.update(status: menuBarStatus, serverURL: serverURL, hasCatalog: false)
+        updateWidget()
     }
 
     /// Connects a store for a window, sheet or intent that shows it. Pair each with a release.
@@ -329,29 +325,35 @@ final class AppModel {
     }
 
     func catalogDidChange() {
-        guard let catalog, !launchOptions.isSnapshot else { return }
-        let badge = Self.dockBadge(channels: catalog.channels, openChannelIDs: openChannelIDs)
+        guard !launchOptions.isSnapshot else { return }
+        let count = catalogs.reduce(0) {
+            $0 + Self.attentionCount(channels: $1.channels, openChannelIDs: openChannelIDs(on: $1))
+        }
+        let badge = count == 0 ? nil : String(count)
         if badge != dockBadgeLabel {
             dockBadgeLabel = badge
             NSApplication.shared.dockTile.badgeLabel = badge
         }
-        if catalog.lastRefreshedAt != nil {
-            notifications.update(channels: catalog.channels, activeChannelID: activeChannelID,
-                                 serverURL: serverURL)
+        for catalog in catalogs where catalog.lastRefreshedAt != nil {
+            let server = Self.address(of: catalog)
+            notifications.update(channels: catalog.channels,
+                                 activeChannelID: activeChannel?.serverURL == server ? activeChannel?.channelID : nil,
+                                 serverURL: catalog.api.baseURL.absoluteString)
         }
     }
 
     /// Brings a channel forward from outside its windows, as notifications and the menu bar do. The
     /// frontmost window selects it, or a new window opens on it when there is none. Without a
-    /// channel, the frontmost window just comes forward.
-    func activate(channelID: String?, sequence: Int? = nil) {
-        if let channelID {
-            navigationRequest = .init(channelID: channelID, sequence: sequence)
+    /// channel, or with one on a server that's gone, the frontmost window just comes forward.
+    func activate(_ channel: ChannelTarget?, sequence: Int? = nil) {
+        let channel = channel.flatMap { catalogs.first(at: $0.serverURL) == nil ? nil : $0 }
+        if let channel {
+            navigationRequest = .init(channel: channel, sequence: sequence)
         }
         let app = NSApplication.shared
         guard app.isHidden else {
             app.activate()
-            return bringForward(channelID)
+            return bringForward(channel)
         }
         // Unhiding finishes on a later turn, and until then every window reads as invisible, so
         // looking now would open a second window beside the one coming back.
@@ -359,24 +361,24 @@ final class AppModel {
         unhideObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didUnhideNotification, object: app, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.didUnhide(channelID) }
+            MainActor.assumeIsolated { self?.didUnhide(channel) }
         }
         app.activate()
         app.unhide(nil)
     }
 
-    private func didUnhide(_ channelID: String?) {
+    private func didUnhide(_ channel: ChannelTarget?) {
         if let unhideObserver { NotificationCenter.default.removeObserver(unhideObserver) }
         unhideObserver = nil
-        bringForward(channelID)
+        bringForward(channel)
     }
 
-    private func bringForward(_ channelID: String?) {
+    private func bringForward(_ channel: ChannelTarget?) {
         if let window = Self.frontChannelWindow() {
             if window.isMiniaturized { window.deminiaturize(nil) }
             window.makeKeyAndOrderFront(nil)
-        } else if let channelID {
-            openChannelWindow?(channelID)
+        } else if let channel {
+            openChannelWindow?(channel)
         } else {
             openMainWindow?()
         }
@@ -398,44 +400,55 @@ final class AppModel {
         !launchOptions.isSnapshot && resizeBenchmark == nil && performanceBenchmark == nil
     }
 
-    /// What the menu bar extra shows, from the same waiting requests and working agents as the sidebar.
+    /// What the menu bar extra shows across every server, from the same waiting requests and
+    /// working agents as the sidebar.
     var menuBarStatus: MenuBarStatus {
-        let unreachable = configurationError != nil || catalog?.phase.message != nil
-            ? SidebarFooter.server(serverURL) : nil
-        guard let catalog, catalog.state != nil else {
-            return MenuBarStatus(unreachableHost: unreachable)
+        let failing = catalogs.filter { $0.phase.message != nil }.map(\.name)
+        let unreachable = configurationError != nil ? SidebarFooter.server(serverURL)
+            : failing.isEmpty ? nil : failing.formatted(.list(type: .and))
+        let inputs = catalogs.filter(\.isLoaded).flatMap { catalog in
+            let presentation = sidebarPresentation(for: catalog)
+            return catalog.channels.compactMap { listed -> MenuBarStatus.Input? in
+                guard let target = catalog.target(listed.id) else { return nil }
+                return .init(target: target, channel: presentation.channel(listed),
+                             working: presentation.working(listed, agents: presentation.agents(listed)))
+            }
         }
-        let presentation = sidebarPresentation
-        return MenuBarStatus(requests: catalog.waitingRequests(openChannelIDs: openChannelIDs), catalog.channels.map {
-            .init(channel: presentation.channel($0), working: presentation.working($0, agents: presentation.agents($0)))
-        }, unreachableHost: unreachable)
+        return MenuBarStatus(requests: catalogs.waitingRequests(open: openChannels), inputs,
+                             unreachableHost: unreachable)
     }
 
-    /// Keeps the status item in step with activity, including an open channel's live presence.
+    /// Keeps the status item, the widget and the Dock in step with activity, including an open
+    /// channel's live presence.
     private func observeMenuBarActivity() {
-        let (status, hasCatalog) = withObservationTracking {
-            _ = catalog?.lastRefreshedAt
-            return (menuBarStatus, catalog?.isLoaded == true)
+        let status = withObservationTracking {
+            for catalog in catalogs { _ = catalog.lastRefreshedAt }
+            return menuBarStatus
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeMenuBarActivity() }
         }
         menuBar.update(isActive: status.isActive)
-        widgetSnapshots.update(status: status, serverURL: serverURL, hasCatalog: catalog?.state != nil)
-        dockAttention.update(status: status, serverURL: serverURL, hasCatalog: hasCatalog)
+        updateWidget()
+        dockAttention.update(status: status, usable: Set(catalogs.compactMap {
+            $0.isLoaded && $0.phase.message == nil ? Self.address(of: $0) : nil
+        }))
     }
 
-    private var sidebarPresentation: ChannelSidebarPresentation { sidebarPresentation(for: catalog) }
+    private func updateWidget() {
+        widgetSnapshots.update(catalogs.map { catalog in
+            .init(serverURL: catalog.api.baseURL.absoluteString, isOffline: catalog.phase.message != nil,
+                  waiting: catalog.isLoaded ? catalog.waitingRequests(openChannelIDs: openChannelIDs(on: catalog)) : nil)
+        })
+    }
 
     /// How the sidebar shows a server's channels, given which of them windows have open.
     func sidebarPresentation(for catalog: ChannelCatalogStore?) -> ChannelSidebarPresentation {
         .init(catalog: catalog, openChannelIDs: openChannelIDs(on: catalog))
     }
 
-    static func dockBadge(channels: [Channel], openChannelIDs: Set<String>) -> String? {
-        let count = channels.filter {
-            $0.sidebarAttention(isOpen: openChannelIDs.contains($0.id)) != nil
-        }.count
-        return count == 0 ? nil : String(count)
+    /// The channels on one server that the Dock's badge counts.
+    static func attentionCount(channels: [Channel], openChannelIDs: Set<String>) -> Int {
+        channels.filter { $0.sidebarAttention(isOpen: openChannelIDs.contains($0.id)) != nil }.count
     }
 
     private func observeCatalog(generation: UUID) {
@@ -492,6 +505,6 @@ final class AppModel {
 
 struct ChannelNavigationRequest: Identifiable {
     let id = UUID()
-    let channelID: String
+    let channel: ChannelTarget
     let sequence: Int?
 }
