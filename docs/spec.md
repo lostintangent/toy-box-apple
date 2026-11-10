@@ -201,8 +201,11 @@ Drafts stay keyed to the address, so adding it back finds them.
   or push registration it carries, so it opens the right one. Handoff carries only the channel,
   because two devices often reach one server by different addresses. It, and any reference
   without a server, opens in the first server in Settings order whose catalog lists the channel,
-  and reports the channel missing only once every server has answered. The Needs You widget is
-  out of date when any server is, and then shows the oldest server's last update.
+  and reports the channel missing only once every server has answered. The menu bar inbox, the
+  Dock menu and the Needs You widget list every server's requests together, newest first, without
+  naming the server. Each is out of date when any server is, the widget showing the oldest
+  server's last update, and Retry refreshes every server. The morning digest stays one
+  notification, and each line opens on its own server.
 - **Settings** lists the servers with their dots and names, even when there's one, so Add is
   always there. On the Mac, the list has Add and
   Remove buttons and drags to reorder, and the selected server's Name, Server URL with Test
