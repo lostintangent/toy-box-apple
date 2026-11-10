@@ -22,7 +22,7 @@ struct OpenChannelIntent: OpenIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        context.open(target.id)
+        context.open(target.target)
         return .result()
     }
 }

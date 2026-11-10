@@ -53,7 +53,7 @@ struct ToyBoxDesktopApp: App {
     var body: some Scene {
         let _ = configureWindowActions()
         WindowGroup("Channels", id: "channels", for: ChannelWindowValue.self) { $value in
-            root(channel: value.flatMap { model.target($0.channelID, on: $0.serverURL) }
+            root(channel: value.flatMap { ChannelTarget(serverURL: $0.serverURL, channelID: $0.channelID) }
                 ?? model.launchOptions.channelID.flatMap { model.target($0) })
         }
         .defaultSize(width: CGFloat(model.launchOptions.width), height: CGFloat(model.launchOptions.height))
@@ -140,8 +140,7 @@ struct ToyBoxDesktopApp: App {
 
 struct ChannelWindowValue: Codable, Hashable {
     let channelID: String
-    /// The channel's server. Windows saved before several servers name none, and open on the first.
-    let serverURL: String?
+    let serverURL: String
     let windowID: UUID
 
     init(_ channel: ChannelTarget) {

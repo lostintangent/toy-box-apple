@@ -297,7 +297,7 @@ final class AppModel {
         guard !app.isHidden,
               let front = app.orderedWindows.first(where: { $0.isVisible && $0.sheetParent == nil }) else { return nil }
         guard !front.isMiniaturized, front.occlusionState.contains(.visible) else { return nil }
-        return ChannelIntents.Screen.onScreen(in: front, screens: screens.values, catalog: catalog)
+        return ChannelIntents.Screen.onScreen(in: front, screens: screens.values, catalogs: catalogs)
     }
 
     private func windowsDidChange() {

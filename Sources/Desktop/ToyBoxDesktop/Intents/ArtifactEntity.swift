@@ -11,6 +11,7 @@ struct ArtifactEntity: AppEntity, Identifiable {
     static let defaultQuery = ArtifactQuery()
 
     /// The channel's ID, then the artifact's, since an artifact's ID is unique only in its channel.
+    /// It needn't name the server, because it resolves only while the frontmost window shows it.
     let id: String
 
     @Property(title: "Title")

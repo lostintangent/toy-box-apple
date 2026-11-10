@@ -40,7 +40,7 @@ struct ReplyIntent: AppIntent {
                 else { "What do you want to say?" }
             text = try await $message.requestValue(question)
         }
-        try await context.send(text, to: channel.id, recipient: recipient, answering: request) { prompt in
+        try await context.send(text, to: channel.target, recipient: recipient, answering: request) { prompt in
             try await requestConfirmation(actionName: .send, dialog: "\(prompt.question)")
         }
         return .result()

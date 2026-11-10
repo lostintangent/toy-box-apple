@@ -45,29 +45,30 @@ struct RequestSpotlightTests {
         await #expect(throws: ChannelIntentError.unreachable) { try await fixture.context.waitingRequests() }
     }
 
-    @Test func answeredAndReplacedRequestsLeaveTheIndexAndServerSwitchClearsIt() async throws {
+    @Test func answeredReplacedAndRemovedServersRequestsLeaveTheIndex() async throws {
         let fake = FakeRequestIndex()
         let spotlight = RequestSpotlight(index: fake.index, icon: { _ in Data([1]) })
-        let first = try entry(), second = try entry(sequence: 9)
-        spotlight.update(.init(server: "server", entries: nil))
+        let first = try entry(), second = try entry(sequence: 9), elsewhere = try entry(server: "https://other.test")
+        spotlight.update(.init(entries: nil))
         await spotlight.settle()
         #expect(fake.operations.isEmpty)
-        spotlight.update(.init(server: "server", entries: [first, first]))
+        spotlight.update(.init(entries: [first, first]))
         await spotlight.settle()
         #expect(fake.operations == [.clear, .add([first.id])])
-        spotlight.update(.init(server: "server", entries: [second]))
+        spotlight.update(.init(entries: [second, elsewhere]))
         await spotlight.settle()
-        #expect(fake.operations.suffix(2) == [.remove([first.id]), .add([second.id])])
-        spotlight.update(.init(server: "server", entries: []))
-        await spotlight.settle()
-        #expect(fake.operations.last == .remove([second.id]))
-        spotlight.update(.init(server: "other", entries: nil))
-        await spotlight.settle()
-        #expect(fake.operations.last == .clear)
+        #expect(fake.operations.suffix(2) == [.remove([first.id]), .add([second.id, elsewhere.id])])
+        // What's indexed stays while a server you add loads.
         let count = fake.operations.count
-        spotlight.update(.init(server: "other", entries: nil))
+        spotlight.update(.init(entries: nil))
         await spotlight.settle()
         #expect(fake.operations.count == count)
+        spotlight.update(.init(entries: [elsewhere]))
+        await spotlight.settle()
+        #expect(fake.operations.last == .remove([second.id]))
+        spotlight.update(.init(entries: []))
+        await spotlight.settle()
+        #expect(fake.operations.last == .remove([elsewhere.id]))
     }
 
     @Test func queuedChangesReconcileAgainstTheLastSuccessfulWriteAndReindexRemovesUnknownIDs() async throws {
@@ -75,11 +76,11 @@ struct RequestSpotlightTests {
         let spotlight = RequestSpotlight(index: fake.index, icon: { _ in Data([1]) })
         let entry = try entry()
         fake.failNext = true
-        spotlight.update(.init(server: "server", entries: [entry]))
-        spotlight.update(.init(server: "server", entries: []))
+        spotlight.update(.init(entries: [entry]))
+        spotlight.update(.init(entries: []))
         await spotlight.settle()
         #expect(fake.operations == [.clear])
-        spotlight.update(.init(server: "server", entries: [entry]))
+        spotlight.update(.init(entries: [entry]))
         await spotlight.settle()
         await spotlight.reindex([entry.id, "gone"])
         #expect(fake.operations.suffix(2) == [.remove(["gone"]), .add([entry.id])])
@@ -93,20 +94,20 @@ struct RequestSpotlightTests {
         var renders = 0
         let spotlight = RequestSpotlight(index: fake.index, icon: { _ in renders += 1; return Data([1]) })
         let entry = try entry()
-        spotlight.update(.init(server: "server", entries: [entry]))
+        spotlight.update(.init(entries: [entry]))
         await spotlight.settle()
-        spotlight.update(.init(server: "server", entries: [entry]))
+        spotlight.update(.init(entries: [entry]))
         await spotlight.settle()
         #expect(fake.operations.count == 2 && renders == 1)
         var renamed = item()
         renamed.name = "Workshop"
         let nameChange = try #require(WaitingRequestEntry(item: renamed))
-        spotlight.update(.init(server: "server", entries: [nameChange]))
+        spotlight.update(.init(entries: [nameChange]))
         await spotlight.settle()
         #expect(fake.operations.last == .add([entry.id]) && renders == 1)
         renamed.agent?.avatar?.color = "#008800"
         let avatarChange = try #require(WaitingRequestEntry(item: renamed))
-        spotlight.update(.init(server: "server", entries: [avatarChange]))
+        spotlight.update(.init(entries: [avatarChange]))
         await spotlight.settle()
         #expect(fake.operations.last == .add([entry.id]) && renders == 2)
     }
@@ -127,31 +128,36 @@ struct RequestSpotlightTests {
                                          environment: ["TOY_BOX_SERVER_URL": "https://server.test"]))
     }
 
-    @Test func openRevealsExactlyTheOriginalRequestAndRejectsAnsweredOrOtherServerResults() async throws {
+    @Test func openRevealsExactlyTheOriginalRequestOnItsOwnServer() async throws {
         let fixture = try RequestIntentFixture(entry: entry())
         try await fixture.context.openRequest(fixture.entry)
-        #expect(fixture.opened == ["studio:8"])
-        fixture.entries = []
+        #expect(fixture.opened == ["https://server.test studio:8"])
+        let elsewhere = try entry(server: "https://other.test")
+        fixture.entries = [elsewhere]
         await #expect(throws: ChannelIntentError.requestNotWaiting) {
             try await fixture.context.openRequest(fixture.entry)
         }
-        fixture.api = try ChannelAPI(serverURL: "https://other.test")
-        await #expect(throws: ChannelIntentError.differentServer) {
-            try await fixture.context.openRequest(fixture.entry)
-        }
-        #expect(fixture.opened == ["studio:8"])
+        try await fixture.context.openRequest(elsewhere)
+        #expect(fixture.opened == ["https://server.test studio:8", "https://other.test studio:8"])
     }
 
-    @Test func replyConfirmsOnceThenSavesOneMentionWithoutConnectingOrOpening() async throws {
+    @Test func replyConfirmsOnceThenSavesOneMentionToItsServerWithoutConnectingOrOpening() async throws {
         let fixture = try RequestIntentFixture(entry: entry())
         try await fixture.context.replyToRequest(fixture.entry, message: "  Ship it. \n") { _ in }
         let server = try #require(URL(string: "https://server.test"))
         #expect(fixture.sent == [.init(text: "@lead Ship it.", channelID: "studio", server: server, request: 8)])
         #expect(fixture.confirmations == [.init(channel: "Studio", message: "Ship it.", recipient: "Lead")])
+
+        let elsewhere = try entry(server: "https://other.test")
+        fixture.entries.append(elsewhere)
+        fixture.apis.append(try ChannelAPI(serverURL: "https://other.test"))
+        try await fixture.context.replyToRequest(elsewhere, message: "Ship it.") { _ in }
+        let other = try #require(URL(string: "https://other.test"))
+        #expect(fixture.sent.last == .init(text: "@lead Ship it.", channelID: "studio", server: other, request: 8))
         #expect(fixture.opened.isEmpty)
     }
 
-    @Test func replyRechecksTheRequestAndServerAfterConfirmation() async throws {
+    @Test func replyRechecksTheRequestAndItsServerAfterConfirmation() async throws {
         let fixture = try RequestIntentFixture(entry: entry())
         let replacement = try entry(sequence: 9)
         fixture.onConfirm = { fixture.entries = [replacement] }
@@ -159,8 +165,8 @@ struct RequestSpotlightTests {
             try await fixture.context.replyToRequest(fixture.entry, message: "Hi") { _ in }
         }
         fixture.entries = [fixture.entry]
-        fixture.onConfirm = { fixture.api = try ChannelAPI(serverURL: "https://other.test") }
-        await #expect(throws: ChannelIntentError.differentServer) {
+        fixture.onConfirm = { fixture.apis = [] }
+        await #expect(throws: ChannelIntentError.requestNotWaiting) {
             try await fixture.context.replyToRequest(fixture.entry, message: "Hi") { _ in }
         }
         #expect(fixture.sent.isEmpty)
@@ -233,7 +239,7 @@ private final class FakeRequestIndex {
 
 @MainActor
 private final class RequestIntentFixture {
-    var api: ChannelAPI?
+    var apis: [ChannelAPI]
     let entry: WaitingRequestEntry
     var entries: [WaitingRequestEntry]
     var isUnreachable = false
@@ -243,7 +249,9 @@ private final class RequestIntentFixture {
     var onConfirm: () throws -> Void = {}
     lazy var context: ChannelIntents = {
         let context = ChannelIntents(host: .init(
-            api: { self.api },
+            api: { server in
+                self.apis.first { ChannelWaitingRequest.normalizedServer($0.baseURL.absoluteString) == server }
+            },
             channels: { Issue.record("A reply reads the waiting request, not the channel list"); return nil },
             store: { _ in Issue.record("A reply never connects its channel"); return nil },
             hold: { _ in }, release: { _ in },
@@ -253,7 +261,7 @@ private final class RequestIntentFixture {
                 if self.isUnreachable { throw ChannelIntentError.unreachable }
                 return self.entries
             },
-            revealRequest: { self.opened.append("\($0):\($1)") }
+            revealRequest: { self.opened.append("\($0.serverURL) \($0.channelID):\($1)") }
         ))
         context.confirmationOverride = { prompt in
             self.confirmations.append(prompt)
@@ -265,6 +273,6 @@ private final class RequestIntentFixture {
     init(entry: WaitingRequestEntry) throws {
         self.entry = entry
         entries = [entry]
-        api = try ChannelAPI(serverURL: entry.link.serverURL)
+        apis = [try ChannelAPI(serverURL: entry.link.serverURL)]
     }
 }

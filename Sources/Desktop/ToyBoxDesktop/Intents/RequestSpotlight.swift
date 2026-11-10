@@ -10,21 +10,17 @@ import ToyBoxUI
 @MainActor
 final class RequestSpotlight {
     struct Catalog: Equatable {
-        var server: String?
-        /// Nil while the catalog loads. Unresolved questions join on a later observation.
+        /// Nil until every saved server's catalog has loaded or failed. Unresolved questions join
+        /// on a later observation.
         var entries: [WaitingRequestEntry]?
 
-        init(server: String?, entries: [WaitingRequestEntry]?) {
-            self.server = server
+        init(entries: [WaitingRequestEntry]?) {
             self.entries = entries
         }
 
         @MainActor init(_ model: AppModel) {
-            server = model.catalog == nil ? nil : ChannelWaitingRequest.normalizedServer(model.serverURL)
-            let server = server
-            entries = model.catalog?.isLoaded == true
-                ? model.menuBarStatus.waiting.filter { $0.target.serverURL == server }.compactMap(WaitingRequestEntry.init)
-                : nil
+            entries = ChannelIntents.Listed.all(in: model.catalogs) == nil
+                ? nil : model.menuBarStatus.waiting.compactMap(WaitingRequestEntry.init)
         }
     }
 
@@ -79,11 +75,13 @@ final class RequestSpotlight {
         tail = Task { [weak self] in
             await previous?.value
             guard let self else { return }
-            // Preserve the last launch's index until its first catalog arrives.
-            guard indexed != nil || catalog.server == nil || catalog.entries != nil else { return }
-            let changedServer = indexed?.server != catalog.server
-            let replace = indexed == nil || changedServer || (force && identifiers == nil)
-            if !replace && catalog.entries == nil { return }
+            // Preserve the last launch's index until the first catalogs arrive, and what's indexed
+            // while a server you add loads.
+            guard catalog.entries != nil else {
+                if force && identifiers == nil { indexed = nil }
+                return
+            }
+            let replace = indexed == nil || (force && identifiers == nil)
             var seen = Set<String>()
             let entries = (catalog.entries ?? []).filter { seen.insert($0.id).inserted }
             let old = Dictionary((indexed?.entries ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -96,7 +94,7 @@ final class RequestSpotlight {
                 if replace { try await index.removeAll() }
                 else if !remove.isEmpty { try await index.remove(remove) }
                 if !add.isEmpty { try await index.add(add.map(entity)) }
-                indexed = Catalog(server: catalog.server, entries: entries)
+                indexed = Catalog(entries: entries)
             } catch {
                 indexed = nil
                 logger.error("Could not update waiting requests in Spotlight: \(error.localizedDescription, privacy: .public)")

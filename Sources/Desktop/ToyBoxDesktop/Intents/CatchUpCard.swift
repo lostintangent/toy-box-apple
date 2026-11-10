@@ -25,7 +25,7 @@ struct CatchUpCard: Codable, Equatable, Sendable {
 
     /// A channel in the overview, with the sidebar's indicator.
     struct Row: Codable, Equatable, Sendable {
-        var channelID: String
+        var channel: ChannelTarget
         var name: String
         var attention: String?
         var detail: String
@@ -38,7 +38,7 @@ struct CatchUpCard: Codable, Equatable, Sendable {
     }
 
     /// Nil for the overview of every channel that needs you.
-    var channelID: String?
+    var channel: ChannelTarget?
     var title: String
     var subtitle: String?
     var isSummary = false
@@ -53,9 +53,9 @@ struct CatchUpCard: Codable, Equatable, Sendable {
         (try? JSONEncoder().encode(self)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
     }
 
-    init(channelID: String?, title: String, subtitle: String? = nil, isSummary: Bool = false,
+    init(channel: ChannelTarget?, title: String, subtitle: String? = nil, isSummary: Bool = false,
          lines: [Line] = [], rows: [Row] = [], footnote: String? = nil, reply: Reply? = nil) {
-        self.channelID = channelID
+        self.channel = channel
         self.title = title
         self.subtitle = subtitle
         self.isSummary = isSummary
@@ -96,7 +96,7 @@ struct CatchUpCardView: View {
             }
             if !card.rows.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(card.rows, id: \.channelID) { CatchUpCardRow(row: $0) }
+                    ForEach(card.rows, id: \.channel) { CatchUpCardRow(row: $0) }
                 }
             }
             if let footnote = card.footnote {
@@ -104,8 +104,8 @@ struct CatchUpCardView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
             }
-            if let channelID = card.channelID {
-                actions(ChannelEntity(id: channelID, name: card.title))
+            if let channel = card.channel {
+                actions(ChannelEntity(channel, name: card.title))
             }
         }
         .padding(16)
@@ -233,7 +233,7 @@ private struct CatchUpCardRow: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Button(intent: OpenChannelIntent(target: ChannelEntity(id: row.channelID, name: row.name,
+        Button(intent: OpenChannelIntent(target: ChannelEntity(row.channel, name: row.name,
                                                                attention: attention))) {
             HStack(spacing: 8) {
                 indicator.frame(width: 16, height: 16)

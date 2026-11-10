@@ -6,6 +6,7 @@ import Foundation
 /// The resolved question the inbox and widget show, not a second waiting-request policy.
 struct WaitingRequestEntry: Equatable, Sendable {
     let id: String
+    let target: ChannelTarget
     let link: NeedsYouRequestLink
     let question: String
     let agent: ChannelAgent
@@ -21,6 +22,7 @@ struct WaitingRequestEntry: Equatable, Sendable {
                                       sequence: request.id.sequence)
         guard let url = link.url, NeedsYouRequestLink(url: url) != nil else { return nil }
         id = url.absoluteString
+        target = item.target
         self.link = link
         question = request.question
         agent = request.agent

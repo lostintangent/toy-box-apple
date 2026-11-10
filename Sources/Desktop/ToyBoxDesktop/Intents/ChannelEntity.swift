@@ -4,12 +4,14 @@ import CoreSpotlight
 import CoreTransferable
 import Foundation
 
-/// A channel on the app's Toy Box server, as Siri, Shortcuts and Spotlight see it.
+/// A channel on one of the app's Toy Box servers, as Siri, Shortcuts and Spotlight see it. Its
+/// identifier names the server, so the same channel ID on two servers stays two channels.
 struct ChannelEntity: IndexedEntity, Identifiable {
     static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Channel", numericFormat: "\(placeholder: .int) channels")
     static let defaultQuery = ChannelQuery()
 
-    let id: String
+    let target: ChannelTarget
+    var id: String { target.identifier }
 
     @Property(title: "Name")
     var name: String
@@ -37,20 +39,17 @@ struct ChannelEntity: IndexedEntity, Identifiable {
     /// The sidebar's icon, which Spotlight shows beside the name.
     let thumbnail: Data?
 
-    init(_ channel: Channel) {
-        self.init(channel, content: "")
-    }
-
-    init(_ channel: Channel, content: String) {
-        self.init(id: channel.id, name: channel.name, attention: channel.attention,
+    init(_ listed: ChannelIntents.Listed, content: String = "") {
+        let channel = listed.channel
+        self.init(listed.target, name: channel.name, attention: channel.attention,
                   unreadCount: max(0, channel.latestSequence - channel.seenThrough),
                   purpose: channel.purposePreview, content: content)
     }
 
     /// A channel as a card remembers it, for its buttons, or as Spotlight indexes it.
-    init(id: String, name: String, attention: Channel.Attention? = nil, unreadCount: Int = 0,
+    init(_ target: ChannelTarget, name: String, attention: Channel.Attention? = nil, unreadCount: Int = 0,
          purpose: String? = nil, thumbnail: Data? = nil, content: String = "") {
-        self.id = id
+        self.target = target
         self.attention = attention
         self.purpose = purpose
         self.thumbnail = thumbnail
@@ -96,8 +95,8 @@ extension ChannelEntity: Transferable {
     }
 }
 
-/// Channels in the server's order, which is the sidebar's, found by name. Only the channel in the
-/// frontmost window comes back with its text.
+/// Channels in Settings' server order, then each server's own, which is the sidebar's, found by
+/// name. Only the channel in the frontmost window comes back with its text.
 struct ChannelQuery: EntityStringQuery, EnumerableEntityQuery {
     @AppDependency var context: ChannelIntents
 
@@ -138,7 +137,7 @@ struct ChannelQuery: EntityStringQuery, EnumerableEntityQuery {
     }
 }
 
-/// Spotlight asks for channels again when it loses them. Only the server saved in Settings fills
+/// Spotlight asks for channels again when it loses them. Only the servers saved in Settings fill
 /// Spotlight, so a session-only launch ignores it.
 extension ChannelQuery: IndexedEntityQuery {
     func reindexAllEntities(indexDescription: CSSearchableIndexDescription) async throws {

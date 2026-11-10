@@ -5,38 +5,37 @@ import CoreSpotlight
 import SwiftUI
 import ToyBoxUI
 
-/// Keeps Spotlight's channels in step with the server saved in Settings. Each channel appears by
+/// Keeps Spotlight's channels in step with the servers saved in Settings. Each channel appears by
 /// name, with its purpose and the sidebar's icon, and picking one runs Open Channel. A deleted
-/// channel leaves, and switching servers takes every channel out until the new server's arrive.
+/// channel leaves, and so does every channel of a server you remove.
 @MainActor
 final class ChannelSpotlight {
     /// What Spotlight knows about a channel.
     struct Entry: Equatable, Sendable {
-        let id: String
+        let target: ChannelTarget
         let name: String
         let purpose: String?
+        var id: String { target.identifier }
 
-        init(id: String, name: String, purpose: String? = nil) {
-            self.id = id
+        init(_ target: ChannelTarget, name: String, purpose: String? = nil) {
+            self.target = target
             self.name = name
             self.purpose = purpose
         }
 
-        init(_ channel: Channel) {
-            self.init(id: channel.id, name: channel.name, purpose: channel.purposePreview)
+        init(_ listed: ChannelIntents.Listed) {
+            self.init(listed.target, name: listed.channel.name, purpose: listed.channel.purposePreview)
         }
     }
 
-    /// The channels Spotlight should hold. `server` is nil when the app has no valid server, and
-    /// `channels` is nil until that server's catalog arrives.
+    /// The channels Spotlight should hold, nil until every saved server's catalog has loaded or
+    /// failed.
     struct Catalog: Equatable {
-        var server: String?
         var channels: [Entry]?
     }
 
     /// What Spotlight holds, by channel.
     struct Indexed: Equatable {
-        var server: String?
         var entries: [String: Entry]
     }
 
@@ -83,7 +82,7 @@ final class ChannelSpotlight {
         bundleID == "dev.toybox.desktop" && options.allowsUserIntegrations(environment: environment)
     }
 
-    /// Follows the app's server and catalog for as long as the app runs.
+    /// Follows the app's servers and catalogs for as long as the app runs.
     func observe(_ model: AppModel) {
         let catalog = withObservationTracking {
             Catalog(model)
@@ -121,17 +120,15 @@ final class ChannelSpotlight {
         var seen: Set<String> = []
         let channels = (catalog.channels ?? []).filter { seen.insert($0.id).inserted }
         let entries = Dictionary(uniqueKeysWithValues: channels.map { ($0.id, $0) })
-        guard let indexed, indexed.server == catalog.server else {
-            // A saved server's channels from an earlier launch stay until its catalog arrives,
-            // but another server's leave at once.
-            if indexed == nil, catalog.server != nil, catalog.channels == nil { return (Plan(), nil) }
-            return (Plan(removesAll: indexed?.entries.isEmpty != true, indexes: channels),
-                    Indexed(server: catalog.server, entries: entries))
-        }
+        // An earlier launch's channels stay until the catalogs arrive, and what's indexed stays
+        // while a server you add loads.
         guard catalog.channels != nil else { return (Plan(), indexed) }
+        guard let indexed else {
+            return (Plan(removesAll: true, indexes: channels), Indexed(entries: entries))
+        }
         return (Plan(removes: indexed.entries.keys.filter { entries[$0] == nil }.sorted(),
                      indexes: channels.filter { indexed.entries[$0.id] != $0 }),
-                Indexed(server: catalog.server, entries: entries))
+                Indexed(entries: entries))
     }
 
     /// Applies changes one batch at a time, in order.
@@ -139,7 +136,7 @@ final class ChannelSpotlight {
         guard !plan.isEmpty else { return }
         let thumbnail = plan.indexes.isEmpty ? nil : thumbnail
         let entities = plan.indexes.map { entry in
-            ChannelEntity(id: entry.id, name: entry.name, purpose: entry.purpose, thumbnail: thumbnail)
+            ChannelEntity(entry.target, name: entry.name, purpose: entry.purpose, thumbnail: thumbnail)
         }
         let previous = tail
         let index = index
@@ -168,12 +165,7 @@ final class ChannelSpotlight {
 extension ChannelSpotlight.Catalog {
     @MainActor
     init(_ model: AppModel) {
-        guard let catalog = model.catalog else {
-            self.init(server: nil, channels: nil)
-            return
-        }
-        self.init(server: model.serverURL,
-                  channels: catalog.isLoaded ? catalog.channels.map(ChannelSpotlight.Entry.init) : nil)
+        self.init(channels: ChannelIntents.Listed.all(in: model.catalogs)?.map(ChannelSpotlight.Entry.init))
     }
 }
 

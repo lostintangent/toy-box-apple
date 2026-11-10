@@ -62,13 +62,12 @@ struct RootView: View {
     }
     /// What the window shows Siri: its conversation, or the artifact open over it. An image open
     /// over it, or an artifact that's gone, names nothing. Overview and management sheets leave
-    /// the conversation in view. Siri reads only the first server for now.
+    /// the conversation in view.
     private var screenEntity: ScreenEntity? {
-        guard let selectedId, handoff.phase == .idle, imageViewer.session == nil,
-              selectedCatalog != nil, selectedCatalog === model.catalog else { return nil }
-        guard artifactOpener.isPresented else { return .channel(selectedId) }
+        guard let selection, handoff.phase == .idle, imageViewer.session == nil, selectedCatalog != nil else { return nil }
+        guard artifactOpener.isPresented else { return .channel(selection) }
         guard !artifactOpener.isUnavailable, let artifact = artifactOpener.artifact else { return nil }
-        return .artifact(channelID: selectedId, artifactID: artifact.id)
+        return .artifact(selection, artifactID: artifact.id)
     }
     private var isColumnPresented: Bool { !isNarrow && interaction.isInspectorPresented && selectedStore != nil }
     private var overviewColumn: Binding<Bool> {
