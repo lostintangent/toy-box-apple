@@ -33,3 +33,7 @@ replace saved Settings.
 | Live Toy Box | 3100 | Reading only. Posting or mutating needs the Lead's approval of a specific scratch channel. Leave its process running |
 
 `TOY_BOX_DEMO_BOOKMARKS=empty` starts either demo with no bookmarks.
+
+Never take control of a real host's screen, including one listed by the live server, since control
+moves the user's real pointer and keyboard. Prove screen control against `bun run demo`'s synthetic
+screen, and leave the real check to the user.
