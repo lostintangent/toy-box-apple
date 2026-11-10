@@ -66,7 +66,7 @@ struct ChannelFollowMenuAction: View {
     var body: some View {
         ChannelFollowAction(state: following.state(for: store)) {
             if following.state(for: store) == .following {
-                following.stop(channelID: store.id)
+                following.stop(store)
             } else {
                 Task { await following.follow(store) }
             }

@@ -339,10 +339,10 @@ final class AppModel {
     }
 
     private func configureFollowing() {
-        following.configure(
-            registration: notifications.currentRegistration, isRegistrationReady: notifications.isRegistrationReady,
-            catalog: catalog, registrationError: notifications.registrationError
-        )
+        following.configure(servers: catalog.map { [.init(
+            catalog: $0, registration: notifications.currentRegistration,
+            isRegistrationReady: notifications.isRegistrationReady, registrationError: notifications.registrationError
+        )] } ?? [])
     }
 
     private func observeIntegrations(generation: UUID) {
