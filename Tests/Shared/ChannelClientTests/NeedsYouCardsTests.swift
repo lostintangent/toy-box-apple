@@ -31,8 +31,10 @@ struct NeedsYouCardsTests {
         #expect(cards.open(in: waiting) == a, "The newest request opens")
         cards.open(b.id)
         #expect(cards.open(in: waiting) == b)
-        #expect(cards.rows(in: waiting) == ["a": .question(a), "b": .card(b)], "The open card replaces its row's question")
-        #expect(cards.hiddenLines(in: waiting, order: ["a", "x", "b", "y"]) == ["x", "b"],
+        let target = server.target
+        #expect(cards.rows(in: waiting) == [target("a"): .question(a), target("b"): .card(b)],
+                "The open card replaces its row's question")
+        #expect(cards.hiddenLines(in: waiting, order: ["a", "x", "b", "y"].map(target)) == [target("x"), target("b")],
                 "The open card's row and the row above it hide their lines")
         #expect(cards.reveals(b.id, after: a.id), "A card the person opens scrolls into view")
 
@@ -41,7 +43,7 @@ struct NeedsYouCardsTests {
         #expect(server.outbox.messages(in: "b", on: server.catalog.api.baseURL).map(\.request) == [7], "A choice answers the card's request")
         #expect(cards.replying == nil && cards.phase == nil && cards.words.isEmpty,
                 "The card shrinks straight back into its row while the reply is still sending")
-        #expect(checks.rows == ["b": .sent], "Its row wears the check")
+        #expect(checks.rows == [target("b"): .sent], "Its row wears the check")
         #expect(server.catalog.waitingRequests() == [a], "Its request stops waiting as the outbox takes the reply")
         #expect(cards.open(in: [a]) == a && cards.reveals(a.id, after: b.id),
                 "The next card opens in the same motion, and scrolls into view")
@@ -55,11 +57,11 @@ struct NeedsYouCardsTests {
                 "A confirmed answer never reopens while the catalog catches up")
 
         await cards.send("Beside the desks", to: a, on: server.catalog.channel(id: "a"))
-        #expect(checks.rows == ["b": .sent, "a": .sent], "Answering the next card leaves the first check in place")
+        #expect(checks.rows == [target("b"): .sent, target("a"): .sent], "Answering the next card leaves the first check in place")
         #expect(server.catalog.waitingRequests().isEmpty && cards.open(in: []) == nil)
         try await beats.end(.seconds(2.35))
-        try await eventually { checks["b"] == .settling }
-        #expect(checks["a"] == .sent, "Each row settles on its own")
+        try await eventually { checks[target("b")] == .settling }
+        #expect(checks[target("a")] == .sent, "Each row settles on its own")
         try await beats.end(.seconds(2.35))
         try await beats.end(.seconds(0.45))
         try await beats.end(.seconds(0.45))
@@ -77,8 +79,31 @@ struct NeedsYouCardsTests {
         var arriving = known
         arriving[0].request = nil
         #expect(cards.open(in: arriving) == known[1], "The newest request waits for its words")
-        #expect(cards.rows(in: arriving) == ["b": .card(known[1])], "Its channel stays an ordinary row")
+        #expect(cards.rows(in: arriving) == [server.target("b"): .card(known[1])], "Its channel stays an ordinary row")
         #expect(cards.open(in: known) == known[0], "It opens once they're known")
+    }
+
+    @Test func theOneCardIsTheNewestAcrossServersAndEachRowIsItsChannelOnItsServer() async throws {
+        let home = try await CardServer.start(waiting: [("a", 12)], newestAt: 58)
+        defer { home.end() }
+        let work = try await CardServer.start(waiting: [("a", 7)])
+        defer { work.end() }
+        let cards = cards()
+        let waiting = [home.catalog, work.catalog].waitingRequests()
+        let (workA, homeA) = (waiting[0], waiting[1])
+        #expect(workA.serverURL != homeA.serverURL)
+        #expect(cards.open(in: waiting) == workA, "The newest request opens, though its server comes second")
+        #expect(cards.rows(in: waiting) == [work.target("a"): .card(workA), home.target("a"): .question(homeA)],
+                "One channel ID on two servers is two rows")
+        #expect(cards.hiddenLines(in: waiting, order: [home.target("a"), home.target("x"), work.target("a")])
+                    == [home.target("x"), work.target("a")])
+
+        await cards.send("Near the entrance", to: workA, on: work.catalog.channel(id: "a"))
+        #expect(checks.rows == [work.target("a"): .sent], "Only the answered server's row wears the check")
+        #expect(cards.open(in: [home.catalog, work.catalog].waitingRequests()) == homeA,
+                "The other server's request opens next")
+        try await eventually(observing: work.mock) { work.posts.count == 1 }
+        #expect(home.posts.isEmpty)
     }
 
     @Test func aTypedReplyLeadsWithTheRequesterAndShrinksBackIntoItsRowAsTheNextCardOpens() async throws {
@@ -98,7 +123,7 @@ struct NeedsYouCardsTests {
 
         let sending = Task { await cards.send() }
         try await eventually { cards.landing == a }
-        #expect(!cards.isLifted && cards.replying == nil && checks["a"] == .sent,
+        #expect(!cards.isLifted && cards.replying == nil && checks[server.target("a")] == .sent,
                 "The lifted card lowers in the sent beat, onto its row wearing the check")
         #expect(cards.words == "Beside the desks", "The words fade with the card rather than blanking")
         #expect(cards.open(in: server.catalog.waitingRequests()) == b, "The next card opens beneath it")
@@ -125,12 +150,12 @@ struct NeedsYouCardsTests {
         let store = server.catalog.channel(id: "b")
         cards.open(b.id)
         await cards.send("Near the entrance", to: b, on: store)
-        #expect(server.catalog.waitingRequests() == [a] && checks.rows == ["b": .sent])
+        #expect(server.catalog.waitingRequests() == [a] && checks.rows == [server.target("b"): .sent])
 
         try await eventually { store.sending.map(\.state) == [.notSent] }
         let returned = server.catalog.waitingRequests()
         #expect(returned == [a, b], "The request comes back where it was")
-        #expect(cards.rows(in: returned) == ["a": .card(a), "b": .question(b)],
+        #expect(cards.rows(in: returned) == [server.target("a"): .card(a), server.target("b"): .question(b)],
                 "As a waiting row, so the open card stays and the list doesn't move")
         #expect(cards.replying == nil && announcements == ["Reply sent in b"],
                 "The card says nothing more, since the reply waits in its channel with Retry")
@@ -180,6 +205,11 @@ struct NeedsYouCardsTests {
 
     var posts: [Post] { log.posts.withLock { $0 } }
 
+    /// A channel on this server.
+    func target(_ channelID: String) -> ChannelTarget {
+        ChannelTarget(serverURL: catalog.api.baseURL.absoluteString, channelID: channelID)!
+    }
+
     private init(mock: MockTransport, catalog: ChannelCatalogStore, outbox: ChannelOutbox, log: Log, folder: URL) {
         self.mock = mock
         self.catalog = catalog
@@ -188,14 +218,15 @@ struct NeedsYouCardsTests {
         self.folder = folder
     }
 
-    /// `waiting` is each waiting channel and its request's sequence, newest first, and `channels`
-    /// any others. `answer` takes each post and its number, and accepts it by default. The outbox
-    /// stamps each message `now`.
-    static func start(waiting: [(channel: String, sequence: Int)] = [], channels: [String] = [], now: Date = .now,
+    /// `waiting` is each waiting channel and its request's sequence, newest first, a minute apart
+    /// from `newestAt` past ten, and `channels` any others. `answer` takes each post and its number,
+    /// and accepts it by default. The outbox stamps each message `now`.
+    static func start(waiting: [(channel: String, sequence: Int)] = [], newestAt minute: Int = 59,
+                      channels: [String] = [], now: Date = .now,
                       answer: (@Sendable (Post, Int) throws -> MockResponse)? = nil) async throws -> CardServer {
         var listed: [Channel] = []
         for (index, request) in waiting.enumerated() {
-            let time = String(format: "2026-11-07T10:%02d:00Z", 59 - index)
+            let time = String(format: "2026-11-07T10:%02d:00Z", minute - index)
             var channel = Channel(id: request.channel, name: request.channel, model: .init(provider: "test", name: "test"),
                                   latestSequence: request.sequence, updatedAt: time)
             channel.requestSequence = request.sequence

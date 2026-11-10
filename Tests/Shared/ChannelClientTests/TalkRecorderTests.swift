@@ -29,15 +29,19 @@ struct TalkRecorderTests {
         }
         defer { server.end() }
         let store = server.catalog.channel(id: "test")
+        let (target, baseURL) = (server.target, server.catalog.api.baseURL)
+        // Another server's channel with the same ID is another row.
+        let elsewhere = try #require(ChannelTarget(serverURL: "https://elsewhere.test", channelID: "test"))
+        let order = [elsewhere] + ["a", "test", "b"].map(target)
         draft.text = "My own draft"
         var announcements: [String] = []
-        let recorder = try await start(on: store, order: ["a", "test", "b"]) { announcements.append($0) }
+        let recorder = try await start(on: store, order: order) { announcements.append($0) }
         defer { recorder.deactivate() }
         #expect(recorder.isLifted && recorder.hidesTrailingColumn)
         #expect(recorder.timeSlot == .counter)
-        #expect(recorder.ordered(channels).map(\.id) == ["a", "test", "b", "new", "newer"],
+        #expect(recorder.ordered(channels, on: baseURL).map(\.id) == ["a", "test", "b", "new", "newer"],
                 "Activity can't move rows beneath the card, and new channels follow in server order")
-        #expect(recorder.hiddenLines == ["a", "test", "b"],
+        #expect(recorder.hiddenLines == Set(["a", "test", "b"].map(target)),
                 "The lines above and below the held row and under the next row hide, so the card never crosses one")
 
         recognizer.send("Put the library", isFinal: true)
@@ -63,12 +67,12 @@ struct TalkRecorderTests {
         try await beats.end(.seconds(0.35))
         try await eventually { recorder.phase == .landed }
         #expect(!recorder.hidesTrailingColumn)
-        recorder.start(store, name: "Studio", order: ["a", "test", "b"])
+        recorder.start(store, name: "Studio", order: order)
         #expect(recorder.phase == .recording)
-        #expect(recorder.channelID == "test" && checks["test"] == nil,
+        #expect(recorder.target == target("test") && checks[target("test")] == nil,
                 "The row stays held, so its card stays up and the check swaps straight to the mic")
         #expect(recorder.finalizedWords.isEmpty && recorder.sentAt == nil)
-        #expect(recorder.hiddenLines == ["a", "test", "b"])
+        #expect(recorder.hiddenLines == Set(["a", "test", "b"].map(target)))
         try await eventually { beats.waiting.isEmpty }
 
         try await eventually { recorder.isListening }
@@ -77,14 +81,14 @@ struct TalkRecorderTests {
         try await beats.end(.seconds(0.35))
         try await eventually { recorder.phase == .landed }
         try await beats.end(.seconds(2.35))
-        try await eventually { checks["test"] == .settling }
+        try await eventually { checks[target("test")] == .settling }
         #expect(recorder.timeSlot == .noteTime && !recorder.isChecked,
                 "The note's time stays through the settle, since the row's own time reads the same")
-        #expect(recorder.ordered(channels).map(\.id) == ["a", "test", "b", "new", "newer"])
+        #expect(recorder.ordered(channels, on: baseURL).map(\.id) == ["a", "test", "b", "new", "newer"])
         try await beats.end(.seconds(0.45))
         try await eventually { recorder.phase == nil }
-        #expect(recorder.channelID == nil)
-        #expect(recorder.ordered(channels).map(\.id) == channels.map(\.id), "Settling lets the row go")
+        #expect(recorder.target == nil)
+        #expect(recorder.ordered(channels, on: baseURL).map(\.id) == channels.map(\.id), "Settling lets the row go")
         #expect(beats.motions == [.open, .sent, .settle, .open, .sent, .settle, .settle])
         #expect(announcements.count == 2)
         try await eventually { server.outbox.messages(in: "test", on: server.catalog.api.baseURL).isEmpty }
@@ -99,7 +103,7 @@ struct TalkRecorderTests {
         defer { server.end() }
         let store = server.catalog.channel(id: "test")
         var announcements: [String] = []
-        let recorder = try await start(on: store, order: ["test", "a"]) { announcements.append($0) }
+        let recorder = try await start(on: store, order: ["test", "a"].map(server.target)) { announcements.append($0) }
         defer { recorder.deactivate() }
         recognizer.send("Keep a reading nook", isFinal: true)
         await recorder.send()
@@ -149,7 +153,7 @@ struct TalkRecorderTests {
     }
 
     /// Opens the recorder on the store's row, as the swipe does, once it's listening.
-    private func start(on store: ChannelStore, order: [String] = [],
+    private func start(on store: ChannelStore, order: [ChannelTarget] = [],
                        announce: @escaping @MainActor (String) -> Void = { _ in }) async throws -> TalkRecorder {
         var system = DictationSystem.scripted()
         system.makeRecognizer = { [recognizer] _, _, _ in recognizer }

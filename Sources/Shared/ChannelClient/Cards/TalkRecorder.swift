@@ -26,7 +26,8 @@ package final class TalkRecorder: DictationTextTarget {
     }
 
     package let dictation: ComposerDictation
-    package private(set) var channelID: String?
+    /// The held row's channel, on its server.
+    package private(set) var target: ChannelTarget?
     package private(set) var channelName = ""
     package private(set) var phase: Phase?
     /// Earlier listening sessions in this note, since a pause ends the dictation session.
@@ -39,7 +40,7 @@ package final class TalkRecorder: DictationTextTarget {
     package private(set) var sentAt: Date?
     /// The list's order when the note began, held until the row settles so the sent note's
     /// activity can't move its row mid-beat.
-    package private(set) var order: [String]?
+    package private(set) var order: [ChannelTarget]?
     @ObservationIgnored private var listened: TimeInterval = 0
     @ObservationIgnored private var store: ChannelStore?
     @ObservationIgnored private weak var catalog: ChannelCatalogStore?
@@ -87,8 +88,8 @@ package final class TalkRecorder: DictationTextTarget {
 
     /// True while the held row wears the done check, from the note's Send until the check settles.
     package var isChecked: Bool {
-        guard phase == .sent || phase == .landed, let channelID else { return false }
-        return checks[channelID] == .sent
+        guard phase == .sent || phase == .landed, let target else { return false }
+        return checks[target] == .sent
     }
 
     /// What the row's time slot shows in place of the time. The note's time stays through the
@@ -104,8 +105,8 @@ package final class TalkRecorder: DictationTextTarget {
     /// The rows whose bottom line the open card covers: the held row, the row above it, whose line
     /// is the held row's top, and the row below it, so the card never crosses a line. The lines
     /// return in the shrink's own transaction, on Send and on Cancel.
-    package var hiddenLines: Set<String> {
-        guard isLifted, let held = channelID else { return [] }
+    package var hiddenLines: Set<ChannelTarget> {
+        guard isLifted, let held = target else { return [] }
         guard let order, let index = order.firstIndex(of: held) else { return [held] }
         return Set(order[max(index - 1, 0)...min(index + 1, order.count - 1)])
     }
@@ -143,14 +144,15 @@ package final class TalkRecorder: DictationTextTarget {
         listened + (listeningSince.map { max(date.timeIntervalSince($0), 0) } ?? 0)
     }
 
-    /// Channels in the order they had when the note began, with any new ones after them.
-    package func ordered(_ channels: [Channel]) -> [Channel] {
+    /// A server's channels in the order they had when the note began, with any new ones after them.
+    package func ordered(_ channels: [Channel], on server: URL) -> [Channel] {
         guard let order else { return channels }
-        let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
-        return channels.enumerated()
-            .sorted { (rank[$0.element.id] ?? order.count + $0.offset, $0.offset)
-                < (rank[$1.element.id] ?? order.count + $1.offset, $1.offset) }
-            .map(\.element)
+        let ranks = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        let ranked = channels.enumerated().map { offset, channel in
+            let target = ChannelTarget(serverURL: server.absoluteString, channelID: channel.id)
+            return (rank: target.flatMap { ranks[$0] } ?? order.count + offset, offset: offset, channel: channel)
+        }
+        return ranked.sorted { ($0.rank, $0.offset) < ($1.rank, $1.offset) }.map(\.channel)
     }
 
     /// Checks the language only, so Talk can show without touching the microphone.
@@ -161,10 +163,12 @@ package final class TalkRecorder: DictationTextTarget {
         dictation.deactivate()
     }
 
-    /// Opens the recorder on the channel's row and starts listening.
+    /// Opens the recorder on the channel's row and starts listening. `order` is the list's
+    /// channels, top to bottom.
     package func start(_ store: ChannelStore, name: String, contextualNames: [String] = [],
-                       catalog: ChannelCatalogStore? = nil, order: [String] = []) {
-        guard isAvailable, !isLifted else { return }
+                       catalog: ChannelCatalogStore? = nil, order: [ChannelTarget] = []) {
+        guard isAvailable, !isLifted,
+              let target = ChannelTarget(serverURL: store.api.baseURL.absoluteString, channelID: store.id) else { return }
         if phase != nil { close() }
         self.store = store
         self.catalog = catalog
@@ -177,7 +181,7 @@ package final class TalkRecorder: DictationTextTarget {
         listeningSince = nil
         dictation.contextualStrings = ["Lead"] + contextualNames
         animate(.open) {
-            channelID = store.id
+            self.target = target
             channelName = name
             phase = .recording
         }
@@ -193,7 +197,7 @@ package final class TalkRecorder: DictationTextTarget {
 
     /// Sends the finalized words as a new message to the Lead.
     package func send() async {
-        guard canSend, let store, let outbox = store.outbox else { return }
+        guard canSend, let store, let outbox = store.outbox, let target else { return }
         phase = .sending
         if dictation.isSessionActive {
             let finalized = await dictation.stop(.send)
@@ -216,20 +220,20 @@ package final class TalkRecorder: DictationTextTarget {
         sentAt = outbox.message(id)?.sentAt ?? .now
         animate(.sent) {
             phase = .sent
-            checks.sent(store.id)
+            checks.sent(target)
         }
         announce("Sent to Lead in \(channelName)")
-        land(store.id)
+        land(target)
     }
 
     /// Lands the card as its shrink ends, then ends the note once its row's check has settled.
-    private func land(_ channelID: String) {
+    private func land(_ target: ChannelTarget) {
         closing?.cancel()
         closing = Task { [weak self] in
             await self?.pause(.seconds(0.35))
             guard let self, !Task.isCancelled, phase == .sent else { return }
             animate(.settle) { phase = .landed }
-            for await check in Observations({ [checks] in checks[channelID] }) where check == nil { break }
+            for await check in Observations({ [checks] in checks[target] }) where check == nil { break }
             guard !Task.isCancelled, phase == .landed else { return }
             close()
         }
@@ -268,9 +272,9 @@ package final class TalkRecorder: DictationTextTarget {
 
     private func close() {
         // A sent note's check leaves with its card, and talking again swaps it straight to the mic.
-        if phase == .sent || phase == .landed, let channelID { checks.clear(channelID) }
+        if phase == .sent || phase == .landed, let target { checks.clear(target) }
         phase = nil
-        channelID = nil
+        target = nil
         order = nil
         following?.cancel()
         sampling?.cancel()

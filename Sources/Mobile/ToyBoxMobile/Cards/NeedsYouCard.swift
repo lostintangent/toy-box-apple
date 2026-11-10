@@ -194,15 +194,15 @@ extension View {
     /// Lifts the open card's typed reply, drawn by `lifted`, above the list from the card's row at
     /// `card` in global space, and rises above the keyboard. Once the reply sends, the card shrinks
     /// back into its row, drawn by `row`. Holds the list while lifted, and ends the reply as a draft
-    /// when anything in `context` changes or the channel leaves `channelIDs`. Reports the list's
+    /// when anything in `context` changes or the channel leaves `targets`. Reports the list's
     /// visible area in global space to `bounds` while no reply holds the list.
     func needsYouList<Card: View, Row: View>(
-        _ cards: NeedsYouCards, card: CGRect?, channelIDs: [String], bounds: Binding<CGRect>,
+        _ cards: NeedsYouCards, card: CGRect?, targets: [ChannelTarget], bounds: Binding<CGRect>,
         endsWhenChanging context: [AnyHashable?],
         @ViewBuilder lifted: @escaping (_ entry: ChannelCatalogStore.WaitingRequest, _ maxHeight: CGFloat) -> Card,
-        @ViewBuilder row: @escaping (_ channelID: String) -> Row
+        @ViewBuilder row: @escaping (_ target: ChannelTarget) -> Row
     ) -> some View {
-        modifier(NeedsYouList(cards: cards, card: card, channelIDs: channelIDs, bounds: bounds, context: context,
+        modifier(NeedsYouList(cards: cards, card: card, targets: targets, bounds: bounds, context: context,
                               lifted: lifted, row: row))
     }
 }
@@ -210,11 +210,11 @@ extension View {
 private struct NeedsYouList<Card: View, Row: View>: ViewModifier {
     let cards: NeedsYouCards
     let card: CGRect?
-    let channelIDs: [String]
+    let targets: [ChannelTarget]
     @Binding var bounds: CGRect
     let context: [AnyHashable?]
     let lifted: (ChannelCatalogStore.WaitingRequest, CGFloat) -> Card
-    let row: (String) -> Row
+    let row: (ChannelTarget) -> Row
     /// The lifted card's row, kept while the card shrinks back into it.
     @ViewState private var cardRow: CGRect?
     @Environment(\.colorScheme) private var colorScheme
@@ -222,7 +222,7 @@ private struct NeedsYouList<Card: View, Row: View>: ViewModifier {
     func body(content: Content) -> some View {
         let entry = cards.isLifted ? cards.replying : cards.landing
         content
-            .cardList(isLifted: cards.isLifted, channelID: cards.replying?.channel.id, channelIDs: channelIDs,
+            .cardList(isLifted: cards.isLifted, target: cards.replying?.target, targets: targets,
                       endsWhenChanging: context, end: cards.leave) { list in
                 Color.clear.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
                     if !cards.isLifted { bounds = frame }
@@ -250,8 +250,8 @@ private struct NeedsYouList<Card: View, Row: View>: ViewModifier {
         ZStack(alignment: .top) {
             if cards.isLifted {
                 lifted(entry, maxHeight)
-            } else {
-                row(entry.channel.id)
+            } else if let target = entry.target {
+                row(target)
                     .environment(\.cardMarkTaps, false)
             }
         }

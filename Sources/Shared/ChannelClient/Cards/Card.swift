@@ -1,3 +1,4 @@
+import ChannelKit
 import Foundation
 import Observation
 
@@ -39,9 +40,9 @@ package final class CardChecks {
         case settling
     }
 
-    /// The rows wearing a check, by channel.
-    package private(set) var rows: [String: Check] = [:]
-    @ObservationIgnored private var settles: [String: Task<Void, Never>] = [:]
+    /// The rows wearing a check, by channel on its server.
+    package private(set) var rows: [ChannelTarget: Check] = [:]
+    @ObservationIgnored private var settles: [ChannelTarget: Task<Void, Never>] = [:]
     @ObservationIgnored private let animate: @MainActor (CardMotion, () -> Void) -> Void
     @ObservationIgnored private let pause: @MainActor (Duration) async -> Void
 
@@ -54,26 +55,26 @@ package final class CardChecks {
         self.pause = pause
     }
 
-    package subscript(channelID: String) -> Check? { rows[channelID] }
+    package subscript(target: ChannelTarget) -> Check? { rows[target] }
 
     /// Puts the check on the row, in the card's own `sent` beat, and settles it 2.35 seconds later.
-    package func sent(_ channelID: String) {
-        settles[channelID]?.cancel()
-        rows[channelID] = .sent
-        settles[channelID] = Task { [weak self] in
+    package func sent(_ target: ChannelTarget) {
+        settles[target]?.cancel()
+        rows[target] = .sent
+        settles[target] = Task { [weak self] in
             await self?.pause(.seconds(2.35))
             guard let self, !Task.isCancelled else { return }
-            animate(.settle) { rows[channelID] = .settling }
+            animate(.settle) { rows[target] = .settling }
             await pause(.seconds(0.45))
             guard !Task.isCancelled else { return }
-            rows[channelID] = nil
-            settles[channelID] = nil
+            rows[target] = nil
+            settles[target] = nil
         }
     }
 
     /// Takes the check off the row at once, as when a new card replaces it.
-    package func clear(_ channelID: String) {
-        settles.removeValue(forKey: channelID)?.cancel()
-        rows[channelID] = nil
+    package func clear(_ target: ChannelTarget) {
+        settles.removeValue(forKey: target)?.cancel()
+        rows[target] = nil
     }
 }
