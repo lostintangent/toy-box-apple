@@ -167,8 +167,7 @@ package final class TalkRecorder: DictationTextTarget {
     /// channels, top to bottom.
     package func start(_ store: ChannelStore, name: String, contextualNames: [String] = [],
                        catalog: ChannelCatalogStore? = nil, order: [ChannelTarget] = []) {
-        guard isAvailable, !isLifted,
-              let target = ChannelTarget(serverURL: store.api.baseURL.absoluteString, channelID: store.id) else { return }
+        guard isAvailable, !isLifted, let target = store.target else { return }
         if phase != nil { close() }
         self.store = store
         self.catalog = catalog

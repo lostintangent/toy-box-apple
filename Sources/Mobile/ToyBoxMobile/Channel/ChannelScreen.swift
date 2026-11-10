@@ -229,11 +229,11 @@ struct ChannelScreen: View {
         .disabled(store.phase == .deleted || model.channelURL(channelID: store.id) == nil)
         Divider()
         Button("Edit Channel", systemImage: "pencil") {
-            management.present(.editChannel(channelId: store.id))
+            if let target = store.target { management.present(.editChannel(target)) }
         }
         .disabled(!store.phase.isConnected)
         Button("Delete Channel", systemImage: "trash", role: .destructive) {
-            management.present(.deleteChannel(channelId: store.id))
+            if let target = store.target { management.present(.deleteChannel(target)) }
         }
         .disabled(!store.phase.isConnected)
     }

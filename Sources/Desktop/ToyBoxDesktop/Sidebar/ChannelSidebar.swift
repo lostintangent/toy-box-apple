@@ -110,7 +110,7 @@ struct ChannelSidebar: View {
             Text(query.isEmpty ? "Your channels live here" : "No channels match \"\(query)\"")
                 .font(.headline).multilineTextAlignment(.center)
             if query.isEmpty {
-                Button("New Channel") { management.present(.newChannel) }
+                Button("New Channel") { management.present(.newChannel(server: model.serverURL)) }
             } else {
                 Button("Clear Search") { query = "" }
             }
@@ -151,10 +151,12 @@ struct ChannelSidebar: View {
             Button("Copy Folder Path", systemImage: "doc.on.doc") { model.folders.copy(path) }
         }
         Divider()
-        Button("Edit Channel…", systemImage: "pencil") { management.present(.editChannel(channelId: channel.id)) }
+        Button("Edit Channel…", systemImage: "pencil") {
+            if let target = model.catalog?.target(channel.id) { management.present(.editChannel(target)) }
+        }
         Divider()
         Button("Delete Channel…", systemImage: "trash", role: .destructive) {
-            management.present(.deleteChannel(channelId: channel.id))
+            if let target = model.catalog?.target(channel.id) { management.present(.deleteChannel(target)) }
         }
     }
 }

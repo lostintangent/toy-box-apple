@@ -369,7 +369,3 @@ final class ChannelFollowController {
         }
     }
 }
-
-private extension ChannelStore {
-    @MainActor var target: ChannelTarget? { ChannelTarget(serverURL: api.baseURL.absoluteString, channelID: id) }
-}

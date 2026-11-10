@@ -24,18 +24,18 @@ private struct ManagementFlowsModifier: ViewModifier {
     }
 
     private func prepareSnapshotState() {
-        guard let snapshot, let state = snapshot.requestedState,
-              let channelId = snapshot.options.channelID else { return }
+        guard let snapshot, let state = snapshot.requestedState, let catalog = app.catalog,
+              let channelId = snapshot.options.channelID, let target = catalog.target(channelId) else { return }
         switch state {
         case "add-member":
-            presenter.present(.addMember(channelId: channelId, name: ""))
+            presenter.present(.addMember(target, name: ""))
             snapshot.markStateReady(state)
         case "edit-member":
-            guard let member = app.catalog?.channel(id: channelId).state?.members.first else {
+            guard let member = catalog.channel(id: channelId).state?.members.first else {
                 snapshot.failState(state, message: "The channel has no member to edit")
                 return
             }
-            presenter.present(.editMember(channelId: channelId, agentId: member.id))
+            presenter.present(.editMember(target, agentId: member.id))
             snapshot.markStateReady(state)
         default: break
         }
@@ -48,13 +48,15 @@ private struct ManagementSheet: View {
     let presenter: ManagementPresenter
     @ViewState private var store: ChannelStore?
 
+    private var catalog: ChannelCatalogStore? { flow.catalog(in: app.catalogs) }
+
     var body: some View {
         Group {
-            if let api = app.api {
-                if flow == .newChannel {
-                    ChannelEditor(channel: nil, store: nil, api: api, presenter: presenter)
+            if let catalog {
+                if flow.isNewChannel {
+                    ChannelEditor(channel: nil, store: nil, catalog: catalog, presenter: presenter)
                 } else if let store, let details = store.details {
-                    flowContent(details: details, store: store, api: api)
+                    flowContent(details: details, store: store, catalog: catalog)
                 } else {
                     VStack(spacing: 16) {
                         if let store, case .deleted = store.phase {
@@ -84,35 +86,40 @@ private struct ManagementSheet: View {
                 .frame(width: 480)
             }
         }
-        .task(id: "\(app.serverURL)|\(flow.channelId ?? "")") {
-            guard let id = flow.channelId, let api = app.api else { return }
+        .task(id: catalog.map(ObjectIdentifier.init)) {
+            guard let id = flow.channelId, let catalog else { return }
             if let store { app.release(store) }
-            let connection = app.catalog?.channel(id: id) ?? ChannelStore(id: id, api: api)
+            let connection = catalog.channel(id: id)
             store = connection
             app.hold(connection)
+        }
+        // A channel's sheet closes when Settings removes its server or gives it a new address.
+        .onChange(of: catalog == nil) { _, isGone in
+            if isGone, !flow.isNewChannel { presenter.flow = nil }
         }
         .onDisappear { if let store { app.release(store) } }
     }
 
     @ViewBuilder
-    private func flowContent(details: ChannelDetails, store: ChannelStore, api: ChannelAPI) -> some View {
+    private func flowContent(details: ChannelDetails, store: ChannelStore,
+                             catalog: ChannelCatalogStore) -> some View {
         switch flow {
         case .newChannel: EmptyView()
         case .editChannel:
-            ChannelEditor(channel: details, store: store, api: api, presenter: presenter)
+            ChannelEditor(channel: details, store: store, catalog: catalog, presenter: presenter)
         case .addMember(_, let name):
             MemberEditor(channel: details, member: nil, initialName: name, store: store,
-                         api: api, presenter: presenter)
+                         catalog: catalog, presenter: presenter)
         case .editMember(_, let agentId):
             if let member = store.roster.dropFirst().first(where: { $0.id == agentId }) {
                 MemberEditor(channel: details, member: member, initialName: member.name,
-                             store: store, api: api, presenter: presenter)
+                             store: store, catalog: catalog, presenter: presenter)
             } else {
                 unavailable("This member is no longer in the channel.")
             }
         case .deleteChannel, .removeMember, .deleteRoutine:
             ManagementConfirmation(flow: flow, channel: details, store: store,
-                                   api: api, presenter: presenter)
+                                   catalog: catalog, presenter: presenter)
         }
     }
 

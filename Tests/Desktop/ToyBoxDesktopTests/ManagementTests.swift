@@ -159,19 +159,39 @@ struct ManagementTests {
         #expect(OverviewPurpose.requiresExpansion(longer + "\u{2026} Show More", width: CGFloat(width), fontSize: 13))
     }
 
-    @Test func finishingMemberCreationDismissesOnlyTheMatchingSheet() {
+    @Test func finishingMemberCreationDismissesOnlyTheMatchingSheet() throws {
         let presenter = ManagementPresenter()
-        presenter.present(.addMember(channelId: "channel", name: "Moss"))
-        presenter.finishAddingMember(channelId: "channel")
+        let channel = try #require(ChannelTarget(serverURL: "http://127.0.0.1:3210", channelID: "channel"))
+        let another = try #require(ChannelTarget(serverURL: "http://127.0.0.1:3210", channelID: "another"))
+        let elsewhere = try #require(ChannelTarget(serverURL: "http://127.0.0.1:3211", channelID: "channel"))
+        presenter.present(.addMember(channel, name: "Moss"))
+        presenter.finishAddingMember(channel)
         #expect(presenter.flow == nil)
 
-        presenter.present(.editChannel(channelId: "another"))
-        presenter.finishAddingMember(channelId: "channel")
-        #expect(presenter.flow == .editChannel(channelId: "another"))
+        presenter.present(.editChannel(another))
+        presenter.finishAddingMember(channel)
+        #expect(presenter.flow == .editChannel(another))
 
-        presenter.present(.addMember(channelId: "another", name: "Finch"))
-        presenter.finishAddingMember(channelId: "channel")
-        #expect(presenter.flow == .addMember(channelId: "another", name: "Finch"))
+        presenter.present(.addMember(another, name: "Finch"))
+        presenter.finishAddingMember(channel)
+        #expect(presenter.flow == .addMember(another, name: "Finch"))
+
+        // The same channel ID on another server is another channel.
+        presenter.present(.addMember(elsewhere, name: "Wren"))
+        presenter.finishAddingMember(channel)
+        #expect(presenter.flow == .addMember(elsewhere, name: "Wren"))
+    }
+
+    @Test func eachFlowWritesToItsOwnServer() throws {
+        let first = ChannelCatalogStore(api: try ChannelAPI(serverURL: "http://127.0.0.1:3210"))
+        let second = ChannelCatalogStore(api: try ChannelAPI(serverURL: "http://127.0.0.1:3211"))
+        let editing = ManagementFlow.editChannel(try #require(second.target("channel")))
+        let creating = ManagementFlow.newChannel(server: "http://127.0.0.1:3211/")
+        #expect(editing.catalog(in: [first, second]) === second)
+        #expect(creating.catalog(in: [first, second]) === second)
+        // Once Settings removes the server, its channel has nowhere to write, and New Channel starts on the first.
+        #expect(editing.catalog(in: [first]) == nil)
+        #expect(creating.catalog(in: [first]) === first)
     }
 
     @Test(arguments: [ColorScheme.light, .dark])
@@ -218,10 +238,11 @@ struct ManagementTests {
         _ = try store.apply(.init(type: "snapshot", state: .init(
             revision: 1, channel: channel, lead: .lead(id: store.id))))
         let presenter = ManagementPresenter()
-        presenter.present(.addMember(channelId: "channel", name: "Finch"))
+        let target = try #require(store.target)
+        presenter.present(.addMember(target, name: "Finch"))
         let member = try await presenter.createMentionMember(name: "Moss", store: store)
         #expect(member == ChannelAgent(id: "moss", name: "Moss"))
-        #expect(presenter.flow == .addMember(channelId: "channel", name: "Finch"))
+        #expect(presenter.flow == .addMember(target, name: "Finch"))
         #expect(fixture.requests == ["POST /api/v1/channels/channel/members"])
     }
 
@@ -229,14 +250,15 @@ struct ManagementTests {
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         let store = ChannelStore(id: "not-connected", api: api)
         let presenter = ManagementPresenter()
-        presenter.present(.addMember(channelId: "not-connected", name: "Finch"))
+        let target = try #require(store.target)
+        presenter.present(.addMember(target, name: "Finch"))
         do {
             _ = try await presenter.createMentionMember(name: "Moss", store: store)
             Issue.record("Disconnected inline creation must fail before making a request.")
         } catch let error as ChannelAPIError {
             #expect(error == .disconnected)
         }
-        #expect(presenter.flow == .addMember(channelId: "not-connected", name: "Finch"))
+        #expect(presenter.flow == .addMember(target, name: "Finch"))
     }
 
     @Test func inlineCreationValidatesBeforeWriting() async throws {

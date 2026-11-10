@@ -43,7 +43,7 @@ struct OverviewTeamSection: View {
                     .listRowInsets(.vertical, verticalInset)
             }
             Button {
-                management.present(.addMember(channelId: store.id, name: ""))
+                if let target = store.target { management.present(.addMember(target, name: "")) }
             } label: {
                 Label("Add Agent", systemImage: "person.badge.plus")
                     .fixedSize(horizontal: false, vertical: true)
@@ -155,8 +155,12 @@ struct OverviewTeamRow: View {
         }
     }
 
-    private func edit() { management.present(.editMember(channelId: store.id, agentId: agent.id)) }
-    private func remove() { management.present(.removeMember(channelId: store.id, agentId: agent.id)) }
+    private func edit() {
+        if let target = store.target { management.present(.editMember(target, agentId: agent.id)) }
+    }
+    private func remove() {
+        if let target = store.target { management.present(.removeMember(target, agentId: agent.id)) }
+    }
     private func reply() {
         interaction.isInspectorPresented = false
         interaction.reply(to: agent)

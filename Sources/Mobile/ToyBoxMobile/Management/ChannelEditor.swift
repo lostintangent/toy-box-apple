@@ -37,11 +37,27 @@ struct ChannelEditor: View {
             && (store == nil || store?.phase.isConnected == true)
     }
     private var catalog: ChannelCatalogStore? {
-        app.catalog === session.catalog ? session.catalog : nil
+        app.catalogs.contains { $0 === session.catalog } ? session.catalog : nil
+    }
+    private var serverSelection: Binding<String> {
+        Binding { session.catalog.api.baseURL.absoluteString } set: { address in
+            if let chosen = app.catalogs.first(at: address) { session.catalog = chosen }
+        }
     }
 
     var body: some View {
         Form {
+            if channel == nil, app.catalogs.count > 1 {
+                Section {
+                    Picker("Server", selection: serverSelection) {
+                        ForEach(app.catalogs, id: \.api.baseURL) { catalog in
+                            Text(catalog.name).tag(catalog.api.baseURL.absoluteString)
+                        }
+                    }
+                    .disabled(recovery.state != nil)
+                    .accessibilityIdentifier("channel-server")
+                }
+            }
             if let store, store.phase.isUnavailable {
                 Section { ManagementConnectionNotice(store: store) }
             }
@@ -82,6 +98,8 @@ struct ChannelEditor: View {
                                  api: api, provider: channel?.model.provider,
                                  allowsInheritance: false, title: "Lead model",
                                  help: channel == nil ? [] : ["Model changes apply the next time the lead works."])
+                // Another server's models load fresh.
+                .id(ObjectIdentifier(session.catalog))
         }
         .accessibilityIdentifier("channel-editor-form")
         .disabled(saving)
@@ -120,6 +138,7 @@ struct ChannelEditor: View {
         session.pending = true
         recovery.clearError()
         let catalog = catalog
+        let api = api
         Task {
             var failed = false
             do {
@@ -133,7 +152,7 @@ struct ChannelEditor: View {
                     if isCurrent { presenter.flow = nil }
                 } else {
                     let created = try await api.createChannel(creationInput(model: model))
-                    if isCurrent { presenter.didCreate(created) }
+                    if isCurrent { presenter.didCreate(created, on: api.baseURL.absoluteString) }
                 }
                 await catalog?.refresh()
             } catch {

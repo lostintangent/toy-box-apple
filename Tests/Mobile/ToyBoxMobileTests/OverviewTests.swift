@@ -110,7 +110,7 @@ struct OverviewTests {
         try withModel { app in
             let catalog = try #require(app.catalog)
             let sessions = ManagementSessions()
-            let flow = ManagementFlow.addMember(channelId: "channel", name: "Initial")
+            let flow = try ManagementFlow.addMember(#require(catalog.target("channel")), name: "Initial")
             let draft = sessions.session(for: flow, catalog: catalog)
             draft.name = "Edited"
             draft.role = "First line\nSecond line"
@@ -867,7 +867,7 @@ struct OverviewTests {
                 "Actions: \(online.actions.map(\.name))")
         let delete = try #require(online.actions.first { $0.name == "Delete Routine" })
         #expect(online.perform(delete))
-        #expect(presenter.flow == .deleteRoutine(channelId: "channel", routineId: "routine"))
+        #expect(try presenter.flow == .deleteRoutine(#require(store.target), routineId: "routine"))
     }
 
     @Test func routineRowTogglesLikeATaskParentAndSpeaksItsSchedule() async throws {
@@ -1316,11 +1316,12 @@ struct OverviewTests {
             let catalog = try #require(app.catalog)
             let sessions = ManagementSessions()
             let presenter = ManagementPresenter()
-            let editing = ManagementFlow.editMember(channelId: "channel", agentId: "agent")
+            let target = try #require(catalog.target("channel"))
+            let editing = ManagementFlow.editMember(target, agentId: "agent")
             presenter.present(editing)
             let editor = sessions.session(for: editing, catalog: catalog)
             editor.name = "Unsaved name"
-            let removal = sessions.session(for: .removeMember(channelId: "channel", agentId: "agent"), catalog: catalog)
+            let removal = sessions.session(for: .removeMember(target, agentId: "agent"), catalog: catalog)
             #expect(removal !== editor && removal.deletionStep == .confirm)
             #expect(sessions.session(for: editing, catalog: catalog) === editor)
             #expect(sessions.isCurrent(editor, app: app, presenter: presenter) && editor.name == "Unsaved name")
@@ -1335,6 +1336,32 @@ struct OverviewTests {
         }
     }
 
+    @Test func managementSessionsBelongToTheirOwnServer() throws {
+        try withModel { app in
+            let first = try #require(app.catalog)
+            let second = try app.addServer("https://second.example")
+            let sessions = ManagementSessions()
+            let presenter = ManagementPresenter()
+            let editing = try ManagementFlow.editChannel(#require(second.target("channel")))
+            presenter.present(editing)
+            let editor = sessions.session(for: editing, catalog: second)
+            try app.changeAddress(of: first, to: "https://moved.example")
+            #expect(sessions.isCurrent(editor, app: app, presenter: presenter))
+            app.removeServer(second)
+            #expect(!sessions.isCurrent(editor, app: app, presenter: presenter))
+
+            // New Channel's Server menu moves its session, so the entries stay.
+            let third = try app.addServer("https://third.example")
+            let creating = ManagementFlow.newChannel(server: app.serverURL)
+            presenter.present(creating)
+            let draft = sessions.session(for: creating, catalog: try #require(app.catalog))
+            draft.name = "Workshop"
+            draft.catalog = third
+            #expect(sessions.session(for: creating, catalog: try #require(app.catalog)) === draft)
+            #expect(sessions.isCurrent(draft, app: app, presenter: presenter) && draft.api.baseURL == third.api.baseURL)
+        }
+    }
+
     @Test(arguments: ["remains", "gone", "unreachable"])
     func anUncertainDeleteChecksTheServerBeforeOfferingAnother(server: String) async throws {
         let host = "delete-\(UUID().uuidString).invalid"
@@ -1343,7 +1370,8 @@ struct OverviewTests {
         configuration.protocolClasses = [UncertainDeletionProtocol.self]
         let api = try ChannelAPI(serverURL: "https://\(host)", session: URLSession(configuration: configuration))
         let catalog = ChannelCatalogStore(api: api)
-        let session = ManagementSession(flow: .deleteRoutine(channelId: "channel", routineId: "routine"),
+        let session = ManagementSession(flow: .deleteRoutine(try #require(catalog.target("channel")),
+                                                             routineId: "routine"),
                                         catalog: catalog)
         func requests() -> [String] { UncertainDeletionProtocol.requests.withLock { $0[host] ?? [] } }
 

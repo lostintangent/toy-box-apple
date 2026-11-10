@@ -209,7 +209,11 @@ struct RootView: View {
             artifactOpener.close(animated: false)
         }
         .onChange(of: management.createdChannel?.token) { _, _ in
-            if let created = management.createdChannel { selectChannel(created.channel.id) }
+            // The sidebar selects only the first server's channels until it groups every server.
+            if let created = management.createdChannel, let target = created.target,
+               model.catalogs.first(at: target.serverURL) === model.catalog {
+                selectChannel(created.channel.id)
+            }
         }
         .onChange(of: management.flow) { _, flow in
             if flow != nil { handoff.cancel() }
@@ -274,11 +278,11 @@ struct RootView: View {
         case "handoff-unavailable":
             if handoff.phase == .missing { snapshot.markStateReady(state) }
         case "new-channel":
-            management.present(.newChannel)
+            management.present(.newChannel(server: model.serverURL))
             snapshot.markStateReady(state)
         case "edit-channel":
-            if let selectedId {
-                management.present(.editChannel(channelId: selectedId))
+            if let target = selectedId.flatMap({ model.catalog?.target($0) }) {
+                management.present(.editChannel(target))
                 snapshot.markStateReady(state)
             }
         case "overview-tasks", "overview-artifacts", "overview-routines":
@@ -324,7 +328,7 @@ struct RootView: View {
     }
 
     private var newChannelButton: some View {
-        Button("New Channel", systemImage: "plus") { management.present(.newChannel) }
+        Button("New Channel", systemImage: "plus") { management.present(.newChannel(server: model.serverURL)) }
             .help("New Channel (Command-N)")
             .disabled(model.api == nil)
     }
@@ -354,7 +358,7 @@ struct RootView: View {
     private func consumeNewChannelRequest() {
         guard model.newChannelRequest != nil, isKeyWindow else { return }
         handoff.cancel()
-        management.present(.newChannel)
+        management.present(.newChannel(server: model.serverURL))
         model.newChannelRequest = nil
     }
 
@@ -367,7 +371,7 @@ struct RootView: View {
             messageView: interaction.messageView,
             imageZoom: imageZoom,
             isViewerPresented: artifactOpener.isPresented,
-            newChannel: { handoff.cancel(); management.present(.newChannel) },
+            newChannel: { handoff.cancel(); management.present(.newChannel(server: model.serverURL)) },
             openNewWindow: { if let selectedId { openWindow(value: ChannelWindowValue(channelID: selectedId)) } },
             openInToyBox: {
                 if artifactOpener.isPresented { artifactOpener.openInToyBox(app: model) }

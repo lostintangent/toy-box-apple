@@ -74,6 +74,8 @@ public struct ChannelManagementReconciliation: Sendable {
 public final class ChannelStore {
     public let id: String
     public let api: ChannelAPI
+    /// This channel on its server.
+    public var target: ChannelTarget? { ChannelTarget(serverURL: api.baseURL.absoluteString, channelID: id) }
     /// The whole channel. Reading it re-evaluates a view on every event, so views read the narrow
     /// slices below instead, and keep `state` for one-off reads in actions and tasks.
     public private(set) var state: ChannelState? {

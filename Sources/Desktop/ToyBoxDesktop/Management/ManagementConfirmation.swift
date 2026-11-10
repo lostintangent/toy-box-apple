@@ -4,11 +4,11 @@ import SwiftUI
 import ToyBoxUI
 
 struct ManagementConfirmation: View {
-    @Environment(AppModel.self) private var app
     let flow: ManagementFlow
     let channel: ChannelDetails
     let store: ChannelStore
-    let api: ChannelAPI
+    /// The channel's server.
+    let catalog: ChannelCatalogStore
     let presenter: ManagementPresenter
     @ViewState private var isDeleting = false
     @ViewState private var recovery = ChannelManagementWriteRecovery()
@@ -104,16 +104,16 @@ struct ManagementConfirmation: View {
             defer { isDeleting = false }
             do {
                 switch flow {
-                case .deleteChannel(let channelId):
-                    try await api.deleteChannel(id: channelId)
-                case .removeMember(let channelId, let agentId):
-                    try await api.removeMember(channelId: channelId, agentId: agentId)
-                case .deleteRoutine(let channelId, let routineId):
-                    try await api.deleteRoutine(channelId: channelId, routineId: routineId)
+                case .deleteChannel(let target):
+                    try await catalog.api.deleteChannel(id: target.channelID)
+                case .removeMember(let target, let agentId):
+                    try await catalog.api.removeMember(channelId: target.channelID, agentId: agentId)
+                case .deleteRoutine(let target, let routineId):
+                    try await catalog.api.deleteRoutine(channelId: target.channelID, routineId: routineId)
                 default: return
                 }
                 presenter.flow = nil
-                await app.catalog?.refresh()
+                await catalog.refresh()
             } catch {
                 if recovery.record(error) { await checkCurrentState() }
             }
@@ -121,7 +121,7 @@ struct ManagementConfirmation: View {
     }
 
     private func checkCurrentState() async {
-        await recovery.check(catalog: app.catalog, channelId: store.id) { current in
+        await recovery.check(catalog: catalog, channelId: store.id) { current in
             let stillExists: Bool
             if current.channelWasDeleted {
                 stillExists = false

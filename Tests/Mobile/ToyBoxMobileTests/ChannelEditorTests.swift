@@ -142,9 +142,10 @@ struct ChannelEditorTests {
             let api = try #require(app.api)
             let store = ChannelStore(id: "channel", api: api)
             let presenter = ManagementPresenter()
+            let target = try #require(store.target)
             let flow: ManagementFlow = editing
-                ? .editMember(channelId: "channel", agentId: "ada")
-                : .addMember(channelId: "channel", name: "")
+                ? .editMember(target, agentId: "ada")
+                : .addMember(target, name: "")
             presenter.present(flow)
             let session = sessions.session(for: flow, catalog: try #require(app.catalog))
             let channel = ChannelDetails(Channel(
@@ -172,9 +173,11 @@ struct ChannelEditorTests {
                            environment: [:], defaults: defaults, session: transport)
         let sessions = ManagementSessions()
         let presenter = ManagementPresenter()
-        let flow: ManagementFlow = editing ? .editChannel(channelId: "channel") : .newChannel
+        let catalog = try #require(app.catalog)
+        let flow: ManagementFlow = try editing
+            ? .editChannel(#require(catalog.target("channel"))) : .newChannel(server: app.serverURL)
         presenter.present(flow)
-        let session = sessions.session(for: flow, catalog: try #require(app.catalog))
+        let session = sessions.session(for: flow, catalog: catalog)
         if editing {
             session.load(channel: ChannelDetails(Channel(
                 id: "channel", name: "Discussion", purpose: "Keep purpose unchanged",

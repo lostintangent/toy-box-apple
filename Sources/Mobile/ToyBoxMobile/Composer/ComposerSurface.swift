@@ -378,7 +378,7 @@ struct ComposerSurface: View {
             if let agent = choice.agent, choice.isMember {
                 Button("Edit Agent") {
                     preparePresentation()
-                    management.present(.editMember(channelId: store.id, agentId: agent.id))
+                    if let target = store.target { management.present(.editMember(target, agentId: agent.id)) }
                 }
                 .disabled(!store.phase.isConnected)
             }
@@ -404,7 +404,7 @@ struct ComposerSurface: View {
             guard store.phase.isConnected else { return }
             dismissedCompletion = query
             preparePresentation()
-            management.present(.addMember(channelId: store.id, name: choice.name))
+            if let target = store.target { management.present(.addMember(target, name: choice.name)) }
         } else {
             editor.replace(query.range, with: "\(choice.handle) ")
         }
