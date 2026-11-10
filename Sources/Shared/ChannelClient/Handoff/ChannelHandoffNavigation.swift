@@ -14,33 +14,34 @@ public final class ChannelHandoffNavigation {
 
     public init() {}
 
+    /// Opens a handed-off channel in the first server, in Settings order, whose catalog lists it,
+    /// since Handoff carries only the channel. `catalogs` reads the app's servers each time, so a
+    /// server removed meanwhile can't open.
     public func continueActivity(
         _ activity: NSUserActivity,
-        currentCatalog: () -> ChannelCatalogStore?,
-        open: (String) -> Void
+        catalogs: () -> [ChannelCatalogStore],
+        open: (ChannelCatalogStore, String) -> Void
     ) async {
         guard !Task.isCancelled else { return }
         cancel()
         let token = generation
         phase = .opening
-        guard let handoff = ChannelHandoff(activity: activity), let catalog = currentCatalog() else {
+        guard let handoff = ChannelHandoff(activity: activity), !catalogs().isEmpty else {
             phase = .missing
             return
         }
-        if catalog.phase != .connected || !catalog.channels.contains(where: { $0.id == handoff.channelID }) {
-            await catalog.refresh()
-        }
+        let catalog = await catalogs().first(listing: handoff.channelID)
         guard generation == token else { return }
         guard !Task.isCancelled else {
             phase = .idle
             return
         }
-        guard currentCatalog() === catalog, catalog.phase == .connected,
+        guard let catalog, catalogs().contains(where: { $0 === catalog }), catalog.phase == .connected,
               catalog.channels.contains(where: { $0.id == handoff.channelID }) else {
             phase = .missing
             return
         }
-        open(handoff.channelID)
+        open(catalog, handoff.channelID)
         phase = .idle
     }
 

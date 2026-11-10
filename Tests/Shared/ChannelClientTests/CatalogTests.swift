@@ -474,4 +474,24 @@ struct CatalogTests {
         #expect(models.models.first?.supportedReasoningEfforts == ["high", "xhigh"])
         #expect(models.models.first?.supportedContextTiers?.first?.tokenWindow == 128000)
     }
+
+    @Test func savedServersMoveFromTheOneServerOnceAndListEachAddressOnce() throws {
+        let suite = "tbm-servers-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(" http://127.0.0.1:3210 \n", forKey: "serverURL")
+        #expect(ChannelCatalogStore.Saved.load(from: defaults) == [.init(url: "http://127.0.0.1:3210")])
+        #expect(ChannelCatalogStore.Saved.load(from: defaults).map(\.name) == ["127.0.0.1:3210"])
+        #expect(defaults.string(forKey: "serverURL") == nil)
+
+        ChannelCatalogStore.Saved.save([.init(url: "https://work.test", name: "Work"), .init(url: "HTTPS://WORK.test:443/"),
+                                        .init(url: "https://[::1]:8443"), .init(url: "not a server")], to: defaults)
+        #expect(ChannelCatalogStore.Saved.load(from: defaults).map(\.name) == ["Work", "[::1]:8443"])
+        defaults.set("http://elsewhere.test", forKey: "serverURL")
+        #expect(ChannelCatalogStore.Saved.load(from: defaults).count == 2, "The one server moves only the first time")
+
+        let empty = try #require(UserDefaults(suiteName: suite + "-empty"))
+        defer { empty.removePersistentDomain(forName: suite + "-empty") }
+        #expect(ChannelCatalogStore.Saved.load(from: empty).isEmpty)
+    }
 }

@@ -1,3 +1,4 @@
+import ChannelClient
 import ChannelKit
 import SwiftUI
 import ToyBoxMobileIntegrations
@@ -19,7 +20,7 @@ struct ShareSheet: View {
     var body: some View {
         NavigationStack {
             Group {
-                if session.serverURL == nil {
+                if session.catalogs.isEmpty {
                     ContentUnavailableView("Open Toy Box to connect first", systemImage: "network")
                         .toolbar { ToolbarItem(placement: .cancellationAction) { closeButton } }
                 } else if let message = session.contentError {
@@ -189,25 +190,31 @@ private struct ShareComposer: View {
     }
 }
 
-/// Up to three recent channels, then the rest A to Z, like the Mac's Quick Send.
+/// Up to three recent channels, then the rest A to Z, like the Mac's Quick Send. With several
+/// servers, each lists its own under its name, and one that hasn't loaded says so in its section.
 private struct ShareChannelPicker: View {
     let session: MobileShareSession
-    let choose: (Channel) -> Void
+    let choose: (MobileShareSession.Choice) -> Void
     @ViewState private var query = ""
 
     var body: some View {
-        let channels = session.catalog?.channels ?? []
-        let choices = channels.choices(matching: query, recentIDs: session.recentChannelIDs)
+        let choices = session.choices(matching: query)
+        let grouped = session.catalogs.count > 1
         List {
             if !choices.recent.isEmpty {
                 Section("Recent") { ForEach(choices.recent) { row($0) } }
             }
-            if !choices.others.isEmpty {
-                Section("All Channels") { ForEach(choices.others) { row($0) } }
+            ForEach(session.catalogs.indices, id: \.self) { index in
+                let catalog = session.catalogs[index]
+                if grouped, !catalog.isLoaded {
+                    Section(catalog.name) { status(catalog) }
+                } else if !choices.others[index].isEmpty {
+                    Section(grouped ? catalog.name : "All Channels") { ForEach(choices.others[index]) { row($0) } }
+                }
             }
         }
         .overlay {
-            if let catalog = session.catalog, !catalog.isLoaded {
+            if !grouped, let catalog = session.catalogs.first, !catalog.isLoaded {
                 if let message = catalog.phase.message {
                     ContentUnavailableView {
                         Label("Can't Load Channels", systemImage: "wifi.exclamationmark")
@@ -219,7 +226,8 @@ private struct ShareChannelPicker: View {
                 } else {
                     ProgressView()
                 }
-            } else if choices.recent.isEmpty, choices.others.isEmpty {
+            } else if choices.recent.isEmpty, choices.others.allSatisfy(\.isEmpty),
+                      session.catalogs.allSatisfy(\.isLoaded) {
                 if query.isEmpty {
                     ContentUnavailableView("No Channels", systemImage: "bubble.left.and.bubble.right")
                 } else {
@@ -232,18 +240,29 @@ private struct ShareChannelPicker: View {
         .refreshable { await session.refreshChannels() }
     }
 
-    private func row(_ channel: Channel) -> some View {
-        Button { choose(channel) } label: {
+    private func row(_ choice: MobileShareSession.Choice) -> some View {
+        Button { choose(choice) } label: {
             HStack(spacing: 12) {
                 ChannelMark(size: 28).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(channel.name).foregroundStyle(Color.primary)
-                    if let purpose = channel.purpose, !purpose.isEmpty {
+                    Text(choice.channel.name).foregroundStyle(Color.primary)
+                    if let purpose = choice.channel.purpose, !purpose.isEmpty {
                         Text(purpose).font(.footnote).foregroundStyle(Color.secondary).lineLimit(1)
                     }
                 }
             }
         }
     }
-}
 
+    @ViewBuilder private func status(_ catalog: ChannelCatalogStore) -> some View {
+        if let message = catalog.phase.message {
+            HStack {
+                Label(message, systemImage: "wifi.exclamationmark").foregroundStyle(Color.secondary)
+                Spacer()
+                Button("Retry") { Task { await session.refreshChannels() } }
+            }
+        } else {
+            ProgressView().frame(maxWidth: .infinity)
+        }
+    }
+}

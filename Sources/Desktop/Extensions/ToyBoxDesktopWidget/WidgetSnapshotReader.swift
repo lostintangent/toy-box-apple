@@ -16,7 +16,7 @@ enum WidgetSnapshotReader {
         do {
             let snapshot = try JSONDecoder().decode(NeedsYouSnapshot.self,
                 from: Data(contentsOf: directory.appendingPathComponent(NeedsYouSnapshot.fileName)))
-            guard snapshot.version == 1 else {
+            guard snapshot.version == NeedsYouSnapshot.currentVersion else {
                 logger.error("The widget snapshot version is unsupported.")
                 return nil
             }

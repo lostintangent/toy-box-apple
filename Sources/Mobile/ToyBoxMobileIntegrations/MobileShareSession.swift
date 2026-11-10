@@ -10,18 +10,32 @@ import Observation
 @MainActor @Observable
 public final class MobileShareSession {
     public struct Target: Equatable, Sendable {
+        /// The address of the server the channel is on.
+        public let serverURL: String
         public let id: String
         public let name: String
+    }
+
+    /// A channel the sheet offers, on its server.
+    public struct Choice: Identifiable {
+        public let catalog: ChannelCatalogStore
+        public let channel: Channel
+        public let id: String
+
+        @MainActor init(catalog: ChannelCatalogStore, channel: Channel) {
+            self.catalog = catalog
+            self.channel = channel
+            id = "\(catalog.api.baseURL.absoluteString) \(channel.id)"
+        }
     }
 
     public enum Phase: Equatable, Sendable {
         case composing, sending, sent
     }
 
-    /// The server the app saved, or nil until the app has connected once.
-    public let serverURL: String?
-    public let catalog: ChannelCatalogStore?
-    public let recentChannelIDs: [String]
+    /// One per server the app saved, in Settings order, and none until the app has connected once.
+    public let catalogs: [ChannelCatalogStore]
+    public let recents: [ChannelTarget]
     public private(set) var content: MobileShareContent?
     public private(set) var contentError: String?
     public private(set) var phase = Phase.composing
@@ -32,22 +46,20 @@ public final class MobileShareSession {
     @ObservationIgnored private let history: MobileShareHistory?
     @ObservationIgnored private let outbox: ChannelOutbox?
 
-    /// `intent` is the suggestion the share sheet opened from. One for another server, or a channel
-    /// the server no longer lists, leaves no channel chosen. Tests pass their own `outbox`.
+    /// `intent` is the suggestion the share sheet opened from. One for a server the app doesn't have,
+    /// or a channel its server no longer lists, leaves no channel chosen. Tests pass their own `outbox`.
     public init(history: MobileShareHistory?, intent: INSendMessageIntent?, session: URLSession = .shared,
                 outbox: ChannelOutbox? = nil) {
         self.history = history
-        let server = history?.serverURL
-        let api = server.flatMap { try? ChannelAPI(serverURL: $0, session: session) }
-        serverURL = api == nil ? nil : server
-        catalog = api.map { ChannelCatalogStore(api: $0) }
-        self.outbox = api == nil ? nil : outbox ?? .mobile(sendsOnce: true)
-        catalog?.outbox = self.outbox
-        recentChannelIDs = history?.recentChannelIDs ?? []
-        if let server, let identifier = intent?.conversationIdentifier,
-           let suggested = MobileShareTarget(conversationIdentifier: identifier),
-           suggested.serverURL == ChannelWaitingRequest.normalizedServer(server) {
-            target = Target(id: suggested.channelID,
+        catalogs = (history?.servers ?? []).compactMap { saved in
+            (try? ChannelAPI(serverURL: saved.url, session: session)).map { ChannelCatalogStore(api: $0, name: saved.name) }
+        }
+        self.outbox = catalogs.isEmpty ? nil : outbox ?? .mobile(sendsOnce: true)
+        for catalog in catalogs { catalog.outbox = self.outbox }
+        recents = history?.recents ?? []
+        if let identifier = intent?.conversationIdentifier, let suggested = ChannelTarget(identifier: identifier),
+           let catalog = catalogs.first(at: suggested.serverURL) {
+            target = Target(serverURL: catalog.api.baseURL.absoluteString, id: suggested.channelID,
                             name: intent?.speakableGroupName?.spokenPhrase ?? suggested.channelID)
         }
     }
@@ -62,7 +74,27 @@ public final class MobileShareSession {
     /// The lead first, then the channel's members, as the audience pill reads them.
     public var agents: [ChannelAgent] {
         guard let target else { return [] }
-        return ChannelSidebarPresentation(catalog: catalog, openChannelIDs: []).catalogAgents(channelID: target.id)
+        return ChannelSidebarPresentation(catalog: catalogs.first(at: target.serverURL), openChannelIDs: [])
+            .catalogAgents(channelID: target.id)
+    }
+
+    /// Up to three recent channels across every server, then each server's others A to Z, which with
+    /// one server is `choices(matching:recentIDs:)`.
+    public func choices(matching query: String) -> (recent: [Choice], others: [[Choice]]) {
+        let latest = recents.prefix(3)
+        let addresses = catalogs.map { ChannelWaitingRequest.normalizedServer($0.api.baseURL.absoluteString) }
+        let perServer = zip(catalogs, addresses).map { catalog, address in
+            catalog.channels.choices(matching: query,
+                                     recentIDs: latest.filter { $0.serverURL == address }.map(\.channelID))
+        }
+        let recent = latest.compactMap { target -> Choice? in
+            guard let index = addresses.firstIndex(of: target.serverURL),
+                  let channel = perServer[index].recent.first(where: { $0.id == target.channelID }) else { return nil }
+            return Choice(catalog: catalogs[index], channel: channel)
+        }
+        return (recent, zip(catalogs, perServer).map { catalog, choices in
+            choices.others.map { Choice(catalog: catalog, channel: $0) }
+        })
     }
 
     /// Reads what was shared while the channel list loads.
@@ -74,24 +106,30 @@ public final class MobileShareSession {
     }
 
     public func refreshChannels() async {
-        guard let catalog else { return }
-        await catalog.refresh()
-        guard catalog.isLoaded, phase == .composing, let id = target?.id else { return }
-        target = catalog.channels.first { $0.id == id }.map { Target(id: id, name: $0.name) }
+        await withTaskGroup(of: Void.self) { group in
+            for catalog in catalogs { group.addTask { await catalog.refresh() } }
+        }
+        guard phase == .composing, let target, let catalog = catalogs.first(at: target.serverURL),
+              catalog.isLoaded else { return }
+        self.target = catalog.channels.first { $0.id == target.id }.map {
+            Target(serverURL: target.serverURL, id: target.id, name: $0.name)
+        }
     }
 
-    public func choose(_ channel: Channel) {
+    public func choose(_ choice: Choice) {
         guard !isLocked else { return }
-        target = Target(id: channel.id, name: channel.name)
+        target = Target(serverURL: choice.catalog.api.baseURL.absoluteString, id: choice.channel.id,
+                        name: choice.channel.name)
     }
 
     /// Returns once the one attempt settles, even offline, and the app shows any failure in the channel.
     public func send() async {
-        guard canSend, let target, let content, let catalog, let outbox, let serverURL else { return }
+        guard canSend, let target, let content, let outbox,
+              let catalog = catalogs.first(at: target.serverURL) else { return }
         phase = .sending
         await outbox.send(content.message(note: note), attachments: content.attachments,
                           to: target.id, on: catalog.api.baseURL)
         phase = .sent
-        await history?.recordSend(serverURL: serverURL, channelID: target.id, name: target.name).value
+        await history?.recordSend(serverURL: target.serverURL, channelID: target.id, name: target.name).value
     }
 }

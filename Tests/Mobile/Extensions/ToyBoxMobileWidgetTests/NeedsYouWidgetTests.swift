@@ -8,8 +8,8 @@ struct NeedsYouWidgetTests {
     private let now = Date(timeIntervalSince1970: 1_000_000)
 
     private func snapshot(count: Int, offline: Bool = false) -> NeedsYouSnapshot {
-        .init(serverURL: "http://127.0.0.1:3210", updatedAt: now, isOffline: offline,
-              isAvailable: true, waitingCount: count, requests: [])
+        .init(servers: [.init(serverURL: "http://127.0.0.1:3210", updatedAt: now, isOffline: offline,
+                              isAvailable: true, waitingCount: count, requests: [])])
     }
 
     @Test func theFourStatesUseTheSharedSnapshotAndFreshnessPolicy() {

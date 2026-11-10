@@ -1,3 +1,4 @@
+import ChannelClient
 import ChannelKit
 import Foundation
 import ImageIO
@@ -7,34 +8,8 @@ import SwiftUI
 import ToyBoxUI
 import UniformTypeIdentifiers
 
-/// One channel on one server, as a share sheet suggestion names it.
-public struct MobileShareTarget: Equatable, Hashable, Sendable {
-    public let serverURL: String
-    public let channelID: String
-
-    public init?(serverURL: String, channelID: String) {
-        guard !channelID.isEmpty, let server = ChannelWaitingRequest.normalizedServer(serverURL) else { return nil }
-        self.serverURL = server
-        self.channelID = channelID
-    }
-
-    public init?(conversationIdentifier: String) {
-        let items = URLComponents(string: conversationIdentifier)?.queryItems ?? []
-        guard let server = items.first(where: { $0.name == "server" })?.value,
-              let channel = items.first(where: { $0.name == "channel" })?.value else { return nil }
-        self.init(serverURL: server, channelID: channel)
-    }
-
-    /// Also each donation's group identifier, so one channel's suggestion can be removed alone.
-    public var conversationIdentifier: String {
-        var components = URLComponents()
-        components.queryItems = [.init(name: "server", value: serverURL), .init(name: "channel", value: channelID)]
-        return components.string ?? ""
-    }
-}
-
-/// The saved server and recently used channels the share extension reads from the app group, and the
-/// share sheet suggestions that mirror those recents. Every change rereads the file first, since
+/// The app's servers and recently used channels the share extension reads from the app group, and
+/// the share sheet suggestions that mirror those recents. Every change rereads the file first, since
 /// the app and the extension both write it.
 @MainActor
 public final class MobileShareHistory {
@@ -57,8 +32,32 @@ public final class MobileShareHistory {
     }
 
     private struct Saved: Codable, Equatable {
-        var serverURL: String
-        var recentChannelIDs: [String]
+        var servers: [ChannelCatalogStore.Saved]
+        var recents: [ChannelTarget]
+
+        init(servers: [ChannelCatalogStore.Saved], recents: [ChannelTarget]) {
+            self.servers = servers
+            self.recents = recents
+        }
+
+        private enum CodingKeys: String, CodingKey { case servers, recents }
+        /// The history from before the phone had several servers: one server and its recent channels.
+        private enum SingleServerKeys: String, CodingKey { case serverURL, recentChannelIDs }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            if container.contains(.servers) {
+                servers = try container.decode([ChannelCatalogStore.Saved].self, forKey: .servers)
+                recents = try container.decode([ChannelTarget].self, forKey: .recents)
+                return
+            }
+            let single = try decoder.container(keyedBy: SingleServerKeys.self)
+            let server = try single.decode(String.self, forKey: .serverURL)
+            servers = [.init(url: server)]
+            recents = try single.decode([String].self, forKey: .recentChannelIDs).compactMap {
+                ChannelTarget(serverURL: server, channelID: $0)
+            }
+        }
     }
 
     private let file: URL
@@ -71,32 +70,34 @@ public final class MobileShareHistory {
         self.donor = donor
     }
 
-    /// The server the app last connected to, exactly as it saved it.
-    public var serverURL: String? { load()?.serverURL }
-    public var recentChannelIDs: [String] { load()?.recentChannelIDs ?? [] }
+    /// The app's servers in Settings order, exactly as it saved them.
+    public var servers: [ChannelCatalogStore.Saved] { load()?.servers ?? [] }
+    /// The most recent first, across every server.
+    public var recents: [ChannelTarget] { load()?.recents ?? [] }
 
-    /// A different server starts an empty history and removes the old server's suggestions.
+    /// Saves the app's servers. One the app no longer has loses its recents and their suggestions.
     @discardableResult
-    public func select(serverURL: String) -> Task<Void, Never> {
+    public func select(servers: [ChannelCatalogStore.Saved]) -> Task<Void, Never> {
         let current = load()
-        guard current?.serverURL != serverURL else { return enqueue {} }
-        let sameServer = current.flatMap { ChannelWaitingRequest.normalizedServer($0.serverURL) }
-            == ChannelWaitingRequest.normalizedServer(serverURL)
-        let removed = sameServer ? [] : targets(current, current?.recentChannelIDs ?? [])
-        write(Saved(serverURL: serverURL, recentChannelIDs: sameServer ? current?.recentChannelIDs ?? [] : []))
+        guard current?.servers != servers, current != nil || !servers.isEmpty else { return enqueue {} }
+        let addresses = Set(servers.compactMap { ChannelWaitingRequest.normalizedServer($0.url) })
+        let recents = current?.recents ?? []
+        let removed = recents.filter { !addresses.contains($0.serverURL) }.map(\.identifier)
+        write(Saved(servers: servers, recents: recents.filter { addresses.contains($0.serverURL) }))
         return enqueue { [donor] in if !removed.isEmpty { try await donor.delete(removed) } }
     }
 
-    /// Moves a channel to the front of the recents and suggests it again. A send on another server
-    /// than the saved one changes nothing.
+    /// Moves a channel to the front of the recents and suggests it again. A send on a server the app
+    /// doesn't have changes nothing.
     @discardableResult
     public func recordSend(serverURL: String, channelID: String, name: String) -> Task<Void, Never> {
-        guard var next = load(), let target = MobileShareTarget(serverURL: serverURL, channelID: channelID),
-              ChannelWaitingRequest.normalizedServer(next.serverURL) == target.serverURL else { return enqueue {} }
-        next.recentChannelIDs.removeAll { $0 == channelID }
-        next.recentChannelIDs.insert(channelID, at: 0)
-        let evicted = targets(next, Array(next.recentChannelIDs.dropFirst(Self.recentLimit)))
-        next.recentChannelIDs = Array(next.recentChannelIDs.prefix(Self.recentLimit))
+        guard var next = load(), let target = ChannelTarget(serverURL: serverURL, channelID: channelID),
+              next.servers.contains(where: { ChannelWaitingRequest.normalizedServer($0.url) == target.serverURL })
+        else { return enqueue {} }
+        next.recents.removeAll { $0 == target }
+        next.recents.insert(target, at: 0)
+        let evicted = next.recents.dropFirst(Self.recentLimit).map(\.identifier)
+        next.recents = Array(next.recents.prefix(Self.recentLimit))
         write(next)
         return enqueue { [donor] in
             if !evicted.isEmpty { try await donor.delete(evicted) }
@@ -107,26 +108,24 @@ public final class MobileShareHistory {
     /// Forgets channels the server no longer lists, along with their suggestions.
     @discardableResult
     public func prune(serverURL: String, keeping channelIDs: Set<String>) -> Task<Void, Never> {
-        guard var next = load(),
-              ChannelWaitingRequest.normalizedServer(next.serverURL) == ChannelWaitingRequest.normalizedServer(serverURL)
-        else { return enqueue {} }
-        let removed = next.recentChannelIDs.filter { !channelIDs.contains($0) }
+        guard var next = load(), let server = ChannelWaitingRequest.normalizedServer(serverURL) else { return enqueue {} }
+        let removed = next.recents.filter { $0.serverURL == server && !channelIDs.contains($0.channelID) }
         guard !removed.isEmpty else { return enqueue {} }
-        next.recentChannelIDs.removeAll { !channelIDs.contains($0) }
+        next.recents.removeAll { removed.contains($0) }
         write(next)
-        let targets = targets(next, removed)
-        return enqueue { [donor] in try await donor.delete(targets) }
+        let identifiers = removed.map(\.identifier)
+        return enqueue { [donor] in try await donor.delete(identifiers) }
     }
 
-    static func interaction(_ target: MobileShareTarget, name: String) -> INInteraction {
+    static func interaction(_ target: ChannelTarget, name: String) -> INInteraction {
         let intent = INSendMessageIntent(
             recipients: nil, outgoingMessageType: .outgoingMessageText, content: nil,
             speakableGroupName: INSpeakableString(spokenPhrase: name),
-            conversationIdentifier: target.conversationIdentifier, serviceName: nil, sender: nil, attachments: nil)
+            conversationIdentifier: target.identifier, serviceName: nil, sender: nil, attachments: nil)
         if let mark = markImage { intent.setImage(INImage(imageData: mark), forParameterNamed: \.speakableGroupName) }
         let interaction = INInteraction(intent: intent, response: nil)
         interaction.direction = .outgoing
-        interaction.groupIdentifier = target.conversationIdentifier
+        interaction.groupIdentifier = target.identifier
         return interaction
     }
 
@@ -149,13 +148,6 @@ public final class MobileShareHistory {
         }
         return png
     }()
-
-    private func targets(_ saved: Saved?, _ channelIDs: [String]) -> [String] {
-        guard let saved else { return [] }
-        return channelIDs.compactMap {
-            MobileShareTarget(serverURL: saved.serverURL, channelID: $0)?.conversationIdentifier
-        }
-    }
 
     private func load() -> Saved? {
         do { return try JSONDecoder().decode(Saved.self, from: Data(contentsOf: file)) }

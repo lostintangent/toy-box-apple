@@ -8,8 +8,8 @@ import Testing
     private let now = Date(timeIntervalSince1970: 1_000_000)
 
     private func snapshot(count: Int, offline: Bool = false, available: Bool = true) -> NeedsYouSnapshot {
-        .init(serverURL: "http://localhost/", updatedAt: now, isOffline: offline,
-              isAvailable: available, waitingCount: count, requests: [])
+        .init(servers: [.init(serverURL: "http://localhost/", updatedAt: now, isOffline: offline,
+                              isAvailable: available, waitingCount: count, requests: [])])
     }
 
     @Test func countUsesTheFullSharedSnapshotInsteadOfVisibleRequestRows() {
@@ -30,7 +30,7 @@ import Testing
 
     @Test func missingUnavailableOrUnsupportedSnapshotsNeverClaimAnEmptyInbox() {
         var unsupported = snapshot(count: 0)
-        unsupported.version = 2
+        unsupported.version = NeedsYouSnapshot.currentVersion + 1
         for value in [nil, snapshot(count: 0, available: false), unsupported, snapshot(count: -1)] {
             let state = NeedsYouControlValue(snapshot: value, now: now)
             #expect(state.waitingCount == nil)

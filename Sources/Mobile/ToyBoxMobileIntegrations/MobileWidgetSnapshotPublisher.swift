@@ -24,42 +24,65 @@ public final class MobileWidgetSnapshotPublisher {
         let directory = try directory ?? MobileSharedContainer.url()
         file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
         self.reload = reload
+        let data: Data
         do {
-            previous = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
-            guard previous?.version == 1 else { throw Failure.unsupportedSnapshot }
+            data = try Data(contentsOf: file)
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
             previous = nil
-        }
-    }
-
-    /// Publishes the waiting requests the app's channel list shows, so both agree.
-    public func update(catalog: ChannelCatalogStore?, serverURL: String) throws {
-        generation = UUID()
-        guard let catalog, catalog.api.baseURL.absoluteString == serverURL,
-              catalog.isLoaded, catalog.phase.message == nil else {
-            var snapshot = previous?.serverURL == serverURL ? previous : nil
-            if snapshot != nil { snapshot?.isOffline = true }
-            try publish(snapshot ?? NeedsYouSnapshot(
-                serverURL: serverURL, updatedAt: .now, isOffline: true, isAvailable: false,
-                waitingCount: 0, requests: []
-            ))
             return
         }
-        try publish(snapshot(of: catalog, serverURL: serverURL))
+        let version = try NeedsYouSnapshot.version(of: data)
+        guard version <= NeedsYouSnapshot.currentVersion else { throw Failure.unsupportedSnapshot }
+        // An older version's snapshot is written over, as if there were none.
+        previous = version == NeedsYouSnapshot.currentVersion
+            ? try JSONDecoder().decode(NeedsYouSnapshot.self, from: data) : nil
     }
 
+    /// Publishes the waiting requests the app's channel list shows, so both agree. A server whose
+    /// catalog isn't current keeps its last requests, out of date.
+    public func update(catalogs: [ChannelCatalogStore]) throws {
+        generation = UUID()
+        let now = Date.now
+        try publish(NeedsYouSnapshot(servers: catalogs.map { catalog in
+            let serverURL = catalog.api.baseURL.absoluteString
+            guard catalog.isLoaded, catalog.phase.message == nil else {
+                return .offline(serverURL, in: previous, at: now)
+            }
+            return try part(of: catalog, serverURL: serverURL)
+        }))
+    }
+
+    /// Fetches every registered server's waiting requests without the app, as the widget's timeline
+    /// and a push do.
     public func refresh(session: URLSession = .shared, now: Date = .now) async throws -> NeedsYouSnapshot? {
         let directory = file.deletingLastPathComponent()
-        let selected = try MobilePushRegistrationStore(directory: directory).current
-        guard let serverURL = selected?.serverURL ?? previous?.serverURL else { return nil }
+        let registrations = try MobilePushRegistrationStore(directory: directory).registrations
+        let servers = registrations.isEmpty ? previous?.servers.map(\.serverURL) ?? [] : registrations.map(\.serverURL)
+        guard !servers.isEmpty else { return nil }
         let token = UUID()
         generation = token
-        let snapshot: NeedsYouSnapshot
+        let parts = try await withThrowingTaskGroup(of: (Int, NeedsYouSnapshot.Server).self) { group in
+            for (index, serverURL) in servers.enumerated() {
+                group.addTask { (index, try await self.part(serverURL: serverURL, session: session, now: now)) }
+            }
+            var parts: [NeedsYouSnapshot.Server?] = Array(repeating: nil, count: servers.count)
+            for try await (index, part) in group { parts[index] = part }
+            return parts.compactMap(\.self)
+        }
+        try Task.checkCancellation()
+        guard generation == token,
+              try MobilePushRegistrationStore(directory: directory).registrations == registrations else {
+            throw CancellationError()
+        }
+        try publish(NeedsYouSnapshot(servers: parts), now: now)
+        return previous
+    }
+
+    /// A server's part, or its last one out of date when it can't be reached within 10 seconds.
+    private func part(serverURL: String, session: URLSession, now: Date) async throws -> NeedsYouSnapshot.Server {
         do {
-            snapshot = try await withThrowingTaskGroup(of: NeedsYouSnapshot.self) { group in
-                group.addTask {
-                    try await self.fetchedSnapshot(serverURL: serverURL, session: session)
-                }
+            return try await withThrowingTaskGroup(of: NeedsYouSnapshot.Server.self) { group in
+                group.addTask { try await self.fetchedPart(serverURL: serverURL, session: session) }
                 group.addTask {
                     try await Task.sleep(for: .seconds(10))
                     throw URLError(.timedOut)
@@ -72,30 +95,19 @@ public final class MobileWidgetSnapshotPublisher {
             if Task.isCancelled || error is CancellationError
                 || (error as? URLError)?.code == .cancelled { throw error }
             logger.error("Could not refresh the widget: \(error.localizedDescription)")
-            var cached = previous?.serverURL == serverURL ? previous : nil
-            if cached != nil { cached?.isOffline = true }
-            snapshot = cached ?? NeedsYouSnapshot(
-                serverURL: serverURL, updatedAt: now, isOffline: true, isAvailable: false,
-                waitingCount: 0, requests: [])
+            return .offline(serverURL, in: previous, at: now)
         }
-        try Task.checkCancellation()
-        guard generation == token,
-              try MobilePushRegistrationStore(directory: directory).current == selected else {
-            throw CancellationError()
-        }
-        try publish(snapshot, now: now)
-        return previous
     }
 
-    private func fetchedSnapshot(serverURL: String, session: URLSession) async throws -> NeedsYouSnapshot {
+    private func fetchedPart(serverURL: String, session: URLSession) async throws -> NeedsYouSnapshot.Server {
         let catalog = ChannelCatalogStore(api: try ChannelAPI(serverURL: serverURL, session: session))
         await catalog.refresh()
         try Task.checkCancellation()
         if let failure = catalog.phase.failure { throw failure }
-        return try snapshot(of: catalog, serverURL: serverURL)
+        return try part(of: catalog, serverURL: serverURL)
     }
 
-    private func snapshot(of catalog: ChannelCatalogStore, serverURL: String) throws -> NeedsYouSnapshot {
+    private func part(of catalog: ChannelCatalogStore, serverURL: String) throws -> NeedsYouSnapshot.Server {
         guard catalog.state != nil else { throw ChannelAPIError.invalidResponse }
         let waiting = catalog.waitingRequests()
         for entry in waiting {
@@ -103,8 +115,7 @@ public final class MobileWidgetSnapshotPublisher {
                 serverURL: serverURL, channelID: entry.channel.id, sequence: entry.sequence
             ) != nil else { throw ChannelAPIError.invalidMessage("A waiting request has an invalid sequence.") }
         }
-        return NeedsYouSnapshot(serverURL: serverURL, updatedAt: .now, isOffline: false, isAvailable: true,
-                                waiting: waiting)
+        return .init(serverURL: serverURL, updatedAt: .now, isOffline: false, isAvailable: true, waiting: waiting)
     }
 
     func publish(_ proposed: NeedsYouSnapshot, now: Date = .now) throws {

@@ -39,13 +39,13 @@ package struct NeedsYouWidgetContent: View {
                 } else {
                     VStack(alignment: .leading, spacing: family == .systemLarge ? 12 : 8) {
                         ForEach(Array(snapshot.requests.prefix(limit))) { request in
-                            if let url = NeedsYouRequestLink(serverURL: snapshot.serverURL,
+                            if let url = NeedsYouRequestLink(serverURL: request.serverURL,
                                 channelID: request.channelID, sequence: request.sequence).url {
                                 HStack(alignment: .center, spacing: 8) {
                                     Link(destination: url) { requestRow(request) }
                                         .accessibilityLabel("\(request.channelName): \(request.quote)")
                                     if family != .systemSmall, let replyURL = NeedsYouRequestLink(
-                                        serverURL: snapshot.serverURL, channelID: request.channelID,
+                                        serverURL: request.serverURL, channelID: request.channelID,
                                         sequence: request.sequence).replyURL {
                                         Link(destination: replyURL) {
                                             Image(systemName: "arrowshape.turn.up.left")
@@ -78,7 +78,7 @@ package struct NeedsYouWidgetContent: View {
     private var firstURL: URL? {
         guard let snapshot, !snapshot.isStale(at: entry.date),
               let request = snapshot.requests.first else { return NeedsYouSnapshot.mainURL }
-        return NeedsYouRequestLink(serverURL: snapshot.serverURL,
+        return NeedsYouRequestLink(serverURL: request.serverURL,
                                   channelID: request.channelID, sequence: request.sequence).url
     }
 

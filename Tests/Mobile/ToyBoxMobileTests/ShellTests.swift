@@ -73,7 +73,7 @@ struct ShellTests {
             host.view.frame = window.bounds
             host.view.layoutIfNeeded()
             await navigation.continueActivity(NSUserActivity(activityType: ChannelHandoff.activityType),
-                                              currentCatalog: { nil }) { _ in
+                                              catalogs: { [] }) { _, _ in
                 Issue.record("An invalid continuation opened a channel.")
             }
             host.rootView = root
@@ -1130,7 +1130,7 @@ struct ShellTests {
                 "serverURL": "https://another.example"
             ]
             let navigation = ChannelHandoffNavigation()
-            await navigation.continueActivity(activity, currentCatalog: { model.catalog }) { id in
+            await navigation.continueActivity(activity, catalogs: { model.catalog.map { [$0] } ?? [] }) { _, id in
                 model.openHandoffChannel(id: id, generation: generation)
             }
             #expect(model.selectedStore === store)

@@ -78,7 +78,7 @@ Signing, notarization, in-place updates and TestFlight are in the [release skill
   go, the store stays connected for 5 seconds, so switching back lands on a live store. Its first
   frame then has a working composer, and the transcript lands without waiting on a reconnect. On
   the switch benchmark that's about 100 ms less main-thread time per warm switch. Only the two most
-  recently released stores linger, and a server change disconnects them at once. A lingering store
+  recently released stores linger, and changing or removing a server disconnects its stores at once. A lingering store
   has no transcript, so it never marks read, and notifications come from the catalog, so it posts
   none.
   Views read the store's observed slices (`details`, `roster`, `agentStatuses`, `presence`,
@@ -172,7 +172,8 @@ couldn't be opened is Handoff's `missing`.
 - **Test Connection:** `ServerConnectionProbe.phase` is nil until a test runs, then `connecting`,
   `connected` with the channel count, or `failed`. `isConnecting` drives the button.
 - **Holders:** `ChannelConnections` counts who holds each store through `hold` and `release`. The
-  last release lingers as State describes, and `disconnectAll` serves a server change.
+  last release lingers as State describes, and `disconnectAll(in:)` serves changing or removing a
+  server.
 
 ### Several servers
 
@@ -460,10 +461,10 @@ opening anything. Stale Activity taps omit the sequence and open only the channe
 
 The phone stores one registration per server in `group.dev.toybox.mobile`. Adding a server
 generates a new UUID, including when adding back an earlier one, and removing one deletes its
-registration. Equivalent URL spelling preserves the UUID. `MobileWidgetSnapshotPublisher.update(catalog:serverURL:)` writes
-the Mac's `NeedsYouSnapshot` schema and filename from the catalog's `waitingRequests`, without
-SSE or channel stores, and reloads `ToyBoxNeedsYou`. It keeps a same-server offline cache, drops it
-on a server change, and shares the Mac's 30-minute freshness and `NeedsYouSnapshot.replacing`.
+registration. Equivalent URL spelling preserves the UUID. `MobileWidgetSnapshotPublisher.update(catalogs:)` writes
+the Mac's `NeedsYouSnapshot` schema and filename from each catalog's `waitingRequests`, one part
+per server, without SSE or channel stores, and reloads `ToyBoxNeedsYou`. It keeps each server's
+last part as its offline cache, drops a removed server's part, and shares the Mac's 30-minute freshness and `NeedsYouSnapshot.replacing`.
 Offline-only writes keep the cached observation time, never heartbeat, and write and reload only
 when visible content changes. Live writes rewrite an unchanged snapshot every 15 minutes.
 
@@ -3107,17 +3108,19 @@ cannot be combined with snapshots or benchmarks. Normal launches leave it unset.
 
 **Sharing to a channel on iPhone.** `PlugIns/ToyBoxMobileShare.appex` (`dev.toybox.mobile.share`) puts Toy Box in the system share
 sheet for up to ten images or one web link. Anything else, or an image it can't read, shows
-"Can't Share This" with the reason and Close. It reads the server the app last connected to from
-the app group's share history and never connects anywhere else. With none saved, it says "Open
+"Can't Share This" with the reason and Close. It reads the servers the app saved from the app
+group's share history and never connects anywhere else. With none saved, it says "Open
 Toy Box to connect first".
 
-The app saves that server whenever it connects and records each channel the user sends to, from
-the app once the server confirms it or from the extension. That history keeps the 20 most recent channels for that
-server and mirrors them as `INSendMessageIntent` donations, so the share sheet suggests them with the channel
-mark. Each donation is grouped by its server and channel, and changing servers or the catalog
+The app saves its servers whenever it connects and records each channel the user sends to, from
+the app once the server confirms it or from the extension. That history keeps the 20 most recent channels across
+every server and mirrors them as `INSendMessageIntent` donations, so the share sheet suggests them with the channel
+mark. Each donation is grouped by its server and channel, and removing a server or its catalog
 dropping a channel deletes its suggestion. A suggestion opens straight to its composer. Anything
 else opens "Choose a Channel": up to three recent channels, then the rest A to Z through
-ChannelKit's `choices(matching:recentIDs:)`, the same order as the Mac's Quick Send. Search, pull to refresh and
+ChannelKit's `choices(matching:recentIDs:)`, the same order as the Mac's Quick Send. With several
+servers, recents span them, and each server's other channels follow under its name, where one that
+hasn't loaded says so with Retry. Search, pull to refresh and
 "Can't Load Channels" with Retry use the native list.
 
 The composer shows the channel name with a chevron as the principal toolbar item to choose

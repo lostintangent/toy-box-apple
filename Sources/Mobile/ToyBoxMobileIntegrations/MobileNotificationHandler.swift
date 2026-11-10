@@ -36,14 +36,14 @@ public final class MobileNotificationHandler {
         do {
             payload = try ChannelPushPayload(userInfo: original.userInfo)
             let directory = try self.directory ?? MobileSharedContainer.url()
-            guard let selected = try MobilePushRegistrationStore(directory: directory).current,
-                  selected.registrationID == payload.registrationID else {
-                logger.notice("Ignoring notification routing for a different registration.")
+            guard let registration = try MobilePushRegistrationStore(directory: directory)
+                .registration(id: payload.registrationID) else {
+                logger.notice("Ignoring notification routing for a registration the phone no longer has.")
                 return unroutable(content)
             }
-            // The payload names only its registration, so a reply after a server switch still knows
-            // which server it answers, as on the Mac.
-            content.userInfo["serverURL"] = selected.serverURL
+            // The payload names only its registration, so this names its server, which opens and
+            // answers it, as on the Mac.
+            content.userInfo["serverURL"] = registration.serverURL
         } catch {
             logger.error("Could not read notification routing: \(error.localizedDescription)")
             return unroutable(content)

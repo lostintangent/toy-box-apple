@@ -23,7 +23,7 @@ struct ChannelHandoffNavigationTests {
         var opened: String?
         let incoming = activity("test")
         incoming.userInfo?["serverURL"] = "https://another.example"
-        await navigation.continueActivity(incoming, currentCatalog: { catalog }, open: { opened = $0 })
+        await navigation.continueActivity(incoming, catalogs: { [catalog] }, open: { opened = $1 })
         #expect(opened == "test")
         #expect(navigation.phase == .idle)
         #expect(mock.requests.count == 1)
@@ -38,7 +38,7 @@ struct ChannelHandoffNavigationTests {
         let navigation = ChannelHandoffNavigation()
         let incoming = activity("missing")
         incoming.userInfo?["name"] = testState().channel.name
-        await navigation.continueActivity(incoming, currentCatalog: { catalog }) { _ in
+        await navigation.continueActivity(incoming, catalogs: { [catalog] }) { _, _ in
             Issue.record("A missing ID opened another channel.")
         }
         #expect(navigation.phase == .missing)
@@ -57,7 +57,7 @@ struct ChannelHandoffNavigationTests {
         let navigation = ChannelHandoffNavigation()
         var opened: String?
         let continuation = Task {
-            await navigation.continueActivity(activity("test"), currentCatalog: { catalog }, open: { opened = $0 })
+            await navigation.continueActivity(activity("test"), catalogs: { [catalog] }, open: { opened = $1 })
         }
         try await eventually { navigation.phase == .opening }
         #expect(opened == nil)
@@ -82,7 +82,7 @@ struct ChannelHandoffNavigationTests {
         let navigation = ChannelHandoffNavigation()
         var opened: [String] = []
         let old = Task {
-            await navigation.continueActivity(activity("test"), currentCatalog: { catalog }, open: { opened.append($0) })
+            await navigation.continueActivity(activity("test"), catalogs: { [catalog] }, open: { opened.append($1) })
         }
         try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
         let changes = AsyncStream<Void>.makeStream()
@@ -91,7 +91,7 @@ struct ChannelHandoffNavigationTests {
             changes.continuation.finish()
         }
         let current = Task {
-            await navigation.continueActivity(activity("second"), currentCatalog: { catalog }, open: { opened.append($0) })
+            await navigation.continueActivity(activity("second"), catalogs: { [catalog] }, open: { opened.append($1) })
         }
         for await _ in changes.stream { break }
         #expect(mock.finishPendingResponses() == 1)
@@ -111,7 +111,7 @@ struct ChannelHandoffNavigationTests {
         var current: ChannelCatalogStore? = ChannelCatalogStore(api: try mock.api())
         let navigation = ChannelHandoffNavigation()
         let continuation = Task {
-            await navigation.continueActivity(activity("test"), currentCatalog: { current }) { _ in
+            await navigation.continueActivity(activity("test"), catalogs: { current.map { [$0] } ?? [] }) { _, _ in
                 Issue.record("An old server selected a channel on the new server.")
             }
         }
@@ -133,13 +133,13 @@ struct ChannelHandoffNavigationTests {
         let second = ChannelHandoffNavigation()
         var opened: [String] = []
         let old = Task {
-            await first.continueActivity(activity("test"), currentCatalog: { catalog }) { _ in
+            await first.continueActivity(activity("test"), catalogs: { [catalog] }) { _, _ in
                 Issue.record("The canceled window selected a channel.")
             }
         }
         try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
         let current = Task {
-            await second.continueActivity(activity("test"), currentCatalog: { catalog }, open: { opened.append($0) })
+            await second.continueActivity(activity("test"), catalogs: { [catalog] }, open: { opened.append($1) })
         }
         try await eventually { second.phase == .opening }
         first.cancel()
@@ -156,7 +156,7 @@ struct ChannelHandoffNavigationTests {
     @Test func missingConfigurationAndInvalidActivitiesUseTheSameUnavailableState() async {
         let navigation = ChannelHandoffNavigation()
         for incoming in [activity("test"), NSUserActivity(activityType: "dev.toybox.other")] {
-            await navigation.continueActivity(incoming, currentCatalog: { nil }) { _ in
+            await navigation.continueActivity(incoming, catalogs: { [] }) { _, _ in
                 Issue.record("An activity opened without a receiving catalog.")
             }
             #expect(navigation.phase == .missing)
@@ -171,7 +171,7 @@ struct ChannelHandoffNavigationTests {
         }
         let catalog = ChannelCatalogStore(api: try mock.api())
         let navigation = ChannelHandoffNavigation()
-        await navigation.continueActivity(activity("test"), currentCatalog: { catalog }) { _ in
+        await navigation.continueActivity(activity("test"), catalogs: { [catalog] }) { _, _ in
             Issue.record("An unreachable catalog selected a channel.")
         }
         #expect(navigation.phase == .missing)
@@ -191,7 +191,7 @@ struct ChannelHandoffNavigationTests {
         await catalog.refresh()
         #expect(catalog.isLoaded && catalog.phase.message != nil)
         let navigation = ChannelHandoffNavigation()
-        await navigation.continueActivity(activity("test"), currentCatalog: { catalog }) { _ in
+        await navigation.continueActivity(activity("test"), catalogs: { [catalog] }) { _, _ in
             Issue.record("A failed current catalog opened a cached channel.")
         }
         #expect(navigation.phase == .missing)
@@ -206,10 +206,93 @@ struct ChannelHandoffNavigationTests {
         let catalog = ChannelCatalogStore(api: try mock.api())
         let navigation = ChannelHandoffNavigation()
         await navigation.continueActivity(NSUserActivity(activityType: "dev.toybox.other"),
-                                          currentCatalog: { catalog }) { _ in
+                                          catalogs: { [catalog] }) { _, _ in
             Issue.record("An invalid activity selected a channel.")
         }
         #expect(navigation.phase == .missing)
         #expect(mock.requests.isEmpty)
+    }
+
+    @Test func theFirstServerInOrderThatListsTheChannelOpensIt() async throws {
+        var renamed = testState().channel
+        renamed.id = "other"
+        let other = renamed
+        let first = MockTransport { _, _ in try .json(ChannelCatalog(lead: testLeadProfile, channels: [other])) }
+        let second = MockTransport { _, _ in try .json(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel])) }
+        let third = MockTransport { _, _ in try .json(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel])) }
+        let catalogs = [ChannelCatalogStore(api: try first.api()), ChannelCatalogStore(api: try second.api()),
+                        ChannelCatalogStore(api: try third.api())]
+        for catalog in catalogs { await catalog.refresh() }
+        let navigation = ChannelHandoffNavigation()
+        var opened: (ChannelCatalogStore, String)?
+        await navigation.continueActivity(activity("test"), catalogs: { catalogs }, open: { opened = ($0, $1) })
+        #expect(opened?.0 === catalogs[1] && opened?.1 == "test")
+        #expect(navigation.phase == .idle)
+        #expect([first, second, third].map(\.requests.count) == [1, 1, 1], "Every server had answered, so none refreshed")
+    }
+
+    @Test func aLaterServerWaitsForAnEarlierOneThatHasntAnswered() async throws {
+        let earlier = MockTransport { _, _ in
+            var response = try MockResponse.json(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel]))
+            response.keepOpen = true
+            return response
+        }
+        let later = MockTransport { _, _ in try .json(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel])) }
+        let catalogs = [ChannelCatalogStore(api: try earlier.api()), ChannelCatalogStore(api: try later.api())]
+        await catalogs[1].refresh()
+        let navigation = ChannelHandoffNavigation()
+        var opened: ChannelCatalogStore?
+        let continuation = Task {
+            await navigation.continueActivity(activity("test"), catalogs: { catalogs }, open: { catalog, _ in opened = catalog })
+        }
+        try await eventually(observing: earlier) { earlier.pendingResponseCount == 1 }
+        #expect(opened == nil && navigation.phase == .opening)
+        #expect(earlier.finishPendingResponses() == 1)
+        await continuation.value
+        #expect(opened === catalogs[0], "The first server in Settings order wins once it answers")
+    }
+
+    @Test func aChannelNoServerListsIsMissingOnlyOnceEveryServerAnswers() async throws {
+        let listed = MockTransport { _, _ in try .json(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel])) }
+        let unreachable = MockTransport { _, _ in
+            var response = MockResponse(status: 503, body: Data(#"{"error":"Unavailable"}"#.utf8))
+            response.keepOpen = true
+            return response
+        }
+        let catalogs = [ChannelCatalogStore(api: try listed.api()), ChannelCatalogStore(api: try unreachable.api())]
+        await catalogs[0].refresh()
+        let navigation = ChannelHandoffNavigation()
+        let continuation = Task {
+            await navigation.continueActivity(activity("missing"), catalogs: { catalogs }) { _, _ in
+                Issue.record("A channel no server lists opened.")
+            }
+        }
+        try await eventually(observing: unreachable) { unreachable.pendingResponseCount == 1 }
+        try await eventually(observing: listed) { listed.requests.count == 2 }
+        #expect(navigation.phase == .opening, "An unanswered server still might list it")
+        #expect(unreachable.finishPendingResponses() == 1)
+        await continuation.value
+        #expect(navigation.phase == .missing)
+    }
+
+    @Test func aServerRemovedWhileItAnswersCannotOpen() async throws {
+        let mock = MockTransport { _, _ in
+            var response = try MockResponse.json(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel]))
+            response.keepOpen = true
+            return response
+        }
+        let removed = ChannelCatalogStore(api: try mock.api())
+        var catalogs = [removed, ChannelCatalogStore(api: try mock.api())]
+        let navigation = ChannelHandoffNavigation()
+        let continuation = Task {
+            await navigation.continueActivity(activity("test"), catalogs: { catalogs }) { catalog, _ in
+                #expect(catalog !== removed, "A removed server opened its channel.")
+            }
+        }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 2 }
+        catalogs.removeFirst()
+        #expect(mock.finishPendingResponses() == 2)
+        await continuation.value
+        #expect(navigation.phase == .missing)
     }
 }

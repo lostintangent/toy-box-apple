@@ -77,13 +77,20 @@ struct ChannelConnectionsTests {
         #expect(connections.stores.isEmpty)
     }
 
-    @Test func disconnectAllDropsHeldAndLingeringStores() async throws {
+    @Test func disconnectAllDropsOneServersHeldAndLingeringStores() async throws {
         let connections = ChannelConnections(linger: .seconds(60))
-        let stores = try await connectedStores("held", "lingering", to: connections)
+        let removed = ChannelCatalogStore(api: try mock.api())
+        let kept = ChannelCatalogStore(api: try mock.api())
+        let stores = [removed.channel(id: "held"), removed.channel(id: "lingering"), kept.channel(id: "held"),
+                      kept.channel(id: "lingering")]
+        for store in stores { connections.hold(store) }
+        try await eventually { stores.allSatisfy(\.phase.isConnected) }
         connections.release(stores[1])
-        connections.disconnectAll()
-        #expect(stores.allSatisfy { !$0.isTrying })
-        #expect(connections.stores.isEmpty)
+        connections.release(stores[3])
+        connections.disconnectAll(in: removed)
+        #expect(stores.prefix(2).allSatisfy { !$0.isTrying })
+        #expect(stores.suffix(2).allSatisfy { $0.phase.isConnected }, "Another server's stores stay connected")
+        #expect(Set(connections.stores.map(ObjectIdentifier.init)) == Set(stores.suffix(2).map(ObjectIdentifier.init)))
         try await eventually(observing: mock) { mock.stops == 2 }
     }
 

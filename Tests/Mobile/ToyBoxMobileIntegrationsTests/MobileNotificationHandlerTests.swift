@@ -31,7 +31,7 @@ struct MobileNotificationHandlerTests {
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registration = try MobilePushRegistrationStore(directory: directory)
-            .select(serverURL: "https://unreachable.example.test")
+            .register(serverURL: "https://unreachable.example.test")
         let original = Self.content(kind: kind, registration: registration)
         var events: [String] = []
         let handler = MobileNotificationHandler(directory: directory, reloadWidgets: { events.append("reload") })
@@ -48,13 +48,25 @@ struct MobileNotificationHandlerTests {
         #expect(delivered.badge == 2)
     }
 
+    @Test @MainActor func eachRegistrationNamesItsOwnServer() async throws {
+        let directory = Self.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try MobilePushRegistrationStore(directory: directory)
+        try store.register(serverURL: "https://first.example.test")
+        let second = try store.register(serverURL: "https://second.example.test")
+        let handler = MobileNotificationHandler(directory: directory, reloadWidgets: {})
+        let delivered = await handler.process(Self.content(registration: second))
+        #expect(delivered.userInfo["serverURL"] as? String == "https://second.example.test")
+        #expect(delivered.categoryIdentifier == "request")
+    }
+
     @Test(arguments: ["missing", "different", "malformed"])
     @MainActor func invalidRegistrationsDisableActionsAndBadgeChangesWithoutReloadingWidgets(failure: String) async throws {
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registration = MobilePushRegistration(serverURL: "https://server.test", registrationID: UUID().uuidString)
         if failure != "missing" {
-            _ = try MobilePushRegistrationStore(directory: directory).select(serverURL: "https://other.test")
+            _ = try MobilePushRegistrationStore(directory: directory).register(serverURL: "https://other.test")
         }
         let original = Self.content(registration: registration)
         if failure == "malformed" { original.userInfo["kind"] = "unknown" }
@@ -73,7 +85,7 @@ struct MobileNotificationHandlerTests {
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registration = try MobilePushRegistrationStore(directory: directory)
-            .select(serverURL: "https://unreachable.example.test")
+            .register(serverURL: "https://unreachable.example.test")
         let original = Self.content(registration: registration, replies: ["Yes", "No"])
         let center = FakeReplyCenter()
         let handler = MobileNotificationHandler(directory: directory, reloadWidgets: {},
@@ -91,7 +103,7 @@ struct MobileNotificationHandlerTests {
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registration = try MobilePushRegistrationStore(directory: directory)
-            .select(serverURL: "https://unreachable.example.test")
+            .register(serverURL: "https://unreachable.example.test")
         let center = FakeReplyCenter()
         let handler = MobileNotificationHandler(directory: directory, reloadWidgets: {},
                                                 replyCategories: center.publisher())
@@ -109,7 +121,7 @@ struct MobileNotificationHandlerTests {
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registration = try MobilePushRegistrationStore(directory: directory)
-            .select(serverURL: "https://unreachable.example.test")
+            .register(serverURL: "https://unreachable.example.test")
         let original = Self.content(registration: registration, replies: ["Yes", "No"])
         let center = FakeReplyCenter(acceptsWrites: false)
         let handler = MobileNotificationHandler(directory: directory, reloadWidgets: {},

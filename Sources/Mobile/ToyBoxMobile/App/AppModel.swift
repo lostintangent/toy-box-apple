@@ -160,7 +160,7 @@ final class AppModel {
         cancelNavigation()
         catalog?.stopPolling()
         catalog?.outbox = nil
-        connections.disconnectAll()
+        if let catalog { connections.disconnectAll(in: catalog) }
         holdsSelectedConnection = false
         selectedChannelID = nil
         visibleChannelID = nil
@@ -264,7 +264,7 @@ final class AppModel {
     private func configureShareHistory() {
         guard let shareHistory, let catalog else { return }
         let serverURL = catalog.api.baseURL.absoluteString
-        shareHistory.select(serverURL: serverURL)
+        shareHistory.select(servers: [catalog.saved])
         catalog.onSendConfirmed = { [weak shareHistory, weak catalog] id in
             guard let name = catalog?.channels.first(where: { $0.id == id })?.name else { return }
             shareHistory?.recordSend(serverURL: serverURL, channelID: id, name: name)
@@ -316,7 +316,7 @@ final class AppModel {
             notifications.updateBadge(catalog.channels.filter { $0.attention == .waiting }.count)
             shareHistory?.prune(serverURL: catalog.api.baseURL.absoluteString, keeping: Set(catalog.channels.map(\.id)))
         }
-        do { try widgetPublisher?.update(catalog: catalog, serverURL: serverURL) }
+        do { try widgetPublisher?.update(catalogs: catalog.map { [$0] } ?? []) }
         catch { integrationLogger.error("Could not update the Needs You widget: \(error.localizedDescription)") }
     }
 

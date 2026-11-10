@@ -118,7 +118,7 @@ public final class ChannelStore {
     @ObservationIgnored public internal(set) weak var outbox: ChannelOutbox?
     /// The messages the outbox still holds for this channel, Sending or Not sent, which the
     /// transcript shows below the server's.
-    public var sending: [ChannelOutbox.Message] { outbox?.messages(in: id) ?? [] }
+    public var sending: [ChannelOutbox.Message] { outbox?.messages(in: id, on: api.baseURL) ?? [] }
 
     @ObservationIgnored private var observation: Task<Void, Never>?
     /// From `connect()` until `disconnect()`. Internal and unobserved, so tests check a disconnect
@@ -545,12 +545,14 @@ public final class ChannelStore {
 @MainActor @Observable
 public final class ChannelCatalogStore {
     public let api: ChannelAPI
+    /// The server's name in Settings and its section header, which starts as its host.
+    public var name: String
     public private(set) var state: ChannelCatalog?
     /// A channel the outbox is sending to reads as read through its latest, since the server marks it
     /// read through the user's message once that lands.
     public var channels: [Channel] {
         let channels = state?.channels ?? []
-        guard let sending = outbox?.sendingChannelIDs, !sending.isEmpty else { return channels }
+        guard let sending = outbox?.sendingChannelIDs(on: api.baseURL), !sending.isEmpty else { return channels }
         return channels.map { channel in
             var channel = channel
             if sending.contains(channel.id) { channel.read(through: channel.latestSequence) }
@@ -577,7 +579,7 @@ public final class ChannelCatalogStore {
     @ObservationIgnored private var detailStores: [String: ChannelStore] = [:]
     /// Called with the channel's ID after the server accepts each send, retries included.
     @ObservationIgnored public var onSendConfirmed: (@MainActor (String) -> Void)?
-    /// The app's outbox. Setting it makes this catalog's server the one it delivers to.
+    /// The app's outbox. Setting it makes this catalog deliver its server's messages.
     @ObservationIgnored public var outbox: ChannelOutbox? {
         didSet {
             guard oldValue !== outbox else { return }
@@ -619,9 +621,10 @@ public final class ChannelCatalogStore {
 
     /// `now` measures the grace and the keepalive interval. Tests pass a clock they move instead of
     /// waiting, and a network path they change.
-    public init(api: ChannelAPI, reconnectPolicy: ReconnectPolicy = .init(), now: @escaping () -> Date = { .now },
-                networkPath: NetworkPathSource = .system) {
+    public init(api: ChannelAPI, name: String? = nil, reconnectPolicy: ReconnectPolicy = .init(),
+                now: @escaping () -> Date = { .now }, networkPath: NetworkPathSource = .system) {
         self.api = api
+        self.name = name ?? Saved.name(of: api.baseURL.absoluteString)
         self.reconnectPolicy = reconnectPolicy
         self.now = now
         self.networkPath = networkPath
@@ -847,7 +850,7 @@ public final class ChannelCatalogStore {
         guard active else { return }
         retryPromptly()
         for store in detailStores.values { store.retryPromptly() }
-        outbox?.reload()
+        outbox?.reload(self)
     }
 
     /// Closes the stream and stops retrying. A refresh waiting on it returns.
@@ -875,7 +878,7 @@ public final class ChannelCatalogStore {
                 guard let self else { return }
                 if !isLive { openStream() }
                 for store in detailStores.values { store.retryOnNewPath() }
-                outbox?.wake()
+                outbox?.wake(self)
             }
         }
     }

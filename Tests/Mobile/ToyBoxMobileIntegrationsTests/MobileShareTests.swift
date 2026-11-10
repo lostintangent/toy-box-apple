@@ -10,30 +10,19 @@ import UniformTypeIdentifiers
 
 @MainActor
 struct MobileShareTests {
-    // MARK: Targets
-
-    @Test func aTargetSurvivesItsConversationIdentifierWhateverItsChannelIsCalled() throws {
-        let target = try #require(MobileShareTarget(serverURL: "HTTPS://Toy.Example:443/base/", channelID: "a&b=c+d e"))
-        #expect(target.serverURL == "https://toy.example/base")
-        #expect(MobileShareTarget(conversationIdentifier: target.conversationIdentifier) == target)
-        #expect(MobileShareTarget(conversationIdentifier: "?server=ftp://toy.example&channel=studio") == nil)
-        #expect(MobileShareTarget(conversationIdentifier: "?server=https://toy.example&channel=") == nil)
-        #expect(MobileShareTarget(conversationIdentifier: "?server=https://toy.example") == nil)
-    }
-
     // MARK: History and suggestions
 
     @Test func recentsPutTheLatestSendFirstKeepTwentyAndSuggestEachOne() async throws {
         let donor = FakeDonor()
         let (history, directory) = try Self.history(donor)
         defer { try? FileManager.default.removeItem(at: directory) }
-        await history.select(serverURL: "https://toy.example").value
+        await history.select(servers: [.init(url: "https://toy.example")]).value
         for index in 0..<22 {
             await history.recordSend(serverURL: "https://toy.example", channelID: "c\(index)", name: "C\(index)").value
         }
         await history.recordSend(serverURL: "https://TOY.example/", channelID: "c5", name: "Five").value
 
-        #expect(history.recentChannelIDs == ["c5"] + (6...21).reversed().map { "c\($0)" } + ["c4", "c3", "c2"])
+        #expect(history.recents.map(\.channelID) == ["c5"] + (6...21).reversed().map { "c\($0)" } + ["c4", "c3", "c2"])
         #expect(donor.deleted == [[Self.identifier("c0")], [Self.identifier("c1")]])
         let last = try #require(donor.donated.last)
         let intent = try #require(last.intent as? INSendMessageIntent)
@@ -45,42 +34,57 @@ struct MobileShareTests {
         #expect(donor.donated.count == 23)
     }
 
-    @Test func theAppAndTheExtensionShareOneHistoryForOneServer() async throws {
+    @Test func theAppAndTheExtensionShareOneHistoryAcrossServers() async throws {
         let donor = FakeDonor()
         let (app, directory) = try Self.history(donor)
         defer { try? FileManager.default.removeItem(at: directory) }
         let share = try MobileShareHistory(directory: directory, donor: donor.donor)
-        #expect(share.serverURL == nil)
+        #expect(share.servers.isEmpty)
 
-        await app.select(serverURL: "https://toy.example").value
+        await app.select(servers: [.init(url: "https://toy.example"), .init(url: "https://home.example", name: "Home")]).value
         await share.recordSend(serverURL: "https://toy.example", channelID: "studio", name: "Studio").value
+        await app.recordSend(serverURL: "https://home.example", channelID: "garden", name: "Garden").value
         await app.recordSend(serverURL: "https://elsewhere.example", channelID: "other", name: "Other").value
-        #expect(app.recentChannelIDs == ["studio"])
-        #expect(share.serverURL == "https://toy.example")
+        #expect(app.recents == [Self.target("garden", on: "https://home.example"), Self.target("studio")])
+        #expect(share.servers.map(\.name) == ["toy.example", "Home"])
 
-        await app.select(serverURL: "https://TOY.example/").value
-        #expect(share.serverURL == "https://TOY.example/")
-        #expect(share.recentChannelIDs == ["studio"])
+        await app.select(servers: [.init(url: "https://TOY.example/"), .init(url: "https://home.example", name: "Home")]).value
+        #expect(share.servers.first?.url == "https://TOY.example/")
+        #expect(share.recents.count == 2, "A server spelled another way keeps its recents")
         #expect(donor.deleted.isEmpty)
 
-        await app.select(serverURL: "https://elsewhere.example").value
-        #expect(share.recentChannelIDs.isEmpty)
-        #expect(donor.deleted == [[Self.identifier("studio")]])
+        await app.select(servers: [.init(url: "https://TOY.example/")]).value
+        #expect(share.recents == [Self.target("studio")])
+        #expect(donor.deleted == [[Self.target("garden", on: "https://home.example").identifier]],
+                "A removed server's recents stop being suggested")
+    }
+
+    @Test func aHistoryFromBeforeSeveralServersKeepsItsServerAndRecents() throws {
+        let directory = Self.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(#"{"serverURL":"https://TOY.example/","recentChannelIDs":["studio","design"]}"#.utf8)
+            .write(to: directory.appendingPathComponent(MobileShareHistory.fileName))
+        let history = try MobileShareHistory(directory: directory, donor: FakeDonor().donor)
+        #expect(history.servers == [.init(url: "https://TOY.example/")])
+        #expect(history.recents == [Self.target("studio"), Self.target("design")])
     }
 
     @Test func pruningForgetsChannelsTheServerNoLongerLists() async throws {
         let donor = FakeDonor()
         let (history, directory) = try Self.history(donor)
         defer { try? FileManager.default.removeItem(at: directory) }
-        await history.select(serverURL: "https://toy.example").value
+        await history.select(servers: [.init(url: "https://toy.example"), .init(url: "https://home.example")]).value
         for id in ["gone", "kept", "removed"] {
             await history.recordSend(serverURL: "https://toy.example", channelID: id, name: id).value
         }
+        await history.recordSend(serverURL: "https://home.example", channelID: "gone", name: "Gone").value
 
         await history.prune(serverURL: "https://elsewhere.example", keeping: []).value
-        #expect(history.recentChannelIDs == ["removed", "kept", "gone"])
+        #expect(history.recents.count == 4)
         await history.prune(serverURL: "https://toy.example/", keeping: ["kept"]).value
-        #expect(history.recentChannelIDs == ["kept"])
+        #expect(history.recents == [Self.target("gone", on: "https://home.example"), Self.target("kept")],
+                "Another server's channel of the same name stays")
         #expect(donor.deleted == [[Self.identifier("removed"), Self.identifier("gone")]])
         await history.prune(serverURL: "https://toy.example", keeping: ["kept"]).value
         #expect(donor.deleted.count == 1)
@@ -157,19 +161,19 @@ struct MobileShareTests {
         let donor = FakeDonor()
         let (session, outbox, directory) = try await Self.session(fixture, donor: donor)
         defer { try? FileManager.default.removeItem(at: directory) }
-        session.choose(Self.studio)
+        session.choose(try Self.choice("studio", in: session))
         session.note = "Look"
 
         await session.send()
         #expect(fixture.posts.map(\.content) == ["Look\n\nhttps://example.com/story"])
         #expect(fixture.reads == ["studio"], "The sheet waits for its channel to be marked read")
-        #expect(outbox.messages(in: "studio").isEmpty)
+        #expect(outbox.messages(in: "studio", on: session.catalogs[0].api.baseURL).isEmpty)
         #expect(session.phase == .sent)
         #expect(!session.canSend)
-        session.choose(Self.channel("design", "Design"))
+        session.choose(try Self.choice("design", in: session))
         #expect(session.target?.id == "studio")
         let history = try MobileShareHistory(directory: directory, donor: donor.donor)
-        #expect(history.recentChannelIDs == ["studio"])
+        #expect(history.recents.map(\.channelID) == ["studio"])
         #expect(donor.donated.count == 1)
     }
 
@@ -178,21 +182,21 @@ struct MobileShareTests {
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let history = try MobileShareHistory(directory: directory, donor: FakeDonor().donor)
-        await history.select(serverURL: fixture.serverURL + "/").value
+        await history.select(servers: [.init(url: fixture.serverURL + "/")]).value
 
-        let elsewhere = try #require(MobileShareTarget(serverURL: "https://elsewhere.example", channelID: "studio"))
+        let elsewhere = try #require(ChannelTarget(serverURL: "https://elsewhere.example", channelID: "studio"))
         #expect(MobileShareSession(history: history, intent: Self.intent(elsewhere, name: "Studio"),
                                    session: fixture.session).target == nil)
 
-        let studio = try #require(MobileShareTarget(serverURL: fixture.serverURL, channelID: "studio"))
+        let studio = try #require(ChannelTarget(serverURL: fixture.serverURL, channelID: "studio"))
         let renamed = MobileShareSession(history: history, intent: Self.intent(studio, name: "Old Name"),
                                          session: fixture.session)
-        #expect(renamed.target == .init(id: "studio", name: "Old Name"))
+        #expect(renamed.target == .init(serverURL: fixture.serverURL + "/", id: "studio", name: "Old Name"))
         await renamed.refreshChannels()
-        #expect(renamed.target == .init(id: "studio", name: "Studio"))
+        #expect(renamed.target == .init(serverURL: fixture.serverURL + "/", id: "studio", name: "Studio"))
         #expect(renamed.agents.map(\.name) == ["Server Lead", "Builder"])
 
-        let gone = try #require(MobileShareTarget(serverURL: fixture.serverURL, channelID: "gone"))
+        let gone = try #require(ChannelTarget(serverURL: fixture.serverURL, channelID: "gone"))
         let stale = MobileShareSession(history: history, intent: Self.intent(gone, name: "Gone"), session: fixture.session)
         #expect(stale.target?.id == "gone")
         await stale.refreshChannels()
@@ -204,24 +208,54 @@ struct MobileShareTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let history = try MobileShareHistory(directory: directory, donor: FakeDonor().donor)
         let session = MobileShareSession(history: history, intent: nil)
-        #expect(session.serverURL == nil)
-        #expect(session.catalog == nil)
-        session.choose(Self.studio)
+        #expect(session.catalogs.isEmpty)
+        #expect(session.choices(matching: "").others.isEmpty)
         #expect(!session.canSend)
-        #expect(MobileShareSession(history: nil, intent: nil).serverURL == nil)
+        #expect(MobileShareSession(history: nil, intent: nil).catalogs.isEmpty)
+    }
+
+    @Test func withSeveralServersEachChannelIsOfferedAndSentOnItsOwnServer() async throws {
+        let first = try ShareHTTPFixture()
+        let second = try ShareHTTPFixture()
+        let donor = FakeDonor()
+        let (history, directory) = try Self.history(donor)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        await history.select(servers: [.init(url: first.serverURL, name: "Work"),
+                                       .init(url: second.serverURL, name: "Home")]).value
+        await history.recordSend(serverURL: second.serverURL, channelID: "design", name: "Design").value
+        let outbox = ChannelOutbox(folder: directory.appending(path: "Sending", directoryHint: .isDirectory),
+                                   sendsOnce: true)
+        let session = MobileShareSession(history: history, intent: nil, session: first.session, outbox: outbox)
+        let page = try #require(URL(string: "https://example.com/story"))
+        await session.start([NSItemProvider(object: page as NSURL)], title: "Story")
+        #expect(session.catalogs.map(\.name) == ["Work", "Home"])
+
+        let choices = session.choices(matching: "")
+        #expect(choices.recent.map(\.channel.id) == ["design"])
+        #expect(choices.recent.first?.catalog === session.catalogs[1], "A recent channel stays on its own server")
+        #expect(choices.others.map { $0.map(\.channel.id) } == [["design", "studio"], ["studio"]])
+        #expect(Set(choices.others.joined().map(\.id) + choices.recent.map(\.id)).count == 4)
+
+        session.choose(try #require(choices.others[1].first))
+        await session.send()
+        #expect(first.posts.isEmpty)
+        #expect(second.posts.map(\.channel) == ["studio"])
+        #expect(history.recents == [Self.target("studio", on: second.serverURL), Self.target("design", on: second.serverURL)])
     }
 
     // MARK: Fixtures
 
-    private static let model = ModelConfiguration(provider: "copilot", name: "model")
-    private static let studio = channel("studio", "Studio")
-
-    private static func channel(_ id: String, _ name: String) -> Channel {
-        Channel(id: id, name: name, model: model, updatedAt: "2026-10-31T05:00:00Z")
+    private static func target(_ channel: String, on serverURL: String = "https://toy.example") -> ChannelTarget {
+        ChannelTarget(serverURL: serverURL, channelID: channel)!
     }
 
     private static func identifier(_ channel: String) -> String {
-        MobileShareTarget(serverURL: "https://toy.example", channelID: channel)!.conversationIdentifier
+        target(channel).identifier
+    }
+
+    /// A channel the sheet offers on its only server.
+    private static func choice(_ id: String, in session: MobileShareSession) throws -> MobileShareSession.Choice {
+        try #require(session.choices(matching: "").others.first?.first { $0.channel.id == id })
     }
 
     private static func directory() -> URL {
@@ -237,21 +271,21 @@ struct MobileShareTests {
     private static func session(_ fixture: ShareHTTPFixture, donor: FakeDonor = FakeDonor())
         async throws -> (MobileShareSession, ChannelOutbox, URL) {
         let (history, directory) = try history(donor)
-        await history.select(serverURL: fixture.serverURL).value
+        await history.select(servers: [.init(url: fixture.serverURL)]).value
         let outbox = ChannelOutbox(folder: directory.appending(path: "Sending", directoryHint: .isDirectory),
                                    sendsOnce: true)
         let session = MobileShareSession(history: history, intent: nil, session: fixture.session, outbox: outbox)
         let page = try #require(URL(string: "https://example.com/story"))
         await session.start([NSItemProvider(object: page as NSURL)], title: "Story")
         #expect(session.content?.link?.url == page)
-        #expect(session.catalog?.isLoaded == true)
+        #expect(session.catalogs.first?.isLoaded == true)
         return (session, outbox, directory)
     }
 
-    private static func intent(_ target: MobileShareTarget, name: String) -> INSendMessageIntent {
+    private static func intent(_ target: ChannelTarget, name: String) -> INSendMessageIntent {
         INSendMessageIntent(recipients: nil, outgoingMessageType: .outgoingMessageText, content: nil,
                             speakableGroupName: INSpeakableString(spokenPhrase: name),
-                            conversationIdentifier: target.conversationIdentifier, serviceName: nil,
+                            conversationIdentifier: target.identifier, serviceName: nil,
                             sender: nil, attachments: nil)
     }
 

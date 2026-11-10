@@ -64,15 +64,18 @@
         }
     }
 
-    /// Disconnects every store at once, as a server change does.
-    public func disconnectAll() {
-        for entry in held.values { entry.store.disconnect() }
-        for entry in lingering {
+    /// Disconnects every store from a catalog at once, as removing its server does.
+    public func disconnectAll(in catalog: ChannelCatalogStore) {
+        func belongs(_ store: ChannelStore) -> Bool { catalog.existingChannel(id: store.id) === store }
+        for (key, entry) in held where belongs(entry.store) {
+            entry.store.disconnect()
+            held.removeValue(forKey: key)
+        }
+        for entry in lingering where belongs(entry.store) {
             entry.expiry.cancel()
             entry.store.disconnect()
         }
-        held.removeAll()
-        lingering.removeAll()
+        lingering.removeAll { belongs($0.store) }
     }
 
     private func expire(_ key: ObjectIdentifier) {

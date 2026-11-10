@@ -53,7 +53,7 @@ struct NeedsYouControlValue: Equatable, Sendable {
     }
 
     init(snapshot: NeedsYouSnapshot?, now: Date) {
-        guard let snapshot, snapshot.version == 1, snapshot.isAvailable, snapshot.waitingCount >= 0 else {
+        guard let snapshot, snapshot.version == NeedsYouSnapshot.currentVersion, snapshot.isAvailable, snapshot.waitingCount >= 0 else {
             self.init(waitingCount: nil, isStale: false)
             return
         }

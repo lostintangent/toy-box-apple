@@ -39,13 +39,5 @@ public struct SidebarFooter: Equatable {
     }
 
     /// The server as the footer and menu bar name it: its host, and a port that isn't the default.
-    public static func server(_ url: String) -> String {
-        guard let components = URLComponents(string: url), let host = components.host, !host.isEmpty else {
-            return url
-        }
-        let name = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
-        guard let port = components.port else { return name }
-        let standard = ["http": 80, "https": 443][components.scheme?.lowercased() ?? ""]
-        return port == standard ? name : "\(name):\(port)"
-    }
+    public static func server(_ url: String) -> String { ChannelCatalogStore.Saved.name(of: url) }
 }
