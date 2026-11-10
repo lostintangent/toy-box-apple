@@ -346,7 +346,9 @@ private struct ChannelComposer: View {
                                     onSend: send, onFiles: draft.attachFiles, onImage: draft.append,
                                     onError: { draft.error = $0 },
                                     agentManagement: store.phase.isConnected ? .enabled(create: { name in
-                                        try await management.createMentionMember(name: name, store: store, catalog: app.catalog)
+                                        try await management.createMentionMember(
+                                            name: name, store: store,
+                                            catalog: app.catalogs.first(at: store.api.baseURL.absoluteString))
                                     }, edit: { agent in
                                         management.present(.editMember(channelId: store.id, agentId: agent.id))
                                     }) : .disabled, snapshot: snapshot,
