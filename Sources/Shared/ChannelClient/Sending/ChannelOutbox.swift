@@ -110,7 +110,8 @@ public final class ChannelOutbox {
                               attachments: attachments,
                               request: request ?? waitingRequest(at: destination), sentAt: now(), state: .sending)
         queue.append(message)
-        // The row shows at once, and delivery starts once the message is saved.
+        // The row shows at once. Delivery starts once the message is saved, or sooner if another
+        // change starts its channel's line, like the outbox finishing its first read of the folder.
         await save(message).value
         changed()
         if sendsOnce { await attempt(message) }

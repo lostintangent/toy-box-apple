@@ -143,6 +143,9 @@ struct ChannelOutboxTests {
         let catalog = ChannelCatalogStore(api: try mock.api())
         await catalog.refresh()
         catalog.outbox = outbox
+        // An app's outbox has read its folder long before anyone sends. One that finishes during a
+        // send's save starts delivery early, so a test could see its answer before `send` returns.
+        await outbox.settled()
         return catalog
     }
 
