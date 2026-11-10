@@ -5,6 +5,10 @@ type DeviceType = { identifier: string; productFamily: string };
 type Runtime = { identifier: string; version: string; isAvailable: boolean; supportedDeviceTypes: DeviceType[] };
 type Simulator = { udid: string; name: string; state: string; isAvailable: boolean; deviceTypeIdentifier: string };
 
+async function state(udid: string) {
+    return Object.values(await simulators()).flat().find(device => device.udid === udid)?.state;
+}
+
 async function simulators() {
     const { devices }: { devices: Record<string, Simulator[]> } = JSON.parse(
         await text(["xcrun", "simctl", "list", "devices", "-j"], { env: mobileEnvironment }));
@@ -12,6 +16,13 @@ async function simulators() {
 }
 
 export async function prepareMobileSimulator(duo: boolean, ifAvailable = false) {
+    const udid = await chooseMobileSimulator(duo, ifAvailable);
+    return udid && await bootMobileSimulator(udid);
+}
+
+/** The UDID of the simulator to use, created if it's missing, without booting it. Undefined only with
+ * `ifAvailable` on a Mac without an iOS 27+ runtime. */
+export async function chooseMobileSimulator(duo: boolean, ifAvailable = false) {
     const { runtimes }: { runtimes: Runtime[] } = JSON.parse(
         await text(["xcrun", "simctl", "list", "runtimes", "-j"], { env: mobileEnvironment }));
     const supported = runtimes.filter(runtime => runtime.isAvailable && runtime.identifier.includes(".iOS-")
@@ -47,16 +58,21 @@ export async function prepareMobileSimulator(duo: boolean, ifAvailable = false) 
             simulator = { udid, name, state: "Shutdown", isAvailable: true, deviceTypeIdentifier: type.identifier };
         }
     }
-    const bootedHere = simulator.state !== "Booted";
-    if (bootedHere) await command(["xcrun", "simctl", "boot", simulator.udid], { env: mobileEnvironment });
-    await command(["xcrun", "simctl", "bootstatus", simulator.udid, "-b"], { env: mobileEnvironment, quiet: true });
-    return { udid: simulator.udid, bootedHere };
+    return simulator.udid;
+}
+
+/** Boots the simulator unless it's already running, and waits until it's ready. */
+export async function bootMobileSimulator(udid: string) {
+    const bootedHere = await state(udid) !== "Booted";
+    if (bootedHere) await command(["xcrun", "simctl", "boot", udid], { env: mobileEnvironment });
+    await command(["xcrun", "simctl", "bootstatus", udid, "-b"], { env: mobileEnvironment, quiet: true });
+    return { udid, bootedHere };
 }
 
 /** Shuts the simulator down. One that's already off, which a crash can cause, is noted instead of failing, so
  * the error from the run it cut short is the one that's reported. */
 export async function shutDownMobileSimulator(udid: string) {
-    if (Object.values(await simulators()).flat().find(device => device.udid === udid)?.state === "Shutdown") {
+    if (await state(udid) === "Shutdown") {
         console.error("The simulator had already shut down.");
         return;
     }

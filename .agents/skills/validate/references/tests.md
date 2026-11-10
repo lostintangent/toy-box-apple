@@ -26,6 +26,8 @@ in the iOS build.
 - A suite silent for three minutes is sampled, stopped and fails, naming the tests that never
   finished.
 - Existing opt-ins stay off.
+- It boots the simulator only once the build finishes, because a CI runner's simulator can shut
+  down during the build.
 - It shuts down the simulator only if it booted it. One that's already off, which a crash can
   cause, is noted rather than failing, so the run's own error is the one reported.
 
