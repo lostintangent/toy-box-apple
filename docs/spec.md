@@ -3046,9 +3046,11 @@ transparent native inset list over the popover's material, with the system selec
 and row metrics, no separators, and a height that fits its rows up to 252 points before
 scrolling. The arrow keys move that selection, Return chooses it and Escape closes the chooser.
 One click anywhere in a row chooses it, including the already highlighted row. Choices put up to
-three recent channels before the remaining alphabetical list. Changing channels saves and restores
-separate Quick Send drafts rather than borrowing the main-window draft. Target history is scoped
-to the server and prefers an unfinished Quick Send draft, then the last explicit Quick Send target,
+three recent channels, from any server, before the remaining alphabetical list. With several
+servers, each server's other channels follow under its name in Settings order, and a server whose
+list hasn't loaded shows its reason with Retry. Changing channels saves and restores
+separate Quick Send drafts rather than borrowing the main-window draft. Target history spans
+every server and prefers an unfinished Quick Send draft, then the last explicit Quick Send target,
 the last main-window channel or the sole available channel. With no suitable target it offers
 the chooser instead of selecting an urgent channel. No-server, no-channel and deleted-target
 states offer Settings, the main window or Choose Channel. A channel list that can't load offers
@@ -3066,8 +3068,8 @@ is disabled only while the list is offline, with "Toy Box isn't connected". Savi
 draft and announces the send once. Quick Send then closes at once, or opens the channel for
 Command-Return, and the message shows in its channel as Sending. A message that fails stays there
 as Not sent with Retry, never in Quick Send or the inbox. Shared content that arrives while a send
-saves opens in a fresh editor instead of closing the panel. Changing servers closes both surfaces
-and never opens a channel from the old server.
+saves opens in a fresh editor instead of closing the panel. Removing a server, or changing its
+address, closes either surface showing one of its channels and never opens a channel from it.
 
 General settings places the native Quick Send shortcut recorder below Show in menu bar. The
 default is Control-Shift-Space. It records physical keys, displays the current keyboard layout,
@@ -3290,7 +3292,8 @@ the transcript's summary, and asking never marks anything read.
 The app name is "Toy Box". The shortcut tile is navy, like the icon. Tile symbols are
 `text.line.3.summary`, `bubble.left.and.bubble.right` and `paperplane`.
 
-The Channel entity is identified by channel ID and displays the name, with `number` as its image
+The Channel entity is identified by its server and channel ID, so the same channel on two servers
+stays two channels, and displays the name, with `number` as its image
 (the whole icon in Spotlight) and the sidebar's attention as its subtitle: "Needs your reply", "All
 tasks completed" or "Unread messages". It has Name, Unread Count (`latestSequence - seenThrough`,
 which counts channel events too), Needs Your Reply, Tasks Completed and Content properties, with
@@ -3357,8 +3360,8 @@ they've left. It returns no dialog, so the card redraws as Replied.
 Send Message trims the text and refuses an empty one before asking anything. It confirms with
 `requestConfirmation(actionName: .send)` and "Send “[text]” to [channel]?", then saves the message
 to the app's outbox. It never waits on the network, so delivery and failure show only in the
-channel, as Sending describes. Siri finds channels in the app's channel list,
-waiting for its first load when the app has just launched. Other errors: "Toy Box isn't connected to a
+channel, as Sending describes. Siri finds channels in every server's channel list,
+waiting for each server's first load when the app has just launched. Other errors: "Toy Box isn't connected to a
 server. Choose one in Settings.", "Can't connect to your Toy Box server. Check that it's running,
 then try again." and "That channel isn't on your Toy Box server anymore." Errors about the server
 always say "your Toy Box server", since "Toy Box" alone also names the app.
@@ -3435,17 +3438,18 @@ the signed phone and Mac on real devices.
 
 Spotlight is Mac only.
 
-Every channel on the server saved in Settings is in Spotlight by name, with the
+Every channel on the servers saved in Settings is in Spotlight by name, with the
 first line of its purpose under it and the sidebar's cyan channel icon (a 128 px PNG) beside it.
 Attention is left out, since Spotlight would keep it after it goes stale. Picking a channel runs
-Open Channel. The Channel entity is an `IndexedEntity`, keyed `ChannelEntity/<id>` in the app's
-default index. The first catalog load after launch replaces whatever Spotlight held, and the last
-launch's channels stay until then. After that the app indexes only renames, purpose changes,
-additions and deletions. Switching servers, or having no valid one, removes every channel at once,
-before the new server's catalog arrives. A failed call makes the next catalog change replace
+Open Channel. The Channel entity is an `IndexedEntity`, keyed by its server and channel ID in the
+app's default index. Once every server has answered and at least one has loaded, the loaded
+servers' channels replace whatever Spotlight held, and the last launch's channels stay until then. A server that
+can't load leaves Spotlight until it does. After that the app indexes only renames, purpose
+changes, additions and deletions. Removing a server, or changing its address, removes its channels
+at once. A failed call makes the next catalog change replace
 everything. Launches with `--server`, `TOY_BOX_SERVER_URL`, a snapshot or a benchmark never touch
-the index. When Spotlight asks the app to reindex, it indexes the catalog's channels and removes
-identifiers the catalog no longer has.
+the index. When Spotlight asks the app to reindex, it indexes the catalogs' channels and removes
+identifiers they no longer have.
 
 Waiting requests appear beside the channel results as their own `IndexedEntity`. Index requests from
 `MenuBarStatus.waiting`, not a separate interpretation of unread messages.
@@ -3459,7 +3463,7 @@ in the channel. It never automatically sends or answers it.
 
 "Reply to Request" is discoverable in Spotlight's action pane with a parameter summary
 "Reply to [Request] with [Message]". It asks for missing text, confirms the message, requester and
-channel, then revalidates that the original request is still waiting on the current server.
+channel, then revalidates that the original request is still waiting on its server.
 An answered, replaced or unavailable request explains the change without posting to a newer one.
 It sends through Send Message's path with the in-app Reply's canonical mention, without opening a
 window. Empty text sends nothing.
