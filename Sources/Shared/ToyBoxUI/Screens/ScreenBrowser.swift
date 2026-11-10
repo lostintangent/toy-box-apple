@@ -2,20 +2,41 @@ import ChannelClient
 import ChannelKit
 import SwiftUI
 
+/// Refetches a screen list and every thumbnail, from its title menu or the Mac's Command-R. It's
+/// disabled while a load is in flight.
+public struct ScreenRefresh {
+    public let isLoading: Bool
+    let load: @MainActor () -> Void
+
+    @MainActor public func callAsFunction() { load() }
+}
+
 /// Picks a display or window to watch, by how each looks right now. Each appearance or refresh
-/// fetches the list once, with one thumbnail per screen, and nothing polls.
-public struct ScreenBrowser: View {
+/// fetches the list once, with one thumbnail per screen, and nothing polls. The app's toolbar
+/// holds Refresh, in its title menu.
+public struct ScreenBrowser<Toolbar: ToolbarContent>: View {
     private let api: ChannelAPI
     private let open: (Screen) -> Void
+    private let toolbar: (ScreenRefresh) -> Toolbar
     @ViewState private var screens: Result<ScreenList, any Error>?
     /// Counts finished loads, so a refresh fetches every thumbnail again even for the same screens.
     @ViewState private var generation = 0
     @ViewState private var isLoading = false
     @ViewState private var query = ""
+    #if os(macOS)
+    /// Whether the list shows, rather than a screen pushed over it, so Command-R refreshes only the list.
+    @ViewState private var isShown = false
+    #endif
 
-    public init(api: ChannelAPI, open: @escaping (Screen) -> Void) {
+    public init(api: ChannelAPI, open: @escaping (Screen) -> Void,
+                @ToolbarContentBuilder toolbar: @escaping (ScreenRefresh) -> Toolbar) {
         self.api = api
         self.open = open
+        self.toolbar = toolbar
+    }
+
+    private var refresh: ScreenRefresh {
+        ScreenRefresh(isLoading: isLoading) { Task { await load() } }
     }
 
     public var body: some View {
@@ -50,15 +71,11 @@ public struct ScreenBrowser: View {
         .scrollDismissesKeyboard(.immediately)
         .task { await load() }
         .refreshable { await load() }
+        .toolbar { toolbar(refresh) }
         #if os(macOS)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Refresh", systemImage: "arrow.clockwise") { Task { await load() } }
-                    .help("Refresh (Command-R)")
-                    .keyboardShortcut("r")
-                    .disabled(isLoading)
-            }
-        }
+        .onAppear { isShown = true }
+        .onDisappear { isShown = false }
+        .focusedSceneValue(\.screenRefresh, isShown ? refresh : nil)
         #endif
     }
 
@@ -141,3 +158,17 @@ public struct ScreenBrowser: View {
         }
     }
 }
+
+#if os(macOS)
+private struct ScreenRefreshKey: FocusedValueKey {
+    typealias Value = ScreenRefresh
+}
+
+extension FocusedValues {
+    /// The focused Screens window's Refresh, while it shows its list.
+    public var screenRefresh: ScreenRefresh? {
+        get { self[ScreenRefreshKey.self] }
+        set { self[ScreenRefreshKey.self] = newValue }
+    }
+}
+#endif

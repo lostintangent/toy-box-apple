@@ -224,7 +224,7 @@ private struct ServerDetails: View {
 
 /// Add Server: an address, tested if you like, then added and selected. An address already listed
 /// selects that server.
-private struct AddServerSheet: View {
+struct AddServerSheet: View {
     let added: (ChannelCatalogStore) -> Void
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss

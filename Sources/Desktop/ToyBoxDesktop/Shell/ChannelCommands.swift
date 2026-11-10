@@ -1,5 +1,6 @@
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 
 /// The open image's zoom, which takes over the Text Size keys while this window shows an image.
 struct ImageZoomActions {
@@ -56,6 +57,7 @@ extension FocusedValues {
 struct ChannelCommands: Commands {
     let model: AppModel
     @FocusedValue(\.channelCommands) private var actions
+    @FocusedValue(\.screenRefresh) private var screenRefresh
     @AppStorage("textScale") private var textScale = 1.0
     @Environment(\.openWindow) private var openWindow
 
@@ -122,7 +124,9 @@ struct ChannelCommands: Commands {
                 Label("Your Messages", systemImage: "person").tag(TranscriptFilter.yours).keyboardShortcut("2")
             }
             .disabled(!hasConversation)
-            Button("Refresh") { actions?.refresh() }.keyboardShortcut("r").disabled(actions == nil)
+            Button("Refresh") { if let actions { actions.refresh() } else { screenRefresh?() } }
+                .keyboardShortcut("r")
+                .disabled(actions == nil && screenRefresh?.isLoading != false)
             // AppKit matches a "+" equivalent for both Command-= and Command-Shift-=.
             if let zoom = actions?.imageZoom {
                 Button("Actual Size") { zoom.actualSize() }.keyboardShortcut("0").disabled(zoom.isActualSize)

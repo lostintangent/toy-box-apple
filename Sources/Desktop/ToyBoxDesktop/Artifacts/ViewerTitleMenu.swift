@@ -31,9 +31,11 @@ struct ViewerLeadingToolbar<Content: View>: ToolbarContent {
 /// main action and Share.
 struct ViewerTitleMenu<Content: View>: View {
     let title: String
-    let subtitle: String
+    /// The second line, or nil for a title alone.
+    let subtitle: String?
     let help: String
-    let fit: ViewerTitleFit
+    /// Nil where nothing else competes for the toolbar, like a Screens window's list.
+    var fit: ViewerTitleFit?
     @ViewBuilder var content: Content
     @Environment(\.appearsActive) private var appearsActive
 
@@ -45,9 +47,11 @@ struct ViewerTitleMenu<Content: View>: View {
                 Text(title)
                     .font(.system(size: ViewerTitleFit.titleSize, weight: .semibold))
                     .foregroundStyle(appearsActive ? .primary : .tertiary)
-                Text(subtitle)
-                    .font(.system(size: ViewerTitleFit.subtitleSize))
-                    .foregroundStyle(appearsActive ? .secondary : .tertiary)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: ViewerTitleFit.subtitleSize))
+                        .foregroundStyle(appearsActive ? .secondary : .tertiary)
+                }
             }
             .lineLimit(1)
             .truncationMode(.tail)
@@ -61,8 +65,8 @@ struct ViewerTitleMenu<Content: View>: View {
         .fixedSize(horizontal: false, vertical: true)
         .help(help)
         .accessibilityLabel(title)
-        .accessibilityValue(subtitle)
-        .frame(maxWidth: fit.maxWidth, alignment: .leading)
+        .accessibilityValue(subtitle ?? "")
+        .frame(maxWidth: fit?.maxWidth, alignment: .leading)
     }
 }
 

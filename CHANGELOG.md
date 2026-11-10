@@ -5,6 +5,7 @@
 ### Bugs/Polish
 
 - With several servers, each one's name shows how many channels it has, and collapsing a server no longer hides a request waiting for you there.
+- The Screens title now lets you refresh the list, switch to another server or add one, all in one place, and it names the server only when you have more than one.
 
 ## Mac 0.1.31
 
@@ -12,6 +13,7 @@
 
 - Your servers now have their own tab in Settings, and with several servers the bottom of the sidebar tells you at a glance whether any of them is having trouble and takes you straight to that tab.
 - Collapsing a server in the sidebar no longer hides a request waiting for you there, and the server names have a little more room to breathe.
+- The Screens window's title now lets you refresh the list, switch to another server or add one, all in one place, and it names the server only when you have more than one.
 - Toy Box no longer quits unexpectedly when a change to a channel can't be saved while VoiceOver or another app that reads the screen is running.
 
 ## iPhone 0.1.27
