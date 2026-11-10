@@ -61,13 +61,22 @@ export async function chooseMobileSimulator(duo: boolean, ifAvailable = false) {
     return simulator.udid;
 }
 
-/** Boots the simulator unless it's already running, and waits until it's ready. */
-export async function bootMobileSimulator(udid: string) {
+/** Boots the simulator unless it's already running, and waits until it's ready. A boot here leaves the launchd
+ * jobs in `disabledJobs` off. */
+export async function bootMobileSimulator(udid: string, disabledJobs: string[] = []) {
     const bootedHere = await state(udid) !== "Booted";
-    if (bootedHere) await command(["xcrun", "simctl", "boot", udid], { env: mobileEnvironment });
+    const startedAt = performance.now();
+    if (bootedHere) {
+        await command(["xcrun", "simctl", "boot", udid, ...disabledJobs.map(job => `--disabledJob=${job}`)],
+            { env: mobileEnvironment });
+    }
     await command(["xcrun", "simctl", "bootstatus", udid, "-b"], { env: mobileEnvironment, quiet: true });
+    if (bootedHere) console.log(`The simulator was ready ${seconds(startedAt)} after booting.`);
     return { udid, bootedHere };
 }
+
+/** The time since `start`, a `performance.now()`, for a progress line. */
+export function seconds(start: number) { return `${((performance.now() - start) / 1000).toFixed(1)}s`; }
 
 /** Shuts the simulator down. One that's already off, which a crash can cause, is noted instead of failing, so
  * the error from the run it cut short is the one that's reported. */
