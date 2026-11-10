@@ -51,9 +51,12 @@ struct ChannelSidebarServerNotice: View {
         if let heading = footer.heading, let error = catalog.phase.message {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Label(footer.isReconnecting ? "Reconnecting to server" : heading,
-                          systemImage: "wifi.exclamationmark")
-                        .font(.footnote.weight(.semibold))
+                    // Not a Label, whose icon the list would tint.
+                    HStack(spacing: 6) {
+                        Image(systemName: "wifi.exclamationmark").accessibilityHidden(true)
+                        Text(footer.isReconnecting ? "Reconnecting to server" : heading)
+                    }
+                    .font(.footnote.weight(.semibold))
                     Text(footer.isReconnecting ? heading : error)
                         .font(.footnote)
                         .foregroundStyle(ChannelInk.secondary)
@@ -62,7 +65,8 @@ struct ChannelSidebarServerNotice: View {
                 .accessibilityHint(footer.isReconnecting ? error : "")
                 Spacer(minLength: 0)
                 if canRetry {
-                    Button("Retry", action: retry).frame(minHeight: 44)
+                    // Borderless, so only Retry retries and it takes the accent, not the whole row.
+                    Button("Retry", action: retry).buttonStyle(.borderless).frame(minHeight: 44)
                 }
             }
             .listRowSeparator(.hidden)
