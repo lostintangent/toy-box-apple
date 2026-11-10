@@ -4,10 +4,10 @@ import ChannelIntelligence
 import ChannelKit
 import Foundation
 import Observation
+import SwiftUI
 import ToyBoxUI
 
 enum AppConfiguration {
-    static let serverURLKey = "serverURL"
     static let defaultServerURL = ProcessInfo.processInfo.environment["TOY_BOX_SERVER_URL"]
         ?? "http://localhost:3000"
 }
@@ -23,10 +23,15 @@ final class AppModel {
     let quickSend: QuickSendController
     let widgetSnapshots: WidgetSnapshotPublisher
     private let dockAttention: DockAttention
+    /// Every server in Settings order, each with its own catalog stream and channel stores.
+    private(set) var catalogs: [ChannelCatalogStore] = []
+    /// The first server, which the windows and integrations show until they span every server.
+    var catalog: ChannelCatalogStore? { catalogs.first }
+    /// The first server's address, or a launch address that isn't usable.
     private(set) var serverURL: String
-    private(set) var catalog: ChannelCatalogStore?
-    /// Every message the user sends until its server confirms it. The current catalog delivers it.
+    /// Every message the user sends until its server confirms it. Each server's catalog delivers its own.
     let outbox: ChannelOutbox
+    /// Why a launch address isn't usable, which leaves no server at all.
     private(set) var configurationError: String?
     private(set) var openChannelIDs: Set<String> = []
     private(set) var activeChannelID: String?
@@ -52,6 +57,9 @@ final class AppModel {
     @ObservationIgnored private var catalogGeneration = UUID()
     @ObservationIgnored private var applicationObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var composerSessions: [String: ChannelComposerSession] = [:]
+    /// A launch override, snapshot or benchmark keeps its server to the session, so Settings never
+    /// saves over the user's servers.
+    @ObservationIgnored private let savesServers: Bool
 
     init(launchOptions: LaunchOptions = .init()) {
         self.launchOptions = launchOptions
@@ -77,10 +85,16 @@ final class AppModel {
         performanceBenchmark = launchOptions.benchmark.flatMap { scenario in
             launchOptions.channelID.map { PerformanceBenchmark(scenario: scenario, channelID: $0) }
         }
-        serverURL = launchOptions.serverURL ?? ProcessInfo.processInfo.environment["TOY_BOX_SERVER_URL"]
-            ?? UserDefaults.standard.string(forKey: AppConfiguration.serverURLKey)
-            ?? AppConfiguration.defaultServerURL
-        configure(serverURL: serverURL, persist: false)
+        savesServers = launchOptions.allowsUserIntegrations()
+        let saved = savesServers ? ChannelCatalogStore.Saved.load(from: .standard) : []
+        serverURL = launchOptions.serverURL ?? saved.first?.url ?? AppConfiguration.defaultServerURL
+        var failure: (any Error)?
+        catalogs = (saved.isEmpty ? [.init(url: serverURL)] : saved).compactMap { server in
+            do { return try connect(ChannelAPI(serverURL: server.url), name: server.name) }
+            catch { failure = error; return nil }
+        }
+        if catalogs.isEmpty { configurationError = failure?.localizedDescription }
+        firstServerDidChange()
         if !launchOptions.isSnapshot { launchChannelID = launchChannel.channelID(serverURL: self.serverURL) }
         notifications.onActivate = { [weak self] activation in
             guard let self, self.serverURL == activation.serverURL else { return }
@@ -96,7 +110,7 @@ final class AppModel {
             applicationObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) {
                 [weak self] _ in
                 Task { @MainActor in
-                    self?.catalog?.setActive(NSApplication.shared.isActive)
+                    for catalog in self?.catalogs ?? [] { catalog.setActive(NSApplication.shared.isActive) }
                     if NSApplication.shared.isActive { self?.refreshFolders() }
                     await self?.notifications.refreshAuthorization()
                 }
@@ -147,33 +161,81 @@ final class AppModel {
         activeChannelID ?? launchChannel.channelID(serverURL: serverURL)
     }
 
-    func configure(serverURL: String, persist: Bool = true) {
-        do {
-            let api = try ChannelAPI(serverURL: serverURL)
-            if self.serverURL != api.baseURL.absoluteString { quickSend.dismiss() }
-            catalog?.stopPolling()
-            catalog?.outbox = nil
-            if let catalog { connections.disconnectAll(in: catalog) }
-            composerSessions = [:]
-            self.serverURL = api.baseURL.absoluteString
-            if persist, !launchOptions.isSnapshot {
-                UserDefaults.standard.set(self.serverURL, forKey: AppConfiguration.serverURLKey)
-            }
-            let catalog = ChannelCatalogStore(api: api)
-            catalog.outbox = outbox
-            self.catalog = catalog
-            isRefreshingCatalog = false
-            configurationError = nil
-            notifications.reset()
-            dockAttention.reset()
-            catalogGeneration = UUID()
-            observeCatalog(generation: catalogGeneration)
-            catalog.setActive(NSApplication.shared.isActive)
-            catalog.startPolling()
-            widgetSnapshots.update(status: menuBarStatus, serverURL: self.serverURL, hasCatalog: false)
-        } catch {
-            configurationError = error.localizedDescription
+    // MARK: Servers
+
+    /// Adds a server, or finds the one already at that address, for Settings to select.
+    func addServer(_ address: String) throws -> ChannelCatalogStore {
+        let api = try ChannelAPI(serverURL: address)
+        if let listed = catalogs.first(at: api.baseURL.absoluteString) { return listed }
+        let catalog = connect(api, name: nil)
+        configurationError = nil
+        updateServers { $0.append(catalog) }
+        return catalog
+    }
+
+    /// Replaces a server's live connections with another address, or finds the server already
+    /// there, for Settings to select. Drafts stay with the old address.
+    func changeAddress(of catalog: ChannelCatalogStore, to address: String) throws -> ChannelCatalogStore {
+        let api = try ChannelAPI(serverURL: address)
+        if let listed = catalogs.first(at: api.baseURL.absoluteString) { return listed }
+        guard let index = catalogs.firstIndex(where: { $0 === catalog }) else { return catalog }
+        let moved = catalog.saved.moved(to: api.baseURL.absoluteString)
+        disconnect(catalog)
+        let replacement = connect(api, name: moved.name)
+        updateServers { $0[index] = replacement }
+        return replacement
+    }
+
+    /// Disconnects a server and forgets it. The last one stays, so there's always a server.
+    func removeServer(_ catalog: ChannelCatalogStore) {
+        guard catalogs.count > 1, let index = catalogs.firstIndex(where: { $0 === catalog }) else { return }
+        disconnect(catalog)
+        updateServers { $0.remove(at: index) }
+    }
+
+    func moveServers(fromOffsets source: IndexSet, toOffset destination: Int) {
+        updateServers { $0.move(fromOffsets: source, toOffset: destination) }
+    }
+
+    func rename(_ catalog: ChannelCatalogStore, to name: String) {
+        catalog.name = catalog.saved.renamed(name).name
+        updateServers { _ in }
+    }
+
+    private func connect(_ api: ChannelAPI, name: String?) -> ChannelCatalogStore {
+        let catalog = ChannelCatalogStore(api: api, name: name)
+        catalog.outbox = outbox
+        catalog.setActive(NSApplication.shared.isActive)
+        catalog.startPolling()
+        return catalog
+    }
+
+    private func disconnect(_ catalog: ChannelCatalogStore) {
+        catalog.stopPolling()
+        catalog.outbox = nil
+        connections.disconnectAll(in: catalog)
+        composerSessions = composerSessions.filter { $0.value.store.api.baseURL != catalog.api.baseURL }
+    }
+
+    private func updateServers(_ change: (inout [ChannelCatalogStore]) -> Void) {
+        let first = catalog
+        change(&catalogs)
+        if savesServers { ChannelCatalogStore.Saved.save(catalogs.map(\.saved), to: .standard) }
+        if catalog !== first { firstServerDidChange() }
+    }
+
+    /// Everything outside Settings shows the first server, so a new first server starts it over.
+    private func firstServerDidChange() {
+        if let address = catalog?.api.baseURL.absoluteString, address != serverURL {
+            quickSend.dismiss()
+            serverURL = address
         }
+        isRefreshingCatalog = false
+        notifications.reset()
+        dockAttention.reset()
+        catalogGeneration = UUID()
+        observeCatalog(generation: catalogGeneration)
+        widgetSnapshots.update(status: menuBarStatus, serverURL: serverURL, hasCatalog: false)
     }
 
     /// Connects a store for a window, sheet or intent that shows it. Pair each with a release.

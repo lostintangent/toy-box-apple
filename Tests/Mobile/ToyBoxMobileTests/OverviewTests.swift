@@ -1329,8 +1329,8 @@ struct OverviewTests {
             #expect(replacement !== editor)
             #expect(!sessions.isCurrent(editor, app: app, presenter: presenter))
             #expect(sessions.isCurrent(replacement, app: app, presenter: presenter))
-            try app.configure(serverURL: "https://other.example", persist: false)
-            try app.configure(serverURL: "https://fixture.example", persist: false)
+            try app.changeAddress(of: #require(app.catalog), to: "https://other.example")
+            try app.changeAddress(of: #require(app.catalog), to: "https://fixture.example")
             #expect(!sessions.isCurrent(replacement, app: app, presenter: presenter))
         }
     }
@@ -1394,7 +1394,7 @@ struct OverviewTests {
         #expect(!first.isPresented)
         let second = model.artifactSession(for: try #require(model.selectedStore))
         second.open(artifact)
-        try model.configure(serverURL: "https://replacement.example", persist: false)
+        try model.changeAddress(of: #require(model.catalog), to: "https://replacement.example")
         #expect(!second.isPresented)
         #expect(model.selectedStore == nil)
         model.selectedChannelID = "second"

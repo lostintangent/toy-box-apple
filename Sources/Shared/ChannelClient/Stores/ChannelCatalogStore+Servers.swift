@@ -49,6 +49,17 @@ extension ChannelCatalogStore {
             defaults.set(try? JSONEncoder().encode(servers), forKey: key)
         }
 
+        /// This server at a new address. A name that was still its host follows the new host.
+        public func moved(to url: String) -> Saved {
+            Saved(url: url, name: name == Self.name(of: self.url) ? nil : name)
+        }
+
+        /// A name the user typed. Clearing it gives the server back its host.
+        public func renamed(_ name: String) -> Saved {
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            return Saved(url: url, name: name.isEmpty ? nil : name)
+        }
+
         private var isValid: Bool { ChannelWaitingRequest.normalizedServer(url) != nil }
     }
 

@@ -84,7 +84,7 @@ struct ConnectionSetupView: View {
     private func connect() {
         guard case .connected(let url, _) = connection.phase else { return }
         do {
-            try model.switchServer(to: url.absoluteString, replacing: model.serverURL)
+            try model.addServer(url.absoluteString)
             Task { await model.refreshCatalog() }
         } catch { connectFailure = error.localizedDescription }
     }

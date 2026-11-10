@@ -12,10 +12,12 @@ import UIKit
 final class AppModel {
     let notifications: ChannelNotifications
     let following: ChannelFollowController
+    /// The first server's address, or a launch address the app can't use.
     private(set) var serverURL = ""
-    private(set) var catalog: ChannelCatalogStore?
+    /// Every server, in Settings order.
+    private(set) var catalogs: [ChannelCatalogStore] = []
     /// Every message the user sends until its server confirms it, in the shared container so the
-    /// share extension's sends join it. The current catalog delivers it.
+    /// share extension's sends join it. Each server's catalog delivers its own.
     let outbox: ChannelOutbox
     private(set) var configurationError: String?
     private(set) var isActive = false
@@ -45,6 +47,8 @@ final class AppModel {
     @ObservationIgnored private(set) var isForeground = false
     @ObservationIgnored private var holdsSelectedConnection = false
     @ObservationIgnored private let defaults: UserDefaults
+    /// A launch server stays in the session, so Settings never saves over the user's servers.
+    @ObservationIgnored private let savesServers: Bool
     @ObservationIgnored private let session: URLSession
     @ObservationIgnored private var restoredSelection = false
     @ObservationIgnored private var navigationGeneration = UUID()
@@ -69,6 +73,9 @@ final class AppModel {
         self.following = following ?? ChannelFollowController()
         self.defaults = defaults
         self.session = session
+        let flag = arguments.firstIndex(of: "--server")
+        let launchServer = flag.map { arguments.dropFirst($0 + 1).first ?? "" } ?? environment["TOY_BOX_SERVER_URL"]
+        savesServers = launchServer == nil
         outbox = .mobile()
         self.notifications.onRegistrationCreated = { [weak self] registration in
             guard let self, self.notifications.currentRegistration == registration,
@@ -83,23 +90,24 @@ final class AppModel {
         self.notifications.onReply = { [weak self] reply in
             await self?.outbox.send(reply.content, to: reply.channelID, on: reply.server, answering: reply.request)
         }
-        let address: String?
-        if let index = arguments.firstIndex(of: "--server") {
-            guard arguments.indices.contains(index + 1) else {
-                configurationError = "Provide a server URL after --server."
-                return
+        if let launchServer {
+            do { catalogs = [connect(try ChannelAPI(serverURL: launchServer, session: session), name: nil)] }
+            catch {
+                serverURL = launchServer
+                configurationError = flag != nil && launchServer.isEmpty
+                    ? "Provide a server URL after --server." : error.localizedDescription
             }
-            address = arguments[index + 1]
         } else {
-            address = environment["TOY_BOX_SERVER_URL"] ?? defaults.string(forKey: "serverURL")
+            catalogs = ChannelCatalogStore.Saved.load(from: defaults).compactMap { server in
+                (try? ChannelAPI(serverURL: server.url, session: session)).map { connect($0, name: server.name) }
+            }
         }
-        guard let address else { return }
-        do { try configure(serverURL: address, persist: false) }
-        catch {
-            serverURL = address
-            configurationError = error.localizedDescription
-        }
+        if catalog != nil { firstServerDidChange() }
     }
+
+    /// The first server, which the list and everything outside Settings show until each reaches
+    /// its own.
+    var catalog: ChannelCatalogStore? { catalogs.first }
 
     var api: ChannelAPI? { catalog?.api }
 
@@ -145,23 +153,74 @@ final class AppModel {
 
     func release(_ store: ChannelStore) { connections.release(store) }
 
-    func switchServer(to address: String, replacing expectedServer: String) throws {
-        guard serverURL == expectedServer else { throw ServerSwitchFailure.changed }
-        try configure(serverURL: address)
+    // MARK: Servers
+
+    /// Adds a server, or finds the one already at that address.
+    @discardableResult
+    func addServer(_ address: String) throws -> ChannelCatalogStore {
+        let api = try ChannelAPI(serverURL: address, session: session)
+        if let listed = catalogs.first(at: api.baseURL.absoluteString) { return listed }
+        let catalog = connect(api, name: nil)
+        updateServers { $0.append(catalog) }
+        return catalog
     }
 
-    func configure(serverURL: String, persist: Bool = true) throws {
-        let api = try ChannelAPI(serverURL: serverURL, session: session)
-        guard let identity = ChannelWaitingRequest.normalizedServer(api.baseURL.absoluteString) else {
-            throw ChannelAPIError.invalidServerURL
-        }
+    /// Replaces a server's live connections with another address, or finds the server already
+    /// there. Drafts stay with the old address.
+    @discardableResult
+    func changeAddress(of catalog: ChannelCatalogStore, to address: String) throws -> ChannelCatalogStore {
+        let api = try ChannelAPI(serverURL: address, session: session)
+        if let listed = catalogs.first(at: api.baseURL.absoluteString) { return listed }
+        guard let index = catalogs.firstIndex(where: { $0 === catalog }) else { return catalog }
+        let moved = catalog.saved.moved(to: api.baseURL.absoluteString)
+        disconnect(catalog)
+        let replacement = connect(api, name: moved.name)
+        updateServers { $0[index] = replacement }
+        return replacement
+    }
+
+    /// Disconnects a server and forgets it. The last one stays, so there's always a server.
+    func removeServer(_ catalog: ChannelCatalogStore) {
+        guard catalogs.count > 1, let index = catalogs.firstIndex(where: { $0 === catalog }) else { return }
+        disconnect(catalog)
+        updateServers { $0.remove(at: index) }
+    }
+
+    func moveServers(fromOffsets source: IndexSet, toOffset destination: Int) {
+        updateServers { $0.move(fromOffsets: source, toOffset: destination) }
+    }
+
+    func rename(_ catalog: ChannelCatalogStore, to name: String) {
+        catalog.name = catalog.saved.renamed(name).name
+        updateServers { _ in }
+    }
+
+    private func connect(_ api: ChannelAPI, name: String?) -> ChannelCatalogStore {
+        let catalog = ChannelCatalogStore(api: api, name: name)
+        catalog.outbox = outbox
+        if isForeground { catalog.startPolling() }
+        return catalog
+    }
+
+    private func disconnect(_ catalog: ChannelCatalogStore) {
+        catalog.stopPolling()
+        catalog.outbox = nil
+        connections.disconnectAll(in: catalog)
+    }
+
+    private func updateServers(_ change: (inout [ChannelCatalogStore]) -> Void) {
+        let first = catalog
+        change(&catalogs)
+        if savesServers { ChannelCatalogStore.Saved.save(catalogs.map(\.saved), to: defaults) }
+        if catalog !== first { firstServerDidChange() }
+    }
+
+    /// The list and everything outside Settings show the first server, so a new first server
+    /// starts them over.
+    private func firstServerDidChange() {
         integrationsGeneration = UUID()
         badgeRefresh = nil
         cancelNavigation()
-        catalog?.stopPolling()
-        catalog?.outbox = nil
-        if let catalog { connections.disconnectAll(in: catalog) }
-        holdsSelectedConnection = false
         selectedChannelID = nil
         visibleChannelID = nil
         screenEntity = nil
@@ -170,17 +229,13 @@ final class AppModel {
         composerSessions = [:]
         artifactSessions = [:]
         galleries = [:]
-        self.serverURL = api.baseURL.absoluteString
-        serverIdentity = identity
-        catalog = ChannelCatalogStore(api: api)
-        catalog?.outbox = outbox
-        notifications.configure(api: api)
+        serverURL = catalog?.api.baseURL.absoluteString ?? ""
+        serverIdentity = ChannelWaitingRequest.normalizedServer(serverURL) ?? ""
+        if let api { notifications.configure(api: api) }
         configurationError = nil
         navigationNotice = nil
         restoredSelection = false
         resumeCatalogBaseline = nil
-        if persist { defaults.set(self.serverURL, forKey: "serverURL") }
-        if isForeground { catalog?.startPolling() }
         if integrationsStarted {
             configureShareHistory()
             observeIntegrations(generation: integrationsGeneration)
@@ -194,14 +249,14 @@ final class AppModel {
         let foreground = phase != .background
         if isForeground != foreground {
             isForeground = foreground
-            catalog?.setActive(foreground)
+            for catalog in catalogs { catalog.setActive(foreground) }
             if foreground {
                 resumeCatalogBaseline = catalog?.lastRefreshedAt
-                catalog?.startPolling()
+                for catalog in catalogs { catalog.startPolling() }
                 for store in connections.stores { store.connect() }
                 connectSelection()
             } else {
-                catalog?.stopPolling()
+                for catalog in catalogs { catalog.stopPolling() }
                 for store in connections.stores { store.disconnect() }
             }
         }
@@ -475,13 +530,5 @@ extension AppModel {
 
         var id: Self { self }
         var screenID: String? { if case .screen(let id) = self { id } else { nil } }
-    }
-}
-
-enum ServerSwitchFailure: LocalizedError {
-    case changed
-
-    var errorDescription: String? {
-        "The connected server changed while confirmation was open. Review the server address and try again."
     }
 }

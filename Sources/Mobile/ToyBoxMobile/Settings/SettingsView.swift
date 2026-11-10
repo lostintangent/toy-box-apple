@@ -11,22 +11,13 @@ struct SettingsView: View {
     @AppStorage("appearance") private var appearance: AppAppearance = .system
     @AppStorage(IntelligenceSettings.summarizesNewMessages) private var summarizesNewMessages = true
     @AppStorage(IntelligenceSettings.describesImages) private var describesImages = true
-    @ViewState private var connection = ServerConnectionProbe()
     @ViewState private var availability: IntelligenceAvailability?
-    @ViewState private var switchFailure: String?
-    @ViewState private var isSwitching = false
-
-    init(connection: ServerConnectionProbe = ServerConnectionProbe()) {
-        _connection = ViewState(initialValue: connection)
-    }
+    @ViewState private var addsServer = false
+    @ViewState private var removal: ChannelCatalogStore?
 
     var body: some View {
         Form {
-            ServerConnectionSection(
-                connection: connection, placeholder: "Required",
-                footer: "Use your server's address, including its port and any path prefix. Toy Box switches to it once the test connects.",
-                currentServer: model.serverURL, isSwitching: isSwitching, failure: $switchFailure)
-                .disabled(isSwitching)
+            servers
             Section("Appearance") {
                 Picker("Appearance", selection: $appearance) {
                     ForEach(AppAppearance.allCases) { value in Text(value.title).tag(value) }
@@ -47,26 +38,48 @@ struct SettingsView: View {
         }
         .accessibilityIdentifier("settings-form")
         .navigationTitle("Settings")
+        .navigationDestination(for: ServerRoute.self) { ServerSettingsView(catalog: $0.catalog) }
+        .navigationDestination(isPresented: $addsServer) { ServerSettingsView(catalog: nil) }
         .toolbar {
+            if model.catalogs.count > 1 {
+                ToolbarItem(placement: .topBarLeading) { EditButton() }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button(role: .close) { model.cover = nil }
                     .accessibilityLabel("Close Settings")
-                    .disabled(isSwitching)
             }
         }
-        .interactiveDismissDisabled(isSwitching)
-        .onAppear {
-            connection.address = model.serverURL
-            availability = intelligence.availability
-        }
-        .onDisappear { connection.cancel() }
+        .onAppear { availability = intelligence.availability }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { availability = intelligence.availability }
-            else { connection.cancel() }
         }
         .task { await model.notifications.refreshAuthorization() }
-        .onChange(of: connectedServer) { _, server in
-            if let server { switchIfNeeded(to: server) }
+    }
+
+    /// Each server with its dot and name, in the order the list shows them. Removing one asks first,
+    /// and the last can't be removed.
+    private var servers: some View {
+        Section {
+            ForEach(model.catalogs, id: \.api.baseURL) { catalog in
+                NavigationLink(value: ServerRoute(catalog: catalog)) { ServerRow(catalog: catalog) }
+            }
+            .onMove { model.moveServers(fromOffsets: $0, toOffset: $1) }
+            .onDelete { removal = $0.first.map { model.catalogs[$0] } }
+            .deleteDisabled(model.catalogs.count < 2)
+            Button("Add Server", systemImage: "plus") { addsServer = true }
+        } header: {
+            Text("Servers")
+        } footer: {
+            if model.catalogs.count > 1 {
+                Text("Drag to reorder in Edit. The list shows servers in this order.")
+            }
+        }
+        .confirmationDialog("Remove \(removal?.name ?? "this server")?", isPresented: Binding(
+            get: { removal != nil }, set: { if !$0 { removal = nil } }
+        ), titleVisibility: .visible, presenting: removal) { catalog in
+            Button("Remove Server", role: .destructive) { model.removeServer(catalog) }
+        } message: { _ in
+            Text("Toy Box disconnects from it and removes its channels from this iPhone. Drafts stay saved, so adding it back finds them.")
         }
     }
 
@@ -103,27 +116,24 @@ struct SettingsView: View {
         case .unsupportedLanguage: "Apple Intelligence doesn't support your iPhone's language yet."
         }
     }
+}
 
-    private var connectedServer: URL? {
-        guard case .connected(let url, _)? = connection.phase else { return nil }
-        return url
-    }
+/// A server's dot and name, then its host, or that it can't connect.
+private struct ServerRow: View {
+    let catalog: ChannelCatalogStore
 
-    /// A successful test is the switch. Testing the server already in use only confirms it.
-    private func switchIfNeeded(to server: URL) {
-        guard !isSwitching, ChannelWaitingRequest.normalizedServer(server.absoluteString)
-                != ChannelWaitingRequest.normalizedServer(model.serverURL) else { return }
-        isSwitching = true
-        switchFailure = nil
-        Task {
-            defer { isSwitching = false }
-            do {
-                try model.switchServer(to: server.absoluteString, replacing: model.serverURL)
-                let catalog = model.catalog
-                await model.refreshCatalog()
-                guard model.catalog === catalog else { return }
-                switchFailure = catalog?.phase.message
-            } catch { switchFailure = error.localizedDescription }
+    var body: some View {
+        let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
+        let host = SidebarFooter.server(catalog.api.baseURL.absoluteString)
+        let detail = catalog.phase.failure != nil ? "Can't connect" : catalog.name == host ? nil : host
+        LabeledContent {
+            if let detail { Text(detail).lineLimit(1).truncationMode(.middle) }
+        } label: {
+            HStack(spacing: 10) {
+                Circle().fill(footer.dot).frame(width: 8, height: 8).accessibilityHidden(true)
+                Text(catalog.name).lineLimit(1)
+            }
         }
+        .accessibilityValue(footer.accessibilityValue)
     }
 }
