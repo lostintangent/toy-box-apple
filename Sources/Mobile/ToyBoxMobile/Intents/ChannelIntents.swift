@@ -15,15 +15,15 @@ final class ChannelIntents {
     }
 
     private let onScreen: @MainActor () -> OnScreen?
-    private let catalog: @MainActor () -> [Channel]
+    private let catalogs: @MainActor () -> [ChannelCatalogStore]
 
-    init(onScreen: @escaping @MainActor () -> OnScreen?, catalog: @escaping @MainActor () -> [Channel]) {
+    init(onScreen: @escaping @MainActor () -> OnScreen?, catalogs: @escaping @MainActor () -> [ChannelCatalogStore]) {
         self.onScreen = onScreen
-        self.catalog = catalog
+        self.catalogs = catalogs
     }
 
     convenience init(model: AppModel) {
-        self.init(onScreen: { model.onScreen }, catalog: { model.catalog?.channels ?? [] })
+        self.init(onScreen: { model.onScreen }, catalogs: { model.catalogs })
     }
 
     /// Makes the queries' dependency available. Call once, before the first query runs.
@@ -36,11 +36,15 @@ final class ChannelIntents {
     /// activity may still name it after the user moves on.
     func channels(for identifiers: [String]) -> [ChannelEntity] {
         let shown: ChannelStore? = if case .channel(let store) = onScreen() { store } else { nil }
-        let channels = catalog()
-        return identifiers.compactMap { id in
-            let name = channels.first { $0.id == id }?.name
-            if let shown, shown.id == id { return ChannelEntity(shown, name: shown.details?.name ?? name ?? "") }
-            return name.map { ChannelEntity(id: id, name: $0) }
+        let catalogs = catalogs()
+        return identifiers.compactMap { identifier in
+            guard let target = ChannelTarget(identifier: identifier) else { return nil }
+            let name = catalogs.first(at: target.serverURL)?.channels.first { $0.id == target.channelID }?.name
+            if let shown, shown.target == target {
+                let name = shown.details?.name ?? name ?? ""
+                return ChannelEntity(target, name: name, content: shown.readableText(name: name))
+            }
+            return name.map { ChannelEntity(target, name: $0) }
         }
     }
 

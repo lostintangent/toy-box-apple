@@ -5,21 +5,22 @@ import SwiftUI
 /// What a channel screen shows: its conversation, or the artifact open over it. An image open over
 /// it shows neither, so the screen names nothing to Siri then.
 enum ScreenEntity: Hashable {
-    case channel(String)
-    case artifact(channelID: String, artifactID: String)
+    case channel(ChannelTarget)
+    case artifact(ChannelTarget, artifactID: String)
 
-    var channelID: String {
+    var channel: ChannelTarget {
         switch self {
-        case .channel(let id), .artifact(let id, _): id
+        case .channel(let channel), .artifact(let channel, _): channel
         }
     }
 
     var identifier: EntityIdentifier {
         switch self {
-        case .channel(let id):
-            EntityIdentifier(for: ChannelEntity.self, identifier: id)
-        case .artifact(let channelID, let artifactID):
-            EntityIdentifier(for: ArtifactEntity.self, identifier: ArtifactEntity.id(channelID: channelID, artifactID: artifactID))
+        case .channel(let channel):
+            EntityIdentifier(for: ChannelEntity.self, identifier: channel.identifier)
+        case .artifact(let channel, let artifactID):
+            EntityIdentifier(for: ArtifactEntity.self,
+                             identifier: ArtifactEntity.id(channelID: channel.channelID, artifactID: artifactID))
         }
     }
 }

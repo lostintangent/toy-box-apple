@@ -4,7 +4,7 @@
 
 ### Features
 
-- You can now connect to several Toy Box servers at once, like one at home and one at work, and the channel list shows each server's channels under its name, so you can keep up with all of them from one app.
+- You can now connect to several Toy Box servers at once, like one at home and one at work. The channel list shows each server's channels under its name, and notifications, Lock Screen replies, the icon badge, the Needs You widget, Live Activities, Share and Siri cover all of them, so nothing waiting for you is missed.
 
 ## Mac 0.1.30
 

@@ -387,7 +387,7 @@ are not repeated on activation, and failures never start a background retry loop
 Until the actual authorization state is loaded, registration and Follow can become ready but
 topic writes wait, preserving the server's existing choices. A stalled read therefore delays
 preference changes without clearing the previous subscriptions.
-A 201 also restores active Follows. New Follow remains unavailable until the selected server
+A 201 also restores active Follows. New Follow remains unavailable until the channel's server
 acknowledges its registration. Restored Activities survive that wait and replay deferred tokens after either 201 or
 204, independently of alert preferences.
 Allow notifications off unsubscribes only the two notification topics, retaining Follow and the address.
@@ -398,8 +398,8 @@ named and returned in the order sent as the server does.
 
 `ChannelPushPayload` carries `kind`, `channelID`, positive `sequence`, `registrationID` and an
 optional requester's `handle` beside the system `aps` envelope. Its kinds and categories are
-`request` and `completion`; request uses the `reply` text action. The service must match the
-current registration before allowing actions or requesting a widget reload.
+`request` and `completion`; request uses the `reply` text action. The service must match one of the
+phone's saved registrations before allowing actions or requesting a widget reload.
 The fixtures are `Tests/Shared/ChannelKitTests/Fixtures/push-request.apns`, `push-completion.apns` and
 `push-activity.apns`.
 
@@ -414,7 +414,7 @@ This display-ready text passes through the stateless push relay and Apple withou
 encryption. The relay streams the body without parsing or logging it, and its observability is
 disabled. Channel names and request text travel this way by design.
 
-`MobileNotificationHandler.process(_:)` checks the saved registration and immediately returns
+`MobileNotificationHandler.process(_:)` checks the payload's saved registration and immediately returns
 the received content, preserving its title, body, sound, thread, Reply handle, badge and routing.
 It makes no catalog, history or other network request and has no enrichment deadline or cache.
 Valid request and completion alerts request a WidgetKit reload before delivery.
@@ -435,6 +435,9 @@ count. Badge-only pushes contain no alert, sound or `content-available`, so iOS 
 launching the app. In the foreground, the notification delegate permits `.badge` for these pushes,
 without a banner, list entry or sound, and suppresses them when notifications are disabled.
 One install receives one badge update even when both alert topics are subscribed.
+With several servers, the app writes the waiting count summed across every server whenever a
+catalog refreshes. A server's badge-only push carries only its own count, so the icon shows that
+count until the app next refreshes and sums them all again.
 Only request or completion subscriptions qualify, never a Live Activity alone. When Allow
 notifications is off, the app clears the badge and suppresses future catalog badge writes,
 and unsubscribes both alert topics to prevent server pushes from restoring it.
@@ -3388,8 +3391,8 @@ makes the main window's activity current, so Siri and Apple Intelligence take "t
 mean the one in front, and with no channel shown there's no activity. Phone and Mac declare the same activity type and carry only the exact channel identifier
 in `userInfo.channelID`. Handoff is eligible while a channel is shown, except isolated Mac
 snapshot, benchmark and explicit-server launches. Each receiving window resolves the identifier
-in its own current server's catalog, joining a catalog refresh when necessary. It never matches
-by name, switches servers, or imports drafts or credentials. A native `Opening channel…` progress
+in the first server, in Settings order, whose catalog lists it, joining catalog refreshes when
+necessary. It never matches by name, or imports drafts or credentials. A native `Opening channel…` progress
 state resolves to the channel or one native `Channel unavailable` state with
 `This channel isn't available.` and `Show Channels`. New navigation or a server change discards
 obsolete results. Local drafts survive Handoff and ordinary Back/sidebar navigation.
@@ -3537,7 +3540,7 @@ After 30 minutes without fresh data, or immediately on a known disconnect, show
 "May be out of date" and the last update, such as "Last update 8:02 AM". Time appears only
 in this stale state, not in fresh Waiting or Empty. A previous zero is not a current all-clear.
 Without a usable snapshot, say "Open Toy Box to connect" instead of claiming nothing needs attention.
-Do not expose requests from the previous server after a switch.
+Do not expose requests from a removed server.
 
 Clicking a request opens Toy Box at that channel and request sequence through a validated URL route.
 The empty Small tile opens the main app. In Medium and Large, the empty state, overflow
@@ -3557,7 +3560,7 @@ There is no generic heading. Keep every line, including timestamp descenders, in
 native 157 x 73.5-point rectangular host.
 Both surfaces render waiting, empty, out-of-date and not-connected states from the phone's
 App Group `NeedsYouSnapshot`. On timeline refresh, the phone widget extension fetches current
-waiting requests from the saved server through the app publisher's HTTP and snapshot path,
+waiting requests from every saved server through the app publisher's HTTP and snapshot path,
 within a ten-second total network deadline, then writes the shared snapshot. After a request or completion alert, the notification service
 extension asks WidgetKit to reload this widget's timelines. WidgetKit schedules the refresh,
 so this is not an immediate-delivery guarantee. A failed fetch keeps the saved snapshot and the
@@ -3586,7 +3589,7 @@ stays available offline and immediately removes the local Activity without confi
 changing the team's work. A failed start tears down its partial Activity and shows only the
 native "Couldn't follow this channel" alert, "Try again." and OK.
 
-The controller requests an ActivityKit push token and registers it with the current server's
+The controller requests an ActivityKit push token and registers it with its channel's server's
 acknowledged registration, inheriting its signing-derived push environment. The Activity's
 immutable attributes preserve its original start time across relaunch and token rotation.
 Registration writes are serialized per channel on its server, using that server's registration, so cleanup from an old follow cannot delete its

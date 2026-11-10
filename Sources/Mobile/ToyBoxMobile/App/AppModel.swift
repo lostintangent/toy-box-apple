@@ -60,11 +60,12 @@ final class AppModel {
     @ObservationIgnored private var artifactSessions: [String: (store: ChannelStore, session: ChannelArtifactSession)] = [:]
     @ObservationIgnored private var galleries: [String: (store: ChannelStore, gallery: TranscriptGallery)] = [:]
     @ObservationIgnored private var integrationsStarted = false
-    @ObservationIgnored private var integrationsGeneration = UUID()
-    @ObservationIgnored private var resumeCatalogBaseline: Date?
+    /// When each server had last refreshed as the app resumed, by address. A server withdraws its
+    /// stale notifications only once it's refreshed since.
+    @ObservationIgnored private var resumeRefreshes: [String: Date] = [:]
     @ObservationIgnored private var widgetPublisher: MobileWidgetSnapshotPublisher?
     @ObservationIgnored private var shareHistory: MobileShareHistory?
-    @ObservationIgnored private var badgeRefresh: Date?
+    @ObservationIgnored private var badgeRefreshes: [Date] = []
     @ObservationIgnored private let integrationLogger = Logger(subsystem: "dev.toybox.mobile", category: "Integrations")
 
     init(arguments: [String] = ProcessInfo.processInfo.arguments,
@@ -80,14 +81,13 @@ final class AppModel {
         savesServers = launchServer == nil
         outbox = .mobile()
         self.notifications.onRegistrationCreated = { [weak self] registration in
-            guard let self, self.notifications.currentRegistration == registration,
-                  self.serverURL == registration.serverURL else { return }
-            self.configureFollowing()
+            guard let self else { return }
+            self.following.configure(servers: self.followedServers)
             await self.following.registrationCreated(registration)
         }
         self.notifications.onActivate = { [weak self] activation in
             await self?.openChannel(id: activation.channel.channelID, sequence: activation.channel.sequence,
-                                    expectedServer: activation.serverURL)
+                                    on: activation.serverURL)
         }
         self.notifications.onReply = { [weak self] reply in
             await self?.outbox.send(reply.content, to: reply.channelID, on: reply.server, answering: reply.request)
@@ -105,11 +105,11 @@ final class AppModel {
             }
         }
         if catalog != nil { firstServerDidChange() }
+        serversDidChange()
         restoring = defaults.string(forKey: "lastServer").flatMap { catalogs.first(at: $0) } ?? catalog
     }
 
-    /// The first server, which the list and everything outside Settings show until each reaches
-    /// its own.
+    /// The first server in Settings order.
     var catalog: ChannelCatalogStore? { catalogs.first }
 
     var api: ChannelAPI? { catalog?.api }
@@ -121,10 +121,8 @@ final class AppModel {
     /// front and nothing covers it. Siri's own overlay makes the scene inactive, so this needs the
     /// foreground rather than the active scene.
     var onScreen: ChannelIntents.OnScreen? {
-        // Siri reads the first server until it reaches every one.
         guard isForeground, !isCovered, let screenEntity, let store = selectedStore,
-              store.target == visibleChannel, catalog?.target(store.id) == visibleChannel,
-              screenEntity.channelID == store.id, store.phase != .deleted
+              store.target == visibleChannel, screenEntity.channel == store.target, store.phase != .deleted
         else { return nil }
         switch screenEntity {
         case .channel:
@@ -251,22 +249,22 @@ final class AppModel {
         change(&catalogs)
         if savesServers { ChannelCatalogStore.Saved.save(catalogs.map(\.saved), to: defaults) }
         if catalog !== first { firstServerDidChange() }
+        serversDidChange()
     }
 
-    /// Everything outside the list reads the first server, so a new first server starts it over.
+    /// The first server stands in for a launch address the app couldn't use, so a new one clears
+    /// that error and any navigation in flight.
     private func firstServerDidChange() {
-        integrationsGeneration = UUID()
-        badgeRefresh = nil
         cancelNavigation()
         serverURL = catalog?.api.baseURL.absoluteString ?? ""
-        if let api { notifications.configure(api: api) }
         configurationError = nil
         navigationNotice = nil
-        resumeCatalogBaseline = nil
-        if integrationsStarted {
-            configureShareHistory()
-            observeIntegrations(generation: integrationsGeneration)
-        }
+    }
+
+    /// Push and Share reach every server.
+    private func serversDidChange() {
+        notifications.configure(apis: catalogs.map(\.api))
+        configureShareHistory()
     }
 
     /// Streams and catalog polling last until the scene enters the background, so Control Center,
@@ -278,7 +276,9 @@ final class AppModel {
             isForeground = foreground
             for catalog in catalogs { catalog.setActive(foreground) }
             if foreground {
-                resumeCatalogBaseline = catalog?.lastRefreshedAt
+                resumeRefreshes = Dictionary(catalogs.compactMap { catalog in
+                    catalog.lastRefreshedAt.map { (catalog.api.baseURL.absoluteString, $0) }
+                }, uniquingKeysWith: { first, _ in first })
                 for catalog in catalogs { catalog.startPolling() }
                 for store in connections.stores { store.connect() }
                 connectSelection()
@@ -340,72 +340,72 @@ final class AppModel {
             integrationLogger.error("Could not prepare share suggestions: \(error.localizedDescription)")
         }
         configureShareHistory()
-        observeIntegrations(generation: integrationsGeneration)
+        observeIntegrations()
         await notifications.start()
     }
 
-    /// The share extension reads the server from this history, and suggests the channels each
+    /// The share extension reads every server from this history, and suggests the channels each
     /// confirmed send went to.
     private func configureShareHistory() {
-        guard let shareHistory, let catalog else { return }
-        let serverURL = catalog.api.baseURL.absoluteString
-        shareHistory.select(servers: [catalog.saved])
-        catalog.onSendConfirmed = { [weak shareHistory, weak catalog] id in
-            guard let name = catalog?.channels.first(where: { $0.id == id })?.name else { return }
-            shareHistory?.recordSend(serverURL: serverURL, channelID: id, name: name)
+        guard let shareHistory else { return }
+        shareHistory.select(servers: catalogs.map(\.saved))
+        for catalog in catalogs {
+            let serverURL = catalog.api.baseURL.absoluteString
+            catalog.onSendConfirmed = { [weak shareHistory, weak catalog] id in
+                guard let name = catalog?.channels.first(where: { $0.id == id })?.name else { return }
+                shareHistory?.recordSend(serverURL: serverURL, channelID: id, name: name)
+            }
         }
     }
 
     private func observeFollowing() {
-        withObservationTracking {
-            _ = notifications.currentRegistration
-            _ = notifications.isRegistrationReady
-            _ = notifications.registrationError
-            _ = catalogs
-        } onChange: { [weak self] in
+        let servers = withObservationTracking { followedServers } onChange: { [weak self] in
             Task { @MainActor in self?.observeFollowing() }
         }
-        configureFollowing()
+        following.configure(servers: servers)
     }
 
-    /// Every server's channels can be followed once its push registration is ready. Push registers
-    /// only the first server so far.
-    private func configureFollowing() {
-        following.configure(servers: catalogs.enumerated().map { index, catalog in
-            index > 0 ? .init(catalog: catalog) : .init(
-                catalog: catalog, registration: notifications.currentRegistration,
-                isRegistrationReady: notifications.isRegistrationReady,
-                registrationError: notifications.registrationError)
-        })
+    /// Every server with its own push registration, so its channels can be followed once that's ready.
+    private var followedServers: [ChannelFollowController.Server] {
+        catalogs.map { catalog in
+            let registration = notifications.registration(for: catalog.api.baseURL.absoluteString)
+            return .init(catalog: catalog, registration: registration,
+                         isRegistrationReady: notifications.isReady(registration),
+                         registrationError: notifications.registrationError(for: registration))
+        }
     }
 
-    private func observeIntegrations(generation: UUID) {
-        guard generation == integrationsGeneration else { return }
+    private func observeIntegrations() {
         let context = withObservationTracking {
-            let channels = catalog?.channels.map(sidebarPresentation.channel) ?? []
             let active = isActive && !isCovered
                 && selection.map({ interaction(for: $0).isArtifactViewerPresented != true }) != false
-                ? visibleChannel.flatMap { catalog?.target($0.channelID) == $0 ? $0.channelID : nil } : nil
+                ? visibleChannel : nil
+            let channels = Dictionary(catalogs.map { catalog in
+                (catalog.api.baseURL.absoluteString, catalog.channels.map(sidebarPresentation(for: catalog).channel))
+            }, uniquingKeysWith: { first, _ in first })
+            let withdrawing = catalogs.filter { catalog in
+                isActive && catalog.isLoaded && catalog.phase.message == nil
+                    && catalog.lastRefreshedAt != resumeRefreshes[catalog.api.baseURL.absoluteString]
+            }
             return (channels: channels, active: active,
-                    withdraw: isActive && catalog?.isLoaded == true && catalog?.phase.message == nil
-                        && catalog?.lastRefreshedAt != resumeCatalogBaseline,
-                    refreshed: catalog?.lastRefreshedAt, failure: catalog?.phase.message,
-                    registration: notifications.currentRegistration?.registrationID)
+                    withdrawing: Set(withdrawing.map(\.api.baseURL.absoluteString)),
+                    refreshes: catalogs.compactMap(\.lastRefreshedAt), registrations: notifications.registrations)
         } onChange: { [weak self] in
-            Task { @MainActor in self?.observeIntegrations(generation: generation) }
+            Task { @MainActor in self?.observeIntegrations() }
         }
         Task { [weak self] in
-            guard let self, generation == integrationsGeneration else { return }
-            await notifications.update(channels: context.channels, activeChannelID: context.active,
-                                       withdraw: context.withdraw)
+            await self?.notifications.update(channels: context.channels, activeChannel: context.active,
+                                             withdrawing: context.withdrawing)
         }
-        if let catalog, catalog.phase.message == nil, let refreshed = catalog.lastRefreshedAt,
-           refreshed != badgeRefresh {
-            badgeRefresh = refreshed
-            notifications.updateBadge(catalog.channels.filter { $0.attention == .waiting }.count)
-            shareHistory?.prune(serverURL: catalog.api.baseURL.absoluteString, keeping: Set(catalog.channels.map(\.id)))
+        // A refresh on any server, or a loaded one leaving, writes every server's waiting count.
+        if !context.refreshes.isEmpty, context.refreshes != badgeRefreshes {
+            badgeRefreshes = context.refreshes
+            notifications.updateBadge(catalogs.reduce(0) { $0 + $1.channels.count { $0.attention == .waiting } })
+            for catalog in catalogs where catalog.lastRefreshedAt != nil {
+                shareHistory?.prune(serverURL: catalog.api.baseURL.absoluteString, keeping: Set(catalog.channels.map(\.id)))
+            }
         }
-        do { try widgetPublisher?.update(catalogs: catalog.map { [$0] } ?? []) }
+        do { try widgetPublisher?.update(catalogs: catalogs) }
         catch { integrationLogger.error("Could not update the Needs You widget: \(error.localizedDescription)") }
     }
 
@@ -425,11 +425,11 @@ final class AppModel {
         selection = target
     }
 
-    func openChannel(id: String, sequence: Int? = nil, focusComposer: Bool = false,
-                     expectedServer: String) async {
+    /// Opens a channel on its server, from a notification, the widget or a request card.
+    func openChannel(id: String, sequence: Int? = nil, focusComposer: Bool = false, on server: String) async {
         cancelNavigation()
         cover = nil
-        guard expectedServer == serverURL, let catalog else {
+        guard let catalog = catalogs.first(at: server) else {
             navigationNotice = "This channel isn't available."
             return
         }
@@ -437,7 +437,7 @@ final class AppModel {
         navigationGeneration = generation
         isResolvingNavigation = true
         if !catalog.isLoaded { await catalog.refresh() }
-        guard navigationGeneration == generation, self.catalog === catalog else { return }
+        guard navigationGeneration == generation, catalogs.contains(where: { $0 === catalog }) else { return }
         isResolvingNavigation = false
         restoring = nil
         guard catalog.isLoaded, catalog.channels.contains(where: { $0.id == id }), let target = catalog.target(id) else {
@@ -464,19 +464,16 @@ final class AppModel {
             restoring = nil
             selection = nil
         } else if let request = NeedsYouRequestLink(url: url) {
-            await openChannel(id: request.channelID, sequence: request.sequence,
-                              expectedServer: request.serverURL)
+            await openChannel(id: request.channelID, sequence: request.sequence, on: request.serverURL)
         } else if let request = NeedsYouRequestLink(replyURL: url) {
             await openChannel(id: request.channelID, sequence: request.sequence, focusComposer: true,
-                              expectedServer: request.serverURL)
+                              on: request.serverURL)
         } else if let activity = ChannelActivityLink(url: url) {
-            guard let registration = notifications.currentRegistration,
-                  registration.registrationID == activity.registrationID else {
+            guard let registration = notifications.registration(id: activity.registrationID) else {
                 navigationNotice = "This channel isn't available."
                 return
             }
-            await openChannel(id: activity.channelID, sequence: activity.sequence,
-                              expectedServer: registration.serverURL)
+            await openChannel(id: activity.channelID, sequence: activity.sequence, on: registration.serverURL)
         } else {
             navigationNotice = "This link couldn't be opened."
         }

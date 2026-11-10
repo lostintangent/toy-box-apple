@@ -5,11 +5,18 @@ import Observation
 import OSLog
 import ToyBoxMobileIntegrations
 
+/// The phone's push registration on every server. Each server registers and subscribes on its own,
+/// so one that's offline never holds up the rest.
 @MainActor @Observable
 final class MobileNotificationRegistration {
-    private(set) var current: MobilePushRegistration?
-    private(set) var isReady = false
-    private(set) var error: String?
+    /// Each server's registration, in Settings order.
+    private(set) var current: [MobilePushRegistration] = []
+    /// The registrations their servers have accepted for this token, by ID.
+    private(set) var ready: Set<String> = []
+    /// Each registration's last failure, by ID.
+    private(set) var failures: [String: String] = [:]
+    /// Why Apple gave no token, which fails every server.
+    private(set) var tokenError: String?
     @ObservationIgnored var onCreated: ((MobilePushRegistration) async -> Void)?
 
     private struct Operation: Equatable {
@@ -32,15 +39,15 @@ final class MobileNotificationRegistration {
     @ObservationIgnored private let unsubscribe: (ChannelAPI, String, String) async throws -> Void
     @ObservationIgnored private let requestToken: () -> Void
     @ObservationIgnored private let logger = Logger(subsystem: "dev.toybox.mobile", category: "PushRegistration")
-    @ObservationIgnored private var api: ChannelAPI?
+    @ObservationIgnored private var apis: [String: ChannelAPI] = [:]
     @ObservationIgnored private var enabled: Bool?
     @ObservationIgnored private var topics: [String]?
     @ObservationIgnored private var token: String?
     @ObservationIgnored private var requestedToken = false
-    @ObservationIgnored private var desired: Operation?
-    @ObservationIgnored private var attempted: Operation?
-    @ObservationIgnored private var removals: [(api: ChannelAPI, registrationID: String)] = []
-    @ObservationIgnored private var work: Task<Void, Never>?
+    @ObservationIgnored private var desired: [String: Operation] = [:]
+    @ObservationIgnored private var attempted: [String: Operation] = [:]
+    @ObservationIgnored private var removals: [String: ChannelAPI] = [:]
+    @ObservationIgnored private var work: [String: Task<Void, Never>] = [:]
 
     init(store: MobilePushRegistrationStore, environment: PushEnvironment,
          requestToken: @escaping () -> Void,
@@ -63,25 +70,37 @@ final class MobileNotificationRegistration {
         self.remove = remove
         self.subscribe = subscribe
         self.unsubscribe = unsubscribe
-        current = store.registrations.first
     }
 
+    /// Tokens failing, or else the first server's failure in Settings order.
+    var error: String? { tokenError ?? current.lazy.compactMap { self.failures[$0.registrationID] }.first }
+
+    /// Registers every server, and unregisters any server that's gone once its own write finishes.
+    /// Returns the registrations it removed.
     @discardableResult
-    func select(api: ChannelAPI) throws -> Bool {
-        let previous = current
-        let selected = try store.register(serverURL: api.baseURL.absoluteString)
-        let changed = previous?.registrationID != selected.registrationID
-        if changed { isReady = false }
-        if changed, let previous {
-            let oldAPI = try self.api ?? ChannelAPI(serverURL: previous.serverURL)
-            try store.remove(registrationID: previous.registrationID)
-            removals.append((oldAPI, previous.registrationID))
+    func select(apis: [ChannelAPI]) throws -> [MobilePushRegistration] {
+        var selected: [MobilePushRegistration] = []
+        var selectedAPIs: [String: ChannelAPI] = [:]
+        for api in apis {
+            let registration = try store.register(serverURL: api.baseURL.absoluteString)
+            selected.append(registration)
+            selectedAPIs[registration.registrationID] = api
         }
-        self.api = api
+        let removed = store.registrations.filter { selectedAPIs[$0.registrationID] == nil }
+        for registration in removed {
+            let id = registration.registrationID
+            let api = try self.apis[id] ?? ChannelAPI(serverURL: registration.serverURL)
+            try store.remove(registrationID: id)
+            removals[id] = api
+            ready.remove(id)
+            failures[id] = nil
+            attempted[id] = nil
+        }
+        self.apis = selectedAPIs
         current = selected
         updateDesired()
         obtainTokenIfNeeded()
-        return changed && previous != nil
+        return removed
     }
 
     func update(enabled: Bool, requests: Bool, completions: Bool) {
@@ -99,7 +118,8 @@ final class MobileNotificationRegistration {
         }
         let next = data.map { String(format: "%02x", $0) }.joined()
         guard token != next else { return }
-        isReady = false
+        ready = []
+        tokenError = nil
         token = next
         requestedToken = false
         updateDesired()
@@ -107,79 +127,82 @@ final class MobileNotificationRegistration {
 
     func failedToReceiveToken(_ message: String) {
         requestedToken = true
-        error = message
+        tokenError = message
         logger.error("Could not obtain an APNs token: \(message)")
     }
 
     func retry() {
-        error = nil
+        tokenError = nil
+        failures = [:]
         requestedToken = false
-        attempted = nil
+        attempted = [:]
         updateDesired()
         obtainTokenIfNeeded()
     }
 
-    func waitUntilIdle() async { await work?.value }
+    func waitUntilIdle() async {
+        while let task = work.values.first { await task.value }
+    }
 
     private func obtainTokenIfNeeded() {
-        guard api != nil, token == nil, !requestedToken else { return }
+        guard !current.isEmpty, token == nil, !requestedToken else { return }
         requestedToken = true
         requestToken()
     }
 
     private func updateDesired() {
-        let next: Operation?
-        if let api, let current, let token {
-            next = Operation(api: api, registrationID: current.registrationID,
-                             input: PushRegistration(token: token, environment: environment), topics: topics)
-        } else {
-            next = nil
+        var next: [String: Operation] = [:]
+        if let token {
+            for registration in current {
+                let id = registration.registrationID
+                guard let api = apis[id] else { continue }
+                next[id] = Operation(api: api, registrationID: id,
+                                     input: PushRegistration(token: token, environment: environment), topics: topics)
+            }
         }
-        if desired != next { error = nil }
+        for id in Set(desired.keys).union(next.keys) where desired[id] != next[id] { failures[id] = nil }
         desired = next
-        schedule()
-    }
-
-    private func schedule() {
-        guard work == nil, !removals.isEmpty || (desired != nil && desired != attempted) else { return }
-        work = Task { [weak self] in
-            guard let self else { return }
-            await apply()
-            work = nil
+        for id in Set(removals.keys).union(desired.keys)
+        where work[id] == nil && (removals[id] != nil || desired[id] != attempted[id]) {
+            work[id] = Task { [weak self] in
+                guard let self else { return }
+                await apply(id)
+                work[id] = nil
+            }
         }
     }
 
-    private func apply() async {
+    /// One registration's writes, in order, so a server that's removed mid-write unregisters after it.
+    private func apply(_ id: String) async {
         while true {
-            if !removals.isEmpty {
-                let old = removals.removeFirst()
-                do { try await remove(old.api, old.registrationID) }
-                catch { logger.warning("Could not remove the previous server's registration: \(error.localizedDescription)") }
+            if let api = removals.removeValue(forKey: id) {
+                do { try await remove(api, id) }
+                catch { logger.warning("Could not remove a removed server's registration: \(error.localizedDescription)") }
                 continue
             }
-            guard let operation = desired, operation != attempted else { return }
-            attempted = operation
+            guard let operation = desired[id], operation != attempted[id] else { return }
+            attempted[id] = operation
             do {
-                let created = try await register(operation.api, operation.registrationID, operation.input)
-                if desired != operation { continue }
-                isReady = true
-                if created, let current {
-                    await onCreated?(current)
-                    if desired != operation { continue }
+                let created = try await register(operation.api, id, operation.input)
+                if desired[id] != operation { continue }
+                ready.insert(id)
+                if created, let registration = current.first(where: { $0.registrationID == id }) {
+                    await onCreated?(registration)
+                    if desired[id] != operation { continue }
                 }
                 if let topics = operation.topics {
                     for topic in ["requests", "completions"] {
                         if topics.contains(topic) {
-                            try await subscribe(operation.api, operation.registrationID, topic)
+                            try await subscribe(operation.api, id, topic)
                         } else {
-                            try await unsubscribe(operation.api, operation.registrationID, topic)
+                            try await unsubscribe(operation.api, id, topic)
                         }
                     }
                 }
-                if desired == operation { error = nil }
+                if desired[id] == operation { failures[id] = nil }
             } catch {
                 logger.error("Could not update notification registration: \(error.localizedDescription)")
-                if desired == operation { self.error = error.localizedDescription }
+                if desired[id] == operation { failures[id] = error.localizedDescription }
             }
         }
     }
