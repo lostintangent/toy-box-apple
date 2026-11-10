@@ -174,6 +174,38 @@ couldn't be opened is Handoff's `missing`.
 - **Holders:** `ChannelConnections` counts who holds each store through `hold` and `release`. The
   last release lingers as State describes, and `disconnectAll` serves a server change.
 
+### Several servers
+
+Both apps can stay connected to several Toy Box servers at once. A server is its address, the
+normalized URL that drafts and push registrations already key on, and a name that starts as its
+host. Each server has its own `ChannelAPI`, catalog stream and channel stores, and every rule in
+this spec holds within each server unchanged. Nothing else is new. Where this spec says a server
+change, it means changing or removing one server, which touches only that server's channels.
+Drafts stay keyed to the address, so adding it back finds them.
+
+- **One server looks exactly as it does today.** The list has no section headers, and the Mac
+  footer keeps its status line as Sidebar describes. Everything below applies with two or more.
+- **Grouped list.** The Mac sidebar and the phone list show one collapsible section per server, in
+  Settings' order. Its header is the server's connection dot and name, with the status line's help
+  and VoiceOver value. A failing server's notice sits under its own header instead of at the
+  bottom: the Mac's error block, still without buttons, and the phone pill's words with Retry. The
+  Mac footer keeps only Open Screen. Search filters every server and keeps the sections. The phone
+  keeps one open Needs You card, the newest across every server, in its server's section.
+- **Choosing a server.** New Channel and the Screens list start on the selected channel's server,
+  with a server menu to pick another.
+- **Beyond the window, everything spans every server.** The Dock and phone badges, notifications,
+  the menu bar, Quick Send, Share, Siri, Spotlight, the Needs You widget and Live Activities cover
+  all servers. Every reference to a channel, in a notification, Handoff, a widget, a Live
+  Activity, Spotlight, an intent, Quick Send, Share or a restored window, names its server so it
+  opens the right one. The phone registers for push with each server.
+- **Settings** lists the servers with their dots and names. On the Mac, the list has Add and
+  Remove buttons and drags to reorder, and the selected server's Name, Server URL with Test
+  Connection and status sit below it. On the phone, each row opens Welcome's Server URL card with
+  a Name field, Add Server follows the rows, and Edit reorders and deletes. Adding an address
+  that's already listed selects that server instead. Removing one asks first, then disconnects it
+  and removes its channels from Spotlight, notifications, widgets and Live Activities. Welcome
+  sets up the first server, and the phone shows Welcome only when there's none.
+
 ### Sending
 
 Every message the user sends goes through one `ChannelOutbox` (ChannelClient), from a composer,
@@ -790,7 +822,9 @@ restores the bar. No hand-built safe-area text field or duplicate gear in the ra
 Toy Box title at the top, with New Channel and then Screens (an outline `display`) in separate
 glass groups, and no More menu or Refresh item. A native placement limitation in the unfolded column
 never justifies substituting custom controls.
-The phone list has no healthy or connecting connection dot, server label or busy footer spinner.
+With one server, the phone list has no healthy or connecting connection dot, server label or busy
+footer spinner, and with several each server's header names it (see
+[Several servers](#several-servers)).
 Settings owns server identity and connection details. The list has pull to refresh, and search
 uses the shared name/purpose/directory filtering. Pull to refresh holds its spinner until the
 finger lifts, so a fast fetch never ends it mid-pull. Command-F focuses channel search when the
@@ -938,7 +972,8 @@ Parts labelled **Phone** apply only to the iPhone companion.
 
 Use the system sidebar search field from `.searchable(placement: .sidebar)`. It filters the local
 catalog by channel name, purpose or directory without making a network search request. Preserve
-the selected channel while filtering. The list remains one "Channels" group in server order.
+the selected channel while filtering. The list remains one "Channels" group in server order, or
+one group per server when there are several (see [Several servers](#several-servers)).
 Do not reorder it for presence or attention. Refresh preserves scroll and selection.
 
 Rows follow the Mail and Messages list pattern: who or what on the left, when on the right, and
@@ -1084,7 +1119,9 @@ its live presence. Activity can lag by one catalog refresh. It must clear when o
 rather than keep animating.
 
 **Connection footer.** The bottom of the sidebar names the server this window talks to, as the
-wireframe's `sidebar-connection` group draws it. Attach it with `.safeAreaBar(edge: .bottom)` on
+wireframe's `sidebar-connection` group draws it. With several servers, each server's header
+carries its status instead, and the footer keeps only Open Screen (see
+[Several servers](#several-servers)). Attach it with `.safeAreaBar(edge: .bottom)` on
 the sidebar list so rows scroll beneath it under the system scroll edge effect. Give it no
 background, divider or material of its own. The status line is a 7-point dot (the unread dot's
 size), 6 points, then the server's host and port in 11 regular, secondary, one line, middle
@@ -2757,10 +2794,11 @@ alert that explains it and offers OK. An uncertain failure checks the server fir
 the target is gone, says it's still there and offers the deletion again, or says the check
 failed and offers Check Again. Nothing is sent again before that check.
 
-Settings uses a native scene with General and Notifications sections. General includes Server
-URL, Test Connection, status, and the selected appearance (System by default). Validate HTTP(S),
-preserve path prefixes and display actionable failures. Changing servers prompts before replacing
-live connections, namespaces drafts, then refreshes the catalog. On iPhone, Settings shares
+Settings uses a native scene with General and Notifications sections. General includes the
+servers (see [Several servers](#several-servers)), each with its Server URL, Test Connection and
+status, and the selected appearance (System by default). Validate HTTP(S), preserve path prefixes
+and display actionable failures. Changing a server's address prompts before replacing its live
+connections, namespaces drafts, then refreshes its catalog. On iPhone, each server shares
 Welcome's Server URL card, with no separate Use Server action or confirmation. Return or Test
 Connection runs the test, and success on a different address switches to it at once: while it
 applies, the field and Close are disabled and the row reads Connecting…, then a green checkmark
