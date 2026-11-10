@@ -120,8 +120,22 @@ final class QuickSendController: NSObject, NSWindowDelegate {
 
     func leaveReply() { replyTarget = nil }
 
+    /// Shows the panel for a snapshot, which never registers the shortcut, in the snapshot's
+    /// appearance.
+    func presentForSnapshot(appearance: NSAppearance?) {
+        replyTarget = nil
+        open(appearance: appearance)
+    }
+
+    /// The panel and the windows it holds, like the channel chooser.
+    var windows: [NSWindow] { panel.map { [$0] + ($0.childWindows ?? []) } ?? [] }
+
     private func show() {
         guard isEnabled else { return }
+        open()
+    }
+
+    private func open(appearance: NSAppearance? = nil) {
         if panel == nil {
             let panel = QuickSendPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 220),
                                       styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
@@ -148,6 +162,7 @@ final class QuickSendController: NSObject, NSWindowDelegate {
             self.panel = panel
         }
         guard let panel else { return }
+        if let appearance { panel.appearance = appearance }
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         if let screen {
             panel.setFrame(Self.frame(size: panel.frame.size, in: screen.visibleFrame), display: false)
