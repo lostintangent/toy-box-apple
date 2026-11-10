@@ -83,12 +83,11 @@ final class WidgetSnapshotPublisher {
 }
 
 enum WidgetSnapshotError: LocalizedError {
-    case unavailableGroup, differentServer
+    case unavailableGroup
 
     var errorDescription: String? {
         switch self {
         case .unavailableGroup: "Toy Box cannot access its widget's shared container."
-        case .differentServer: "This request belongs to another server. Switch servers in Settings to open it."
         }
     }
 }
@@ -131,7 +130,6 @@ extension AppModel {
             activate(ChannelTarget(serverURL: request.serverURL, channelID: request.channelID),
                      sequence: request.sequence)
         case .reply(let request):
-            guard request.serverURL == serverURL else { throw WidgetSnapshotError.differentServer }
             guard quickSend.isEnabled else { throw QuickSendIntake.IntakeError.unavailable }
             quickSend.present(replyTo: request)
         }

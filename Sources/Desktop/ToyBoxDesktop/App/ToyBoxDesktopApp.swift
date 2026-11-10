@@ -33,7 +33,7 @@ struct ToyBoxDesktopApp: App {
             }
             let model = AppModel(launchOptions: options)
             model.quickSend.setContent(
-                QuickSendView(lastUsedChannel: { model.lastUsedChannelID }).environment(model)
+                QuickSendView().environment(model)
             )
             delegate.quickSendIntake = model.quickSend.isEnabled ? QuickSendIntake { prefill in
                 guard model.quickSend.isEnabled else { throw QuickSendIntake.IntakeError.unavailable }

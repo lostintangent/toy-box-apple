@@ -132,10 +132,6 @@ struct ComposerTests {
             #expect(staged.images.count == 1)
             let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString))
             let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
-            let otherStore = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "https://other.example"))
-            let otherSession = AuxiliaryComposerSession(store: otherStore, scope: .quickSend, draft: draft)
-            #expect(!inbox.apply(to: otherSession))
-            #expect(draft.text == "Keep this draft")
             #expect(inbox.apply(to: session))
             #expect(draft.text == "Keep this draft\n\n" + staged.text)
             #expect(draft.images.count == 2)
@@ -249,39 +245,75 @@ struct ComposerTests {
         }
     }
 
-    @Test func quickSendRestoresDraftTargetsBeforeRecentsAndNeverGuessesAmongChannels() throws {
+    @Test func quickSendRestoresDraftTargetsBeforeRecentsAndNeverGuessesAmongChannels() async throws {
         let suite = "ComposerQuickSend-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let server = try #require(URL(string: "http://localhost:3210"))
         let alpha = Channel(id: "alpha", name: "Alpha", purpose: "Build the launch",
                             model: .init(provider: "test", name: "test"), updatedAt: "2026-10-24T00:00:00Z")
         var beta = alpha
         beta.id = "beta"; beta.name = "Beta"; beta.purpose = "Sketch the entrance"
-        let history = QuickSendTargetHistory(serverURL: server, defaults: defaults)
-        #expect(history.initialTarget(channels: [beta, alpha], lastUsedID: nil, hasDraft: { _ in false }) == nil)
-        #expect(history.initialTarget(channels: [beta, alpha], lastUsedID: "alpha", hasDraft: { _ in false }) == "alpha")
-        #expect(history.initialTarget(channels: [beta], lastUsedID: nil, hasDraft: { _ in false }) == "beta")
-        history.choose(beta)
-        #expect(history.initialTarget(channels: [], lastUsedID: nil, catalogLoaded: false,
-                                      hasDraft: { _ in false }) == "beta")
-        #expect(history.initialTarget(channels: [beta, alpha], lastUsedID: "alpha", hasDraft: { _ in false }) == "beta")
-        history.trackDraft(channelID: "alpha", name: "Alpha", hasContent: true)
-        history.choose(beta)
-        #expect(history.selectedID == "beta")
-        history.restoreTarget(channels: [alpha, beta], lastUsedID: "beta", catalogLoaded: true,
-                              hasDraft: { $0 == "alpha" })
-        #expect(history.selectedID == "alpha")
-        let restored = QuickSendTargetHistory(serverURL: server, defaults: defaults)
-        #expect(restored.initialTarget(channels: [beta], lastUsedID: "beta", hasDraft: { $0 == "alpha" }) == "alpha")
-        #expect(restored.choices(channels: [alpha, beta], query: "").map(\.id) == ["beta", "alpha"])
-        #expect(restored.choices(channels: [alpha, beta], query: "entrance").map(\.id) == ["beta"])
-        #expect(restored.choices(channels: [alpha, beta], query: "LAUNCH").map(\.id) == ["alpha"])
-        restored.trackDraft(channelID: "alpha", name: nil, hasContent: false)
-        #expect(restored.initialTarget(channels: [alpha], lastUsedID: "alpha", hasDraft: { _ in false }) == nil)
-        let otherServer = QuickSendTargetHistory(serverURL: try #require(URL(string: "http://localhost:3211")),
-                                               defaults: defaults)
-        #expect(otherServer.initialTarget(channels: [alpha, beta], lastUsedID: nil, hasDraft: { _ in false }) == nil)
+        let both = try await loadedCatalog([beta, alpha])
+        let server = both.api.baseURL.absoluteString
+        let onlyBeta = try await loadedCatalog([beta], at: server)
+        let onlyAlpha = try await loadedCatalog([alpha], at: server)
+        let loading = ChannelCatalogStore(api: try ChannelAPI(serverURL: server))
+        let empty = try await loadedCatalog([])
+        let alphaTarget = try #require(both.target("alpha")), betaTarget = try #require(both.target("beta"))
+        func choice(_ channel: Channel, in catalog: ChannelCatalogStore) throws -> QuickSendTargetHistory.Choice {
+            .init(target: try #require(catalog.target(channel.id)), channel: channel)
+        }
+        let history = QuickSendTargetHistory(defaults: defaults)
+        #expect(history.initialTarget(in: [both], lastUsed: nil, hasDraft: { _ in false }) == nil)
+        #expect(history.initialTarget(in: [both], lastUsed: alphaTarget, hasDraft: { _ in false }) == alphaTarget)
+        #expect(history.initialTarget(in: [onlyBeta, empty], lastUsed: nil, hasDraft: { _ in false }) == betaTarget)
+        #expect(history.initialTarget(in: [onlyBeta, loading], lastUsed: nil, hasDraft: { _ in false }) == nil,
+                "The only channel isn't known while another server loads")
+        history.choose(try choice(beta, in: both))
+        #expect(history.initialTarget(in: [loading], lastUsed: nil, hasDraft: { _ in false }) == betaTarget)
+        #expect(history.initialTarget(in: [both], lastUsed: alphaTarget, hasDraft: { _ in false }) == betaTarget)
+        #expect(history.initialTarget(in: [empty], lastUsed: nil, hasDraft: { _ in true }) == nil,
+                "A channel on a server you removed is never the target")
+        history.trackDraft(alphaTarget, name: "Alpha", hasContent: true)
+        history.choose(try choice(beta, in: both))
+        #expect(history.selected == betaTarget)
+        history.restoreTarget(in: [both], lastUsed: betaTarget, hasDraft: { $0 == alphaTarget })
+        #expect(history.selected == alphaTarget)
+
+        let restored = QuickSendTargetHistory(defaults: defaults)
+        #expect(restored.initialTarget(in: [onlyBeta], lastUsed: betaTarget, hasDraft: { $0 == alphaTarget }) == alphaTarget)
+        #expect(restored.name(for: alphaTarget) == "Alpha")
+        func ids(_ query: String) -> [String] {
+            let choices = restored.choices(in: [both], query: query)
+            return (choices.recent + choices.others.joined()).map(\.channel.id)
+        }
+        #expect(ids("") == ["beta", "alpha"])
+        #expect(ids("entrance") == ["beta"])
+        #expect(ids("LAUNCH") == ["alpha"])
+        restored.trackDraft(alphaTarget, name: nil, hasContent: false)
+        #expect(restored.initialTarget(in: [onlyAlpha], lastUsed: alphaTarget, hasDraft: { _ in false }) == nil)
+    }
+
+    @Test func quickSendRecentsSpanServersAndEachServerListsItsOthers() async throws {
+        let suite = "ComposerQuickSendServers-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let channels = ["alpha", "beta", "gamma"].map { id in
+            Channel(id: id, name: id.capitalized, model: .init(provider: "test", name: "test"),
+                    updatedAt: "2026-10-24T00:00:00Z")
+        }
+        let first = try await loadedCatalog([channels[0], channels[1]])
+        let second = try await loadedCatalog([channels[0], channels[2]])
+        let history = QuickSendTargetHistory(defaults: defaults)
+        history.choose(.init(target: try #require(second.target("alpha")), channel: channels[0]))
+        history.choose(.init(target: try #require(first.target("beta")), channel: channels[1]))
+
+        let choices = history.choices(in: [first, second], query: "")
+        #expect(choices.recent.map(\.target) == [first.target("beta"), second.target("alpha")])
+        #expect(choices.others.map { $0.map(\.target) } == [[first.target("alpha")], [second.target("gamma")]],
+                "The same channel ID on another server is its own channel")
+        #expect(history.initialTarget(in: [second], lastUsed: nil, hasDraft: { _ in false }) == nil,
+                "The last channel chosen is on a server you removed")
     }
 
     @Test func quickSendChooserIsATransparentNativeListWhereAClickOrReturnChoosesAnyRow() async throws {
@@ -292,9 +324,14 @@ struct ComposerTests {
             channel.id = id; channel.name = id.capitalized
             return channel
         }
+        let suite = "ComposerQuickSendChooser-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let catalog = try await loadedCatalog(channels)
         var chosen: [String] = []
-        let host = NSHostingView(rootView: QuickSendChannelChooser(channels: channels, history: nil,
-                                                                   selectedID: "beta") { chosen.append($0.id) })
+        let host = NSHostingView(rootView: QuickSendChannelChooser(
+            catalogs: [catalog], history: QuickSendTargetHistory(defaults: defaults), selected: catalog.target("beta"),
+            retry: {}) { chosen.append($0.channel.id) })
         let panel = QuickSendPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 400),
                                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false
@@ -344,7 +381,7 @@ struct ComposerTests {
         #expect(chosen == ["alpha", "alpha"], "Clicking the highlighted row chooses it though the selection can't change")
         try click(row: 2) { $0.minY + 1 }
         try click(row: 1) { $0.maxY - 1 }
-        #expect(chosen == ["alpha", "alpha", "gamma", "beta"], "Either edge of a row chooses it too")
+        #expect(chosen == ["alpha", "alpha", "delta", "beta"], "Either edge of a row chooses it too")
     }
 
     @Test func auxiliarySendSavesToTheOutboxOnlyWhileTheCatalogIsConnected() async throws {
@@ -1669,6 +1706,22 @@ struct ComposerTests {
         do { try FileManager.default.removeItem(at: url) }
         catch { Issue.record("Composer test cleanup failed: \(error.localizedDescription)") }
     }
+
+    /// A catalog that has loaded `channels`, on a server of its own unless `server` names one.
+    private func loadedCatalog(_ channels: [Channel], at server: String? = nil) async throws -> ChannelCatalogStore {
+        let server = server ?? "http://\(UUID().uuidString.lowercased()).quick-send.test"
+        let body = try JSONEncoder().encode(ChannelCatalog(
+            lead: .init(name: "Lead", role: "Coordinates", avatar: .init(mark: "M4 12L12 4L20 12", color: "#327785")),
+            channels: channels))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CatalogProtocol.self]
+        configuration.httpAdditionalHeaders = [CatalogProtocol.header: body.base64EncodedString()]
+        let catalog = ChannelCatalogStore(api: try ChannelAPI(serverURL: server,
+                                                              session: URLSession(configuration: configuration)))
+        await catalog.refresh()
+        try #require(catalog.isLoaded)
+        return catalog
+    }
 }
 
 /// A window that counts as key, so typed keys reach the focused view while it stays out of sight.
@@ -1685,6 +1738,26 @@ private final class NoContentProtocol: URLProtocol, @unchecked Sendable {
         guard let url = request.url,
               let response = HTTPURLResponse(url: url, statusCode: 204, httpVersion: nil, headerFields: nil) else { return }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+/// A server that lists the catalog its session sends in a header.
+private final class CatalogProtocol: URLProtocol, @unchecked Sendable {
+    static let header = "X-Test-Catalog"
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        guard let url = request.url, url.path == "/api/v1/channels",
+              let body = request.value(forHTTPHeaderField: Self.header).flatMap({ Data(base64Encoded: $0) }),
+              let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil,
+                                             headerFields: ["Content-Type": "application/json"]) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.cannotConnectToHost))
+            return
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
