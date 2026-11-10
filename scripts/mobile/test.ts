@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import type { Subprocess } from "bun";
-import { checkTestCompletion, CommandFailure, command, machineLock, main, scratchPath, text } from "../shared/lib/index.ts";
+import { CommandFailure, command, machineLock, main, scratchPath, text } from "../shared/lib/index.ts";
 import { buildMobile, mobileEnvironment } from "./bundle/index.ts";
 import { bootMobileSimulator, chooseMobileSimulator, seconds, shutDownMobileSimulator } from "./dogfood/boot.ts";
 
@@ -23,8 +23,18 @@ const launchMinutes = 10;
  * A local simulator keeps them, since `bun run simulator` shares it. */
 const ciDisabledJobs = ["com.apple.chronod", "com.apple.apsd", "com.apple.intelligenceplatformd"];
 
+/** Fails unless every run in a suite's log printed its summary and Swift Testing's passed with at least one test.
+ * The log comes straight from `xctest`, not through `swift test`'s relay, which can drop lines. */
 export function checkMobileTestCompletion(log: string) {
-    checkTestCompletion(log);
+    const count = (pattern: RegExp) => [...log.matchAll(pattern)].length;
+    const started = count(/Test run started\./g);
+    const finished = count(/Test run with [0-9]+ tests? .*(passed|failed) after /g);
+    const suitesStarted = count(/Test Suite '(All|Selected) tests' started/g);
+    const suitesFinished = count(/Test Suite '(All|Selected) tests' (passed|failed)/g);
+    if ((!finished && !suitesFinished) || started !== finished || suitesStarted !== suitesFinished) {
+        throw new Error("error: a test run stopped before printing its summary, so its remaining tests never ran "
+            + `(Swift Testing ${finished} of ${started} finished, XCTest ${suitesFinished} of ${suitesStarted})`);
+    }
     if (!/Test run with [1-9][0-9]* tests? .*passed after /.test(log)
         || /Test run with [0-9]+ tests? .*failed after /.test(log)) {
         throw new Error("iOS tests did not finish with a nonempty passing Swift Testing summary.");

@@ -1,6 +1,24 @@
 import { dirname, join } from "node:path";
-import { mkdir, stat } from "node:fs/promises";
-import { checkTestCompletion, CommandFailure, command, developerEnvironment, main, root, scratchPath, text } from "../shared/lib/index.ts";
+import { mkdir, rm, stat } from "node:fs/promises";
+import { CommandFailure, command, developerEnvironment, main, root, scratchPath, text } from "../shared/lib/index.ts";
+
+/** Fails unless every Swift Testing run that started also ended. A test process can stop partway and still exit 0,
+ * for example when a WindowServer event stops the main run loop under an async main, so its remaining tests never
+ * run. This reads the event stream each test process writes to its own file, never the console. SwiftPM 6.4 relays
+ * the console in 4 KB reads and drops any read that splits a multi-byte character, so a run's first or last line
+ * can go missing from a green run (swiftlang/swift-package-manager#10636). */
+function checkRunCompletion(events: string) {
+    const kinds = events.split("\n").flatMap(line => {
+        const record = line ? JSON.parse(line) : undefined;
+        return record?.kind === "event" ? [record.payload.kind] : [];
+    });
+    const started = kinds.filter(kind => kind === "runStarted").length;
+    const ended = kinds.filter(kind => kind === "runEnded").length;
+    if (!ended || started !== ended) {
+        throw new Error("error: a test run stopped before it ended, so its remaining tests never ran "
+            + `(${ended} of ${started} Swift Testing runs ended)`);
+    }
+}
 
 function testProcessTree(source: string, parentPID: number) {
     const rows = source.split("\n").flatMap(line => {
@@ -48,29 +66,20 @@ if (import.meta.main) await main(async () => {
         throw error;
     });
     if (directory?.isDirectory()) args.push("-Xswiftc", "-plugin-path", "-Xswiftc", plugins);
+    const events = join(scratchPath(), "mac-test-events.jsonl");
+    await rm(events, { force: true });
+    args.push("--event-stream-output-path", events, "--event-stream-version", "0");
     const child = Bun.spawn([...args, ...process.argv.slice(2)], {
-        cwd: root, env: developerEnvironment, stdin: "inherit", stdout: "pipe", stderr: "pipe",
+        cwd: root, env: developerEnvironment, stdin: "inherit", stdout: "inherit", stderr: "inherit",
     });
-    async function forward(stream: ReadableStream<Uint8Array>, destination: NodeJS.WriteStream) {
-        const decoder = new TextDecoder();
-        let log = "";
-        for await (const data of stream) {
-            destination.write(data);
-            log += decoder.decode(data, { stream: true });
-        }
-        return log + decoder.decode();
-    }
     const deadline = Promise.withResolvers<undefined>();
     const timer = setTimeout(() => deadline.resolve(undefined), 12 * 60 * 1_000);
-    const result = await Promise.race([
-        Promise.all([forward(child.stdout, process.stdout), forward(child.stderr, process.stderr), child.exited]),
-        deadline.promise,
-    ]).finally(() => clearTimeout(timer));
-    if (!result) {
+    const code = await Promise.race([child.exited, deadline.promise]).finally(() => clearTimeout(timer));
+    if (code === undefined) {
         await sampleAndStopTests(child.pid);
         throw new Error("Mac tests exceeded the twelve-minute watchdog. See the process samples.");
     }
-    const [stdout, stderr, code] = result;
     if (code) throw new CommandFailure(code, `Swift tests failed (exit ${code}).`);
-    checkTestCompletion(stdout + "\n" + stderr);
+    const file = Bun.file(events);
+    checkRunCompletion(await file.exists() ? await file.text() : "");
 });
