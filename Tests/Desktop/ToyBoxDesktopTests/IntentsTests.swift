@@ -113,6 +113,22 @@ struct IntentsTests {
         #expect(Spotlight.plan(from: noServer.indexed, to: .init(channels: [])).plan.isEmpty)
     }
 
+    @Test func spotlightKeepsTheLastLaunchsIndexWhileTheOnlyServerFails() async throws {
+        let catalog = ChannelCatalogStore(api: try ChannelAPI(serverURL: "http://127.0.0.1:1"))
+        await catalog.refresh()
+        try #require(catalog.phase.failure != nil && !catalog.isLoaded)
+        let index = FakeSpotlightIndex()
+        let spotlight = ChannelSpotlight(index: index.index, icon: { nil })
+        spotlight.update(.init([catalog]))
+        await spotlight.settle()
+        #expect(index.operations.isEmpty)
+        #expect(ChannelIntents.Listed.spotlight(in: [catalog]) == nil)
+
+        spotlight.update(.init([]))
+        await spotlight.settle()
+        #expect(index.operations == ["remove all"], "Removing the last server empties Spotlight")
+    }
+
     @Test func spotlightFollowsRenamesAndDeletions() {
         typealias Spotlight = ChannelSpotlight
         let a = entry("a", "Studio demo"), b = entry("b", "Docs"), c = entry("c", "Ops")

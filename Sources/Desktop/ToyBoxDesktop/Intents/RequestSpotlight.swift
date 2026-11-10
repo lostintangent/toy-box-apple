@@ -10,8 +10,8 @@ import ToyBoxUI
 @MainActor
 final class RequestSpotlight {
     struct Catalog: Equatable {
-        /// Nil until every saved server's catalog has loaded or failed. Unresolved questions join
-        /// on a later observation.
+        /// Nil until a server's catalog has loaded and every other has loaded or failed. Unresolved
+        /// questions join on a later observation.
         var entries: [WaitingRequestEntry]?
 
         init(entries: [WaitingRequestEntry]?) {
@@ -19,7 +19,7 @@ final class RequestSpotlight {
         }
 
         @MainActor init(_ model: AppModel) {
-            entries = ChannelIntents.Listed.all(in: model.catalogs) == nil
+            entries = ChannelIntents.Listed.spotlight(in: model.catalogs) == nil
                 ? nil : model.menuBarStatus.waiting.compactMap(WaitingRequestEntry.init)
         }
     }

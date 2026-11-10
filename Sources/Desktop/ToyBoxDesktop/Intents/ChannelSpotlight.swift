@@ -1,5 +1,6 @@
 import AppIntents
 import AppKit
+import ChannelClient
 import ChannelKit
 import CoreSpotlight
 import SwiftUI
@@ -28,8 +29,8 @@ final class ChannelSpotlight {
         }
     }
 
-    /// The channels Spotlight should hold, nil until every saved server's catalog has loaded or
-    /// failed.
+    /// The channels Spotlight should hold, nil until a server's catalog has loaded and every other
+    /// has loaded or failed.
     struct Catalog: Equatable {
         var channels: [Entry]?
     }
@@ -85,7 +86,7 @@ final class ChannelSpotlight {
     /// Follows the app's servers and catalogs for as long as the app runs.
     func observe(_ model: AppModel) {
         let catalog = withObservationTracking {
-            Catalog(model)
+            Catalog(model.catalogs)
         } onChange: { [weak self] in
             Task { @MainActor in self?.observe(model) }
         }
@@ -164,8 +165,8 @@ final class ChannelSpotlight {
 
 extension ChannelSpotlight.Catalog {
     @MainActor
-    init(_ model: AppModel) {
-        self.init(channels: ChannelIntents.Listed.all(in: model.catalogs)?.map(ChannelSpotlight.Entry.init))
+    init(_ catalogs: [ChannelCatalogStore]) {
+        self.init(channels: ChannelIntents.Listed.spotlight(in: catalogs)?.map(ChannelSpotlight.Entry.init))
     }
 }
 

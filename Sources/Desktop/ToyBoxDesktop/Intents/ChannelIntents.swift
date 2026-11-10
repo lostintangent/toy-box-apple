@@ -48,6 +48,12 @@ final class ChannelIntents {
                 }
             }
         }
+
+        /// What Spotlight holds: `all`, once at least one server has loaded, so a launch while every
+        /// server fails keeps the last launch's index. With no server, nothing.
+        @MainActor static func spotlight(in catalogs: [ChannelCatalogStore]) -> [Listed]? {
+            catalogs.isEmpty || catalogs.contains(where: \.isLoaded) ? all(in: catalogs) : nil
+        }
     }
 
     /// The channel or artifact a window shows, with the stores behind it.
