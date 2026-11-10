@@ -195,9 +195,13 @@ Drafts stay keyed to the address, so adding it back finds them.
   with a server menu to pick another.
 - **Beyond the window, everything spans every server.** The Dock and phone badges, notifications,
   the menu bar, Quick Send, Share, Siri, Spotlight, the Needs You widget and Live Activities cover
-  all servers. Every reference to a channel, in a notification, Handoff, a widget, a Live
-  Activity, Spotlight, an intent, Quick Send, Share or a restored window, names its server so it
-  opens the right one. The phone registers for push with each server.
+  all servers. Every reference to a channel, in a notification, a widget, a Live Activity,
+  Spotlight, an intent, Quick Send, Share or a restored window, names its server by the address
+  or push registration it carries, so it opens the right one. Handoff carries only the channel,
+  because two devices often reach one server by different addresses. It, and any reference
+  without a server, opens in the first server in Settings order whose catalog lists the channel,
+  and reports the channel missing only once every server has answered. The Needs You widget is
+  out of date when any server is, and then shows the oldest server's last update.
 - **Settings** lists the servers with their dots and names. On the Mac, the list has Add and
   Remove buttons and drags to reorder, and the selected server's Name, Server URL with Test
   Connection and status sit below it. On the phone, each row opens Welcome's Server URL card with
@@ -454,9 +458,9 @@ native codec.
 in `toybox-desktop://activity` URLs. The receiving app checks the selected registration before
 opening anything. Stale Activity taps omit the sequence and open only the channel.
 
-The phone stores the selected server's registration in `group.dev.toybox.mobile`. Selecting a
-different server generates a new UUID, including when returning to an earlier server. Equivalent
-URL spelling preserves the UUID. `MobileWidgetSnapshotPublisher.update(catalog:serverURL:)` writes
+The phone stores one registration per server in `group.dev.toybox.mobile`. Adding a server
+generates a new UUID, including when adding back an earlier one, and removing one deletes its
+registration. Equivalent URL spelling preserves the UUID. `MobileWidgetSnapshotPublisher.update(catalog:serverURL:)` writes
 the Mac's `NeedsYouSnapshot` schema and filename from the catalog's `waitingRequests`, without
 SSE or channel stores, and reloads `ToyBoxNeedsYou`. It keeps a same-server offline cache, drops it
 on a server change, and shares the Mac's 30-minute freshness and `NeedsYouSnapshot.replacing`.
