@@ -189,8 +189,11 @@ Drafts stay keyed to the address, so adding it back finds them.
 - **Grouped list.** The Mac sidebar and the phone list show one collapsible section per server, in
   Settings' order. Its header is the server's connection dot and name, with the status line's help
   and VoiceOver value. A failing server's notice sits under its own header instead of at the
-  bottom: the Mac's error block, still without buttons, and the phone pill's words with Retry. The
-  Mac footer keeps only Open Screen. Search filters every server and keeps the sections. The phone
+  bottom: the Mac's error block, still without buttons, and the phone pill's words with Retry.
+  While a section is collapsed, its header also shows how many of its channels wait for the
+  user's response, trailing in the waiting attention color, so collapsing a server never hides a
+  request. The count hides at zero and while the section is open, and VoiceOver reads it as
+  "N waiting for you" after the header's value. The Mac footer keeps only Open Screen. Search filters every server and keeps the sections. The phone
   keeps one open Needs You card, the newest across every server, in its server's section.
 - **Choosing a server.** New Channel and the Screens list start on the selected channel's server,
   with a server menu to pick another.
@@ -207,7 +210,8 @@ Drafts stay keyed to the address, so adding it back finds them.
   server's last update, and Retry refreshes every server. The morning digest stays one
   notification, and each line opens on its own server.
 - **Settings** lists the servers with their dots and names, even when there's one, so Add is
-  always there. On the Mac, the list has Add and
+  always there. On the Mac, they have their own Servers tab between General and Notifications,
+  and the list has Add and
   Remove buttons and drags to reorder, and the selected server's Name, Server URL with Test
   Connection and status sit below it. On the phone, each row opens Welcome's Server URL card with
   a Name field, Add Server follows the rows, and Edit reorders and deletes. Adding an address
@@ -2808,9 +2812,9 @@ alert that explains it and offers OK. An uncertain failure checks the server fir
 the target is gone, says it's still there and offers the deletion again, or says the check
 failed and offers Check Again. Nothing is sent again before that check.
 
-Settings uses a native scene with General and Notifications sections. General includes the
-servers (see [Several servers](#several-servers)), each with its Server URL, Test Connection and
-status, and the selected appearance (System by default). Validate HTTP(S), preserve path prefixes
+Settings uses a native scene with General and Notifications sections. The Mac adds a Servers tab
+between them for the servers (see [Several servers](#several-servers)), each with its Server URL,
+Test Connection and status. General includes the selected appearance (System by default). Validate HTTP(S), preserve path prefixes
 and display actionable failures. Changing a server's address prompts before replacing its live
 connections, namespaces drafts, then refreshes its catalog. On iPhone, each server shares
 Welcome's Server URL card, with no separate Use Server action or confirmation. Return or Test
