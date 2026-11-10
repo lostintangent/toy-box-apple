@@ -262,7 +262,7 @@ struct ComposerTray: View {
             }
             .help("Open preview in your browser: \(url.absoluteString)")
         } else if preview.kind == "screen", let screenID = preview.screenId {
-            Button { openWindow(id: "screens", value: screenID) } label: {
+            Button { openWindow(id: "screens", value: ScreenWindowValue(serverURL: store.api.baseURL.absoluteString, screenID: screenID)) } label: {
                 Label("Screen", systemImage: "display").lineLimit(1)
                     .modifier(ComposerCapsuleLabel())
             }

@@ -100,7 +100,9 @@ struct ChannelSidebar: View {
                 busy: busy, serverURL: model.serverURL,
                 error: model.configurationError ?? model.catalog?.phase.message,
                 openSettings: { openSettings() },
-                openScreen: model.api == nil ? nil : { openWindow(id: "screens") }
+                openScreen: model.api == nil ? nil : {
+                    openWindow(id: "screens", value: ScreenWindowValue(serverURL: selection?.serverURL ?? model.serverURL))
+                }
             )
         }
         .navigationTitle("Channels")

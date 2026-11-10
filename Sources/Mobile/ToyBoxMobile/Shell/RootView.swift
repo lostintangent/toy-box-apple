@@ -244,7 +244,7 @@ struct RootView: View {
             },
             findInChannel: conversation.map { interaction in { interaction.findInChannel() } },
             findNext: conversation.map { interaction in { interaction.findNext($0) } },
-            newChannel: model.canCreateChannel ? { management.present(.newChannel(server: model.newChannelServer)) } : nil,
+            newChannel: model.canCreateChannel ? { management.present(.newChannel(server: model.selectedServer)) } : nil,
             openInToyBox: store?.target.flatMap { target in
                 model.channelURL(target) == nil ? nil : { model.openInToyBox(target) }
             },
@@ -292,8 +292,8 @@ private struct AppCoverPresentation: ViewModifier {
         )) { cover in
             if cover == .settings {
                 NavigationStack { SettingsView() }
-            } else if let api = model.api {
-                ScreenSheet(api: api)
+            } else {
+                ScreenSheet(server: model.selectedServer)
             }
         }
     }
@@ -317,7 +317,7 @@ private struct ScreenCoverPresentation: ViewModifier {
             get: { isHost && model.cover?.screenID != nil ? model.cover : nil },
             set: { if $0 == nil, isHost, model.cover?.screenID != nil { model.cover = nil } }
         )) { cover in
-            if let id = cover.screenID, let api = model.api {
+            if case .screen(let id, let server) = cover, let api = model.catalogs.first(at: server)?.api {
                 ScreenViewer(api: api, screenID: id)
                     .onAppear { isUp = true }
                     // A sheet that goes under the screen, like a deleted channel's, takes it along.
