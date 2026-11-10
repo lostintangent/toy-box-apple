@@ -194,7 +194,11 @@ Drafts stay keyed to the address, so adding it back finds them.
   While a section is collapsed and any of its channels waits for the user's response, its header
   also shows the waiting attention symbol, trailing in its color and without a count, so
   collapsing a server never hides a request. It hides while the section is open, and VoiceOver
-  adds "waiting for you" after the header's value. The Mac footer keeps only Open Screen. Search filters every server and keeps the sections. The phone
+  adds "waiting for you" after the header's value. The Mac footer's status line reads "2 servers" instead of a host, with its dot showing the
+  least healthy server: red, then orange, then the first load's gray, then green. That dot never
+  spins, since each header shows its own server's load. Its help names the least healthy server,
+  like "Reconnecting to 127.0.0.1:3211", or reads "Connected to 2 servers" when every server is
+  connected, then "Change servers in Settings.", and VoiceOver reads the same. Search filters every server and keeps the sections. The phone
   keeps one open Needs You card, the newest across every server, in its server's section.
 - **Choosing a server.** New Channel and the Screens list start on the selected channel's server,
   with a server menu to pick another.
@@ -1139,7 +1143,7 @@ rather than keep animating.
 
 **Connection footer.** The bottom of the sidebar names the server this window talks to, as the
 wireframe's `sidebar-connection` group draws it. With several servers, each server's header
-carries its status instead, and the footer keeps only Open Screen (see
+carries its own status, and the footer's status line sums them up (see
 [Several servers](#several-servers)). Attach it with `.safeAreaBar(edge: .bottom)` on
 the sidebar list so rows scroll beneath it under the system scroll edge effect. Give it no
 background, divider or material of its own. The status line is a 7-point dot (the unread dot's
@@ -1177,7 +1181,8 @@ In an inactive window the system draws a hairline above the bar, just as it does
 toolbar. Keep it, because the soft edge in the active window comes from the same system effect.
 Never fake that line, and never hide the scroll edge effect to remove it.
 
-The status line is a borderless button that opens Settings, where the server URL lives. Hover and
+The status line is a borderless button that opens Settings on the Servers tab, where the server
+URL lives. Hover and
 press use the folder token's capsule of the hover fill,
 outset 6 points so the dot never moves. Help reads "Connected to http://localhost:3100", or
 "Connecting to", "Reconnecting to" or "Can't connect to", then "Change the server in Settings."
