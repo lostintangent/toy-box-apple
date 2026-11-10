@@ -45,6 +45,8 @@ struct NeedsYouCard: View {
     @ViewState private var hidden: Edge.Set = []
 
     private var isReplying: Bool { cards.replying?.id == entry.id }
+    /// The request's own server, which its links resolve against and its reply waits for.
+    private var catalog: ChannelCatalogStore? { model.catalogs.first(at: entry.serverURL) }
 
     var body: some View {
         let lineHeight = UIFont.preferredFont(forTextStyle: .body).lineHeight
@@ -63,7 +65,7 @@ struct NeedsYouCard: View {
                 ScrollView {
                     // The bubble's own body, so the question reads exactly as it does in the transcript.
                     TranscriptBody(text: markdown, agents: entry.request?.agents ?? [],
-                                   baseURL: model.api?.baseURL, surface: .pendingAgent)
+                                   baseURL: catalog?.api.baseURL, surface: .pendingAgent)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { questionHeight = $0 }
                 }
@@ -126,7 +128,7 @@ struct NeedsYouCard: View {
 
     @ViewBuilder private var footer: some View {
         if isLifted {
-            NeedsYouReplyField(cards: cards, prompt: "Reply to \(requester)")
+            NeedsYouReplyField(cards: cards, catalog: catalog, prompt: "Reply to \(requester)")
         } else {
             // A choice holds the card as it was while it's saved, as the talk card holds its note.
             let isSending = isReplying && cards.phase == .sending
@@ -155,15 +157,15 @@ private struct InlineLabelStyle: LabelStyle {
     }
 }
 
-/// A typed reply's field where the choices were, then Cancel and Send. Send waits for a connection,
-/// as the choices do, and the words stay until it's back.
+/// A typed reply's field where the choices were, then Cancel and Send. Send waits for a connection
+/// to the request's server, as the choices do, and the words stay until it's back.
 struct NeedsYouReplyField: View {
     @Bindable var cards: NeedsYouCards
+    let catalog: ChannelCatalogStore?
     let prompt: String
-    @Environment(AppModel.self) private var model
     @FocusState private var focused: Bool
 
-    private var isConnected: Bool { model.catalog?.phase.failure == nil }
+    private var isConnected: Bool { catalog?.phase.failure == nil }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
