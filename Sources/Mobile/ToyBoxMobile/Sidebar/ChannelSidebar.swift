@@ -356,8 +356,7 @@ struct ChannelSidebar: View {
     }
 
     private func openChannel(_ entry: ChannelCatalogStore.WaitingRequest) {
-        let server = model.serverURL
-        Task { await model.openChannel(id: entry.channel.id, sequence: entry.sequence, expectedServer: server) }
+        Task { await model.openChannel(id: entry.channel.id, sequence: entry.sequence, on: entry.serverURL) }
     }
 
     private func choose(_ choice: String, for entry: ChannelCatalogStore.WaitingRequest) {

@@ -47,12 +47,12 @@ struct ShellTests {
                 let registration = MobileNotificationRegistration(
                     store: store, environment: .sandbox, requestToken: {}, register: register,
                     remove: { _, _ in }, subscribe: subscribe, unsubscribe: unsubscribe)
-                try registration.select(api: api)
+                try registration.select(apis: [api])
                 let notifications = ChannelNotifications(
                     defaults: defaults, registration: registration,
                     readAuthorization: readAuthorization, removeDelivered: removeDelivered,
                     setBadgeCount: setBadgeCount)
-                notifications.configure(api: api)
+                notifications.configure(apis: [api])
                 try await work(defaults, registration, notifications)
                 await registration.waitUntilIdle()
             }
@@ -379,8 +379,8 @@ struct ShellTests {
                 }, remove: { _, id in deleted.append(id) },
                 subscribe: { _, _, topic in topics.append("on:\(topic)") },
                 unsubscribe: { _, _, topic in topics.append("off:\(topic)") })
-            try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
-            let id = try #require(registration.current?.registrationID)
+            try registration.select(apis: [ChannelAPI(serverURL: "https://first.example")])
+            let id = try #require(registration.current.first?.registrationID)
             registration.update(enabled: true, requests: false, completions: true)
             #expect(tokenRequests == 1)
             #expect(inputs.isEmpty)
@@ -400,7 +400,7 @@ struct ShellTests {
             await registration.waitUntilIdle()
             #expect(deleted.isEmpty)
             #expect(Array(topics.suffix(2)) == ["off:requests", "off:completions"])
-            #expect(registration.current?.registrationID == id)
+            #expect(registration.current.first?.registrationID == id)
             #expect(registration.isReady)
             registration.update(enabled: true, requests: true, completions: false)
             await registration.waitUntilIdle()
@@ -430,8 +430,8 @@ struct ShellTests {
                 remove: { _, _ in }, subscribe: { _, _, topic in topics.append("on:\(topic)") },
                 unsubscribe: { _, _, topic in topics.append("off:\(topic)") })
             registration.onCreated = { created.append($0) }
-            try registration.select(api: ChannelAPI(serverURL: "https://fixture.example"))
-            let selected = try #require(registration.current)
+            try registration.select(apis: [ChannelAPI(serverURL: "https://fixture.example")])
+            let selected = try #require(registration.current.first)
             registration.receivedToken(Data([1]))
             await registration.waitUntilIdle()
             #expect(registration.isReady)
@@ -447,7 +447,7 @@ struct ShellTests {
             registration.update(enabled: enabled, requests: true, completions: false)
             await registration.waitUntilIdle()
             #expect(registrations == 3)
-            #expect(registration.current == selected)
+            #expect(registration.current == [selected])
             #expect(registration.isReady && registration.error == nil)
             #expect(topics == [enabled ? "on:requests" : "off:requests", "off:completions"])
         }
@@ -468,7 +468,7 @@ struct ShellTests {
                         topics.append("off:\(topic)")
                         if fails { throw URLError(.cannotConnectToHost) }
                     })
-                try registration.select(api: ChannelAPI(serverURL: "https://fixture.example"))
+                try registration.select(apis: [ChannelAPI(serverURL: "https://fixture.example")])
                 registration.update(enabled: true, requests: true, completions: false)
                 registration.receivedToken(Data([1]))
                 return registration
@@ -488,55 +488,57 @@ struct ShellTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func aServerSwitchWaitsForTheOldWriteWithoutAcceptingItsAcknowledgement() async throws {
+    func eachServerRegistersOnItsOwnAndARemovedOneUnregistersAfterItsWriteWithoutAcceptingIt() async throws {
         try await withRegistrationStore { store in
             var events: [String] = []
-            var created: [MobilePushRegistration] = []
-            var responses: [CheckedContinuation<Void, Never>] = []
+            var created: [String] = []
+            var held: CheckedContinuation<Void, Never>?
             var began: (() -> Void)?
             let registration = MobileNotificationRegistration(
                 store: store, environment: .sandbox, requestToken: {},
                 register: { api, _, _ in
                     events.append("register:\(api.baseURL.host ?? "")")
-                    if responses.count < 2 { await withCheckedContinuation { continuation in
-                        responses.append(continuation)
-                        began?()
-                    } }
+                    if api.baseURL.host == "offline.example", held == nil {
+                        await withCheckedContinuation { continuation in
+                            held = continuation
+                            began?()
+                        }
+                    }
                     return true
                 },
                 remove: { api, _ in events.append("delete:\(api.baseURL.host ?? "")") },
                 subscribe: { _, _, _ in }, unsubscribe: { _, _, _ in })
-            registration.onCreated = { created.append($0) }
-            try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
-            let firstID = try #require(registration.current?.registrationID)
+            registration.onCreated = { created.append($0.serverURL) }
+            let offline = try ChannelAPI(serverURL: "https://offline.example")
+            let online = try ChannelAPI(serverURL: "https://online.example")
+            try registration.select(apis: [offline, online])
+            let offlineID = try #require(registration.current.first?.registrationID)
+            let onlineID = try #require(registration.current.last?.registrationID)
             registration.update(enabled: true, requests: true, completions: true)
             await withCheckedContinuation { continuation in
                 began = { continuation.resume() }
                 registration.receivedToken(Data([1]))
             }
-            try registration.select(api: ChannelAPI(serverURL: "https://second.example"))
-            let secondID = try #require(registration.current?.registrationID)
-            registration.update(enabled: false, requests: true, completions: true)
-            #expect(firstID != secondID)
-            #expect(!registration.isReady)
-            #expect(events == ["register:first.example"])
-            let firstResponse = try #require(responses.first)
-            await withCheckedContinuation { continuation in
-                began = { continuation.resume() }
-                firstResponse.resume()
-            }
-            #expect(events == ["register:first.example", "delete:first.example", "register:second.example"])
-            #expect(!registration.isReady)
-            #expect(created.isEmpty)
-            try #require(responses.last).resume()
+            // The held server never holds up the other.
+            for await ready in Observations({ registration.ready }) where ready.contains(onlineID) { break }
+            #expect(created == ["https://online.example"])
+
+            try registration.select(apis: [online])
+            #expect(registration.current.map(\.registrationID) == [onlineID])
+            #expect(registration.ready == [onlineID])
+            #expect(!events.contains("delete:offline.example"))
+            try #require(held).resume()
             await registration.waitUntilIdle()
-            #expect(registration.isReady)
-            #expect(created == [try #require(registration.current)])
-            try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
-            #expect(!registration.isReady)
-            #expect(registration.current?.registrationID != firstID)
-            #expect(registration.current?.registrationID != secondID)
+            #expect(events.last == "delete:offline.example")
+            #expect(events.filter { $0 == "register:online.example" }.count == 1)
+            #expect(created == ["https://online.example"])
+            #expect(registration.ready == [onlineID])
+
+            try registration.select(apis: [offline, online])
+            #expect(registration.current.first?.registrationID != offlineID)
             await registration.waitUntilIdle()
+            #expect(registration.ready == Set(registration.current.map(\.registrationID)))
+            #expect(created == ["https://online.example", "https://offline.example"])
         }
     }
 
@@ -552,7 +554,7 @@ struct ShellTests {
                     if inputs.count == 1 { throw failure }
                     return true
                 }, remove: { _, _ in }, subscribe: { _, _, _ in }, unsubscribe: { _, _, _ in })
-            try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
+            try registration.select(apis: [ChannelAPI(serverURL: "https://first.example")])
             registration.update(enabled: true, requests: true, completions: true)
             registration.receivedToken(Data([1]))
             await registration.waitUntilIdle()
@@ -578,7 +580,7 @@ struct ShellTests {
             let registration = MobileNotificationRegistration(
                 store: store, environment: .sandbox, requestToken: { requests += 1 },
                 register: { _, _, _ in false }, remove: { _, _ in }, subscribe: { _, _, _ in }, unsubscribe: { _, _, _ in })
-            try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
+            try registration.select(apis: [ChannelAPI(serverURL: "https://first.example")])
             registration.update(enabled: true, requests: true, completions: true)
             registration.failedToReceiveToken("Token unavailable")
             registration.update(enabled: true, requests: true, completions: true)
@@ -621,7 +623,7 @@ struct ShellTests {
             #expect(registrations == 2)
             #expect(topics == ["on:requests", "off:completions"])
             #expect(notifications.registrationError == nil)
-            #expect(notifications.isRegistrationReady)
+            #expect(notifications.isReady(notifications.registrations.first))
             model.setScenePhase(.active)
             model.setScenePhase(.background)
             model.setScenePhase(.active)
@@ -634,12 +636,13 @@ struct ShellTests {
     @Test(.timeLimit(.minutes(1)))
     func theIconBadgeUsesFreshWidgetWaitingCountsWithoutWaitingForAuthorization() async throws {
         let host = "\(UUID().uuidString.lowercased()).badge.test"
+        let otherHost = "other-\(host)"
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [BadgeFixtureProtocol.self]
         let session = URLSession(configuration: configuration)
         defer {
             session.invalidateAndCancel()
-            BadgeFixtureProtocol.responses.withLock { $0[host] = nil }
+            BadgeFixtureProtocol.responses.withLock { $0[host] = nil; $0[otherHost] = nil }
         }
         let channels = (0..<4).map { index in
             Channel(id: "\(index)", name: "Channel \(index)", model: .init(provider: "test", name: "test"),
@@ -647,12 +650,12 @@ struct ShellTests {
                     completedSequence: index == 2 ? 20 : nil, requestSequence: index < 2 ? 12 : nil,
                     updatedAt: "2026-10-28T12:00:00Z")
         }
-        func serve(_ channels: [Channel], status: Int = 200) throws {
+        func serve(_ channels: [Channel], status: Int = 200, on server: String? = nil) throws {
             let catalog = ChannelCatalog(
                 lead: .init(name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")),
                 channels: channels)
             let data = try JSONEncoder().encode(catalog)
-            BadgeFixtureProtocol.responses.withLock { $0[host] = .init(status: status, data: data) }
+            BadgeFixtureProtocol.responses.withLock { $0[server ?? host] = .init(status: status, data: data) }
         }
         let badges = BadgeRecorder()
         var authorization: CheckedContinuation<UNAuthorizationStatus, Never>?
@@ -707,6 +710,15 @@ struct ShellTests {
             await model.catalog?.refresh()
             await badges.waitForCalls(4)
             #expect(badges.counts == [2, 2, 0, 1])
+
+            try serve(channels, on: otherHost)
+            let other = try model.addServer("https://\(otherHost)")
+            await other.refresh()
+            await badges.waitForCalls(5)
+            #expect(badges.counts == [2, 2, 0, 1, 3])
+            model.removeServer(try #require(model.catalog))
+            await badges.waitForCalls(6)
+            #expect(badges.counts == [2, 2, 0, 1, 3, 2])
             authorization?.resume(returning: .authorized)
             authorization = nil
             await startup.value
@@ -714,7 +726,7 @@ struct ShellTests {
     }
 
     @Test(.timeLimit(.minutes(1)), arguments: [false, true])
-    func badgeWritesStayOrderedAndANewServersFreshCountOrOptOutWinsEvenAfterAFailure(optOut: Bool) async throws {
+    func badgeWritesStayOrderedAndTheLatestCountOrOptOutWinsEvenAfterAFailure(optOut: Bool) async throws {
         let badges = BadgeRecorder()
         var held: CheckedContinuation<Void, Never>?
         var began: (() -> Void)?
@@ -739,7 +751,6 @@ struct ShellTests {
             }
             notifications.updateBadge(3)
             if optOut { notifications.disable() }
-            notifications.configure(api: try ChannelAPI(serverURL: "https://other.example"))
             if !optOut { notifications.updateBadge(0) }
             #expect(badges.counts.isEmpty)
             try #require(held).resume()
@@ -774,11 +785,14 @@ struct ShellTests {
     }
 
     @Test(arguments: [false, true])
-    func notificationAndActivityRoutesRevealOnlyRequestsFromTheSelectedRegistration(activityLink: Bool) async throws {
+    func notificationAndActivityRoutesRevealRequestsOnTheirOwnServerOnly(activityLink: Bool) async throws {
         try await withNotifications { defaults, registration, notifications in
-            let id = try #require(registration.current?.registrationID)
+            let id = try #require(registration.current.first?.registrationID)
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
                                  defaults: defaults, session: fixtureSession(), notifications: notifications)
+            let second = try model.addServer("https://second.example")
+            try registration.select(apis: model.catalogs.map(\.api))
+            let secondID = try #require(registration.current.last?.registrationID)
             @MainActor func open(_ kind: ChannelPushPayload.Kind, _ channel: String, _ sequence: Int,
                                  _ registrationID: String) async throws {
                 if activityLink {
@@ -797,8 +811,12 @@ struct ShellTests {
             try await open(.completion, "second", 51, id)
             #expect(model.selectedChannelID == "second")
             #expect(model.interaction(for: "second").revealRequest == nil)
+            try await open(.request, "first", 43, secondID)
+            let elsewhere = try #require(second.target("first"))
+            #expect(model.selection == elsewhere)
+            #expect(model.interaction(for: elsewhere).revealRequest?.sequence == 43)
             try await open(.request, "first", 88, "old")
-            #expect(model.selectedChannelID == "second")
+            #expect(model.selection == elsewhere)
             #expect(model.navigationNotice == (activityLink ? "This channel isn't available." : nil))
             #expect(model.serverURL == "https://fixture.example")
         }
@@ -807,8 +825,13 @@ struct ShellTests {
     @Test func aReplyOrChoiceSavesForItsOwnServerAndClearsOnlyThatNotification() async throws {
         var removed: [String] = []
         try await withNotifications(removeDelivered: { removed += $0 }) { _, registration, notifications in
-            let id = try #require(registration.current?.registrationID)
+            let apis = try ["https://fixture.example", "https://second.example"].map { try ChannelAPI(serverURL: $0) }
+            notifications.configure(apis: apis)
+            try registration.select(apis: apis)
+            let id = try #require(registration.current.first?.registrationID)
+            let secondID = try #require(registration.current.last?.registrationID)
             let current = try #require(URL(string: "https://fixture.example"))
+            let second = try #require(URL(string: "https://second.example"))
             let earlier = try #require(URL(string: "https://earlier.example"))
             var saved: [ChannelNotifications.Reply] = []
             notifications.onReply = { saved.append($0) }
@@ -827,12 +850,16 @@ struct ShellTests {
             await notifications.receive(
                 ChannelPushPayload(kind: .request, channelID: "first", sequence: 44, registrationID: id),
                 action: ChannelNotificationCategory.reply, text: "  ", handle: "lead", identifier: "empty")
+            await notifications.receive(
+                ChannelPushPayload(kind: .request, channelID: "first", sequence: 45, registrationID: secondID),
+                action: ChannelNotificationCategory.reply, text: "Ship it", handle: nil, identifier: "second")
 
             #expect(saved == [
                 .init(content: "@lead Keep the library by the desks", channelID: "first", server: current, request: 42),
-                .init(content: "No", channelID: "second", server: earlier, request: nil)
+                .init(content: "No", channelID: "second", server: earlier, request: nil),
+                .init(content: "Ship it", channelID: "first", server: second, request: 45)
             ])
-            #expect(removed == ["request", "earlier"])
+            #expect(removed == ["request", "earlier", "second"])
         }
     }
 
@@ -861,7 +888,7 @@ struct ShellTests {
             )))
             registration.receivedToken(Data([1]))
             await registration.waitUntilIdle()
-            #expect(notifications.isRegistrationReady)
+            #expect(notifications.isReady(notifications.registrations.first))
             let startup = Task { await model.startIntegrations() }
             await withCheckedContinuation { continuation in
                 if authorization != nil { continuation.resume() }
@@ -916,26 +943,26 @@ struct ShellTests {
                 began = { continuation.resume() }
                 registration.receivedToken(Data([1]))
             }
-            #expect(notifications.currentRegistration == registration.current)
-            #expect(!notifications.isRegistrationReady)
+            #expect(notifications.registrations == registration.current)
+            #expect(!notifications.isReady(notifications.registrations.first))
             #expect(following.state(for: first) == .unavailable(nil))
             #expect(!notifications.isEnabled)
             try #require(response).resume(returning: false)
             await registration.waitUntilIdle()
             await waitFor(.available, for: first)
-            #expect(notifications.isRegistrationReady)
+            #expect(notifications.isReady(notifications.registrations.first))
 
             try model.changeAddress(of: #require(model.catalog), to: "https://second.example")
             let secondAPI = try #require(model.api)
-            try registration.select(api: secondAPI)
+            try registration.select(apis: [secondAPI])
             let second = try #require(model.catalog?.channel(id: "first"))
             try prepare(second)
             await waitFor(.available, for: second)
             #expect(following.state(for: first) == .unavailable(nil))
 
-            try registration.select(api: firstAPI)
+            try registration.select(apis: [firstAPI])
             await waitFor(.unavailable(nil), for: second)
-            try registration.select(api: secondAPI)
+            try registration.select(apis: [secondAPI])
             await waitFor(.available, for: second)
             #expect(!notifications.isEnabled)
         }
@@ -944,8 +971,9 @@ struct ShellTests {
     @Test func presentationKeepsTheVisibleChannelQuietAndCompletionsInNotificationCenter() async throws {
         try await withNotifications { _, registration, notifications in
             await notifications.enable()
-            await notifications.update(channels: [], activeChannelID: "first", withdraw: false)
-            let id = try #require(registration.current?.registrationID)
+            await notifications.update(channels: [:], activeChannel: ChannelTarget(serverURL: "https://fixture.example", channelID: "first"),
+                                      withdrawing: [])
+            let id = try #require(registration.current.first?.registrationID)
             let visible = ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: id)
             let other = ChannelPushPayload(kind: .request, channelID: "second", sequence: 45, registrationID: id)
             #expect(notifications.presentation(for: visible, category: ChannelNotificationCategory.request).isEmpty)
@@ -961,7 +989,8 @@ struct ShellTests {
     func foregroundCountPushesApplyOnlyTheBadgeAndRespectOptOut(count: Int) async throws {
         try await withNotifications { _, _, notifications in
             await notifications.enable()
-            await notifications.update(channels: [], activeChannelID: "first", withdraw: false)
+            await notifications.update(channels: [:], activeChannel: ChannelTarget(serverURL: "https://fixture.example", channelID: "first"),
+                                      withdrawing: [])
             #expect(notifications.presentation(for: nil, category: "", badge: NSNumber(value: count)) == [.badge])
             #expect(!notifications.presentation(for: nil, category: "").contains(.badge))
             notifications.disable()
@@ -1132,7 +1161,7 @@ struct ShellTests {
                 "serverURL": "https://another.example"
             ]
             let navigation = ChannelHandoffNavigation()
-            await navigation.continueActivity(activity, catalogs: { model.catalog.map { [$0] } ?? [] }) { _, id in
+            await navigation.continueActivity(activity, catalogs: { model.catalogs }) { _, id in
                 model.openHandoffChannel(model.target(id)!, generation: generation)
             }
             #expect(model.selectedStore === store)
@@ -1210,7 +1239,7 @@ struct ShellTests {
             #expect(model.cover == nil)
             #expect(model.selectedChannelID == "first")
             model.cover = .screen("window-1", serverURL: model.serverURL)
-            await model.openChannel(id: "second", sequence: 7, expectedServer: model.serverURL)
+            await model.openChannel(id: "second", sequence: 7, on: model.serverURL)
             #expect(model.cover == nil)
             #expect(model.selectedChannelID == "second")
             model.cover = .settings
@@ -1228,15 +1257,20 @@ struct ShellTests {
         #expect(overview.placement == .inspector)
     }
 
-    @Test func aWidgetRequestNeverSwitchesToItsForeignServer() async throws {
+    @Test func aWidgetRequestOpensOnItsOwnServerAndNeverAnUnlistedOne() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
                                  defaults: defaults, session: fixtureSession())
-            model.selectedChannelID = "second"
+            let second = try model.addServer("https://second.example")
+            let listed = NeedsYouRequestLink(serverURL: "https://second.example", channelID: "first", sequence: 41)
+            await model.openExternalURL(try #require(listed.url))
+            let target = try #require(second.target("first"))
+            #expect(model.selection == target)
+            #expect(model.interaction(for: target).revealRequest?.sequence == 41)
             let request = NeedsYouRequestLink(serverURL: "https://other.example", channelID: "first", sequence: 42)
             await model.openExternalURL(try #require(request.url))
             #expect(model.serverURL == "https://fixture.example")
-            #expect(model.selectedChannelID == "second")
+            #expect(model.selection == target)
             #expect(model.navigationNotice == "This channel isn't available.")
         }
     }
@@ -1855,28 +1889,31 @@ struct ShellTests {
         #expect(draft.images.count == 1)
     }
 
-    @Test func siriReadsTheChannelOnScreenAndOnlyNamesOthers() async throws {
-        let channel = Channel(id: "launch", name: "Launch", model: .init(provider: "test", name: "test"),
+    @Test func siriReadsTheChannelOnScreenAndOnlyNamesOthersOnEveryServer() async throws {
+        let channel = Channel(id: "first", name: "Launch", model: .init(provider: "test", name: "test"),
                               updatedAt: "2026-11-05T12:00:00Z")
         let store = try siriStore(channel, messages: [
             ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-11-05T12:00:00Z", sender: .user,
                            content: .text("Can you check the build?")),
         ], request: nil)
-        let other = Channel(id: "other", name: "Other", model: .init(provider: "test", name: "test"),
-                            updatedAt: "2026-11-05T12:00:00Z")
-        let query = ChannelQuery(intents: ChannelIntents(onScreen: { .channel(store) }, catalog: { [channel, other] }))
+        let catalogs = try await siriCatalogs()
+        let query = ChannelQuery(intents: ChannelIntents(onScreen: { .channel(store) }, catalogs: { catalogs }))
 
         let expected = store.readableText(name: "Launch")
         #expect(expected.hasSuffix("You: Can you check the build?"))
-        let entities = try await query.entities(for: ["launch", "other", "missing"])
-        #expect(entities.map(\.id) == ["launch", "other"])
-        #expect(entities.map(\.name) == ["Launch", "Other"])
-        #expect(entities.map(\.content) == [expected, ""])
+        let shown = try #require(store.target)
+        // The same channel ID on the second server is another channel.
+        let targets = try [shown, #require(catalogs[0].target("second")), #require(catalogs[1].target("first"))]
+        let missing = try #require(catalogs[1].target("missing"))
+        let entities = try await query.entities(for: (targets + [missing]).map(\.identifier) + ["first"])
+        #expect(entities.map(\.target) == targets)
+        #expect(entities.map(\.name) == ["Launch", "second", "first"])
+        #expect(entities.map(\.content) == [expected, "", ""])
         let exported = try await #require(entities.first).exported(as: .utf8PlainText)
         #expect(String(decoding: exported, as: UTF8.self) == expected)
 
-        let offScreen = ChannelQuery(intents: ChannelIntents(onScreen: { nil }, catalog: { [channel, other] }))
-        #expect(try await offScreen.entities(for: ["launch"]).map(\.content) == [""])
+        let offScreen = ChannelQuery(intents: ChannelIntents(onScreen: { nil }, catalogs: { catalogs }))
+        #expect(try await offScreen.entities(for: [shown.identifier]).map(\.content) == [""])
     }
 
     @Test func siriReadsTheOpenMarkdownArtifactAndOnlyNamesOtherKinds() async throws {
@@ -1893,14 +1930,13 @@ struct ShellTests {
                                    url: "/api/serve/launch/plan.md")
         let page = ChannelArtifact(file: .init(kind: "machine", path: "page.html"), title: "Page",
                                    url: "/api/serve/launch/page.html")
-        let store = ChannelStore(id: "launch", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        session.configure(api: store.api, channelID: "launch", artifacts: [plan, page])
-        let channel = Channel(id: "launch", name: "Launch", model: .init(provider: "test", name: "test"),
-                              updatedAt: "2026-11-05T12:00:00Z")
-        let intents = ChannelIntents(onScreen: { .artifact(session, in: store) }, catalog: { [channel] })
+        let store = ChannelStore(id: "first", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        session.configure(api: store.api, channelID: "first", artifacts: [plan, page])
+        let catalogs = try await siriCatalogs()
+        let intents = ChannelIntents(onScreen: { .artifact(session, in: store) }, catalogs: { catalogs })
         let artifacts = ArtifactQuery(intents: intents)
-        let planID = ArtifactEntity.id(channelID: "launch", artifactID: plan.id)
-        let pageID = ArtifactEntity.id(channelID: "launch", artifactID: page.id)
+        let planID = ArtifactEntity.id(channelID: "first", artifactID: plan.id)
+        let pageID = ArtifactEntity.id(channelID: "first", artifactID: page.id)
         #expect(try await artifacts.entities(for: [planID]).isEmpty)
 
         session.open(plan)
@@ -1912,7 +1948,8 @@ struct ShellTests {
         #expect(!session.readableText.isEmpty)
         #expect(shown.map(\.content) == [session.readableText])
         // The conversation is behind the artifact, so the channel gives Siri only its name.
-        #expect(try await ChannelQuery(intents: intents).entities(for: ["launch"]).map(\.content) == [""])
+        let behind = try #require(store.target).identifier
+        #expect(try await ChannelQuery(intents: intents).entities(for: [behind]).map(\.content) == [""])
 
         #expect(session.select(page.id))
         await session.loadTask?.value
@@ -1934,7 +1971,8 @@ struct ShellTests {
             model.selectedChannelID = "first"
             let store = try #require(model.selectedStore)
             model.visibleChannelID = "first"
-            model.screenEntity = .channel("first")
+            let first = try #require(model.target("first"))
+            model.screenEntity = .channel(first)
             @MainActor func shownChannel() -> ChannelStore? { if case .channel(let shown) = model.onScreen { shown } else { nil } }
             #expect(model.onScreen == nil)
 
@@ -1947,11 +1985,11 @@ struct ShellTests {
             model.visibleChannelID = "second"
             #expect(model.onScreen == nil)
             model.visibleChannelID = "first"
-            model.screenEntity = .channel("second")
+            model.screenEntity = .channel(try #require(model.target("second")))
             #expect(model.onScreen == nil)
 
             let artifact = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: "Plan")
-            model.screenEntity = .artifact(channelID: "first", artifactID: artifact.id)
+            model.screenEntity = .artifact(first, artifactID: artifact.id)
             #expect(model.onScreen == nil)
             let session = model.artifactSession(for: store)
             defer { session.close() }
@@ -1962,6 +2000,14 @@ struct ShellTests {
             }
             #expect(shown === session)
             #expect(owner === store)
+
+            let second = try model.addServer("https://second.example")
+            await second.refresh()
+            let elsewhere = try #require(second.target("first"))
+            model.selection = elsewhere
+            model.visibleChannel = elsewhere
+            model.screenEntity = .channel(elsewhere)
+            #expect(shownChannel()?.target == elsewhere)
 
             model.setScenePhase(.background)
             #expect(model.onScreen == nil)
@@ -1987,7 +2033,7 @@ struct ShellTests {
                 host.view.layoutIfNeeded()
                 await Task.yield()
             } while model.screenEntity == nil && ContinuousClock.now < deadline
-            #expect(model.screenEntity == .channel("first"))
+            #expect(model.screenEntity == model.target("first").map { .channel($0) })
 
             model.selectedChannelID = nil
             repeat {
@@ -1996,6 +2042,17 @@ struct ShellTests {
             } while model.screenEntity != nil && ContinuousClock.now < deadline.advanced(by: .seconds(2))
             #expect(model.screenEntity == nil)
         }
+    }
+
+    /// Two servers that each list channels "first" and "second".
+    private func siriCatalogs() async throws -> [ChannelCatalogStore] {
+        var catalogs: [ChannelCatalogStore] = []
+        for server in ["https://fixture.example", "https://second.example"] {
+            let catalog = ChannelCatalogStore(api: try ChannelAPI(serverURL: server, session: fixtureSession()))
+            await catalog.refresh()
+            catalogs.append(catalog)
+        }
+        return catalogs
     }
 
     private func siriStore(_ channel: Channel, messages: [ChannelMessage], request: ChannelMessage?) throws -> ChannelStore {
@@ -2117,6 +2174,11 @@ private final class BadgeFixtureProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+}
+
+extension MobileNotificationRegistration {
+    /// Whether the first server's registration is ready.
+    var isReady: Bool { current.first.map { ready.contains($0.registrationID) } ?? false }
 }
 
 /// Tests that predate several servers name their channels on the first server.

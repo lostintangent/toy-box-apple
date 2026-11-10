@@ -1,15 +1,18 @@
 import AppIntents
 import ChannelClient
+import ChannelKit
 import CoreTransferable
 import Foundation
 
 /// A channel as Siri sees it while it's on screen. The text lives in Content, which the query fills
-/// only for the channel on screen, so Siri reads what the user is looking at and nothing else.
+/// only for the channel on screen, so Siri reads what the user is looking at and nothing else. Its
+/// identifier names the server, so the same channel ID on two servers stays two channels.
 struct ChannelEntity: AppEntity, Identifiable {
     static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Channel", numericFormat: "\(placeholder: .int) channels")
     static let defaultQuery = ChannelQuery()
 
-    let id: String
+    let target: ChannelTarget
+    var id: String { target.identifier }
 
     @Property(title: "Name")
     var name: String
@@ -18,14 +21,10 @@ struct ChannelEntity: AppEntity, Identifiable {
     @Property(title: "Content")
     var content: String
 
-    init(id: String, name: String, content: String = "") {
-        self.id = id
+    init(_ target: ChannelTarget, name: String, content: String = "") {
+        self.target = target
         self.name = name
         self.content = content
-    }
-
-    @MainActor init(_ store: ChannelStore, name: String) {
-        self.init(id: store.id, name: name, content: store.readableText(name: name))
     }
 
     var displayRepresentation: DisplayRepresentation {

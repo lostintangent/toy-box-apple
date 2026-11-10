@@ -65,9 +65,10 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private var installedDelegate = false
     @ObservationIgnored private var enableAfterSettings = false
-    @ObservationIgnored private var configuredAPI: ChannelAPI?
-    @ObservationIgnored private var channels: [Channel] = []
-    @ObservationIgnored private var activeChannelID: String?
+    private var configuredAPIs: [ChannelAPI] = []
+    /// Each server's latest channels, by registration ID.
+    @ObservationIgnored private var channels: [String: [Channel]] = [:]
+    @ObservationIgnored private var activeChannel: ChannelTarget?
     @ObservationIgnored private let replyCategories = ReplyCategoryPublisher()
 
     init(defaults: UserDefaults = .standard,
@@ -109,12 +110,32 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     var isEnabled: Bool { enabled && isAuthorized }
-    var isRegistrationReady: Bool { currentRegistration != nil && registration?.isReady == true }
     var registrationError: String? { registrationSetupError ?? registration?.error }
-    var currentRegistration: MobilePushRegistration? {
-        guard let current = registration?.current,
-              current.serverURL == configuredAPI?.baseURL.absoluteString else { return nil }
-        return current
+
+    /// Each server's registration, in Settings order.
+    var registrations: [MobilePushRegistration] {
+        let servers = Set(configuredAPIs.map(\.baseURL.absoluteString))
+        return registration?.current.filter { servers.contains($0.serverURL) } ?? []
+    }
+
+    /// A server's registration, however its address is spelled.
+    func registration(for serverURL: String) -> MobilePushRegistration? {
+        guard let server = ChannelWaitingRequest.normalizedServer(serverURL) else { return nil }
+        return registrations.first { ChannelWaitingRequest.normalizedServer($0.serverURL) == server }
+    }
+
+    func registration(id: String) -> MobilePushRegistration? {
+        registrations.first { $0.registrationID == id }
+    }
+
+    func isReady(_ registration: MobilePushRegistration?) -> Bool {
+        guard let registration, registrations.contains(registration) else { return false }
+        return self.registration?.ready.contains(registration.registrationID) == true
+    }
+
+    func registrationError(for registration: MobilePushRegistration?) -> String? {
+        registrationSetupError ?? self.registration?.tokenError
+            ?? registration.flatMap { self.registration?.failures[$0.registrationID] }
     }
     var canOfferPermissionTip: Bool {
         tipsAvailable && hasLoadedAuthorization && authorization == .notDetermined
@@ -141,14 +162,14 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         prepareRegistration()
     }
 
-    func configure(api: ChannelAPI) {
-        if enabled { pendingBadgeCount = nil }
-        configuredAPI = api
+    /// Takes every server, in Settings order.
+    func configure(apis: [ChannelAPI]) {
+        configuredAPIs = apis
         if installedDelegate { prepareRegistration() }
     }
 
     private func prepareRegistration() {
-        guard let configuredAPI else { return }
+        guard !configuredAPIs.isEmpty else { return }
         do {
             if registration == nil {
                 guard let value = Bundle.main.object(forInfoDictionaryKey: "ToyBoxPushEnvironment") as? String,
@@ -160,12 +181,11 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
                     requestToken: { UIApplication.shared.registerForRemoteNotifications() })
             }
             registration?.onCreated = { [weak self] registration in
-                guard let self, self.currentRegistration == registration else { return }
+                guard let self, self.registrations.contains(registration) else { return }
                 await self.onRegistrationCreated?(registration)
             }
-            if try registration?.select(api: configuredAPI) == true {
-                center.removeAllDeliveredNotifications()
-            }
+            let removed = Set(try registration?.select(apis: configuredAPIs).map(\.registrationID) ?? [])
+            if !removed.isEmpty { Task { await withdraw(registrations: removed) } }
             registrationSetupError = nil
             updateRegistration()
         } catch {
@@ -180,7 +200,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func receivedDeviceToken(_ data: Data) {
-        guard currentRegistration != nil else { return }
+        guard !registrations.isEmpty else { return }
         registration?.receivedToken(data)
     }
 
@@ -258,7 +278,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func updateRegistration() {
-        guard hasLoadedAuthorization, currentRegistration != nil else { return }
+        guard hasLoadedAuthorization, !registrations.isEmpty else { return }
         registration?.update(enabled: isEnabled, requests: requests, completions: completions)
     }
 
@@ -270,29 +290,50 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         updateRegistration()
     }
 
-    func isCurrent(_ payload: ChannelPushPayload) -> Bool {
-        currentRegistration?.registrationID == payload.registrationID
+    /// The channel a push names, on the server its registration belongs to.
+    private func target(of payload: ChannelPushPayload) -> ChannelTarget? {
+        registration(id: payload.registrationID).flatMap {
+            ChannelTarget(serverURL: $0.serverURL, channelID: payload.channelID)
+        }
     }
 
-    func update(channels: [Channel], activeChannelID: String?, withdraw: Bool) async {
-        self.channels = channels
-        self.activeChannelID = activeChannelID
-        guard withdraw, let registrationID = currentRegistration?.registrationID else { return }
-        let delivered = await center.deliveredNotifications().compactMap { notification -> ChannelNotification.Delivered? in
+    /// Takes each server's channels by address, and the channel in front, which stays quiet. Servers in
+    /// `withdrawing` have refreshed since the app resumed, so their notifications that went stale go.
+    func update(channels: [String: [Channel]], activeChannel: ChannelTarget?, withdrawing: Set<String>) async {
+        self.channels = Dictionary(channels.compactMap { server, channels in
+            registration(for: server).map { ($0.registrationID, channels) }
+        }, uniquingKeysWith: { first, _ in first })
+        self.activeChannel = activeChannel
+        let scopes = withdrawing.compactMap { registration(for: $0)?.registrationID }
+        guard !scopes.isEmpty else { return }
+        let delivered = await deliveredNotifications()
+        let stale = scopes.flatMap { scope -> [String] in
+            guard let registration = registration(id: scope), let channels = self.channels[scope] else { return [] }
+            let active = self.activeChannel?.serverURL == ChannelWaitingRequest.normalizedServer(registration.serverURL)
+                ? self.activeChannel?.channelID : nil
+            return ChannelNotification.Delivered.stale(delivered, channels: channels, scope: scope, activeChannelID: active)
+        }
+        if !stale.isEmpty { removeDelivered(stale) }
+    }
+
+    /// Clears a removed server's notifications, which nothing can open or answer now.
+    private func withdraw(registrations: Set<String>) async {
+        let removed = await deliveredNotifications().filter { registrations.contains($0.scope) }
+        if !removed.isEmpty { removeDelivered(removed.map(\.identifier)) }
+    }
+
+    private func deliveredNotifications() async -> [ChannelNotification.Delivered] {
+        await center.deliveredNotifications().compactMap { notification in
             guard let payload = try? ChannelPushPayload(userInfo: notification.request.content.userInfo) else { return nil }
             return ChannelNotification.Delivered(identifier: notification.request.identifier, payload: payload)
         }
-        guard currentRegistration?.registrationID == registrationID else { return }
-        let stale = ChannelNotification.Delivered.stale(delivered, channels: self.channels, scope: registrationID,
-                                              activeChannelID: self.activeChannelID)
-        if !stale.isEmpty { removeDelivered(stale) }
     }
 
     func presentation(for payload: ChannelPushPayload?, category: String,
                       badge: NSNumber? = nil) -> UNNotificationPresentationOptions {
         guard isEnabled else { return [] }
         if payload == nil, category.isEmpty, badge != nil { return [.badge] }
-        if let payload, isCurrent(payload), payload.channelID == activeChannelID { return [] }
+        if let payload, let activeChannel, target(of: payload) == activeChannel { return [] }
         return category == ChannelNotificationCategory.completion ? [.list] : [.banner, .list, .sound]
     }
 
@@ -309,13 +350,13 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         case ChannelNotificationCategory.reply:
             await sendReply(payload, text: text, handle: handle, server: server, identifier: identifier)
         case UNNotificationDefaultActionIdentifier:
-            guard isCurrent(payload), let currentRegistration else {
-                Self.logger.info("Ignored an alert from a previous notification registration.")
+            guard let registration = registration(id: payload.registrationID) else {
+                Self.logger.info("Ignored an alert from a removed server's notification registration.")
                 return
             }
             await onActivate?(Activation(
                 channel: .init(channelID: payload.channelID, kind: payload.kind, sequence: payload.sequence),
-                serverURL: currentRegistration.serverURL))
+                serverURL: registration.serverURL))
         default:
             break
         }
@@ -327,7 +368,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     private func sendReply(_ payload: ChannelPushPayload, text: String?, handle: String?, server: String?,
                            identifier: String) async {
         guard let reply = ChannelNotification.Reply(text ?? "", to: handle), let onReply else { return }
-        let server = server ?? (isCurrent(payload) ? currentRegistration?.serverURL : nil)
+        let server = server ?? registration(id: payload.registrationID)?.serverURL
         guard let server = server.flatMap(URL.init(string:)) else {
             Self.logger.notice("Dropped a reply to a notification from an earlier server that doesn't name it.")
             return

@@ -190,7 +190,7 @@ struct RootView: View {
         overview.reset()
         let generation = model.beginHandoffNavigation()
         Task {
-            await handoff.continueActivity(activity, catalogs: { model.catalog.map { [$0] } ?? [] }) { catalog, id in
+            await handoff.continueActivity(activity, catalogs: { model.catalogs }) { catalog, id in
                 if let target = catalog.target(id) { model.openHandoffChannel(target, generation: generation) }
             }
         }
