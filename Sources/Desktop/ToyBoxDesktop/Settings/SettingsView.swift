@@ -18,10 +18,7 @@ struct SettingsView: View {
     @AppStorage(DockAttention.enabledKey) private var bounceDockForRequests = false
     @AppStorage(MorningDigest.enabledKey) private var morningDigestEnabled = true
     @AppStorage(MorningDigest.timeKey) private var morningDigestMinutes = 480
-    @ViewState private var connection = ServerConnectionProbe()
-    @ViewState private var configurationFailure: String?
     @ViewState private var isEnabling = false
-    @ViewState private var confirmsServerChange = false
     /// Read on appear and whenever the app becomes active, since the service can't be observed.
     @ViewState private var intelligenceAvailability: IntelligenceAvailability?
 
@@ -31,12 +28,9 @@ struct SettingsView: View {
             fitted(notifications).tabItem { Label("Notifications", systemImage: "bell") }
         }
         .onAppear {
-            connection.address = model.serverURL
             intelligenceAvailability = intelligence.availability
             model.openAtLogin.refresh()
         }
-        .onDisappear { connection.cancel() }
-        .onChange(of: connection.address) { _, _ in configurationFailure = nil }
         .task {
             for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
                 intelligenceAvailability = intelligence.availability
@@ -50,51 +44,11 @@ struct SettingsView: View {
         .onChange(of: model.notifications.authorization) { _, status in
             if status == .denied { notificationsEnabled = false }
         }
-        .confirmationDialog("Switch Toy Box servers?", isPresented: $confirmsServerChange) {
-            Button("Switch Server") { useServer() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Live connections to \(model.serverURL) will close. Drafts stay saved separately for each server.")
-        }
     }
 
     private var general: some View {
-        @Bindable var connection = connection
-        return Form {
-            Section {
-                TextField("Server URL", text: $connection.address)
-                    .textContentType(.URL)
-                    .onSubmit { requestServerChange() }
-                Text("Use an HTTP or HTTPS URL, including any server path prefix.")
-                    .font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    Button(connection.isConnecting ? "Connecting..." : "Test Connection") {
-                        configurationFailure = nil
-                        connection.start()
-                    }
-                        .disabled(connection.isConnecting || validationError != nil)
-                    if connection.isConnecting { ProgressView().controlSize(.small) }
-                    Spacer()
-                    Button("Use Server") { requestServerChange() }
-                        .disabled(connection.address == model.serverURL || validationError != nil || connection.isConnecting)
-                }
-                if let validationError {
-                    errorLabel(validationError)
-                }
-                switch connection.phase {
-                case .connected(let url, let count)?:
-                    Label(Self.connectionSummary(serverURL: url.absoluteString, channelCount: count),
-                          systemImage: "checkmark.circle")
-                        .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                case .failed(let address, let error)?:
-                    errorLabel("Couldn't connect to \(address): \(error.localizedDescription)")
-                case .connecting?, nil:
-                    EmptyView()
-                }
-                if let configurationFailure {
-                    errorLabel(configurationFailure)
-                }
-            }
+        Form {
+            ServerSettings()
             Section {
                 Picker("Appearance", selection: $appearance) {
                     ForEach(AppAppearance.allCases) { value in Text(value.title).tag(value) }
@@ -335,22 +289,6 @@ struct SettingsView: View {
             Image(systemName: "exclamationmark.circle").foregroundStyle(.red)
         }
         .font(.caption).textSelection(.enabled)
-    }
-
-    private var validationError: String? {
-        connection.validationError
-    }
-
-    private func requestServerChange() {
-        guard validationError == nil, connection.address != model.serverURL else { return }
-        confirmsServerChange = true
-    }
-
-    private func useServer() {
-        model.configure(serverURL: connection.address)
-        connection.address = model.serverURL
-        connection.cancel()
-        configurationFailure = model.configurationError
     }
 
     static func connectionSummary(serverURL: String, channelCount: Int) -> String {

@@ -227,7 +227,8 @@ struct ShellTests {
                 return try await api.catalog()
             }
             let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
-            let host = UIHostingController(rootView: SettingsView(connection: connection).environment(model))
+            let page = ServerSettingsView(catalog: model.catalog, connection: connection)
+            let host = UIHostingController(rootView: NavigationStack { page }.environment(model))
             window.rootViewController = host
             window.isHidden = false
             defer { window.isHidden = true }
@@ -260,6 +261,7 @@ struct ShellTests {
             let switched = MobileAutomationTree(windows: [window]).elements
             #expect(switched.first { $0.identifier == "server-test" }?.value == "Connected",
                     "\(switched.map(\.label))")
+            #expect(model.catalogs.count == 1, "The page's server moved rather than adding another.")
         }
     }
 
@@ -698,9 +700,9 @@ struct ShellTests {
             await badges.waitForCalls(3)
             #expect(badges.counts == [2, 2, 0])
 
-            try model.configure(serverURL: "https://other.example")
+            try model.changeAddress(of: #require(model.catalog), to: "https://other.example")
             model.cover = nil
-            try model.configure(serverURL: "https://\(host)")
+            try model.changeAddress(of: #require(model.catalog), to: "https://\(host)")
             try serve([channels[0]])
             await model.catalog?.refresh()
             await badges.waitForCalls(4)
@@ -923,7 +925,7 @@ struct ShellTests {
             await waitFor(.available, for: first)
             #expect(notifications.isRegistrationReady)
 
-            try model.configure(serverURL: "https://second.example")
+            try model.changeAddress(of: #require(model.catalog), to: "https://second.example")
             let secondAPI = try #require(model.api)
             try registration.select(api: secondAPI)
             let second = try #require(model.catalog?.channel(id: "first"))
@@ -1152,7 +1154,7 @@ struct ShellTests {
             model.openHandoffChannel(id: "first", generation: generation)
             #expect(model.selectedChannelID == "second")
             let beforeSwitch = model.beginHandoffNavigation()
-            try model.configure(serverURL: "https://another.example")
+            try model.changeAddress(of: #require(model.catalog), to: "https://another.example")
             model.openHandoffChannel(id: "first", generation: beforeSwitch)
             #expect(model.selectedChannelID == nil)
             #expect(model.serverURL == "https://another.example")
@@ -1249,20 +1251,40 @@ struct ShellTests {
             let environment = AppModel(arguments: [], environment: ["TOY_BOX_SERVER_URL": "https://environment.example"],
                                        defaults: defaults)
             #expect(environment.serverURL == "https://environment.example")
+            #expect(defaults.string(forKey: "serverURL") == "https://saved.example/prefix")
             let saved = AppModel(arguments: [], environment: [:], defaults: defaults)
             #expect(saved.serverURL == "https://saved.example/prefix")
-            #expect(defaults.string(forKey: "serverURL") == "https://saved.example/prefix")
+            #expect(ChannelCatalogStore.Saved.load(from: defaults) == [.init(url: "https://saved.example/prefix")])
         }
     }
 
-    @Test func anInvalidSavedServerReportsAConfigurationError() async {
+    @Test func anInvalidSavedServerIsDroppedSoWelcomeAsksForOne() async {
         await withDefaults { defaults in
             defaults.set("not-a-server", forKey: "serverURL")
             let model = AppModel(arguments: [], environment: [:], defaults: defaults)
             #expect(model.catalog == nil)
-            #expect(model.configurationError != nil)
-            #expect(model.serverURL == "not-a-server")
-            #expect(defaults.string(forKey: "serverURL") == "not-a-server")
+            #expect(model.configurationError == nil)
+            #expect(model.serverURL.isEmpty)
+            #expect(defaults.string(forKey: "serverURL") == nil)
+        }
+    }
+
+    @Test func settingsKeepsEveryServerInItsOrderAndTheLastOneStays() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: [], environment: [:], defaults: defaults, session: fixtureSession())
+            let first = try model.addServer("https://first.example")
+            let second = try model.addServer("https://second.example")
+            #expect(try model.addServer("https://second.example") === second)
+            #expect(try model.changeAddress(of: first, to: "https://second.example") === second)
+            model.rename(second, to: "  Work ")
+            model.moveServers(fromOffsets: [1], toOffset: 0)
+            #expect(model.catalog === second)
+            #expect(model.serverURL == "https://second.example")
+            model.removeServer(first)
+            model.removeServer(second)
+            #expect(model.catalogs.count == 1 && model.catalog === second)
+            let relaunched = AppModel(arguments: [], environment: [:], defaults: defaults)
+            #expect(relaunched.catalogs.map(\.saved) == [.init(url: "https://second.example", name: "Work")])
         }
     }
 
@@ -1290,7 +1312,7 @@ struct ShellTests {
             #expect(model.configurationError == nil)
             #expect(defaults.string(forKey: "serverURL") == nil)
             #expect(model.channelURL(channelID: "first") == nil)
-            try model.configure(serverURL: "https://fixture.example")
+            try model.addServer("https://fixture.example")
             #expect(model.channelURL(channelID: "first") != nil)
         }
     }
@@ -1448,7 +1470,7 @@ struct ShellTests {
             interaction.isArtifactViewerPresented = true
             let replacement: ChannelStore
             if changingServer {
-                try model.configure(serverURL: "https://second.example")
+                try model.changeAddress(of: #require(model.catalog), to: "https://second.example")
                 replacement = try #require(model.catalog?.channel(id: store.id))
             } else {
                 replacement = ChannelStore(id: store.id, api: store.api)
@@ -1606,35 +1628,31 @@ struct ShellTests {
             model.selectedChannelID = "first"
             let previousStore = model.selectedStore
             let previousInteraction = model.interaction(for: "first")
-            try model.configure(serverURL: "https://second.example")
+            try model.changeAddress(of: #require(model.catalog), to: "https://second.example")
             #expect(model.selectedStore == nil)
             #expect(previousStore?.isTrying == false)
             #expect(model.interaction(for: "first") !== previousInteraction)
             #expect(defaults.dictionary(forKey: "lastChannelByServer")?["https://first.example"] as? String == "first")
-            #expect(defaults.string(forKey: "serverURL") == "https://second.example")
+            #expect(defaults.data(forKey: ChannelCatalogStore.Saved.key) == nil, "A launch server stays in the session.")
         }
     }
 
-    @Test func staleServerConfirmationLeavesTheCurrentServerAndSelectionUntouched() async throws {
+    @Test func anAddressAlreadyListedFindsThatServerAndLeavesTheFirstUntouched() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://first.example"], environment: [:],
                                  defaults: defaults, session: fixtureSession())
-            let confirmedOldAddress = model.serverURL
-            try model.configure(serverURL: "https://second.example/prefix")
+            let first = try #require(model.catalog)
+            let second = try model.addServer("https://second.example/prefix")
             model.selectedChannelID = "second"
             model.visibleChannelID = "second"
-            let catalog = model.catalog
             let store = model.selectedStore
             let interaction = model.interaction(for: "second")
-            #expect(throws: ServerSwitchFailure.self) {
-                try model.switchServer(to: "https://third.example", replacing: confirmedOldAddress)
-            }
-            #expect(model.serverURL == "https://second.example/prefix")
-            #expect(model.catalog === catalog)
+            #expect(try model.changeAddress(of: first, to: "https://second.example/prefix") === second)
+            #expect(model.catalogs.count == 2 && model.catalog === first && model.catalogs.last === second)
+            #expect(model.serverURL == "https://first.example")
             #expect(model.selectedStore === store)
             #expect(model.visibleChannelID == "second")
             #expect(model.interaction(for: "second") === interaction)
-            #expect(defaults.string(forKey: "serverURL") == model.serverURL)
         }
     }
 
@@ -1647,7 +1665,7 @@ struct ShellTests {
             let catalog = model.catalog
             let store = model.selectedStore
             #expect(throws: ChannelAPIError.invalidServerURL) {
-                try model.switchServer(to: "file:///not-a-server", replacing: model.serverURL)
+                try model.changeAddress(of: #require(catalog), to: "file:///not-a-server")
             }
             #expect(model.serverURL == "https://first.example")
             #expect(model.catalog === catalog)
@@ -1688,11 +1706,11 @@ struct ShellTests {
             model.visibleChannelID = firstStore.id
             model.setScenePhase(.active)
             #expect(firstStore.isTrying)
-            try model.switchServer(to: secondAddress, replacing: firstAddress)
+            try model.changeAddress(of: #require(model.catalog), to: secondAddress)
             #expect(!firstStore.isTrying)
             #expect(model.selectedStore == nil)
             #expect(model.visibleChannelID == nil)
-            #expect(defaults.string(forKey: "serverURL") == secondAddress)
+            #expect(model.serverURL == secondAddress)
             await model.refreshCatalog()
             #expect(model.selectedChannelID == nil)
             let secondStore = try #require(model.catalog?.channel(id: "first"))
@@ -1702,7 +1720,7 @@ struct ShellTests {
             #expect(secondDraft.text.isEmpty)
             secondDraft.text = "Draft for the second server"
             model.selectedChannelID = "second"
-            try model.switchServer(to: firstAddress, replacing: secondAddress)
+            try model.changeAddress(of: #require(model.catalog), to: firstAddress)
             await model.refreshCatalog()
             #expect(model.selectedChannelID == "first")
             let restoredStore = try #require(model.selectedStore)
@@ -1769,7 +1787,7 @@ struct ShellTests {
 
             let replacement = ChannelStore(id: first.id, api: first.api)
             #expect(model.composerSession(for: replacement) !== session)
-            try model.configure(serverURL: "https://second.example")
+            try model.changeAddress(of: #require(model.catalog), to: "https://second.example")
             #expect(secondSession == nil)
             model.selectedChannelID = "first"
             let changedServer = try #require(model.selectedStore)
