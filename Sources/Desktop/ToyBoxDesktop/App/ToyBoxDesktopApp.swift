@@ -53,8 +53,7 @@ struct ToyBoxDesktopApp: App {
     var body: some Scene {
         let _ = configureWindowActions()
         WindowGroup("Channels", id: "channels", for: ChannelWindowValue.self) { $value in
-            root(channel: value.flatMap { ChannelTarget(serverURL: $0.serverURL, channelID: $0.channelID) }
-                ?? model.launchOptions.channelID.flatMap { model.target($0) })
+            root(channel: value.flatMap { ChannelTarget(serverURL: $0.serverURL, channelID: $0.channelID) })
         }
         .defaultSize(width: CGFloat(model.launchOptions.width), height: CGFloat(model.launchOptions.height))
         // Wait for the open-application event before deciding whether to open a first window.

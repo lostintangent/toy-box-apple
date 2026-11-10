@@ -51,6 +51,10 @@ final class AppModel {
     @ObservationIgnored let connections = ChannelConnections()
     @ObservationIgnored private let launchChannel = LaunchChannel()
     @ObservationIgnored private var launchChannelID: String?
+    /// The channel `--channel` names, on the first server in Settings order whose catalog lists it,
+    /// like any reference that doesn't name its server. It resolves to nil once every server has
+    /// answered without it.
+    @ObservationIgnored private(set) var launchTarget: Task<ChannelTarget?, Never>?
     @ObservationIgnored private var windows: [UUID: ChannelTarget] = [:]
     @ObservationIgnored private var keyWindowID: UUID?
     /// What each channel window shows Siri.
@@ -99,6 +103,10 @@ final class AppModel {
         if catalogs.isEmpty { configurationError = failure?.localizedDescription }
         serversDidChange()
         if !launchOptions.isSnapshot { launchChannelID = launchChannel.channelID(serverURL: self.serverURL) }
+        launchTarget = launchOptions.channelID.map { id in
+            let catalogs = catalogs
+            return Task { await catalogs.first(listing: id)?.target(id) }
+        }
         notifications.onActivate = { [weak self] activation in
             self?.activate(ChannelTarget(serverURL: activation.serverURL, channelID: activation.channel.channelID),
                            sequence: activation.channel.sequence)
