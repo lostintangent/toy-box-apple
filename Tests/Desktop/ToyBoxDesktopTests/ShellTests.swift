@@ -1708,28 +1708,30 @@ struct SiriOnScreenTests {
                                       content: .text("Can you **check** the build?")), request],
             request: request)))
         var shown: ChannelIntents.OnScreen? = .channel(store)
-        let context = intents(api: api, channels: [launch, channel("other", "Other")]) { shown }
+        let context = intents(channels: [launch, channel("other", "Other")]) { shown }
         let text = store.readableText(name: "Launch")
         #expect(text.contains("Ship it?"))
+        let launchID = try #require(store.target).identifier
+        let otherID = try Self.target("other").identifier
 
         // Siri resolves the window's channel from its live store.
-        let resolved = try await context.entities(for: ["launch"])
+        let resolved = try await context.entities(for: [launchID])
         #expect(resolved.map(\.content) == [text])
         let exported = try await #require(resolved.first).exported(as: .utf8PlainText)
         #expect(String(decoding: exported, as: UTF8.self) == text)
 
         // Any other channel keeps only what the sidebar shows, and so does Shortcuts' list.
-        let named = try await context.entities(for: ["launch", "other", "missing"])
-        #expect(named.map(\.id) == ["launch", "other"])
+        let named = try await context.entities(for: [launchID, otherID, "missing"])
+        #expect(named.map(\.id) == [launchID, otherID])
         #expect(named.map(\.content) == [text, ""])
         #expect(try await context.entities().map(\.content) == [text, ""])
 
         // Once the window shows an artifact or nothing Siri may read, the channel keeps only its name.
         shown = .artifact(ChannelArtifactSession(decodeImage: { _, _, _ in throw ChannelAttachmentError.invalidImage }),
                           in: store)
-        #expect(try await context.entities(for: ["launch"]).map(\.content) == [""])
+        #expect(try await context.entities(for: [launchID]).map(\.content) == [""])
         shown = nil
-        #expect(try await context.entities(for: ["launch"]).map(\.content) == [""])
+        #expect(try await context.entities(for: [launchID]).map(\.content) == [""])
     }
 
     @Test func siriReadsTheOpenMarkdownArtifactAndOnlyNamesOtherKinds() async throws {
@@ -1748,7 +1750,7 @@ struct SiriOnScreenTests {
                                    url: "/api/serve/launch/page.html")
         let store = ChannelStore(id: "launch", api: try ChannelAPI(serverURL: "https://fixture.example"))
         session.configure(api: store.api, channelID: "launch", artifacts: [plan, page])
-        let context = intents(api: nil) { .artifact(session, in: store) }
+        let context = intents { .artifact(session, in: store) }
         let planID = ArtifactEntity.id(channelID: "launch", artifactID: plan.id)
         let pageID = ArtifactEntity.id(channelID: "launch", artifactID: page.id)
         #expect(context.artifacts(for: [planID]).isEmpty)
@@ -1779,31 +1781,35 @@ struct SiriOnScreenTests {
         let session = ChannelArtifactSession(decodeImage: { _, _, _ in throw ChannelAttachmentError.invalidImage },
                                              download: { _, _ in throw URLError(.cannotConnectToHost) })
         defer { session.close() }
-        func shown(_ entity: ScreenEntity, in front: NSWindow? = nil, server: ChannelCatalogStore? = nil) -> String? {
+        let launch = try Self.target("launch")
+        func shown(_ entity: ScreenEntity, in front: NSWindow? = nil, catalogs: [ChannelCatalogStore]? = nil) -> String? {
             let screen = ChannelIntents.Screen(window: window, entity: entity, artifacts: session)
-            return switch ChannelIntents.Screen.onScreen(in: front ?? window, screens: [screen], catalog: server ?? catalog) {
+            return switch ChannelIntents.Screen.onScreen(in: front ?? window, screens: [screen],
+                                                         catalogs: catalogs ?? [catalog]) {
             case .channel(let shown): "channel \(shown.id)"
             case .artifact(let shown, let owner): "artifact \(owner.id)/\(shown.artifact?.id ?? "")"
             case nil: nil
             }
         }
 
-        #expect(shown(.channel("launch")) == "channel launch")
+        #expect(shown(.channel(launch)) == "channel launch")
         // Another window in front, like Settings, shows Siri nothing.
-        #expect(shown(.channel("launch"), in: NSWindow()) == nil)
-        // Neither does a channel with no store, like one from the server you just left.
-        #expect(shown(.channel("other")) == nil)
+        #expect(shown(.channel(launch), in: NSWindow()) == nil)
+        // Neither does a channel with no store, or one on a server you removed.
+        #expect(shown(.channel(try Self.target("other"))) == nil)
         let next = ChannelCatalogStore(api: try ChannelAPI(serverURL: "https://next.example"))
-        #expect(shown(.channel("launch"), server: next) == nil)
-        // Once the window loads it there, Siri reads the new server's store.
-        let moved = next.channel(id: "launch")
-        let screen = ChannelIntents.Screen(window: window, entity: .channel("launch"), artifacts: session)
-        if case .channel(let resolved) = ChannelIntents.Screen.onScreen(in: window, screens: [screen], catalog: next) {
-            #expect(resolved === moved)
-        } else { Issue.record("The window should show the new server's channel") }
+        #expect(shown(.channel(launch), catalogs: [next]) == nil)
+        // The same channel ID on another server reads that server's store.
+        let elsewhere = next.channel(id: "launch")
+        let screen = ChannelIntents.Screen(window: window, entity: .channel(try #require(elsewhere.target)),
+                                           artifacts: session)
+        if case .channel(let resolved) = ChannelIntents.Screen.onScreen(in: window, screens: [screen],
+                                                                         catalogs: [catalog, next]) {
+            #expect(resolved === elsewhere)
+        } else { Issue.record("The window should show the other server's channel") }
 
         let artifact = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: "Plan")
-        let open = ScreenEntity.artifact(channelID: "launch", artifactID: artifact.id)
+        let open = ScreenEntity.artifact(launch, artifactID: artifact.id)
         #expect(shown(open) == nil)
         session.configure(api: store.api, channelID: "launch", artifacts: [artifact])
         session.open(artifact)
@@ -1814,7 +1820,8 @@ struct SiriOnScreenTests {
     }
 
     @Test func spotlightNeverGetsTheContent() throws {
-        let entity = ChannelEntity(id: "launch", name: "Launch", purpose: "Ship the app", content: "Siri-only text")
+        let entity = ChannelEntity(try Self.target("launch"), name: "Launch", purpose: "Ship the app",
+                                   content: "Siri-only text")
         let archive = try NSKeyedArchiver.archivedData(withRootObject: entity.attributeSet, requiringSecureCoding: true)
         #expect(archive.range(of: Data("Ship the app".utf8)) != nil)
         #expect(archive.range(of: Data("Siri-only text".utf8)) == nil)
@@ -1828,10 +1835,15 @@ struct SiriOnScreenTests {
                 updatedAt: "2026-11-05T12:00:00Z")
     }
 
-    private func intents(api: ChannelAPI?, channels: [Channel] = [],
+    private static func target(_ id: String) throws -> ChannelTarget {
+        try #require(ChannelTarget(serverURL: "https://fixture.example", channelID: id))
+    }
+
+    private func intents(channels: [Channel] = [],
                          onScreen: @escaping @MainActor () -> ChannelIntents.OnScreen?) -> ChannelIntents {
-        ChannelIntents(host: .init(api: { api }, channels: { channels }, store: { _ in nil }, hold: { _ in },
-                                   release: { _ in }, send: { _ in Issue.record("Reading never sends") },
-                                   open: { _ in }, onScreen: onScreen))
+        ChannelIntents(host: .init(api: { _ in nil },
+                                   channels: { try channels.map { .init(target: try Self.target($0.id), channel: $0) } },
+                                   store: { _ in nil }, hold: { _ in }, release: { _ in },
+                                   send: { _ in Issue.record("Reading never sends") }, open: { _ in }, onScreen: onScreen))
     }
 }

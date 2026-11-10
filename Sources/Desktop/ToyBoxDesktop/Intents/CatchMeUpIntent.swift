@@ -26,7 +26,7 @@ struct CatchMeUpIntent: AppIntent {
 
     /// Siri says the headline beside the card, and everything when it can't show one.
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog & ShowsSnippetIntent {
-        let answer = try await context.catchUp(channelID: channel?.id)
+        let answer = try await context.catchUp(channel: channel?.target)
         guard let card = answer.card else {
             return .result(value: answer.spoken, dialog: "\(answer.spoken)", snippetIntent: EmptySnippetIntent())
         }

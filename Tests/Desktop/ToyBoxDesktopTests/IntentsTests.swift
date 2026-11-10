@@ -15,17 +15,17 @@ struct IntentsTests {
     // MARK: Entity and query
 
     @Test func entityMirrorsTheSidebar() {
-        let waiting = ChannelEntity(channel("a", "Studio demo", latest: 15, seen: 9, request: 15))
+        let waiting = ChannelEntity(listed(channel("a", "Studio demo", latest: 15, seen: 9, request: 15)))
         #expect(waiting.name == "Studio demo" && waiting.unreadCount == 6)
         #expect(waiting.needsReply && !waiting.tasksCompleted)
         #expect(subtitle(waiting) == "Needs your reply")
 
-        let finished = ChannelEntity(channel("b", "Docs", latest: 5, seen: 3, completed: 5))
+        let finished = ChannelEntity(listed(channel("b", "Docs", latest: 5, seen: 3, completed: 5)))
         #expect(finished.tasksCompleted && !finished.needsReply)
         #expect(subtitle(finished) == "All tasks completed")
 
-        #expect(subtitle(ChannelEntity(channel("c", "Notes", latest: 5, seen: 3))) == "Unread messages")
-        let quiet = ChannelEntity(channel("d", "Quiet", latest: 4, seen: 4))
+        #expect(subtitle(ChannelEntity(listed(channel("c", "Notes", latest: 5, seen: 3)))) == "Unread messages")
+        let quiet = ChannelEntity(listed(channel("d", "Quiet", latest: 4, seen: 4)))
         #expect(quiet.unreadCount == 0 && quiet.attention == nil && subtitle(quiet) == nil)
     }
 
@@ -33,10 +33,10 @@ struct IntentsTests {
         let entities = [
             channel("1", "Café ideas"), channel("2", "Studio demo"), channel("3", "Demo studio"),
             channel("4", "studio-demo-2"),
-        ].map(ChannelEntity.init)
-        #expect(ChannelQuery.matching("STUDIO-DEMO", in: entities).map(\.id) == ["2", "4"])
-        #expect(ChannelQuery.matching("demo", in: entities).map(\.id) == ["3", "2", "4"])
-        #expect(ChannelQuery.matching("cafe", in: entities).map(\.id) == ["1"])
+        ].map { ChannelEntity(listed($0)) }
+        #expect(ChannelQuery.matching("STUDIO-DEMO", in: entities).map(\.target.channelID) == ["2", "4"])
+        #expect(ChannelQuery.matching("demo", in: entities).map(\.target.channelID) == ["3", "2", "4"])
+        #expect(ChannelQuery.matching("cafe", in: entities).map(\.target.channelID) == ["1"])
         #expect(ChannelQuery.matching("  ", in: entities).count == 4)
         #expect(ChannelQuery.matching("roadmap", in: entities).isEmpty)
     }
@@ -44,15 +44,15 @@ struct IntentsTests {
     // MARK: Spotlight
 
     @Test func spotlightGetsTheNameAndPurposeButNeverTheAttention() throws {
-        let entity = ChannelEntity(channel("a", "Studio demo", purpose: "  Ship the demo  \nThen the docs",
-                                           latest: 15, seen: 9, request: 15))
+        let entity = ChannelEntity(listed(channel("a", "Studio demo", purpose: "  Ship the demo  \nThen the docs",
+                                                  latest: 15, seen: 9, request: 15)))
         #expect(entity.purpose == "Ship the demo" && subtitle(entity) == "Needs your reply")
         let attributes = entity.attributeSet
         #expect(attributes.displayName == "Studio demo" && attributes.title == "Studio demo")
         #expect(attributes.contentDescription == "Ship the demo" && attributes.thumbnailData == nil)
 
         let png = try #require(ChannelSpotlight.renderIcon())
-        let quiet = ChannelEntity(id: "b", name: "Docs", attention: .unread, thumbnail: png).attributeSet
+        let quiet = ChannelEntity(target("b"), name: "Docs", attention: .unread, thumbnail: png).attributeSet
         #expect(quiet.contentDescription == nil && quiet.thumbnailData == png)
 
         let icon = try #require(NSBitmapImageRep(data: png))
@@ -98,70 +98,85 @@ struct IntentsTests {
         #expect(host.revealedRequests.count == 1)
     }
 
-    @Test func spotlightKeepsAnEarlierLaunchsChannelsUntilTheCatalogReplacesThem() {
+    @Test func spotlightKeepsAnEarlierLaunchsChannelsUntilTheCatalogsReplaceThem() {
         typealias Spotlight = ChannelSpotlight
-        let loading = Spotlight.plan(from: nil, to: .init(server: "s", channels: nil))
+        let loading = Spotlight.plan(from: nil, to: .init(channels: nil))
         #expect(loading.plan.isEmpty && loading.indexed == nil)
 
-        let a = Spotlight.Entry(id: "a", name: "Studio demo"), b = Spotlight.Entry(id: "b", name: "Docs")
-        let loaded = Spotlight.plan(from: nil, to: .init(server: "s", channels: [a, b, a]))
+        let a = entry("a", "Studio demo"), b = entry("b", "Docs")
+        let loaded = Spotlight.plan(from: nil, to: .init(channels: [a, b, a]))
         #expect(loaded.plan == .init(removesAll: true, indexes: [a, b]))
-        #expect(loaded.indexed == .init(server: "s", entries: ["a": a, "b": b]))
+        #expect(loaded.indexed == .init(entries: [a.id: a, b.id: b]))
 
-        let noServer = Spotlight.plan(from: nil, to: .init(server: nil, channels: nil))
-        #expect(noServer.plan == .init(removesAll: true) && noServer.indexed == .init(server: nil, entries: [:]))
-        #expect(Spotlight.plan(from: noServer.indexed, to: .init(server: nil, channels: nil)).plan.isEmpty)
+        let noServer = Spotlight.plan(from: nil, to: .init(channels: []))
+        #expect(noServer.plan == .init(removesAll: true) && noServer.indexed == .init(entries: [:]))
+        #expect(Spotlight.plan(from: noServer.indexed, to: .init(channels: [])).plan.isEmpty)
     }
 
-    @Test func spotlightFollowsRenamesAndDeletionsOnTheSameServer() {
-        typealias Spotlight = ChannelSpotlight
-        let a = Spotlight.Entry(id: "a", name: "Studio demo"), b = Spotlight.Entry(id: "b", name: "Docs")
-        let c = Spotlight.Entry(id: "c", name: "Ops")
-        let indexed = Spotlight.Indexed(server: "s", entries: ["a": a, "b": b, "c": c])
-        let renamed = Spotlight.Entry(id: "b", name: "Handbook"), purpose = Spotlight.Entry(id: "a", name: "Studio demo", purpose: "Ship")
-        let d = Spotlight.Entry(id: "d", name: "Design")
-        let next = Spotlight.plan(from: indexed, to: .init(server: "s", channels: [purpose, renamed, d]))
-        #expect(next.plan == .init(removes: ["c"], indexes: [purpose, renamed, d]))
-        #expect(Spotlight.plan(from: next.indexed, to: .init(server: "s", channels: [purpose, renamed, d])).plan.isEmpty)
-        // A catalog reloading for the same server keeps what's there.
-        let reloading = Spotlight.plan(from: indexed, to: .init(server: "s", channels: nil))
-        #expect(reloading.plan.isEmpty && reloading.indexed == indexed)
+    @Test func spotlightKeepsTheLastLaunchsIndexWhileTheOnlyServerFails() async throws {
+        let catalog = ChannelCatalogStore(api: try ChannelAPI(serverURL: "http://127.0.0.1:1"))
+        await catalog.refresh()
+        try #require(catalog.phase.failure != nil && !catalog.isLoaded)
+        let index = FakeSpotlightIndex()
+        let spotlight = ChannelSpotlight(index: index.index, icon: { nil })
+        spotlight.update(.init([catalog]))
+        await spotlight.settle()
+        #expect(index.operations.isEmpty)
+        #expect(ChannelIntents.Listed.spotlight(in: [catalog]) == nil)
+
+        spotlight.update(.init([]))
+        await spotlight.settle()
+        #expect(index.operations == ["remove all"], "Removing the last server empties Spotlight")
     }
 
-    @Test func switchingServersEmptiesSpotlightAtOnce() {
+    @Test func spotlightFollowsRenamesAndDeletions() {
         typealias Spotlight = ChannelSpotlight
-        let a = Spotlight.Entry(id: "a", name: "Studio demo"), x = Spotlight.Entry(id: "x", name: "Roadmap")
-        let switched = Spotlight.plan(from: .init(server: "one", entries: ["a": a]), to: .init(server: "two", channels: nil))
-        #expect(switched.plan == .init(removesAll: true) && switched.indexed == .init(server: "two", entries: [:]))
-        let loaded = Spotlight.plan(from: switched.indexed, to: .init(server: "two", channels: [x]))
-        #expect(loaded.plan == .init(indexes: [x]))
-        let gone = Spotlight.plan(from: loaded.indexed, to: .init(server: nil, channels: nil))
-        #expect(gone.plan == .init(removesAll: true) && gone.indexed == .init(server: nil, entries: [:]))
+        let a = entry("a", "Studio demo"), b = entry("b", "Docs"), c = entry("c", "Ops")
+        let indexed = Spotlight.Indexed(entries: [a.id: a, b.id: b, c.id: c])
+        let renamed = entry("b", "Handbook"), purpose = entry("a", "Studio demo", purpose: "Ship")
+        let d = entry("d", "Design")
+        let next = Spotlight.plan(from: indexed, to: .init(channels: [purpose, renamed, d]))
+        #expect(next.plan == .init(removes: [c.id], indexes: [purpose, renamed, d]))
+        #expect(Spotlight.plan(from: next.indexed, to: .init(channels: [purpose, renamed, d])).plan.isEmpty)
+        // What's there stays while a server you add loads.
+        let loading = Spotlight.plan(from: indexed, to: .init(channels: nil))
+        #expect(loading.plan.isEmpty && loading.indexed == indexed)
+    }
+
+    @Test func eachServersChannelsComeAndGoWithIt() {
+        typealias Spotlight = ChannelSpotlight
+        let a = entry("a", "Studio demo"), elsewhere = entry("a", "Roadmap", on: "https://other.test")
+        let added = Spotlight.plan(from: .init(entries: [a.id: a]), to: .init(channels: [a, elsewhere]))
+        #expect(added.plan == .init(indexes: [elsewhere]) && added.indexed?.entries.count == 2)
+        let removed = Spotlight.plan(from: added.indexed, to: .init(channels: [elsewhere]))
+        #expect(removed.plan == .init(removes: [a.id]))
+        let gone = Spotlight.plan(from: removed.indexed, to: .init(channels: []))
+        #expect(gone.plan == .init(removes: [elsewhere.id]) && gone.indexed == .init(entries: [:]))
     }
 
     @Test func spotlightAppliesChangesInOrderAndStartsOverAfterAFailure() async {
         let index = FakeSpotlightIndex()
         let spotlight = ChannelSpotlight(index: index.index, icon: { Data("icon".utf8) })
-        let a = ChannelSpotlight.Entry(id: "a", name: "Studio demo", purpose: "Ship")
-        let b = ChannelSpotlight.Entry(id: "b", name: "Docs")
-        spotlight.update(.init(server: "s", channels: nil))
-        spotlight.update(.init(server: "s", channels: [a, b]))
-        spotlight.update(.init(server: "s", channels: [a]))
+        let a = entry("a", "Studio demo", purpose: "Ship")
+        let b = entry("b", "Docs")
+        spotlight.update(.init(channels: nil))
+        spotlight.update(.init(channels: [a, b]))
+        spotlight.update(.init(channels: [a]))
         await spotlight.settle()
         #expect(index.operations == ["remove all", "add a b", "remove b"])
         #expect(index.added.allSatisfy { $0.thumbnail == Data("icon".utf8) } && index.added.first?.purpose == "Ship")
 
-        await spotlight.reindex(["a", "b"])
+        await spotlight.reindex([a.id, b.id])
         #expect(index.operations.suffix(2) == ["remove b", "add a"])
         await spotlight.reindex()
         #expect(index.operations.suffix(2) == ["remove all", "add a"])
 
         index.fails = true
-        spotlight.update(.init(server: "s", channels: [a, b]))
+        spotlight.update(.init(channels: [a, b]))
         await spotlight.settle()
         #expect(spotlight.indexed == nil)
         index.fails = false
-        spotlight.update(.init(server: "s", channels: [a, b]))
+        spotlight.update(.init(channels: [a, b]))
         await spotlight.settle()
         #expect(index.operations.suffix(2) == ["remove all", "add a b"])
     }
@@ -176,7 +191,8 @@ struct IntentsTests {
             channel("done", "Done", latest: 6, seen: 2, completed: 6),
             channel("ask", "Ask", latest: 6, seen: 6, request: 6),
         ]
-        #expect(CatchUpAnswer.needingAttention(channels).map(\.id) == ["ask", "done", "newer", "older"])
+        #expect(CatchUpAnswer.needingAttention(channels.map { listed($0) }).map(\.target.channelID)
+            == ["ask", "done", "newer", "older"])
     }
 
     @Test func overviewNamesTheFirstFewChannels() {
@@ -185,12 +201,12 @@ struct IntentsTests {
             channel("done", "Docs", latest: 6, seen: 2, completed: 6),
             channel("design", "Design", latest: 9, seen: 2, updatedAt: "2026-03-01T00:00:00.000Z"),
             channel("ops", "Ops", latest: 9, seen: 2),
-        ])
-        #expect(CatchUpAnswer.overview(needing, newMessages: ["design": 3]) == """
+        ].map { listed($0) })
+        #expect(CatchUpAnswer.overview(needing, newMessages: [target("design"): 3]) == """
             You have updates in 4 channels. Studio demo is waiting for your reply. Docs finished all its \
             tasks. Design has 3 new messages. There's 1 more channel with updates.
             """)
-        #expect(CatchUpAnswer.overview(Array(needing.suffix(2)), newMessages: ["design": 0]) == """
+        #expect(CatchUpAnswer.overview(Array(needing.suffix(2)), newMessages: [target("design"): 0]) == """
             You have updates in 2 channels. Design has new activity. Ops has new messages.
             """)
         #expect(CatchUpAnswer.overview(Array(needing.prefix(1)), newMessages: [:]) == "Studio demo is waiting for your reply.")
@@ -277,7 +293,7 @@ struct IntentsTests {
         #expect(answer.headline == "Lead needs your reply in Studio demo.")
         #expect(answer.spoken.contains("Please review the handoff with Iris and everyone."))
         let card = try #require(answer.card)
-        #expect(card.channelID == "studio-demo" && card.title == "Studio demo" && card.subtitle == "1 new message")
+        #expect(card.channel == target("studio-demo") && card.title == "Studio demo" && card.subtitle == "1 new message")
         #expect(card.caption == "Waiting for your reply \u{00B7} 1 new message")
         #expect(!card.isSummary && card.footnote == nil && !card.isReplied)
         #expect(card.lines.map(\.speaker) == ["Lead", "Ada"])
@@ -360,12 +376,13 @@ struct IntentsTests {
             channel("notes", "Notes", latest: 9, seen: 2, updatedAt: "2026-01-20T00:00:00.000Z"),
             channel("misc", "Misc", latest: 9, seen: 2),
             channel("old", "Old", latest: 9, seen: 2, updatedAt: "2025-01-01T00:00:00.000Z"),
-        ])
-        let answer = CatchUpAnswer.overviewAnswer(needing, newMessages: ["design": 3, "ops": 0])
+        ].map { listed($0) })
+        let answer = CatchUpAnswer.overviewAnswer(needing, newMessages: [target("design"): 3, target("ops"): 0])
         #expect(answer.spoken.hasPrefix("You have updates in 7 channels. Studio demo is waiting for your reply."))
         #expect(answer.headline == "You have updates in 7 channels.")
         let card = try #require(answer.card)
-        #expect(card.channelID == nil && card.title == "Updates in 7 channels" && card.reply == nil)
+        #expect(card.channel == nil && card.title == "Updates in 7 channels" && card.reply == nil)
+        #expect(card.rows.first?.channel == target("ask"))
         #expect(card.rows.map(\.name) == ["Studio demo", "Docs", "Design", "Ops", "Notes"])
         #expect(card.rows.map(\.attention) == ["waiting", "finished", "unread", "unread", "unread"])
         #expect(card.rows.map(\.detail) == ["Waiting for your reply", "Finished all its tasks", "3 new messages",
@@ -415,7 +432,7 @@ struct IntentsTests {
 
     @Test func aReplyWithoutAServerIsNeverConfirmed() async throws {
         let host = TestHost(api: nil)
-        var intent = ReplyIntent(channel: ChannelEntity(id: "c", name: "Docs"), recipient: "Lead", request: 4,
+        var intent = ReplyIntent(channel: ChannelEntity(target("c"), name: "Docs"), recipient: "Lead", request: 4,
                                  message: "Sounds good")
         intent.context = host.context
         await #expect(throws: ChannelIntentError.noServer) { try await intent.perform() }
@@ -427,18 +444,39 @@ struct IntentsTests {
     @Test func sendMessageSavesToTheOutboxFromTheLoadedCatalogWithoutConnecting() async throws {
         let host = TestHost(api: try ChannelAPI(serverURL: "https://server.test"))
         host.channels = [channel("c", "Docs")]
-        var intent = SendMessageIntent(channel: ChannelEntity(id: "c", name: "Docs"), message: "  Ship it\n")
+        var intent = SendMessageIntent(channel: ChannelEntity(target("c"), name: "Docs"), message: "  Ship it\n")
         intent.context = host.context
         _ = try await intent.perform()
         let server = try #require(URL(string: "https://server.test"))
         #expect(host.sent == [.init(text: "Ship it", channelID: "c", server: server, request: nil)])
         #expect(host.confirmations == [.init(channel: "Docs", message: "Ship it")] && host.held.isEmpty)
 
-        var reply = ReplyIntent(channel: ChannelEntity(id: "c", name: "Docs"), recipient: "Design Lead", request: 4,
+        var reply = ReplyIntent(channel: ChannelEntity(target("c"), name: "Docs"), recipient: "Design Lead", request: 4,
                                 message: "Sounds good")
         reply.context = host.context
         _ = try await reply.perform()
         #expect(host.sent.last == .init(text: "@design-lead Sounds good", channelID: "c", server: server, request: 4))
+    }
+
+    @Test func theSameChannelOnTwoServersStaysTwoChannels() async throws {
+        let host = TestHost(api: try ChannelAPI(serverURL: "https://server.test"))
+        host.channels = [channel("c", "Docs")]
+        let other = try ChannelAPI(serverURL: "https://other.test")
+        host.elsewhere = (other, [channel("c", "Roadmap")])
+        var query = ChannelQuery()
+        query.context = host.context
+        let entities = try await query.allEntities()
+        #expect(entities.map(\.name) == ["Docs", "Roadmap"])
+        let roadmap = try #require(entities.last)
+        #expect(try await query.entities(for: [roadmap.id]).map(\.name) == ["Roadmap"])
+        // A shortcut saved before several servers names the channel alone, which means the first server's.
+        #expect(try await query.entities(for: ["c"]).map(\.name) == ["Docs"])
+
+        var intent = SendMessageIntent(channel: roadmap, message: "Ship it")
+        intent.context = host.context
+        _ = try await intent.perform()
+        #expect(host.sent == [.init(text: "Ship it", channelID: "c", server: other.baseURL, request: nil)])
+        #expect(host.confirmations == [.init(channel: "Roadmap", message: "Ship it")])
     }
 
     @Test func sendMessageNamesNoChannelUntilTheCatalogLoads() async throws {
@@ -446,18 +484,18 @@ struct IntentsTests {
         let context = host.context
         context.connectionTimeout = .zero
         await #expect(throws: ChannelIntentError.unreachable) {
-            try await context.send("Hi", to: "c") { _ in }
+            try await context.send("Hi", to: target("c")) { _ in }
         }
         host.channels = [channel("d", "Notes")]
         await #expect(throws: ChannelIntentError.channelNotFound) {
-            try await context.send("Hi", to: "c") { _ in }
+            try await context.send("Hi", to: target("c")) { _ in }
         }
         #expect(host.confirmations.isEmpty && host.sent.isEmpty)
     }
 
     @Test func anEmptyMessageIsNeverConfirmedOrSent() async throws {
         let host = TestHost(api: nil)
-        var intent = SendMessageIntent(channel: ChannelEntity(channel("c", "Docs")), message: " \n ")
+        var intent = SendMessageIntent(channel: ChannelEntity(listed(channel("c", "Docs"))), message: " \n ")
         intent.context = host.context
         await #expect(throws: ChannelIntentError.emptyMessage) { try await intent.perform() }
         #expect(host.confirmations.isEmpty && host.held.isEmpty)
@@ -472,7 +510,7 @@ struct IntentsTests {
     private func answerWithCard(_ state: ChannelState, unreadAfter: Int? = nil,
                                 summary: (catchUp: CatchUp, count: Int)? = nil) -> CatchUpAnswer.Answer {
         let boundary = unreadAfter ?? state.channel.unreadAfter
-        let answer = CatchUpAnswer.channelAnswer(state, unreadAfter: boundary,
+        let answer = CatchUpAnswer.channelAnswer(state, on: target(state.channel.id), unreadAfter: boundary,
                                                  digest: CatchUpDigest(state: state, unreadAfter: boundary), summary: summary)
         #expect(answer.spoken == self.answer(state, unreadAfter: unreadAfter, summary: summary))
         return answer
@@ -502,15 +540,17 @@ extension IntentsTests {
             var query = ChannelQuery()
             query.context = host.context
             let suggested = try await query.suggestedEntities()
-            let studio = try #require(suggested.first { $0.id == "studio-demo" })
+            let studio = try #require(suggested.first { $0.target == target("studio-demo", on: host.server) })
             #expect(studio.name == "Studio demo")
-            #expect(try await query.entities(matching: "studio demo").first?.id == "studio-demo")
-            #expect(try await query.entities(for: ["studio-demo", "missing"]).map(\.id) == ["studio-demo"])
+            #expect(try await query.entities(matching: "studio demo").first?.id == studio.id)
+            #expect(try await query.entities(for: [studio.id, "missing"]).map(\.id) == [studio.id])
+            // A shortcut saved before several servers names the channel alone.
+            #expect(try await query.entities(for: ["studio-demo"]).map(\.id) == [studio.id])
 
             var intent = OpenChannelIntent(target: studio)
             intent.context = host.context
             _ = try await intent.perform()
-            #expect(host.opened == ["studio-demo"])
+            #expect(host.opened == [studio.target])
             #expect(host.held.isEmpty)
         }
 
@@ -519,7 +559,7 @@ extension IntentsTests {
             let host = try await TestHost.demo()
             let channel = try #require(try await host.api?.catalog().channels.first { $0.id == "studio-demo" })
             RequestRecorder.reset()
-            var intent = CatchMeUpIntent(channel: ChannelEntity(channel))
+            var intent = CatchMeUpIntent(channel: ChannelEntity(listed(channel, on: host.server)))
             intent.context = host.context
             let started = ContinuousClock.now
             let value = try #require(try await intent.perform().value)
@@ -537,7 +577,7 @@ extension IntentsTests {
         func catchMeUpWithoutAChannelCoversEveryChannelThatNeedsYou() async throws {
             let host = try await TestHost.demo()
             let api = try #require(host.api)
-            let needing = CatchUpAnswer.needingAttention(try await api.catalog().channels)
+            let needing = CatchUpAnswer.needingAttention(try await api.catalog().channels.map { listed($0, on: host.server) })
             RequestRecorder.reset()
             var intent = CatchMeUpIntent(channel: nil)
             intent.context = host.context
@@ -545,7 +585,7 @@ extension IntentsTests {
             print("Catch Me Up (all channels): \(value)")
             switch needing.count {
             case 0: #expect(value == "You're all caught up.")
-            case 1: #expect(value.contains(needing[0].name) && !value.contains("channels"))
+            case 1: #expect(value.contains(needing[0].channel.name) && !value.contains("channels"))
             default: #expect(value.hasPrefix("You have updates in \(needing.count) channels."))
             }
             #expect(RequestRecorder.requests.allSatisfy { $0.hasPrefix("GET ") })
@@ -558,7 +598,7 @@ extension IntentsTests {
             let api = try #require(host.api)
             let channel = try #require(try await api.catalog().channels.first { $0.id == "studio-demo" })
             let context = host.context
-            let answer = try await context.catchUp(channelID: "studio-demo")
+            let answer = try await context.catchUp(channel: target("studio-demo", on: host.server))
             let card = try #require(answer.card)
             let reply = card.reply
             let recipient = reply?.recipient
@@ -567,7 +607,8 @@ extension IntentsTests {
 
             let text = "Siri reply fixture \(UUID().uuidString.prefix(8))"
             RequestRecorder.reset()
-            var intent = ReplyIntent(channel: ChannelEntity(channel), recipient: recipient, request: reply?.request,
+            var intent = ReplyIntent(channel: ChannelEntity(listed(channel, on: host.server)), recipient: recipient,
+                                     request: reply?.request,
                                      message: text)
             intent.context = context
             _ = try await intent.perform()
@@ -593,7 +634,7 @@ extension IntentsTests {
             let channel = try #require(try await api.catalog().channels.first { $0.id == "studio-demo" })
             let text = "Siri intent fixture \(UUID().uuidString.prefix(8))"
             RequestRecorder.reset()
-            var intent = SendMessageIntent(channel: ChannelEntity(channel), message: "  \(text)\n")
+            var intent = SendMessageIntent(channel: ChannelEntity(listed(channel, on: host.server)), message: "  \(text)\n")
             intent.context = host.context
             _ = try await intent.perform()
 
@@ -613,7 +654,7 @@ extension IntentsTests {
             let channel = try #require(try await host.api?.catalog().channels.first { $0.id == "studio-demo" })
             host.declines = true
             RequestRecorder.reset()
-            var intent = SendMessageIntent(channel: ChannelEntity(channel), message: "Never sent")
+            var intent = SendMessageIntent(channel: ChannelEntity(listed(channel, on: host.server)), message: "Never sent")
             intent.context = host.context
             await #expect(throws: CancellationError.self) { try await intent.perform() }
             #expect(host.confirmations.count == 1 && host.held.isEmpty)
@@ -626,7 +667,7 @@ extension IntentsTests {
             let host = try await TestHost.demo()
             let api = try #require(host.api)
             let context = host.context
-            _ = try await context.catchUp(channelID: "studio-demo")
+            _ = try await context.catchUp(channel: target("studio-demo", on: host.server))
             let before = try #require(host.store("studio-demo")?.state)
             let request = try #require(before.request)
             let agent = try #require(([before.lead] + before.members).first { $0.id == request.sender.agentId })
@@ -665,8 +706,13 @@ private final class FakeSpotlightIndex {
     var fails = false
 
     var index: ChannelSpotlight.Index {
-        .init(add: { entities in try await self.record("add " + entities.map(\.id).joined(separator: " "), entities) },
-              remove: { ids in try await self.record("remove " + ids.joined(separator: " ")) },
+        .init(add: { entities in
+                  try await self.record("add " + entities.map(\.target.channelID).joined(separator: " "), entities)
+              },
+              remove: { ids in
+                  try await self.record("remove " + ids.map { ChannelTarget(identifier: $0)?.channelID ?? $0 }
+                      .joined(separator: " "))
+              },
               removeAll: { try await self.record("remove all") })
     }
 
@@ -683,11 +729,15 @@ private final class TestHost {
     private var stores: [String: ChannelStore] = [:]
     private(set) var holds: [String: Int] = [:]
     private(set) var held: [String] = []
-    private(set) var opened: [String] = []
+    private(set) var opened: [ChannelTarget] = []
     private(set) var confirmations: [ChannelIntents.SendConfirmation] = []
     private(set) var sent: [ChannelIntents.Outgoing] = []
     /// The loaded catalog's channels, or nil before it loads.
     var channels: [Channel]?
+    /// Another server's API and channels, listed after this one's.
+    var elsewhere: (api: ChannelAPI, channels: [Channel])?
+    /// The normalized server the channels are on.
+    var server: String { api.flatMap { ChannelWaitingRequest.normalizedServer($0.baseURL.absoluteString) } ?? testServer }
     /// Delivers what the intents save, as the outbox would. Only the demo server sets it.
     var deliver: (@MainActor (ChannelIntents.Outgoing) async throws -> Void)?
     var declines = false
@@ -696,9 +746,19 @@ private final class TestHost {
     /// Installs a context backed by this host, which intents use until the next is installed.
     var context: ChannelIntents {
         let context = ChannelIntents(host: .init(
-            api: { self.api },
-            channels: { self.channels },
-            store: { self.store($0) },
+            api: { server in
+                [self.api, self.elsewhere?.api].compactMap { $0 }
+                    .first { ChannelWaitingRequest.normalizedServer($0.baseURL.absoluteString) == server }
+            },
+            channels: {
+                guard self.api != nil else { throw ChannelIntentError.noServer }
+                guard let channels = self.channels else { return nil }
+                let elsewhere = self.elsewhere.map { other in
+                    other.channels.map { listed($0, on: other.api.baseURL.absoluteString) }
+                }
+                return channels.map { listed($0, on: self.server) } + (elsewhere ?? [])
+            },
+            store: { $0.serverURL == self.server ? self.store($0.channelID) : nil },
             hold: { store in
                 self.held.append(store.id)
                 self.holds[store.id, default: 0] += 1
@@ -714,8 +774,10 @@ private final class TestHost {
             },
             open: { self.opened.append($0) },
             requests: { self.waitingRequests },
-            isWaiting: { id, request in self.channels?.first { $0.id == id }.map { $0.requestSequence == request } ?? true },
-            revealRequest: { self.revealedRequests.append("\($0):\($1)") }
+            isWaiting: { target, request in
+                self.channels?.first { $0.id == target.channelID }.map { $0.requestSequence == request } ?? true
+            },
+            revealRequest: { self.revealedRequests.append("\($0.channelID):\($1)") }
         ), intelligence: UnavailableIntelligence(), summarizes: { false })
         context.confirmationOverride = { prompt in
             self.confirmations.append(prompt)
@@ -771,6 +833,21 @@ private struct UnavailableIntelligence: ChannelIntelligenceService {
     var availability: IntelligenceAvailability { .unavailable(.modelNotReady) }
     func catchUp(_ request: CatchUpRequest) async -> CatchUpResult { .unavailable(.modelNotReady) }
     func altText(_ request: AltTextRequest) async -> AltText? { nil }
+}
+
+private let testServer = "https://server.test"
+
+private func target(_ id: String, on server: String = testServer) -> ChannelTarget {
+    ChannelTarget(serverURL: server, channelID: id)!
+}
+
+private func listed(_ channel: Channel, on server: String = testServer) -> ChannelIntents.Listed {
+    .init(target: target(channel.id, on: server), channel: channel)
+}
+
+private func entry(_ id: String, _ name: String, purpose: String? = nil,
+                   on server: String = testServer) -> ChannelSpotlight.Entry {
+    .init(target(id, on: server), name: name, purpose: purpose)
 }
 
 private func channel(_ id: String, _ name: String, purpose: String? = nil, latest: Int = 0, seen: Int = 0,

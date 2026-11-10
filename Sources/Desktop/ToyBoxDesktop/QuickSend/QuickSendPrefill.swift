@@ -15,6 +15,8 @@ struct QuickSendPrefill: Identifiable, Sendable {
 }
 
 /// Incoming content is durable before a channel is chosen and never edits a send while it saves.
+/// It reaches a channel on any server, and the server it arrives for decides whether a file becomes
+/// its path.
 @MainActor @Observable
 final class QuickSendPrefillInbox {
     let serverURL: URL
@@ -52,8 +54,8 @@ final class QuickSendPrefillInbox {
 
     @discardableResult
     func apply(to session: AuxiliaryComposerSession) -> Bool {
-        guard draft.revision != lastAppliedRevision, session.store.api.baseURL == serverURL,
-              hasPendingContent, !draft.isLoadingImages, !session.isSubmitting, session.confirmation == nil, session.store.phase != .deleted else { return false }
+        guard draft.revision != lastAppliedRevision, hasPendingContent, !draft.isLoadingImages,
+              !session.isSubmitting, session.confirmation == nil, session.store.phase != .deleted else { return false }
         session.prepareForExternalEdit?()
         let revision = draft.revision
         session.draft.append(contentsOf: draft)

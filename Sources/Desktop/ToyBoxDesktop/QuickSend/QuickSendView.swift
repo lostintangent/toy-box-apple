@@ -6,14 +6,13 @@ import ToyBoxUI
 import UniformTypeIdentifiers
 
 struct QuickSendView: View {
-    var lastUsedChannel: () -> String? = { nil }
     @Environment(AppModel.self) private var model
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.openSettings) private var openSettings
     @AppStorage("textScale") private var textScale = 1.0
     @ViewState private var history: QuickSendTargetHistory?
     @ViewState private var incoming: QuickSendPrefillInbox?
-    @ViewState private var sessions: [String: AuxiliaryComposerSession] = [:]
+    @ViewState private var sessions: [ChannelTarget: AuxiliaryComposerSession] = [:]
     @ViewState private var replySession: AuxiliaryComposerSession?
     @ViewState private var heldStore: ChannelStore?
     @ViewState private var showsChooser = false
@@ -21,21 +20,29 @@ struct QuickSendView: View {
     @ViewState private var isDragging = false
     @ViewState private var catalogConnectingLong = false
 
-    private var channels: [Channel] { model.catalog?.channels ?? [] }
-    private var selectedID: String? { model.quickSend.replyTarget?.channelID ?? history?.selectedID }
+    private var catalogs: [ChannelCatalogStore] { model.catalogs }
+    private var replyChannel: ChannelTarget? {
+        model.quickSend.replyTarget.flatMap { ChannelTarget(serverURL: $0.serverURL, channelID: $0.channelID) }
+    }
+    private var selected: ChannelTarget? { model.quickSend.replyTarget == nil ? history?.selected : replyChannel }
     private var session: AuxiliaryComposerSession? {
-        model.quickSend.replyTarget == nil ? selectedID.flatMap { sessions[$0] } : replySession
+        model.quickSend.replyTarget == nil ? selected.flatMap { sessions[$0] } : replySession
     }
     private var replyItem: MenuBarStatus.Item? {
-        guard let target = model.quickSend.replyTarget else { return nil }
-        let channel = ChannelTarget(serverURL: target.serverURL, channelID: target.channelID)
-        return model.menuBarStatus.waiting.first { $0.target == channel }
+        guard let replyChannel else { return nil }
+        return model.menuBarStatus.waiting.first { $0.target == replyChannel }
     }
-    private var showsHeader: Bool { session != nil || !channels.isEmpty }
+    private var hasChannels: Bool { catalogs.contains { !$0.channels.isEmpty } }
+    private var showsHeader: Bool { session != nil || hasChannels }
     private var channelName: String {
-        guard let selectedID else { return "Choose Channel" }
-        return channels.first { $0.id == selectedID }?.name ?? session?.store.details?.name
-            ?? history?.name(for: selectedID) ?? "Saved Channel"
+        guard let selected else { return "Choose Channel" }
+        return channel(selected)?.name ?? session?.store.details?.name
+            ?? history?.name(for: selected) ?? "Saved Channel"
+    }
+
+    private func catalog(_ target: ChannelTarget) -> ChannelCatalogStore? { catalogs.first(at: target.serverURL) }
+    private func channel(_ target: ChannelTarget) -> Channel? {
+        catalog(target)?.channels.first { $0.id == target.channelID }
     }
 
     var body: some View {
@@ -95,28 +102,20 @@ struct QuickSendView: View {
             if model.quickSend.replyTarget != nil { installReplySession() }
         }
         .onChange(of: model.quickSend.pendingPrefill?.id) { _, _ in receivePendingPrefill() }
-        .onChange(of: model.catalog?.isLoaded) { _, loaded in
-            if loaded == true, model.quickSend.isPresented,
-               selectedID == nil || model.quickSend.replyTarget != nil { chooseInitialTarget() }
+        .onChange(of: catalogs.filter(\.isLoaded).map(ObjectIdentifier.init)) { _, _ in
+            if model.quickSend.isPresented, selected == nil || model.quickSend.replyTarget != nil { chooseInitialTarget() }
         }
-        .onChange(of: selectedID) { _, _ in holdSelectedStore(); applyIncoming() }
+        .onChange(of: selected) { _, _ in holdSelectedStore(); applyIncoming() }
         .onChange(of: session.map(ObjectIdentifier.init)) { _, _ in holdSelectedStore() }
         .onChange(of: session?.draft.revision) { _, _ in trackDraft() }
         .onChange(of: session?.confirmation?.id) { _, _ in applyIncoming() }
         .onChange(of: incoming?.draft.isLoadingImages) { _, _ in applyIncoming() }
         .onChange(of: incoming?.draft.revision) { _, _ in applyIncoming() }
-        .onChange(of: model.serverURL) { _, _ in
-            model.quickSend.dismiss()
-            endPresentation()
-            sessions = [:]
-            replySession = nil
-            history = nil
-            incoming = nil
-        }
+        .onChange(of: catalogs.map(ObjectIdentifier.init)) { _, _ in serversChanged() }
         .onDisappear { endPresentation() }
-        .task(id: model.catalog?.isLoaded) {
+        .task(id: catalogs.contains(where: \.isLoaded)) {
             catalogConnectingLong = false
-            guard model.catalog?.isLoaded == false else { return }
+            guard !catalogs.isEmpty, !catalogs.contains(where: \.isLoaded) else { return }
             do { try await Task.sleep(for: .seconds(1)) }
             catch { return }
             catalogConnectingLong = true
@@ -147,7 +146,7 @@ struct QuickSendView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if model.api == nil {
+            if catalogs.isEmpty {
                 Text("Connect to Toy Box").font(.system(size: 15, weight: .semibold))
                 Text("Set a server in Settings to send a message.").foregroundStyle(.secondary)
                 Button("Open Settings") {
@@ -156,10 +155,11 @@ struct QuickSendView: View {
                     openSettings()
                 }
             } else if let target = model.quickSend.replyTarget {
-                let unavailable = model.catalog?.phase.message != nil || replyItem?.quote != nil
+                let failure = replyChannel.flatMap(catalog)?.phase.message
+                let unavailable = failure != nil || replyItem?.quote != nil
                 Text(unavailable ? "Request preview unavailable" : "Loading request...")
                     .font(.system(size: 15, weight: .semibold))
-                Text(model.catalog?.phase.message ?? (unavailable
+                Text(failure ?? (unavailable
                     ? "The requester is no longer available. Open the channel to review this request."
                     : "The original request is being checked before you reply."))
                     .foregroundStyle(.secondary)
@@ -168,18 +168,18 @@ struct QuickSendView: View {
                     model.activate(ChannelTarget(serverURL: target.serverURL, channelID: target.channelID),
                                    sequence: target.sequence)
                 }
-            } else if model.catalog?.isLoaded == true, channels.isEmpty {
+            } else if catalogs.allSatisfy(\.isLoaded), !hasChannels {
                 Text("No channels yet").font(.system(size: 15, weight: .semibold))
                 Text("Open Toy Box to create one.").foregroundStyle(.secondary)
                 Button("Open Toy Box") {
                     model.quickSend.dismiss()
                     model.activate(nil)
                 }
-            } else if let error = model.catalog?.phase.message {
+            } else if catalogs.allSatisfy({ $0.phase.message != nil }), let error = catalogs.first?.phase.message {
                 Text("Offline.").font(.system(size: 15, weight: .semibold))
                 Text(error).font(.system(size: 12)).foregroundStyle(.secondary)
                 Button("Retry") { model.refreshCatalog() }
-            } else if model.catalog?.isLoaded == true {
+            } else if catalogs.contains(where: \.isLoaded) {
                 Text("Choose a channel to start a message.").foregroundStyle(.secondary)
             } else if catalogConnectingLong {
                 Text("Connecting…").foregroundStyle(.secondary)
@@ -204,10 +204,12 @@ struct QuickSendView: View {
             .disabled(session?.isSubmitting == true || session?.confirmation != nil)
             .accessibilityLabel("Channel, \(channelName)")
             .popover(isPresented: $showsChooser, arrowEdge: .bottom) {
-                QuickSendChannelChooser(channels: history?.choices(channels: channels, query: "") ?? channels,
-                                       history: history, selectedID: selectedID) { channel in
-                    select(channel)
-                    showsChooser = false
+                if let history {
+                    QuickSendChannelChooser(catalogs: catalogs, history: history, selected: selected,
+                                           retry: model.refreshCatalog) { choice in
+                        select(choice)
+                        showsChooser = false
+                    }
                 }
             }
             Spacer(minLength: 0)
@@ -229,10 +231,8 @@ struct QuickSendView: View {
     }
 
     private func beginPresentation() {
-        if let api = model.api {
-            if history == nil { history = .init(serverURL: api.baseURL) }
-            if incoming == nil { incoming = .init(serverURL: api.baseURL) }
-        }
+        if history == nil { history = .init() }
+        if let api = model.api, incoming == nil { incoming = .init(serverURL: api.baseURL) }
         chooseInitialTarget()
         holdSelectedStore()
         receivePendingPrefill()
@@ -241,16 +241,17 @@ struct QuickSendView: View {
     }
 
     private func receivePendingPrefill() {
-        guard let api = model.api, let prefill = model.quickSend.pendingPrefill else { return }
-        if incoming?.serverURL != api.baseURL { incoming = .init(serverURL: api.baseURL) }
+        guard let prefill = model.quickSend.pendingPrefill,
+              let server = session?.store.api.baseURL ?? model.api?.baseURL else { return }
+        if incoming?.serverURL != server, incoming?.hasPendingContent != true { incoming = .init(serverURL: server) }
         incoming?.receive(prefill)
         model.quickSend.consumePrefill(id: prefill.id)
         applyIncoming()
     }
 
     private func applyIncoming() {
-        guard model.quickSend.replyTarget == nil, let session, model.api?.baseURL == session.store.api.baseURL,
-              model.catalog?.isLoaded != true || channels.contains(where: { $0.id == session.store.id }),
+        guard model.quickSend.replyTarget == nil, let session, let target = session.store.target,
+              let catalog = catalog(target), !catalog.isLoaded || channel(target) != nil,
               incoming?.apply(to: session) == true else { return }
         trackDraft()
         focusID = UUID()
@@ -262,60 +263,65 @@ struct QuickSendView: View {
             installReplySession()
             return
         }
-        guard let api = model.api else { showsChooser = false; return }
-        history?.restoreTarget(channels: channels, lastUsedID: model.activeChannelID ?? lastUsedChannel(),
-                               catalogLoaded: model.catalog?.isLoaded == true) {
-            ComposerDraft.shared(serverURL: api.baseURL, channelID: $0, scope: .quickSend).hasContent
+        guard !catalogs.isEmpty else { showsChooser = false; return }
+        history?.restoreTarget(in: catalogs, lastUsed: model.lastUsedChannel) { target in
+            catalog(target).map {
+                ComposerDraft.shared(serverURL: $0.api.baseURL, channelID: target.channelID, scope: .quickSend).hasContent
+            } ?? false
         }
-        if let selectedID {
-            installSession(channelID: selectedID)
+        if let selected {
+            installSession(selected)
         } else {
-            showsChooser = model.catalog?.isLoaded == true && !channels.isEmpty
+            showsChooser = hasChannels
         }
     }
 
-    private func select(_ channel: Channel) {
+    private func select(_ choice: QuickSendTargetHistory.Choice) {
         model.quickSend.leaveReply()
-        history?.choose(channel)
-        installSession(channelID: channel.id)
+        history?.choose(choice)
+        installSession(choice.target)
         applyIncoming()
         trackDraft()
         holdSelectedStore()
     }
 
     private func installReplySession() {
-        guard let target = model.quickSend.replyTarget, target.serverURL == model.serverURL,
-              let catalog = model.catalog else { return }
+        guard let target = model.quickSend.replyTarget, let catalog = replyChannel.flatMap(catalog) else { return }
         let requester = replyItem.flatMap { $0.sequence == target.sequence ? $0.agent : nil }
-        if replySession?.store.id != target.channelID || replySession?.requestSequence != target.sequence {
+        if replySession?.store.target != replyChannel || replySession?.requestSequence != target.sequence {
             let draft = ComposerDraft.shared(serverURL: catalog.api.baseURL, channelID: target.channelID,
                                              scope: .inboxReply(sequence: target.sequence))
             let knownChanged = catalog.isLoaded
-                && channels.first(where: { $0.id == target.channelID })?.requestSequence != target.sequence
+                && catalog.channels.first(where: { $0.id == target.channelID })?.requestSequence != target.sequence
             guard requester != nil || !draft.isNew || draft.hasContent || knownChanged else {
                 replySession = nil
                 return
             }
             replySession = AuxiliaryComposerSession(store: catalog.channel(id: target.channelID),
                 scope: .inboxReply(sequence: target.sequence), requester: requester, draft: draft,
-                isConnected: isCatalogConnected)
+                isConnected: { [weak catalog] in catalog?.phase.failure == nil })
         } else if let requester {
             replySession?.seedRequesterIfNew(requester)
         }
         if catalog.isLoaded {
-            let current = channels.first { $0.id == target.channelID }?.requestSequence
+            let current = catalog.channels.first { $0.id == target.channelID }?.requestSequence
             if current != target.sequence { replySession?.invalidateRequest(replacementSequence: current) }
         }
     }
 
-    private func installSession(channelID: String) {
-        guard sessions[channelID] == nil, let catalog = model.catalog else { return }
-        sessions[channelID] = AuxiliaryComposerSession(store: catalog.channel(id: channelID), scope: .quickSend,
-                                                       isConnected: isCatalogConnected)
+    private func installSession(_ target: ChannelTarget) {
+        guard sessions[target] == nil, let catalog = catalog(target) else { return }
+        sessions[target] = AuxiliaryComposerSession(store: catalog.channel(id: target.channelID), scope: .quickSend,
+                                                    isConnected: { [weak catalog] in catalog?.phase.failure == nil })
     }
 
-    private var isCatalogConnected: @MainActor () -> Bool {
-        { [weak model] in model?.catalog?.phase.failure == nil }
+    /// A server you remove or readdress takes its editors with it, and closes Quick Send if it
+    /// showed one, so it never opens a channel from a server that's gone.
+    private func serversChanged() {
+        let servers = Set(catalogs.map(\.api.baseURL))
+        if let session, !servers.contains(session.store.api.baseURL) { model.quickSend.dismiss() }
+        sessions = sessions.filter { servers.contains($0.value.store.api.baseURL) }
+        if let replySession, !servers.contains(replySession.store.api.baseURL) { self.replySession = nil }
     }
 
     private func holdSelectedStore() {
@@ -327,9 +333,8 @@ struct QuickSendView: View {
     }
 
     private func trackDraft() {
-        guard model.quickSend.replyTarget == nil, let selectedID, let session else { return }
-        history?.trackDraft(channelID: selectedID, name: session.store.details?.name,
-                            hasContent: session.draft.hasContent)
+        guard model.quickSend.replyTarget == nil, let selected, let session else { return }
+        history?.trackDraft(selected, name: session.store.details?.name, hasContent: session.draft.hasContent)
     }
 
     private func endPresentation() {
@@ -340,7 +345,7 @@ struct QuickSendView: View {
     }
 
     private func open(_ session: AuxiliaryComposerSession) {
-        guard model.api?.baseURL == session.store.api.baseURL else { return }
+        guard catalogs.contains(where: { $0.api.baseURL == session.store.api.baseURL }) else { return }
         model.quickSend.dismiss()
         model.activate(session.store.target)
     }
@@ -349,7 +354,7 @@ struct QuickSendView: View {
     /// Shared content that arrived during the save stays open in a fresh editor instead.
     private func confirmed(_ confirmation: AuxiliaryComposerSession.Confirmation,
                            session: AuxiliaryComposerSession) {
-        guard model.api?.baseURL == session.store.api.baseURL else { return }
+        guard catalogs.contains(where: { $0.api.baseURL == session.store.api.baseURL }) else { return }
         trackDraft()
         guard model.quickSend.isPresented, self.session === session else { return }
         if confirmation.opensChannel { open(session); return }
@@ -362,56 +367,60 @@ struct QuickSendView: View {
     }
 }
 
+/// Up to three recent channels, then the rest A to Z. With several servers, each lists its own
+/// under its name, and one that hasn't loaded says so with Retry.
 struct QuickSendChannelChooser: View {
-    let channels: [Channel]
-    let history: QuickSendTargetHistory?
-    let selectedID: String?
-    let choose: (Channel) -> Void
+    let catalogs: [ChannelCatalogStore]
+    let history: QuickSendTargetHistory
+    let selected: ChannelTarget?
+    let retry: () -> Void
+    let choose: (QuickSendTargetHistory.Choice) -> Void
     @ViewState private var query = ""
-    @ViewState private var highlightedID: String?
+    @ViewState private var highlighted: ChannelTarget?
     @ViewState private var listHeight: CGFloat?
     @FocusState private var searching: Bool
     @Environment(\.dismiss) private var dismiss
 
     private static let maximumListHeight: CGFloat = 252
 
-    private var matches: [Channel] {
-        history?.choices(channels: channels, query: query)
-            ?? channels.filter { $0.matches(query) }
+    private var choices: (recent: [QuickSendTargetHistory.Choice], others: [[QuickSendTargetHistory.Choice]]) {
+        history.choices(in: catalogs, query: query)
+    }
+
+    /// Every choice in the order the list shows them.
+    private var matches: [QuickSendTargetHistory.Choice] {
+        let choices = choices
+        return choices.recent + choices.others.joined()
     }
 
     var body: some View {
+        let choices = choices
+        let grouped = catalogs.count > 1
         VStack(spacing: 8) {
             TextField("Search Channels", text: $query)
                 .textFieldStyle(.roundedBorder)
                 .focused($searching)
                 .onSubmit(selectHighlighted)
-            if matches.isEmpty {
+            if matches.isEmpty, !grouped || catalogs.allSatisfy(\.isLoaded) {
                 Text(query.isEmpty ? "No channels yet" : "No channels found")
                     .foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 44)
             } else {
                 // The list's own selection is the highlight the arrow keys move.
-                List(matches, selection: $highlightedID) { channel in
-                    HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(channel.name).lineLimit(1)
-                            if let purpose = channel.purpose, !purpose.isEmpty {
-                                Text(purpose).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                List(selection: $highlighted) {
+                    if grouped {
+                        if !choices.recent.isEmpty {
+                            Section("Recent") { ForEach(choices.recent, content: row) }
+                        }
+                        ForEach(catalogs.indices, id: \.self) { index in
+                            if !catalogs[index].isLoaded {
+                                Section(catalogs[index].name) { status(catalogs[index]).listRowSeparator(.hidden) }
+                            } else if !choices.others[index].isEmpty {
+                                Section(catalogs[index].name) { ForEach(choices.others[index], content: row) }
                             }
                         }
-                        Spacer(minLength: 0)
-                        if channel.id == selectedID {
-                            Image(systemName: "checkmark").foregroundStyle(.secondary)
-                        }
+                    } else {
+                        ForEach(matches, content: row)
                     }
-                    // A click anywhere in the row chooses it, including the row that's already highlighted,
-                    // which never changes the selection.
-                    .contentShape(Rectangle().inset(by: -8))
-                    .onTapGesture { choose(channel) }
-                    .tag(channel.id)
-                    .listRowSeparator(.hidden)
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityAction { choose(channel) }
                 }
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
@@ -426,21 +435,57 @@ struct QuickSendChannelChooser: View {
         .font(.system(size: 13))
         .padding(10)
         .frame(width: 340)
-        .onAppear { searching = true; highlightedID = selectedID ?? matches.first?.id }
-        .onChange(of: query) { _, _ in highlightedID = matches.first?.id }
+        .onAppear { searching = true; highlighted = selected ?? matches.first?.target }
+        .onChange(of: query) { _, _ in highlighted = matches.first?.target }
         .onExitCommand { dismiss() }
         .onKeyPress(.return) { selectHighlighted(); return .handled }
         .onKeyPress(.downArrow) { moveHighlight(1); return .handled }
         .onKeyPress(.upArrow) { moveHighlight(-1); return .handled }
     }
 
+    private func row(_ choice: QuickSendTargetHistory.Choice) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(choice.channel.name).lineLimit(1)
+                if let purpose = choice.channel.purpose, !purpose.isEmpty {
+                    Text(purpose).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+            if choice.target == selected {
+                Image(systemName: "checkmark").foregroundStyle(.secondary)
+            }
+        }
+        // A click anywhere in the row chooses it, including the row that's already highlighted,
+        // which never changes the selection.
+        .contentShape(Rectangle().inset(by: -8))
+        .onTapGesture { choose(choice) }
+        .tag(choice.target)
+        .listRowSeparator(.hidden)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { choose(choice) }
+    }
+
+    @ViewBuilder private func status(_ catalog: ChannelCatalogStore) -> some View {
+        if let message = catalog.phase.message {
+            HStack {
+                Text(message).foregroundStyle(.secondary).lineLimit(2)
+                Spacer(minLength: 8)
+                Button("Retry", action: retry)
+            }
+        } else {
+            ProgressView().controlSize(.small).frame(maxWidth: .infinity)
+        }
+    }
+
     private func selectHighlighted() {
-        if let channel = matches.first(where: { $0.id == highlightedID }) ?? matches.first { choose(channel) }
+        if let choice = matches.first(where: { $0.target == highlighted }) ?? matches.first { choose(choice) }
     }
 
     private func moveHighlight(_ offset: Int) {
+        let matches = matches
         guard !matches.isEmpty else { return }
-        let index = matches.firstIndex { $0.id == highlightedID } ?? 0
-        highlightedID = matches[max(0, min(index + offset, matches.count - 1))].id
+        let index = matches.firstIndex { $0.target == highlighted } ?? 0
+        highlighted = matches[max(0, min(index + offset, matches.count - 1))].target
     }
 }

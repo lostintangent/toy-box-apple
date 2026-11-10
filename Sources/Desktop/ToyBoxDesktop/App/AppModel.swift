@@ -153,12 +153,6 @@ final class AppModel {
 
     var api: ChannelAPI? { catalog?.api }
 
-    /// The key window's channel when it's on the first server.
-    var activeChannelID: String? {
-        guard let activeChannel, activeChannel.serverURL == Self.address(of: catalog) else { return nil }
-        return activeChannel.channelID
-    }
-
     func openChannelIDs(on catalog: ChannelCatalogStore?) -> Set<String> {
         let server = Self.address(of: catalog)
         return Set(openChannels.compactMap { $0.serverURL == server ? $0.channelID : nil })
@@ -182,8 +176,9 @@ final class AppModel {
         return session
     }
 
-    var lastUsedChannelID: String? {
-        activeChannelID ?? launchChannel.channelID(serverURL: serverURL)
+    /// The key window's channel, or the one the main window last showed.
+    var lastUsedChannel: ChannelTarget? {
+        activeChannel ?? launchChannel.channelID(serverURL: serverURL).flatMap { target($0) }
     }
 
     // MARK: Servers
@@ -250,11 +245,7 @@ final class AppModel {
     }
 
     private func serversDidChange() {
-        // Quick Send still shows only the first server.
-        if let address = catalog?.api.baseURL.absoluteString, address != serverURL {
-            quickSend.dismiss()
-            serverURL = address
-        }
+        if let address = catalog?.api.baseURL.absoluteString, address != serverURL { serverURL = address }
         catalogGeneration = UUID()
         observeCatalog(generation: catalogGeneration)
         updateWidget()
@@ -297,7 +288,7 @@ final class AppModel {
         guard !app.isHidden,
               let front = app.orderedWindows.first(where: { $0.isVisible && $0.sheetParent == nil }) else { return nil }
         guard !front.isMiniaturized, front.occlusionState.contains(.visible) else { return nil }
-        return ChannelIntents.Screen.onScreen(in: front, screens: screens.values, catalog: catalog)
+        return ChannelIntents.Screen.onScreen(in: front, screens: screens.values, catalogs: catalogs)
     }
 
     private func windowsDidChange() {

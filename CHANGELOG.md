@@ -10,7 +10,7 @@
 
 ### Features
 
-- You can now connect to several Toy Box servers at once, like one at home and one at work. The sidebar shows each server's channels under its name, and notifications, the menu bar, the Dock, the Needs You widget and the morning digest cover all of them, so nothing waiting for you is missed.
+- You can now connect to several Toy Box servers at once, like one at home and one at work. The sidebar shows each server's channels under its name, Quick Send, Siri and Spotlight reach every channel on any of them, and notifications, the menu bar, the Dock, the Needs You widget and the morning digest cover all of them, so nothing waiting for you is missed.
 
 ### Bugs/Polish
 

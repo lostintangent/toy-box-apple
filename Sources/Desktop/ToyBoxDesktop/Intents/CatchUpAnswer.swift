@@ -34,7 +34,7 @@ enum CatchUpAnswer {
 
     /// Channels that need you, in the order Siri mentions them: waiting for your reply, then
     /// finished work, then unread messages, most recently updated first.
-    static func needingAttention(_ channels: [Channel]) -> [Channel] {
+    static func needingAttention(_ channels: [ChannelIntents.Listed]) -> [ChannelIntents.Listed] {
         func rank(_ attention: Channel.Attention?) -> Int {
             switch attention {
             case .waiting: 0
@@ -44,8 +44,10 @@ enum CatchUpAnswer {
             }
         }
         return channels.enumerated()
-            .compactMap { offset, channel in
-                channel.attention.map { (rank: rank($0), updated: channel.updatedAt, offset: offset, channel: channel) }
+            .compactMap { offset, listed in
+                listed.channel.attention.map {
+                    (rank: rank($0), updated: listed.channel.updatedAt, offset: offset, channel: listed)
+                }
             }
             .sorted { lhs, rhs in
                 if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
@@ -56,18 +58,18 @@ enum CatchUpAnswer {
     }
 
     /// A line for each of the first few channels that need you. `newMessages` counts unread agent
-    /// messages by channel ID where they're known.
-    static func overview(_ needing: [Channel], newMessages: [String: Int]) -> String {
+    /// messages by channel where they're known.
+    static func overview(_ needing: [ChannelIntents.Listed], newMessages: [ChannelTarget: Int]) -> String {
         guard !needing.isEmpty else { return allCaughtUp }
         var sentences = needing.count > 1 ? ["You have updates in \(needing.count) channels."] : []
-        for channel in needing.prefix(overviewLimit) {
+        for (target, channel) in needing.prefix(overviewLimit).map({ ($0.target, $0.channel) }) {
             switch channel.attention {
             case .waiting:
                 sentences.append("\(channel.name) is waiting for your reply.")
             case .finished:
                 sentences.append("\(channel.name) finished all its tasks.")
             case .unread, nil:
-                switch newMessages[channel.id] {
+                switch newMessages[target] {
                 case let count? where count > 0:
                     sentences.append("\(channel.name) has \(messages(count)).")
                 case 0:
@@ -133,16 +135,17 @@ enum CatchUpAnswer {
     // MARK: Cards
 
     /// The overview, with a row for each of the first few channels that need you.
-    static func overviewAnswer(_ needing: [Channel], newMessages: [String: Int]) -> Answer {
+    static func overviewAnswer(_ needing: [ChannelIntents.Listed], newMessages: [ChannelTarget: Int]) -> Answer {
         let spoken = overview(needing, newMessages: newMessages)
         guard !needing.isEmpty else { return Answer(spoken: spoken) }
-        let rows = needing.prefix(overviewRowLimit).map { channel in
-            CatchUpCard.Row(channelID: channel.id, name: channel.name, attention: channel.attention?.rawValue,
-                            detail: detail(channel, newMessages: newMessages[channel.id]))
+        let rows = needing.prefix(overviewRowLimit).map { listed in
+            CatchUpCard.Row(channel: listed.target, name: listed.channel.name,
+                            attention: listed.channel.attention?.rawValue,
+                            detail: detail(listed.channel, newMessages: newMessages[listed.target]))
         }
         let more = needing.count - rows.count
         let channels = needing.count == 1 ? "1 channel" : "\(needing.count) channels"
-        let card = CatchUpCard(channelID: nil, title: "Updates in \(channels)", rows: rows,
+        let card = CatchUpCard(channel: nil, title: "Updates in \(channels)", rows: rows,
                                footnote: more > 0 ? "Plus \(more == 1 ? "1 more channel" : "\(more) more channels")" : nil)
         return Answer(spoken: spoken, headline: needing.count > 1 ? "You have updates in \(channels)." : spoken, card: card)
     }
@@ -150,8 +153,8 @@ enum CatchUpAnswer {
     /// One channel's answer, with a card unless there's nothing new to show. The card's lines are
     /// the spoken answer's: the model's when it summarized, otherwise the request and the newest
     /// few messages in their authors' own words.
-    static func channelAnswer(_ state: ChannelState, unreadAfter: Int?, digest: CatchUpDigest,
-                              summary: (catchUp: CatchUp, count: Int)?) -> Answer {
+    static func channelAnswer(_ state: ChannelState, on target: ChannelTarget, unreadAfter: Int?,
+                              digest: CatchUpDigest, summary: (catchUp: CatchUp, count: Int)?) -> Answer {
         let info = state.channel
         let spoken = channel(info, unreadAfter: unreadAfter, digest: digest, summary: summary)
         let completed = isCompleted(info, unreadAfter: unreadAfter)
@@ -201,7 +204,7 @@ enum CatchUpAnswer {
         }
 
         let reply = asked.map { CatchUpCard.Reply(recipient: ChannelWaitingRequest.recipient(of: $0, in: state), request: $0) }
-        let card = CatchUpCard(channelID: info.id, title: info.name, subtitle: subtitle, isSummary: summary != nil,
+        let card = CatchUpCard(channel: target, title: info.name, subtitle: subtitle, isSummary: summary != nil,
                                lines: lines, footnote: footnote, reply: reply)
         return Answer(spoken: spoken, headline: headline, card: card)
     }
