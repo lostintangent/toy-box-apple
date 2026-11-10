@@ -203,13 +203,14 @@ Drafts stay keyed to the address, so adding it back finds them.
   without a server, opens in the first server in Settings order whose catalog lists the channel,
   and reports the channel missing only once every server has answered. The Needs You widget is
   out of date when any server is, and then shows the oldest server's last update.
-- **Settings** lists the servers with their dots and names. On the Mac, the list has Add and
+- **Settings** lists the servers with their dots and names, even when there's one, so Add is
+  always there. On the Mac, the list has Add and
   Remove buttons and drags to reorder, and the selected server's Name, Server URL with Test
   Connection and status sit below it. On the phone, each row opens Welcome's Server URL card with
   a Name field, Add Server follows the rows, and Edit reorders and deletes. Adding an address
   that's already listed selects that server instead. Removing one asks first, then disconnects it
-  and removes its channels from Spotlight, notifications, widgets and Live Activities. Welcome
-  sets up the first server, and the phone shows Welcome only when there's none.
+  and removes its channels from Spotlight, notifications, widgets and Live Activities. The last
+  server can't be removed, only given a new address, so Welcome appears only on first launch.
 
 ### Sending
 

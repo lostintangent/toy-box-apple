@@ -1,6 +1,6 @@
 # 🧸 Toy Box
 
-A native Mac and iPhone app for your [Toy Box](https://github.com/lostintangent/toy-box) agent teams. Connect to your Toy Box server, and then know who needs you, answer without switching context, and keep up while your work progresses.
+A native Mac and iPhone app for your [Toy Box](https://github.com/lostintangent/toy-box) agent channels. Connect to your Toy Box server, and then know who needs you, answer without switching context, and keep up as your work progresses.
 
 > _Try it out:_ [Download for Mac](https://github.com/lostintangent/toy-box-apple/releases/latest)
 
