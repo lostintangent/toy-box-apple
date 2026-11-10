@@ -191,10 +191,10 @@ Drafts stay keyed to the address, so adding it back finds them.
   and VoiceOver value. On the Mac, the dot's leading edge lines up with the search field's. On the phone, the name is followed by how many channels the server has, in
   the header's font and secondary color, once its catalog has loaded. A failing server's notice sits under its own header instead of at the
   bottom: the Mac's error block, still without buttons, and the phone pill's words with Retry.
-  While a section is collapsed, its header also shows how many of its channels wait for the
-  user's response, trailing in the waiting attention color, so collapsing a server never hides a
-  request. The count hides at zero and while the section is open, and VoiceOver reads it as
-  "N waiting for you" after the header's value. The Mac footer keeps only Open Screen. Search filters every server and keeps the sections. The phone
+  While a section is collapsed and any of its channels waits for the user's response, its header
+  also shows the waiting attention symbol, trailing in its color and without a count, so
+  collapsing a server never hides a request. It hides while the section is open, and VoiceOver
+  adds "waiting for you" after the header's value. The Mac footer keeps only Open Screen. Search filters every server and keeps the sections. The phone
   keeps one open Needs You card, the newest across every server, in its server's section.
 - **Choosing a server.** New Channel and the Screens list start on the selected channel's server,
   with a server menu to pick another.
