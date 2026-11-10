@@ -221,8 +221,8 @@ Drafts stay keyed to the address, so adding it back finds them.
   and the list has Add and
   Remove buttons and drags to reorder, and the selected server's Name, Server URL with Test
   Connection and status sit below it. The list adds no inset of its own: its dots line up with
-  the labels below, it's as tall as its rows, and its card's top and bottom padding match the
-  details card below it. On the phone, each row opens Welcome's Server URL card with
+  the labels below, and it's as tall as its rows. Its card keeps the grouped Form's own padding
+  around a list, a little roomier than the details card below it. On the phone, each row opens Welcome's Server URL card with
   a Name field, Add Server follows the rows, and Edit reorders and deletes. Adding an address
   that's already listed selects that server instead. Removing one asks first, then disconnects it
   and removes its channels from Spotlight, notifications, widgets and Live Activities. The last
