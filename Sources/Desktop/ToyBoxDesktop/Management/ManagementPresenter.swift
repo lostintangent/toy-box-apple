@@ -136,15 +136,17 @@ private struct ManagementSheet: View {
 struct ManagementError: View {
     let message: String
     var body: some View {
+        // The symbol speaks "Error" on its own. A label around selectable text recurses in AppKit.
         Label {
             Text(message).foregroundStyle(.primary)
         } icon: {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                .accessibilityLabel("Error")
+                .accessibilityHidden(false)
         }
         .font(.callout)
         .textSelection(.enabled)
         .fixedSize(horizontal: false, vertical: true)
-        .accessibilityLabel("Error: \(message)")
     }
 }
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## Mac 0.1.31
+
+### Bugs/Polish
+
+- Toy Box no longer quits unexpectedly when a change to a channel can't be saved while VoiceOver or another app that reads the screen is running.
+
 ## iPhone 0.1.27
 
 ### Features
