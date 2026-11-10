@@ -143,9 +143,9 @@ final class AppModel {
     /// Management needs the active scene and the channel's own server connected.
     func canManageChannels(on catalog: ChannelCatalogStore?) -> Bool { isActive && catalog?.phase == .connected }
 
-    /// New Channel starts on the selected channel's server.
-    var newChannelServer: String { selection?.serverURL ?? serverURL }
-    var canCreateChannel: Bool { canManageChannels(on: catalogs.first(at: newChannelServer)) }
+    /// The selected channel's server, or the first one.
+    var selectedServer: String { selection?.serverURL ?? serverURL }
+    var canCreateChannel: Bool { canManageChannels(on: catalogs.first(at: selectedServer)) }
 
     var sidebarPresentation: ChannelSidebarPresentation { sidebarPresentation(for: catalog) }
 
@@ -563,10 +563,10 @@ extension AppModel {
     /// notification, the widget or Handoff closes it.
     enum Cover: Hashable, Identifiable {
         case settings, screens
-        /// One screen watched full screen, like a channel's screen preview.
-        case screen(String)
+        /// One screen on a server, watched full screen, like a channel's screen preview.
+        case screen(String, serverURL: String)
 
         var id: Self { self }
-        var screenID: String? { if case .screen(let id) = self { id } else { nil } }
+        var screenID: String? { if case .screen(let id, _) = self { id } else { nil } }
     }
 }

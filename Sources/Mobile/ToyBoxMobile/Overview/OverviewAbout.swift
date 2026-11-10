@@ -63,7 +63,7 @@ struct OverviewAboutSection: View {
         if preview.kind == "screen", let screenID = preview.screenId {
             // The app presents the viewer and holds Overview in place under it, so a rotation keeps it open.
             Button {
-                app?.cover = .screen(screenID)
+                app?.cover = .screen(screenID, serverURL: store.api.baseURL.absoluteString)
             } label: {
                 previewTitle("Screen Preview", systemImage: "display")
                     .frame(minHeight: 44, alignment: .leading)

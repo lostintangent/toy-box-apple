@@ -66,18 +66,10 @@ struct ToyBoxDesktopApp: App {
             updateStartupWindow(phase: phase)
         }
 
-        // The list, then the screen chosen from it. The window keeps its screen, so it restores there,
-        // and opening a screen a window already shows brings that window forward.
-        WindowGroup("Screens", id: "screens", for: String.self) { $screenID in
-            if let api = model.api {
-                NavigationStack {
-                    ScreenBrowser(api: api) { screenID = $0.id }
-                        .navigationTitle("Screens")
-                        .navigationDestination(item: $screenID) { ScreenViewer(api: api, screenID: $0) }
-                }
-                .id(model.serverURL)
+        WindowGroup("Screens", id: "screens", for: ScreenWindowValue.self) { $value in
+            ScreenWindow(value: $value)
+                .environment(model)
                 .preferredColorScheme(colorScheme)
-            }
         }
         .defaultSize(width: 960, height: 600)
         .restorationBehavior(restorationBehavior)

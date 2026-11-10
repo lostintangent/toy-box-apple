@@ -21,6 +21,8 @@ struct WindowCommandActions {
     /// act on what's underneath.
     var imageZoom: ImageZoomActions? = nil
     var isViewerPresented = false
+    /// The selected channel's server, where New Channel and Open Screen start.
+    var server: String
     var newChannel: () -> Void
     var openNewWindow: () -> Void
     var openInToyBox: () -> Void
@@ -77,7 +79,9 @@ struct ChannelCommands: Commands {
             Button("Open Channel in New Window") { actions?.openNewWindow() }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(actions?.hasChannel != true)
-            Button("Open Screen…") { openWindow(id: "screens") }
+            Button("Open Screen…") {
+                openWindow(id: "screens", value: ScreenWindowValue(serverURL: actions?.server ?? model.serverURL))
+            }
                 .keyboardShortcut("o")
                 .disabled(model.api == nil)
             Button("Open in Toy Box") { actions?.openInToyBox() }

@@ -1209,7 +1209,7 @@ struct ShellTests {
             await model.openExternalURL(try #require(request.url))
             #expect(model.cover == nil)
             #expect(model.selectedChannelID == "first")
-            model.cover = .screen("window-1")
+            model.cover = .screen("window-1", serverURL: model.serverURL)
             await model.openChannel(id: "second", sequence: 7, expectedServer: model.serverURL)
             #expect(model.cover == nil)
             #expect(model.selectedChannelID == "second")
@@ -1665,7 +1665,7 @@ struct ShellTests {
             model.selection = second.target("second")
             let store = try #require(model.selectedStore)
             #expect(store.api.baseURL == second.api.baseURL)
-            #expect(model.newChannelServer == model.selection?.serverURL)
+            #expect(model.selectedServer == model.selection?.serverURL)
 
             let relaunched = AppModel(arguments: [], environment: [:], defaults: defaults, session: fixtureSession())
             await relaunched.refreshCatalog()
@@ -1678,7 +1678,7 @@ struct ShellTests {
             model.removeServer(second)
             #expect(model.selection == nil)
             #expect(model.selectedStore == nil)
-            #expect(model.newChannelServer == model.serverURL)
+            #expect(model.selectedServer == model.serverURL)
         }
     }
 

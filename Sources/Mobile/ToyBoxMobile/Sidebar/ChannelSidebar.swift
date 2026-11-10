@@ -318,7 +318,7 @@ struct ChannelSidebar: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("New Channel", systemImage: "plus") { management.present(.newChannel(server: model.newChannelServer)) }
+                Button("New Channel", systemImage: "plus") { management.present(.newChannel(server: model.selectedServer)) }
                     .disabled(!canCreate)
             }
             ToolbarSpacer(.fixed, placement: .primaryAction)
@@ -396,7 +396,7 @@ struct ChannelSidebar: View {
                 ContentUnavailableView {
                     Label("Your channels live here", systemImage: "bubble.left.and.bubble.right")
                 } actions: {
-                    Button("New Channel") { management.present(.newChannel(server: model.newChannelServer)) }
+                    Button("New Channel") { management.present(.newChannel(server: model.selectedServer)) }
                         .frame(minHeight: 44)
                         .disabled(!canCreate)
                 }

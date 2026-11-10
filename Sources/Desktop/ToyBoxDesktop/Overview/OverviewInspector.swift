@@ -460,7 +460,9 @@ struct OverviewPreviewRow: View {
     }
 
     private func open() {
-        if let screenID { return openWindow(id: "screens", value: screenID) }
+        if let screenID {
+            return openWindow(id: "screens", value: ScreenWindowValue(serverURL: api.baseURL.absoluteString, screenID: screenID))
+        }
         if let target { NSWorkspace.shared.open(target) }
     }
 }

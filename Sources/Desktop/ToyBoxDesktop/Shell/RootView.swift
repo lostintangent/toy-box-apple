@@ -331,11 +331,11 @@ struct RootView: View {
         if isNarrow { isOverviewSheetPresented = visible } else { interaction.isInspectorPresented = visible }
     }
 
-    /// New Channel starts on the selected channel's server.
-    private var newChannelServer: String { selection?.serverURL ?? model.serverURL }
+    /// The selected channel's server, or the first one.
+    private var selectedServer: String { selection?.serverURL ?? model.serverURL }
 
     private var newChannelButton: some View {
-        Button("New Channel", systemImage: "plus") { management.present(.newChannel(server: newChannelServer)) }
+        Button("New Channel", systemImage: "plus") { management.present(.newChannel(server: selectedServer)) }
             .help("New Channel (Command-N)")
             .disabled(model.api == nil)
     }
@@ -365,7 +365,7 @@ struct RootView: View {
     private func consumeNewChannelRequest() {
         guard model.newChannelRequest != nil, isKeyWindow else { return }
         handoff.cancel()
-        management.present(.newChannel(server: newChannelServer))
+        management.present(.newChannel(server: selectedServer))
         model.newChannelRequest = nil
     }
 
@@ -378,7 +378,8 @@ struct RootView: View {
             messageView: interaction.messageView,
             imageZoom: imageZoom,
             isViewerPresented: artifactOpener.isPresented,
-            newChannel: { handoff.cancel(); management.present(.newChannel(server: newChannelServer)) },
+            server: selectedServer,
+            newChannel: { handoff.cancel(); management.present(.newChannel(server: selectedServer)) },
             openNewWindow: { if let selection { openWindow(value: ChannelWindowValue(selection)) } },
             openInToyBox: {
                 if artifactOpener.isPresented { artifactOpener.openInToyBox(app: model) }

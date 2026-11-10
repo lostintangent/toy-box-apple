@@ -84,7 +84,7 @@ struct TranscriptSystemMessages: View {
                     if let screenID = preview.screenId {
                         let screen = ChannelSystemContent.screenPreview
                         valueLine(phrase, findText: "\(phrase) \(screen)") {
-                            Button { openWindow(id: "screens", value: screenID) } label: {
+                            Button { openWindow(id: "screens", value: ScreenWindowValue(serverURL: api.baseURL.absoluteString, screenID: screenID)) } label: {
                                 TranscriptSystemLinkLabel(title: screen, findHighlight: findHighlight,
                                                           findText: "\(phrase) \(screen)",
                                                           findOffset: "\(phrase) ".utf16.count)
