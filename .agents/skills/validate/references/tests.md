@@ -24,10 +24,16 @@ in the iOS build.
 
 - It rejects interrupted, failed and empty Swift Testing runs.
 - A suite silent for three minutes is sampled, stopped and fails, naming the tests that never
-  finished.
+  finished. A suite's launch waits on the simulator rather than the tests, so the three minutes
+  start at its first output, and one that prints nothing for ten minutes after it launches is
+  stopped the same way. A sample that fails is noted, and the stall stays the error.
 - Existing opt-ins stay off.
 - It boots the simulator only once the build finishes, because a CI runner's simulator can shut
-  down during the build.
+  down during the build. It prints how long the simulator took to be ready and each suite took to
+  start.
+- On CI, it boots without system widget timelines, push and Apple Intelligence indexing. A
+  runner's device is new, and that first-boot work starved the first suite's launch. A local
+  simulator keeps them, because `bun run simulator` shares it.
 - It shuts down the simulator only if it booted it. One that's already off, which a crash can
   cause, is noted rather than failing, so the run's own error is the one reported.
 

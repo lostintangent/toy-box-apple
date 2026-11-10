@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import type { Subprocess } from "bun";
 import { checkTestCompletion, CommandFailure, command, machineLock, main, scratchPath, text } from "../shared/lib/index.ts";
 import { buildMobile, mobileEnvironment } from "./bundle/index.ts";
-import { bootMobileSimulator, chooseMobileSimulator, shutDownMobileSimulator } from "./dogfood/boot.ts";
+import { bootMobileSimulator, chooseMobileSimulator, seconds, shutDownMobileSimulator } from "./dogfood/boot.ts";
 
 export const mobileTestProducts = [
     "ChannelClientTests", "ToyBoxUITests",
@@ -12,6 +12,16 @@ export const mobileTestProducts = [
 
 /** Swift Testing prints as each test starts and finishes, so this much silence means what's left is stuck. */
 const stallMinutes = 3;
+
+/** How long a suite has to print anything at all. Its launch waits on the simulator rather than the tests, and a
+ * new device's first-boot work kept CI's first launch silent for over a minute after `bootstatus` returned. */
+const launchMinutes = 10;
+
+/** The system jobs a CI runner's simulator boots without. Its device is new, and on a first boot these start
+ * every system widget's first timeline, push and Apple Intelligence indexing, which held the 3-core runner's load
+ * in the hundreds long after `bootstatus` and kept the first suite from launching. The tests use none of them.
+ * A local simulator keeps them, since `bun run simulator` shares it. */
+const ciDisabledJobs = ["com.apple.chronod", "com.apple.apsd", "com.apple.intelligenceplatformd"];
 
 export function checkMobileTestCompletion(log: string) {
     checkTestCompletion(log);
@@ -38,19 +48,32 @@ function unfinishedTests(log: string) {
     return [...running.keys()];
 }
 
-/** Samples the stalled xctest process for the log, keeping the full sample in scratch, then ends it and its
- * `simctl spawn`, so the simulator is left to shut down or run the next suite. */
+/** Prints where each thread of the stalled xctest process is stuck, keeping the full sample in scratch. A sample
+ * that fails is reported instead, so the stall stays the error. */
+async function sampleStalledSuite(pid: number, name: string) {
+    const path = join(scratchPath(), "mobile-test-watchdog", `${name}.sample.txt`);
+    await mkdir(dirname(path), { recursive: true });
+    const sampled = await command(["sample", String(pid), "3", "-file", path], { quiet: true, allowFailure: true });
+    // A CI runner's `sample` can exit cleanly without writing its file.
+    const file = Bun.file(path);
+    if (sampled.exitCode || !await file.exists()) {
+        console.error(`sample couldn't record ${name} (exit ${sampled.exitCode}). ${sampled.stderr.toString().trim()}`);
+        return;
+    }
+    // The call graph shows where each thread is stuck. The binary image list after it is the bulk.
+    console.error((await file.text()).split("\nBinary Images:")[0]);
+}
+
+/** Samples the stalled xctest process for the log, then ends it and its `simctl spawn`, so the simulator is left
+ * to shut down or run the next suite. */
 async function stopStalledSuite(child: Subprocess, agent: string, bundle: string, name: string) {
     const tests = (await text(["ps", "-axww", "-o", "pid=,command="])).split("\n")
         .map(line => line.trim().match(/^(\d+) (.*)$/))
         .find(match => match?.[2]?.startsWith(agent) && match[2].includes(bundle));
     if (tests) {
         const pid = Number(tests[1]);
-        const path = join(scratchPath(), "mobile-test-watchdog", `${name}.sample.txt`);
-        await mkdir(dirname(path), { recursive: true });
-        const sampled = await command(["sample", String(pid), "3", "-file", path], { quiet: true, allowFailure: true });
-        // The call graph shows where each thread is stuck. The binary image list after it is the bulk.
-        if (!sampled.exitCode) console.error((await Bun.file(path).text()).split("\nBinary Images:")[0]);
+        await sampleStalledSuite(pid, name)
+            .catch(error => console.error(`sample couldn't record ${name}. ${error instanceof Error ? error.message : error}`));
         try { process.kill(pid, "SIGKILL"); }
         catch (error) {
             if (!(error instanceof Error) || !("code" in error) || error.code !== "ESRCH") throw error;
@@ -63,6 +86,8 @@ async function stopStalledSuite(child: Subprocess, agent: string, bundle: string
 async function runSuite(udid: string, developer: string, bin: string, name: string) {
     const agent = join(developer, "Library/Xcode/Agents/xctest");
     const bundle = join(bin, `${name}.xctest`);
+    const launchedAt = performance.now();
+    let startedIn: string | undefined;
     const child = Bun.spawn(["xcrun", "simctl", "spawn", udid, agent, bundle], {
         env: {
             ...mobileEnvironment,
@@ -73,12 +98,21 @@ async function runSuite(udid: string, developer: string, bin: string, name: stri
     });
     const logs = ["", ""];
     const stalled = Promise.withResolvers<undefined>();
-    const timer = setTimeout(() => stalled.resolve(undefined), stallMinutes * 60_000);
+    let timer = setTimeout(() => stalled.resolve(undefined), launchMinutes * 60_000);
+    function heard() {
+        if (startedIn) {
+            timer.refresh();
+            return;
+        }
+        startedIn = seconds(launchedAt);
+        clearTimeout(timer);
+        timer = setTimeout(() => stalled.resolve(undefined), stallMinutes * 60_000);
+    }
     async function collect(stream: ReadableStream<Uint8Array>, index: number) {
         const decoder = new TextDecoder();
         for await (const data of stream) {
             logs[index] += decoder.decode(data, { stream: true });
-            timer.refresh();
+            heard();
         }
         logs[index] += decoder.decode();
     }
@@ -88,6 +122,8 @@ async function runSuite(udid: string, developer: string, bin: string, name: stri
     const log = logs.join("\n");
     if (code === undefined) {
         await stopStalledSuite(child, agent, bundle, name);
+        if (!startedIn) throw new Error(`error: ${name} printed nothing in the ${launchMinutes} minutes after it `
+            + "launched, so it was stopped.");
         const unfinished = unfinishedTests(log);
         throw new Error(`error: ${name} printed nothing for ${stallMinutes} minutes, so it was stopped. `
             + (unfinished.length ? `Started and never finished:\n${unfinished.map(item => `  ${item}`).join("\n")}`
@@ -97,7 +133,7 @@ async function runSuite(udid: string, developer: string, bin: string, name: stri
         process.stdout.write(log);
         throw new CommandFailure(code, `xctest failed (exit ${code}).`);
     }
-    return log;
+    return { log, startedIn };
 }
 
 if (import.meta.main) await main(async () => {
@@ -111,13 +147,13 @@ if (import.meta.main) await main(async () => {
         if (!udid) return;
         // Boot only once the build is done, since a CI runner's simulator can shut down during a long build.
         const { bin } = await buildMobile(false, true);
-        const simulator = await bootMobileSimulator(udid);
+        const simulator = await bootMobileSimulator(udid, process.env.CI ? ciDisabledJobs : []);
         try {
             const developer = join(mobileEnvironment.DEVELOPER_DIR, "Platforms/iPhoneSimulator.platform/Developer");
             for (const name of mobileTestProducts) {
-                const log = await runSuite(simulator.udid, developer, bin, name);
+                const { log, startedIn } = await runSuite(simulator.udid, developer, bin, name);
                 checkMobileTestCompletion(log);
-                console.log(`${name}: ${log.match(/Test run with [^\n]+/)?.[0]}`);
+                console.log(`${name}: started in ${startedIn}. ${log.match(/Test run with [^\n]+/)?.[0]}`);
                 const skipped = [...log.matchAll(/Test .+ skipped\./g)].length;
                 if (skipped) console.log(`  ${skipped} existing opt-in tests skipped.`);
             }
