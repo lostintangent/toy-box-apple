@@ -371,18 +371,23 @@ extension ChannelIntents {
                                         answering: message.request)
             },
             open: { id in
+                guard let channel = model.catalog?.target(id) else { return }
                 NSApplication.shared.activate()
-                model.navigationRequest = .init(channelID: id, sequence: nil)
-                if model.activeChannelID == nil { model.openChannelWindow?(id) }
+                model.navigationRequest = .init(channel: channel, sequence: nil)
+                if model.activeChannel == nil { model.openChannelWindow?(channel) }
             },
             requests: {
                 guard try channels() != nil else { return nil }
-                return model.menuBarStatus.waiting.compactMap { .init(item: $0, serverURL: model.serverURL) }
+                // Siri and Shortcuts read only the first server for now.
+                let server = ChannelWaitingRequest.normalizedServer(model.serverURL)
+                return model.menuBarStatus.waiting.filter { $0.target.serverURL == server }
+                    .compactMap(WaitingRequestEntry.init)
             },
             isWaiting: { channelID, request in
-                model.menuBarStatus.waiting.contains { $0.id == channelID && $0.sequence == request }
+                let channel = model.catalog?.target(channelID)
+                return model.menuBarStatus.waiting.contains { $0.target == channel && $0.sequence == request }
             },
-            revealRequest: { model.activate(channelID: $0, sequence: $1) },
+            revealRequest: { model.activate(model.catalog?.target($0), sequence: $1) },
             onScreen: { model.onScreen }
         ), summarizes: { IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages) })
     }

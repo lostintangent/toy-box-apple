@@ -260,7 +260,7 @@ struct RootView: View {
         setOverviewVisible(false)
         selection = nil
         Task {
-            await handoff.continueActivity(activity, catalogs: { model.catalog.map { [$0] } ?? [] }) { catalog, id in
+            await handoff.continueActivity(activity, catalogs: { model.catalogs }) { catalog, id in
                 selection = catalog.target(id)
                 model.snapshot?.markStateReady("handoff-match")
             }
@@ -357,7 +357,7 @@ struct RootView: View {
     private func consumeNavigationRequest() {
         guard let request = model.navigationRequest, isKeyWindow else { return }
         handoff.cancel()
-        selection = model.target(request.channelID)
+        selection = request.channel
         if let sequence = request.sequence { interaction.reveal(sequence: sequence) }
         model.navigationRequest = nil
     }

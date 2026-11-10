@@ -10,7 +10,7 @@
 
 ### Features
 
-- You can now connect to several Toy Box servers at once, like one at home and one at work, and the sidebar shows each server's channels under its name, so all your channels are in one window.
+- You can now connect to several Toy Box servers at once, like one at home and one at work. The sidebar shows each server's channels under its name, and notifications, the menu bar, the Dock, the Needs You widget and the morning digest cover all of them, so nothing waiting for you is missed.
 
 ### Bugs/Polish
 

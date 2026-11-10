@@ -10,20 +10,20 @@ struct MorningDigestTests {
     @Test func digestLinesUseSummariesAndOrderTheBusiestChannels() throws {
         let state = state([.init(id: "2", sequence: 2, timestamp: "2026-10-24T08:00:00Z",
                                  sender: .agent("lead"), content: .text("Finished the layout."))])
-        let line = try #require(MorningDigest.line(state))
+        let line = try #require(MorningDigest.line(state, serverURL: "server"))
         #expect(line.text == "1 new message" && line.count == 1)
         var userOnly = state
         userOnly.messages[0].sender = .user
-        #expect(MorningDigest.line(userOnly) == nil)
+        #expect(MorningDigest.line(userOnly, serverURL: "server") == nil)
         let summary = CatchUp(needsYou: nil, changes: [.init(text: "Fixed the layout.", sources: [2])], through: 2)
-        #expect(MorningDigest.line(state, summary: summary)?.text == "Fixed the layout.")
-        let content = MorningDigest.ordered([line, .init(channelID: "busy", name: "Busy", count: 12,
-                                                         text: "12 new messages")])
+        #expect(MorningDigest.line(state, serverURL: "server", summary: summary)?.text == "Fixed the layout.")
+        let content = MorningDigest.ordered([line, .init(serverURL: "server", channelID: "busy", name: "Busy",
+                                                         count: 12, text: "12 new messages")])
         #expect(content.busiest?.channelID == "busy")
         #expect(content.body == "Busy: 12 new messages\nStudio: 1 new message")
         #expect(MorningDigest.ordered([
-            .init(channelID: "b", name: "B", count: 2, text: "2 new messages"),
-            .init(channelID: "a", name: "A", count: 2, text: "2 new messages"),
+            .init(serverURL: "server", channelID: "b", name: "B", count: 2, text: "2 new messages"),
+            .init(serverURL: "server", channelID: "a", name: "A", count: 2, text: "2 new messages"),
         ]).busiest?.channelID == "a")
     }
 
@@ -38,14 +38,13 @@ struct MorningDigestTests {
         var fails = true
         var empty = false
         let digest = MorningDigest(host: .init(
-            server: { "server" }, authorized: { true },
-            build: { _ in
+            servers: { ["server"] }, authorized: { true },
+            build: { _, _ in
                 builds += 1
                 if fails { throw ChannelAPIError.disconnected }
-                return empty ? .init(lines: []) : .init(lines: [.init(channelID: "a", name: "Studio", count: 2,
-                                                                       text: "2 new messages")])
+                return .init(lines: empty ? [] : [studio])
             },
-            deliver: { _, _, id in delivered.append(id) }
+            deliver: { _, id in delivered.append(id) }
         ), defaults: defaults, allowed: true, now: { now }, calendar: calendar)
         await digest.check()
         #expect(digest.error != nil && defaults.object(forKey: MorningDigest.lastRunKey) == nil)
@@ -61,12 +60,42 @@ struct MorningDigestTests {
         #expect(builds == 3 && delivered.count == 1)
     }
 
+    @Test func oneDigestSpansEveryServerAndAFailedServerCatchesUpTheNextMorning() async throws {
+        let suite = "MorningDigestTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "notificationsEnabled")
+        let first = date("2026-10-24T09:30:00Z")
+        var now = first
+        var failing: Set<String> = ["two"]
+        var windows: [String: ChannelDigestWindow] = [:]
+        var delivered: [MorningDigest.Content] = []
+        let digest = MorningDigest(host: .init(
+            servers: { ["one", "two"] }, authorized: { true },
+            build: { server, window in
+                windows[server] = window
+                if failing.contains(server) { throw ChannelAPIError.disconnected }
+                return .init(lines: [.init(serverURL: server, channelID: "studio", name: "Studio",
+                                           count: server == "one" ? 1 : 5, text: "News")])
+            },
+            deliver: { content, _ in delivered.append(content) }
+        ), defaults: defaults, allowed: true, now: { now }, calendar: calendar)
+        await digest.check()
+        #expect(delivered.map { $0.lines.map(\.serverURL) } == [["one"]] && digest.error == nil)
+        now = date("2026-10-25T08:30:00Z")
+        failing = []
+        await digest.check()
+        #expect(delivered.last?.lines.map(\.serverURL) == ["two", "one"], "The busiest channel leads, whatever its server")
+        #expect(windows["one"]?.since == first)
+        #expect(try #require(windows["two"]).since < first, "A server that failed is covered from where it left off")
+    }
+
     @Test func notificationHasNoSoundBadgeOrReplyAndOpensTheBusiestChannel() throws {
         let digest = MorningDigest.ordered([
-            .init(channelID: "b", name: "Docs", count: 1, text: "1 new message"),
-            .init(channelID: "a", name: "Studio", count: 7, text: "7 new messages"),
+            .init(serverURL: "https://other.test", channelID: "b", name: "Docs", count: 1, text: "1 new message"),
+            .init(serverURL: "https://example.test", channelID: "a", name: "Studio", count: 7, text: "7 new messages"),
         ])
-        let content = try #require(ChannelNotifications.morningDigestContent(digest, serverURL: "https://example.test"))
+        let content = try #require(ChannelNotifications.morningDigestContent(digest))
         #expect(content.title == "Morning digest" && content.subtitle.isEmpty)
         #expect(content.body == "Studio: 7 new messages\nDocs: 1 new message")
         #expect(content.sound == nil && content.badge == nil)
@@ -83,35 +112,35 @@ struct MorningDigestTests {
         defaults.set(true, forKey: "notificationsEnabled")
         var server = "first"
         let digest = MorningDigest(host: .init(
-            server: { server }, authorized: { true },
-            build: { _ in
+            servers: { [server] }, authorized: { true },
+            build: { _, _ in
                 server = "second"
-                return .init(lines: [.init(channelID: "a", name: "Studio", count: 2, text: "2 new messages")])
+                return .init(lines: [studio])
             },
-            deliver: { _, _, _ in Issue.record("A stale server's digest must not be delivered") }
+            deliver: { _, _ in Issue.record("A stale server's digest must not be delivered") }
         ), defaults: defaults, allowed: true,
            now: { date("2026-10-24T08:00:00Z") }, calendar: calendar)
         await digest.check()
         #expect(defaults.object(forKey: MorningDigest.lastRunKey) == nil)
         let disabled = MorningDigest(host: .init(
-            server: { server }, authorized: { true },
-            build: { _ in
+            servers: { [server] }, authorized: { true },
+            build: { _, _ in
                 defaults.set(false, forKey: MorningDigest.enabledKey)
-                return .init(lines: [.init(channelID: "a", name: "Studio", count: 2, text: "2 new messages")])
+                return .init(lines: [studio])
             },
-            deliver: { _, _, _ in Issue.record("Disabled digest must not be delivered") }
+            deliver: { _, _ in Issue.record("Disabled digest must not be delivered") }
         ), defaults: defaults, allowed: true,
            now: { date("2026-10-24T08:00:00Z") }, calendar: calendar)
         await disabled.check()
         #expect(defaults.object(forKey: MorningDigest.lastRunKey) == nil)
         defaults.set(true, forKey: MorningDigest.enabledKey)
         let rescheduled = MorningDigest(host: .init(
-            server: { server }, authorized: { true },
-            build: { _ in
+            servers: { [server] }, authorized: { true },
+            build: { _, _ in
                 defaults.set(540, forKey: MorningDigest.timeKey)
-                return .init(lines: [.init(channelID: "a", name: "Studio", count: 2, text: "2 new messages")])
+                return .init(lines: [studio])
             },
-            deliver: { _, _, _ in Issue.record("The new delivery time has not arrived") }
+            deliver: { _, _ in Issue.record("The new delivery time has not arrived") }
         ), defaults: defaults, allowed: true,
            now: { date("2026-10-24T08:00:00Z") }, calendar: calendar)
         await rescheduled.check()
@@ -126,12 +155,12 @@ struct MorningDigestTests {
         var continuation: CheckedContinuation<Void, Never>?
         var attempts = 0
         let digest = MorningDigest(host: .init(
-            server: { "server" }, authorized: { true },
-            build: { _ in
+            servers: { ["server"] }, authorized: { true },
+            build: { _, _ in
                 if attempts == 0 { await withCheckedContinuation { continuation = $0 } }
-                return .init(lines: [.init(channelID: "a", name: "Studio", count: 2, text: "2 new messages")])
+                return .init(lines: [studio])
             },
-            deliver: { _, _, _ in
+            deliver: { _, _ in
                 attempts += 1
                 if attempts == 1 { throw ChannelAPIError.disconnected }
             }
@@ -175,9 +204,9 @@ struct MorningDigestTests {
         var authorized = false
         var calls = 0
         let host = MorningDigest.Host(
-            server: { "server" }, authorized: { authorized },
-            build: { _ in calls += 1; return .init(lines: []) },
-            deliver: { _, _, _ in Issue.record("Unexpected notification") }
+            servers: { ["server"] }, authorized: { authorized },
+            build: { _, _ in calls += 1; return .init(lines: []) },
+            deliver: { _, _ in Issue.record("Unexpected notification") }
         )
         let digest = MorningDigest(host: host, defaults: defaults, allowed: true,
                                    now: { date("2026-10-24T08:00:00Z") }, calendar: calendar)
@@ -215,6 +244,9 @@ struct MorningDigestTests {
                                       server: "http://localhost:3100"))
         #expect(NotificationPresentation.options(kind: MorningDigest.category, isActiveChannel: true) == [.banner, .list])
     }
+
+    private let studio = MorningDigest.Content.Line(serverURL: "server", channelID: "a", name: "Studio", count: 2,
+                                                    text: "2 new messages")
 
     private struct NoModel: ChannelIntelligenceService {
         var availability: IntelligenceAvailability { .unavailable(.appleIntelligenceNotEnabled) }

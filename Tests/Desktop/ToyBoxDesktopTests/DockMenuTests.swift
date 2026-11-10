@@ -7,10 +7,18 @@ import Testing
 @MainActor
 @Suite("Dock requests and attention")
 struct DockMenuTests {
-    private func waiting(_ id: String = "core", sequence: Int = 10, quote: String? = "Should I tag v0.1.4?")
-        -> MenuBarStatus.Item {
-        .init(id: id, name: id == "core" ? "Core" : id, subtitle: ChannelNotification.Content.needsReply,
-              agent: nil, sequence: sequence, quote: quote)
+    private static let server = "http://server.test"
+    private static let other = "http://other.test"
+
+    private func waiting(_ id: String = "core", sequence: Int = 10, quote: String? = "Should I tag v0.1.4?",
+                         on server: String = server) -> MenuBarStatus.Item {
+        .init(target: ChannelTarget(serverURL: server, channelID: id)!, name: id == "core" ? "Core" : id,
+              subtitle: ChannelNotification.Content.needsReply, agent: nil, sequence: sequence, quote: quote)
+    }
+
+    /// Servers whose catalogs are loaded and reachable, as the app normalizes them.
+    private func usable(_ servers: String...) -> Set<String> {
+        Set(servers.compactMap(ChannelWaitingRequest.normalizedServer))
     }
 
     @Test func theMenuUsesTheSharedOrderAndRetainsActionsForItsLifetime() throws {
@@ -67,19 +75,19 @@ struct DockMenuTests {
     @Test func launchAndRepeatedOrAnsweredRequestsNeverBounce() {
         var requests: [NSApplication.RequestUserAttentionType] = []
         let attention = DockAttention(allowed: true, enabled: { true }, active: { false }, request: { requests.append($0) })
-        attention.update(status: .init(), serverURL: "server", hasCatalog: false)
-        attention.update(status: .init(waiting: [waiting()]), serverURL: "server", hasCatalog: true)
-        attention.update(status: .init(waiting: [waiting()]), serverURL: "server", hasCatalog: true)
-        attention.update(status: .init(), serverURL: "server", hasCatalog: true)
-        attention.update(status: .init(waiting: [waiting()]), serverURL: "server", hasCatalog: true)
+        attention.update(status: .init(), usable: [])
+        attention.update(status: .init(waiting: [waiting()]), usable: usable(Self.server))
+        attention.update(status: .init(waiting: [waiting()]), usable: usable(Self.server))
+        attention.update(status: .init(), usable: usable(Self.server))
+        attention.update(status: .init(waiting: [waiting()]), usable: usable(Self.server))
         #expect(requests.isEmpty)
         attention.update(status: .init(waiting: [waiting(sequence: 11), waiting("another", sequence: 30)]),
-                         serverURL: "server", hasCatalog: true)
+                         usable: usable(Self.server))
         #expect(requests == [.informationalRequest])
         attention.update(status: .init(waiting: [waiting(sequence: 11), waiting("another", sequence: 30)]),
-                         serverURL: "server", hasCatalog: true)
+                         usable: usable(Self.server))
         #expect(requests == [.informationalRequest])
-        attention.update(status: .init(waiting: [waiting(sequence: 12)]), serverURL: "server", hasCatalog: true)
+        attention.update(status: .init(waiting: [waiting(sequence: 12)]), usable: usable(Self.server))
         #expect(requests == [.informationalRequest, .informationalRequest])
     }
 
@@ -88,33 +96,37 @@ struct DockMenuTests {
         var active = false
         var bounces = 0
         let attention = DockAttention(allowed: true, enabled: { enabled }, active: { active }, request: { _ in bounces += 1 })
-        attention.update(status: .init(), serverURL: "server", hasCatalog: true)
-        attention.update(status: .init(waiting: [waiting()]), serverURL: "server", hasCatalog: true)
+        attention.update(status: .init(), usable: usable(Self.server))
+        attention.update(status: .init(waiting: [waiting()]), usable: usable(Self.server))
         enabled = true
-        attention.update(status: .init(waiting: [waiting()]), serverURL: "server", hasCatalog: true)
+        attention.update(status: .init(waiting: [waiting()]), usable: usable(Self.server))
         active = true
-        attention.update(status: .init(waiting: [waiting(sequence: 11)]), serverURL: "server", hasCatalog: true)
+        attention.update(status: .init(waiting: [waiting(sequence: 11)]), usable: usable(Self.server))
         active = false
-        attention.update(status: .init(waiting: [waiting(sequence: 11)]), serverURL: "server", hasCatalog: true)
+        attention.update(status: .init(waiting: [waiting(sequence: 11)]), usable: usable(Self.server))
         #expect(bounces == 0)
-        attention.update(status: .init(waiting: [waiting(sequence: 12)]), serverURL: "server", hasCatalog: true)
+        attention.update(status: .init(waiting: [waiting(sequence: 12)]), usable: usable(Self.server))
         #expect(bounces == 1)
     }
 
-    @Test func reconnectAndServerSwitchStartWithQuietBaselines() {
+    @Test func eachServerStartsWithAQuietBaselineWhenItArrivesOrReconnects() {
         var bounces = 0
         let attention = DockAttention(allowed: true, enabled: { true }, active: { false }, request: { _ in bounces += 1 })
-        attention.update(status: .init(waiting: [waiting()]), serverURL: "server", hasCatalog: true)
-        attention.update(status: .init(waiting: [waiting()], unreachableHost: "server"),
-                         serverURL: "server", hasCatalog: true)
-        attention.update(status: .init(waiting: [waiting(sequence: 20)]), serverURL: "server", hasCatalog: true)
+        attention.update(status: .init(waiting: [waiting()]), usable: usable(Self.server))
+        attention.update(status: .init(waiting: [waiting()]), usable: [])
+        attention.update(status: .init(waiting: [waiting(sequence: 20)]), usable: usable(Self.server))
         #expect(bounces == 0)
-        attention.update(status: .init(waiting: [waiting(sequence: 21)]), serverURL: "server", hasCatalog: true)
+        attention.update(status: .init(waiting: [waiting(sequence: 21)]), usable: usable(Self.server))
         #expect(bounces == 1)
-        attention.update(status: .init(waiting: [waiting(sequence: 30)]), serverURL: "other", hasCatalog: true)
-        #expect(bounces == 1)
-        attention.update(status: .init(waiting: [waiting(sequence: 31)]), serverURL: "other", hasCatalog: true)
-        #expect(bounces == 2)
+        attention.update(status: .init(waiting: [waiting(sequence: 21), waiting(sequence: 30, on: Self.other)]),
+                         usable: usable(Self.server, Self.other))
+        #expect(bounces == 1, "A server that just loaded has no new requests yet")
+        attention.update(status: .init(waiting: [waiting(sequence: 21), waiting(sequence: 31, on: Self.other)]),
+                         usable: usable(Self.server, Self.other))
+        #expect(bounces == 2, "The same channel ID on another server is its own request")
+        attention.update(status: .init(waiting: [waiting(sequence: 21), waiting(sequence: 32, on: Self.other)]),
+                         usable: usable(Self.other))
+        #expect(bounces == 3, "One server going offline doesn't quiet the others")
     }
 
     @Test func onlyOrdinaryProductionLaunchesCanRequestDockAttention() {
@@ -139,23 +151,20 @@ struct DockMenuTests {
                                         environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"]))
         let attention = DockAttention(allowed: false, enabled: { true }, active: { false },
                                       request: { _ in Issue.record("A validation bundle must never bounce the Dock.") })
-        attention.update(status: .init(), serverURL: "server", hasCatalog: true)
-        attention.update(status: .init(waiting: [waiting()]), serverURL: "server", hasCatalog: true)
+        attention.update(status: .init(), usable: usable(Self.server))
+        attention.update(status: .init(waiting: [waiting()]), usable: usable(Self.server))
     }
 
     @Test func olderSequenceReplaysAndResolvedQuotesAreNotNewRequests() {
         var bounces = 0
         let attention = DockAttention(allowed: true, enabled: { true }, active: { false }, request: { _ in bounces += 1 })
-        attention.update(status: .init(), serverURL: "server", hasCatalog: true)
+        attention.update(status: .init(), usable: usable(Self.server))
         attention.update(status: .init(waiting: [waiting(sequence: 20, quote: nil)]),
-                         serverURL: "server", hasCatalog: true)
+                         usable: usable(Self.server))
         #expect(bounces == 1)
         attention.update(status: .init(waiting: [waiting(sequence: 20, quote: "Now resolved")]),
-                         serverURL: "server", hasCatalog: true)
-        attention.update(status: .init(waiting: [waiting(sequence: 19)]), serverURL: "server", hasCatalog: true)
-        #expect(bounces == 1)
-        attention.reset()
-        attention.update(status: .init(waiting: [waiting(sequence: 21)]), serverURL: "server", hasCatalog: true)
+                         usable: usable(Self.server))
+        attention.update(status: .init(waiting: [waiting(sequence: 19)]), usable: usable(Self.server))
         #expect(bounces == 1)
     }
 

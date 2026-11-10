@@ -527,9 +527,10 @@ struct ShellTests {
         #expect(options.channelID == "studio-demo")
     }
 
-    @Test func eachNewWindowHasAnIndependentIdentity() {
-        let first = ChannelWindowValue(channelID: "studio-demo")
-        let second = ChannelWindowValue(channelID: "studio-demo")
+    @Test func eachNewWindowHasAnIndependentIdentity() throws {
+        let channel = try #require(ChannelTarget(serverURL: "http://127.0.0.1:3210", channelID: "studio-demo"))
+        let first = ChannelWindowValue(channel)
+        let second = ChannelWindowValue(channel)
         #expect(first.channelID == second.channelID)
         #expect(first != second)
     }
@@ -643,10 +644,10 @@ struct ShellTests {
         var unread = testChannel(id: "unread")
         unread.latestSequence = 100
         let channels = [request, finished, unread, testChannel(id: "quiet")]
-        #expect(AppModel.dockBadge(channels: channels, openChannelIDs: []) == "3")
-        #expect(AppModel.dockBadge(channels: channels, openChannelIDs: ["request", "finished", "unread"]) == "1")
-        #expect(AppModel.dockBadge(channels: [finished, unread], openChannelIDs: ["finished", "unread"]) == nil)
-        #expect(AppModel.dockBadge(channels: [], openChannelIDs: []) == nil)
+        #expect(AppModel.attentionCount(channels: channels, openChannelIDs: []) == 3)
+        #expect(AppModel.attentionCount(channels: channels, openChannelIDs: ["request", "finished", "unread"]) == 1)
+        #expect(AppModel.attentionCount(channels: [finished, unread], openChannelIDs: ["finished", "unread"]) == 0)
+        #expect(AppModel.attentionCount(channels: [], openChannelIDs: []) == 0)
     }
 
     @MainActor @Test(arguments: [0, 1, 2])
@@ -1264,9 +1265,19 @@ struct MenuBarExtraTests {
     private let nova = ChannelAgent(id: "nova", name: "Nova")
     private let lead = ChannelAgent(id: "lead", name: "Lead")
 
+    private static let server = "http://localhost:3210"
+
     private func channel(_ id: String, updated: String = "2026-10-22T08:00:00Z", request: Int? = nil) -> Channel {
         Channel(id: id, name: id.capitalized, model: .init(provider: "test", name: "test"), latestSequence: 20,
                 seenThrough: 10, requestSequence: request, updatedAt: updated)
+    }
+
+    private func target(_ id: String, on server: String = server) -> ChannelTarget {
+        ChannelTarget(serverURL: server, channelID: id)!
+    }
+
+    private func input(_ channel: Channel, working: [ChannelAgent], on server: String = server) -> MenuBarStatus.Input {
+        .init(target: target(channel.id, on: server), channel: channel, working: working)
     }
 
     private func request(_ text: String, sequence: Int = 12, at timestamp: String = "2026-10-22T08:00:00Z",
@@ -1278,10 +1289,10 @@ struct MenuBarExtraTests {
     }
 
     private func waiting(
-        _ channel: Channel, _ request: ChannelRequestMessage? = nil
+        _ channel: Channel, _ request: ChannelRequestMessage? = nil, on server: String = server
     ) -> ChannelCatalogStore.WaitingRequest {
-        .init(serverURL: "http://localhost:3210", channel: channel, sequence: channel.requestSequence ?? 0,
-              request: request)
+        .init(serverURL: target(channel.id, on: server).serverURL, channel: channel,
+              sequence: channel.requestSequence ?? 0, request: request)
     }
 
     @Test func theIconFollowsTheMostUrgentState() {
@@ -1293,13 +1304,13 @@ struct MenuBarExtraTests {
         #expect(offline.state == .disconnected && offline.icon == .face && !offline.isActive)
         #expect(offline.accessibilityValue == "Not connected" && offline.emptyText == "Can't connect to studio.local:3100")
 
-        let working = MenuBarStatus([.init(channel: channel("a"), working: [ada])], unreachableHost: nil)
+        let working = MenuBarStatus([input(channel("a"), working: [ada])], unreachableHost: nil)
         #expect(working.state == .working && working.icon == .working && working.isActive)
         #expect(working.accessibilityValue == "1 agent working" && working.emptyText == nil)
 
         let waiting = MenuBarStatus(requests: [self.waiting(channel("a", request: 12))], [
-            .init(channel: channel("a", request: 12), working: [lead, ada]),
-            .init(channel: channel("b"), working: [nova]),
+            input(channel("a", request: 12), working: [lead, ada]),
+            input(channel("b"), working: [nova]),
         ], unreachableHost: "studio.local:3100")
         #expect(waiting.state == .waiting && waiting.icon == .waiting && waiting.isActive)
         #expect(waiting.accessibilityValue == "1 channel waiting for you, 3 agents working")
@@ -1318,8 +1329,8 @@ struct MenuBarExtraTests {
             waiting(channel("newer", request: 14), request(long, sequence: 14, at: "2026-10-22T09:00:00Z")),
             waiting(channel("older", request: 12), request("Pick a palette\nfor the icon", at: "2026-10-22T08:00:00Z")),
             waiting(channel("unknown", updated: "2026-10-22T07:00:00Z", request: 3)),
-        ], [.init(channel: channel("newer", request: 14), working: [ada])], unreachableHost: nil)
-        #expect(status.waiting.map(\.id) == ["newer", "older", "unknown"])
+        ], [input(channel("newer", request: 14), working: [ada])], unreachableHost: nil)
+        #expect(status.waiting.map(\.target.channelID) == ["newer", "older", "unknown"])
         #expect(status.waiting.map(\.sequence) == [14, 12, 3])
         #expect(status.waiting.map(\.agent?.id) == ["ada", "ada", nil])
         #expect(status.waiting[1].subtitle == "Ada needs your reply")
@@ -1338,23 +1349,39 @@ struct MenuBarExtraTests {
         #expect(MenuBarStatus.workingSubtitle(["Lead", "Ada", "Nova"]) == "Lead, Ada and Nova are working")
         #expect(MenuBarStatus.workingSubtitle(["Lead", "Ada", "Nova", "Max"]) == "Lead, Ada and 2 others are working")
         let status = MenuBarStatus([
-            .init(channel: channel("quiet"), working: []),
-            .init(channel: channel("early", updated: "2026-10-22T07:00:00Z"), working: [nova]),
-            .init(channel: channel("late", updated: "2026-10-22T09:00:00Z"), working: [lead, ada]),
+            input(channel("quiet"), working: []),
+            input(channel("early", updated: "2026-10-22T07:00:00Z"), working: [nova]),
+            input(channel("late", updated: "2026-10-22T09:00:00Z"), working: [lead, ada]),
         ], unreachableHost: nil)
-        #expect(status.working.map(\.id) == ["late", "early"])
+        #expect(status.working.map(\.target.channelID) == ["late", "early"])
         #expect(status.working.map(\.agent?.id) == ["lead", "nova"])
         #expect(status.workingAgents == 3)
     }
 
     @Test func workingShowsThreeChannelsThenOpensTheWindowForTheRest() {
         let inputs = (0..<8).map { index in
-            MenuBarStatus.Input(channel: channel("c\(index)", updated: "2026-10-22T0\(index):00:00Z"), working: [ada])
+            input(channel("c\(index)", updated: "2026-10-22T0\(index):00:00Z"), working: [ada])
         }
         let section = MenuBarStatus(inputs, unreachableHost: nil).workingSection
-        #expect(section.items.map(\.id) == ["c7", "c6", "c5"] && section.overflow == 5)
+        #expect(section.items.map(\.target.channelID) == ["c7", "c6", "c5"] && section.overflow == 5)
         #expect(section.items.allSatisfy { $0.agents == [ada] })
         #expect(MenuBarStatus(Array(inputs.prefix(3)), unreachableHost: nil).workingSection.overflow == 0)
+    }
+
+    @Test func theSameChannelOnTwoServersIsTwoItems() {
+        let other = "http://localhost:3211"
+        let status = MenuBarStatus(requests: [waiting(channel("studio", request: 12))], [
+            input(channel("studio", request: 12), working: [ada]),
+            input(channel("studio"), working: [nova], on: other),
+        ], unreachableHost: nil)
+        #expect(status.waiting.map(\.target) == [target("studio")])
+        #expect(status.working.map(\.target) == [target("studio", on: other)])
+        var inbox = MenuBarInboxRequests(status: .init(requests: [
+            waiting(channel("studio", request: 12), request("Here?")),
+            waiting(channel("studio", request: 7), request("There?", sequence: 7), on: other),
+        ], [], unreachableHost: nil))
+        inbox.record(target("studio", on: other), .replied)
+        #expect(inbox.requests.map(\.state) == [.waiting, .replied])
     }
 
     @Test func inboxQuotesFlattenMarkdownWithoutDroppingMentionsOrCuttingAtSixtyCharacters() {
@@ -1373,19 +1400,19 @@ struct MenuBarExtraTests {
         ], [], unreachableHost: nil)
         var inbox = MenuBarInboxRequests(status: first)
         let next = MenuBarStatus(waiting: [
-            .init(id: "new", name: "New", subtitle: "Needs your reply", agent: ada, sequence: 14, quote: "New?"),
+            .init(target: target("new"), name: "New", subtitle: "Needs your reply", agent: ada, sequence: 14, quote: "New?"),
             first.waiting[1],
         ])
         inbox.update(next)
-        #expect(inbox.requests.map(\.id) == ["one", "two", "new"])
+        #expect(inbox.requests.map(\.id.channelID) == ["one", "two", "new"])
         #expect(inbox.requests[0].state == .answered)
         #expect(!inbox.requests[0].canReply)
         #expect(inbox.requests[1].canReply)
-        #expect(MenuBarInboxRequests(status: next).requests.map(\.id) == ["new", "two"])
+        #expect(MenuBarInboxRequests(status: next).requests.map(\.id.channelID) == ["new", "two"])
     }
 
     @Test func aChangedRequestKeepsTheOriginalQuoteAndDisablesItsReply() {
-        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "First?")
+        let item = MenuBarStatus.Item(target: target("one"), name: "One", subtitle: "", agent: ada, sequence: 12, quote: "First?")
         var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         var newer = item
         newer.sequence = 20
@@ -1397,9 +1424,9 @@ struct MenuBarExtraTests {
     }
 
     @Test func aRepliedRowStaysUntilTheNextOpening() {
-        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "First?")
+        let item = MenuBarStatus.Item(target: target("one"), name: "One", subtitle: "", agent: ada, sequence: 12, quote: "First?")
         var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
-        inbox.record("one", .replied)
+        inbox.record(target("one"), .replied)
         inbox.update(.init(waiting: [item]))
         #expect(inbox.requests[0].state == .replied)
         #expect(!inbox.requests[0].canReply)
@@ -1411,7 +1438,7 @@ struct MenuBarExtraTests {
     }
 
     @Test func previewArrivalEnablesReplyWithoutInventingARequester() {
-        var item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", sequence: 12)
+        var item = MenuBarStatus.Item(target: target("one"), name: "One", subtitle: "", sequence: 12)
         var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         #expect(!inbox.requests[0].canReply)
         item.quote = "Question?"
@@ -1423,26 +1450,26 @@ struct MenuBarExtraTests {
     }
 
     @Test func choicesShowWhileTheRequestWaitsAndNeedNoRequester() {
-        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", sequence: 12, quote: "Ship it?",
+        let item = MenuBarStatus.Item(target: target("one"), name: "One", subtitle: "", sequence: 12, quote: "Ship it?",
                                       replies: ["Yes", "No"])
         var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         #expect(inbox.requests[0].canChoose)
         #expect(!inbox.requests[0].canReply)
-        inbox.record("one", .replied)
+        inbox.record(target("one"), .replied)
         #expect(!inbox.requests[0].canChoose)
         #expect(inbox.requests[0].choices(isConnected: true) == nil)
         #expect(inbox.requests[0].state.notice == "Replied")
     }
 
     @Test func aRequestWithoutSuggestedRepliesOffersNoChoices() {
-        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?")
+        let item = MenuBarStatus.Item(target: target("one"), name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?")
         let inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         #expect(inbox.requests[0].canReply)
         #expect(!inbox.requests[0].canChoose)
     }
 
     @Test func choicesDisableWhileTheCatalogCannotConnect() throws {
-        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?",
+        let item = MenuBarStatus.Item(target: target("one"), name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?",
                                       replies: ["Yes", "No"])
         let request = MenuBarInboxRequests(status: .init(waiting: [item])).requests[0]
         #expect(try #require(request.choices(isConnected: true)).canSend)

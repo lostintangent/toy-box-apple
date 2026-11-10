@@ -65,9 +65,10 @@ final class DockAttention {
     private let enabled: () -> Bool
     private let active: () -> Bool
     private let request: (NSApplication.RequestUserAttentionType) -> Void
-    private var serverURL: String?
-    private var needsBaseline = true
-    private var seen: [String: Int] = [:]
+    /// The servers whose requests are already known, so a server that comes back doesn't bounce
+    /// for the ones that arrived while it was away.
+    private var baselined: Set<String> = []
+    private var seen: [ChannelTarget: Int] = [:]
 
     init(allowed: Bool, enabled: @escaping () -> Bool, active: @escaping () -> Bool,
          request: @escaping (NSApplication.RequestUserAttentionType) -> Void) {
@@ -82,53 +83,33 @@ final class DockAttention {
         bundleID == "dev.toybox.desktop" && options.allowsUserIntegrations(environment: environment)
     }
 
-    func reset() {
-        serverURL = nil
-        needsBaseline = true
-        seen = [:]
-    }
-
-    func update(status: MenuBarStatus, serverURL: String, hasCatalog: Bool) {
+    /// Bounces once for requests that are new since the last update. Only servers in `usable`, the
+    /// normalized addresses of those loaded and reachable, count.
+    func update(status: MenuBarStatus, usable: Set<String>) {
         guard allowed else { return }
-        if self.serverURL != serverURL {
-            reset()
-            self.serverURL = serverURL
-        }
-        guard hasCatalog, status.unreachableHost == nil else {
-            needsBaseline = true
-            return
-        }
+        baselined.formIntersection(usable)
         var hasNewRequest = false
-        for item in status.waiting {
-            guard let sequence = item.sequence, sequence > 0 else { continue }
-            if sequence > (seen[item.id] ?? 0) {
-                hasNewRequest = true
-                seen[item.id] = sequence
-            }
+        for item in status.waiting where usable.contains(item.target.serverURL) {
+            guard let sequence = item.sequence, sequence > 0, sequence > (seen[item.target] ?? 0) else { continue }
+            seen[item.target] = sequence
+            if baselined.contains(item.target.serverURL) { hasNewRequest = true }
         }
-        let wasBaseline = needsBaseline
-        needsBaseline = false
-        if !wasBaseline, hasNewRequest, enabled(), !active() { request(.informationalRequest) }
+        baselined.formUnion(usable)
+        if hasNewRequest, enabled(), !active() { request(.informationalRequest) }
     }
 }
 
 extension AppModel {
     func makeDockMenu() -> NSMenu {
-        let server = serverURL
-        return DockMenu.make(status: menuBarStatus, hasCatalog: catalog?.state != nil,
-                             quickSendEnabled: quickSend.isEnabled,
-                             canCreateChannel: api != nil, open: { [weak self] item in
-            guard let self else { return }
-            guard self.serverURL == server else {
-                NSApplication.shared.presentError(WidgetSnapshotError.differentServer)
-                return
-            }
-            self.activate(channelID: item.id, sequence: item.sequence)
+        DockMenu.make(status: menuBarStatus, hasCatalog: catalogs.contains(where: \.isLoaded),
+                      quickSendEnabled: quickSend.isEnabled,
+                      canCreateChannel: api != nil, open: { [weak self] item in
+            self?.activate(item.target, sequence: item.sequence)
         }, quickSend: { [weak self] in
             self?.quickSend.present()
         }, newChannel: { [weak self] in
             self?.newChannelRequest = UUID()
-            self?.activate(channelID: nil)
+            self?.activate(nil)
         })
     }
 }

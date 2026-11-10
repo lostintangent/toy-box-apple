@@ -25,7 +25,16 @@ final class WidgetSnapshotPublisher {
         self.reload = reload
     }
 
-    func update(status: MenuBarStatus, serverURL: String, hasCatalog: Bool, now: Date = .now) {
+    /// One server as the app sees it.
+    struct Source {
+        /// Exactly as the app saved it.
+        var serverURL: String
+        var isOffline: Bool
+        /// Its waiting requests, or nil until its catalog loads.
+        var waiting: [ChannelCatalogStore.WaitingRequest]?
+    }
+
+    func update(_ sources: [Source], now: Date = .now) {
         guard isEnabled else { return }
         do {
             guard let directory = directory ?? FileManager.default.containerURL(
@@ -45,11 +54,8 @@ final class WidgetSnapshotPublisher {
                     logger.error("Could not restore the widget snapshot: \(error.localizedDescription, privacy: .public)")
                 }
             }
-            var snapshot = Self.snapshot(status: status, serverURL: serverURL, hasCatalog: hasCatalog, now: now)
-            if !hasCatalog, previous?.servers.contains(where: { $0.serverURL == serverURL }) == true {
-                snapshot = NeedsYouSnapshot(servers: [.offline(serverURL, in: previous, at: now)])
-            }
-            guard let snapshot = snapshot.replacing(previous, at: now) else { return }
+            guard let snapshot = Self.snapshot(sources, previous: previous, now: now)
+                .replacing(previous, at: now) else { return }
             let data = try JSONEncoder().encode(snapshot)
             try data.write(to: file, options: .atomic)
             previous = snapshot
@@ -59,9 +65,20 @@ final class WidgetSnapshotPublisher {
         }
     }
 
-    static func snapshot(status: MenuBarStatus, serverURL: String, hasCatalog: Bool, now: Date) -> NeedsYouSnapshot {
-        NeedsYouSnapshot(servers: [.init(serverURL: serverURL, updatedAt: now, isOffline: status.unreachableHost != nil,
-                                         isAvailable: hasCatalog, waiting: status.requests)])
+    /// One part per server, in Settings order. A server whose catalog hasn't loaded keeps its last
+    /// part, out of date, and claims no empty inbox when it has none.
+    static func snapshot(_ sources: [Source], previous: NeedsYouSnapshot?, now: Date) -> NeedsYouSnapshot {
+        NeedsYouSnapshot(servers: sources.map { source in
+            if let waiting = source.waiting {
+                return .init(serverURL: source.serverURL, updatedAt: now, isOffline: source.isOffline,
+                             isAvailable: true, waiting: waiting)
+            }
+            guard source.isOffline || previous?.servers.contains(where: { $0.serverURL == source.serverURL }) == true else {
+                return .init(serverURL: source.serverURL, updatedAt: now, isOffline: false, isAvailable: false,
+                             waiting: [])
+            }
+            return .offline(source.serverURL, in: previous, at: now)
+        })
     }
 }
 
@@ -102,7 +119,7 @@ extension AppModel {
         guard let action = WidgetActionLink(url: url) else { return false }
         switch action {
         case .main:
-            activate(channelID: nil)
+            activate(nil)
         case .quickSend:
             guard quickSend.isEnabled else { throw QuickSendIntake.IntakeError.unavailable }
             quickSend.present()
@@ -111,8 +128,8 @@ extension AppModel {
             quickSend.dismiss()
             menuBar.requestPresentation()
         case .open(let request):
-            guard request.serverURL == serverURL else { throw WidgetSnapshotError.differentServer }
-            activate(channelID: request.channelID, sequence: request.sequence)
+            activate(ChannelTarget(serverURL: request.serverURL, channelID: request.channelID),
+                     sequence: request.sequence)
         case .reply(let request):
             guard request.serverURL == serverURL else { throw WidgetSnapshotError.differentServer }
             guard quickSend.isEnabled else { throw QuickSendIntake.IntakeError.unavailable }

@@ -26,7 +26,10 @@ import Testing
         }
         await catalog.refresh()
         #expect(catalog.phase.message == nil)
-        publisher.update(status: .init(), serverURL: server, hasCatalog: catalog.state != nil, now: now)
+        func source() -> WidgetSnapshotPublisher.Source {
+            .init(serverURL: server, isOffline: false, waiting: catalog.isLoaded ? catalog.waitingRequests() : nil)
+        }
+        publisher.update([source()], now: now)
         let first = try read()
         let state = catalog.state
         let didRefresh = Mutex(false)
@@ -39,7 +42,7 @@ import Testing
         await catalog.refresh()
         #expect(catalog.phase.message == nil)
         #expect(didRefresh.withLock { $0 })
-        publisher.update(status: .init(), serverURL: server, hasCatalog: catalog.state != nil, now: now)
+        publisher.update([source()], now: now)
         let refreshed = try read()
         #expect(catalog.state == state)
         #expect(refreshed.requests == first.requests)
@@ -54,22 +57,21 @@ import Testing
         var reloads = 0
         let publisher = WidgetSnapshotPublisher(enabled: true, directory: directory, reload: { reloads += 1 })
         let now = Date(timeIntervalSince1970: 1793086200)
-        publisher.update(status: .init(), serverURL: "http://widget.test", hasCatalog: true, now: now)
-        publisher.update(status: .init(), serverURL: "http://widget.test", hasCatalog: true,
-                         now: now.addingTimeInterval(15 * 60 - 1))
+        let loaded = WidgetSnapshotPublisher.Source(serverURL: "http://widget.test", isOffline: false, waiting: [])
+        let offline = WidgetSnapshotPublisher.Source(serverURL: "http://widget.test", isOffline: true, waiting: nil)
+        publisher.update([loaded], now: now)
+        publisher.update([loaded], now: now.addingTimeInterval(15 * 60 - 1))
         #expect(reloads == 1)
         let heartbeat = now.addingTimeInterval(15 * 60)
-        publisher.update(status: .init(), serverURL: "http://widget.test", hasCatalog: true, now: heartbeat)
+        publisher.update([loaded], now: heartbeat)
         #expect(reloads == 2)
-        publisher.update(status: .init(unreachableHost: "widget.test"), serverURL: "http://widget.test",
-                         hasCatalog: false, now: now.addingTimeInterval(40 * 60))
+        publisher.update([offline], now: now.addingTimeInterval(40 * 60))
         #expect(reloads == 3)
         let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
         let cached = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
         #expect(cached.updatedAt == heartbeat)
         #expect(cached.isOffline)
-        publisher.update(status: .init(unreachableHost: "widget.test"), serverURL: "http://widget.test",
-                         hasCatalog: false, now: now.addingTimeInterval(60 * 60))
+        publisher.update([offline], now: now.addingTimeInterval(60 * 60))
         #expect(reloads == 3)
     }
 
@@ -162,7 +164,7 @@ import Testing
         let now = Date(timeIntervalSince1970: 1_000_000)
         let requested = now.addingTimeInterval(-600)
         let stamp = ISO8601DateFormatter().string(from: requested)
-        let status = MenuBarStatus(requests: (1...6).map { index in
+        let waiting: [ChannelCatalogStore.WaitingRequest] = (1...6).map { index in
             .init(serverURL: "http://localhost",
                   channel: Channel(id: "channel-\(index)", name: "Channel \(index)",
                                    model: .init(provider: "test", name: "test"), requestSequence: index,
@@ -171,9 +173,9 @@ import Testing
                     message: .init(id: "m\(index)", sequence: index, timestamp: stamp, sender: .agent("lead"),
                                    content: .text("Question \(index)?"), request: true),
                     agents: [.init(id: "lead", name: "Lead")]))
-        }, [], unreachableHost: "localhost")
-        let snapshot = WidgetSnapshotPublisher.snapshot(status: status, serverURL: "http://localhost/",
-                                                        hasCatalog: true, now: now)
+        }
+        let snapshot = WidgetSnapshotPublisher.snapshot(
+            [.init(serverURL: "http://localhost/", isOffline: true, waiting: waiting)], previous: nil, now: now)
         #expect(snapshot.waitingCount == 6)
         #expect(snapshot.requests.map(\.sequence) == [1, 2, 3, 4, 5])
         #expect(snapshot.requests.first?.quote == "Needs your reply")
@@ -195,8 +197,8 @@ import Testing
 
     @Test @MainActor func missingCatalogDoesNotClaimAnEmptyInboxAndStalenessUsesAnInjectedTime() {
         let now = Date(timeIntervalSince1970: 1_000_000)
-        let snapshot = WidgetSnapshotPublisher.snapshot(status: .init(), serverURL: "http://new-server/",
-                                                        hasCatalog: false, now: now)
+        let snapshot = WidgetSnapshotPublisher.snapshot(
+            [.init(serverURL: "http://new-server/", isOffline: false, waiting: nil)], previous: nil, now: now)
         #expect(!snapshot.isAvailable)
         #expect(snapshot.requests.isEmpty)
         #expect(snapshot.waitingCount == 0)
@@ -205,5 +207,30 @@ import Testing
         var offline = snapshot
         offline.servers[0].isOffline = true
         #expect(offline.isStale(at: now))
+    }
+
+    @Test @MainActor func eachServerWritesItsOwnPartAndAnUnloadedOneKeepsItsLastRequests() throws {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        func waiting(_ id: String, sequence: Int) -> ChannelCatalogStore.WaitingRequest {
+            .init(serverURL: "http://unused", channel: Channel(id: id, name: id, model: .init(provider: "t", name: "t"),
+                                                               requestSequence: sequence, updatedAt: ""),
+                  sequence: sequence, request: nil)
+        }
+        let first = WidgetSnapshotPublisher.snapshot([
+            .init(serverURL: "http://one/", isOffline: false, waiting: [waiting("studio", sequence: 4)]),
+            .init(serverURL: "http://two/", isOffline: false, waiting: [waiting("studio", sequence: 9)]),
+        ], previous: nil, now: now)
+        #expect(first.servers.map(\.serverURL) == ["http://one/", "http://two/"])
+        #expect(Set(first.requests.map(\.id)).count == 2, "The same channel on two servers is two requests")
+        let next = WidgetSnapshotPublisher.snapshot([
+            .init(serverURL: "http://one/", isOffline: false, waiting: []),
+            .init(serverURL: "http://two/", isOffline: true, waiting: nil),
+            .init(serverURL: "http://three/", isOffline: false, waiting: nil),
+        ], previous: first, now: now.addingTimeInterval(60))
+        let two = try #require(next.servers.first { $0.serverURL == "http://two/" })
+        #expect(two.isOffline && two.requests.map(\.sequence) == [9] && two.updatedAt == now)
+        let three = try #require(next.servers.first { $0.serverURL == "http://three/" })
+        #expect(!three.isAvailable && !three.isOffline && three.requests.isEmpty)
+        #expect(next.requests.map(\.serverURL) == ["http://two/"])
     }
 }
