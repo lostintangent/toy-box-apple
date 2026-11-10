@@ -129,14 +129,11 @@ private struct SheetBarBehavior: ViewModifier {
 @available(iOS 27.1, *)
 private struct LeadingVerticalBarBehavior: ViewModifier {
     let placement: OverviewPlacement
-    @Environment(\.toolbarVerticalEdge) private var verticalEdge
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     func body(content: Content) -> some View {
-        if placement.keepsHorizontalBar(hasLeadingVerticalBar: verticalEdge == .leading) {
-            content.toolbarVerticalBehavior(.disabled)
-        } else {
-            content
-        }
+        content.toolbarVerticalBehavior(placement.keepsHorizontalBar(verticalSizeClass: verticalSizeClass)
+                                        ? .disabled : .automatic)
     }
 }
 

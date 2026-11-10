@@ -2197,9 +2197,11 @@ The phone sheet's close is the system `Button(role: .close)` glass X, trailing i
 inline navigation bar with no title, labeled "Close Overview". It sits on the root and on every
 pushed page and stays pinned while the content scrolls beneath it. UIKit owns its glass, size,
 hit target and placement. Where the system reports a trailing vertical bar, the close joins that
-column beside the status bar, as every trailing bar item does. Where it reports a leading vertical
-bar, as folded landscape does, the sheet sets `toolbarVerticalBehavior(.disabled)` so the bar stays
-horizontal and the close stays at the top trailing edge, clear of the list. The landscape inspector
+column beside the status bar, as every trailing bar item does. Folded landscape stands the bar on
+the leading edge, so in compact height the sheet sets `toolbarVerticalBehavior(.disabled)` and the
+bar stays horizontal, with the close at the top trailing edge, clear of the list. The vertical size
+class decides, never the reported edge, because a horizontal bar reports none and switching on it
+would never settle. The landscape inspector
 column has no close and keeps its root bar hidden, because the channel toolbar's Overview button
 closes it, like the sidebar. Overview has no channel-actions menu: Follow, Edit Channel and
 Delete Channel live in the channel's Channel Actions menu. The purpose starts 12 points below
