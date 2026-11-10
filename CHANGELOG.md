@@ -9,6 +9,7 @@
 ### Bugs/Polish
 
 - Unfolding an iPhone Duo with a channel open keeps the channel full width, and unfolding from the channel list keeps the list showing, so you carry on where you were.
+- Toy Box no longer freezes when you open Overview with your phone folded and turned sideways.
 
 ## Mac 0.1.30
 

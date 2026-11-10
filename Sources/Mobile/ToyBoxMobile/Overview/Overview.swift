@@ -20,9 +20,12 @@ enum OverviewPlacement: Equatable {
     }
 
     /// Folded landscape stands the sheet's bar items in a leading vertical bar, which would move the
-    /// close over the list. The sheet keeps its bar horizontal there, so the close stays trailing.
-    func keepsHorizontalBar(hasLeadingVerticalBar: Bool) -> Bool {
-        self == .sheet && hasLeadingVerticalBar
+    /// close over the list. The sheet keeps its bar horizontal in compact height, so the close stays
+    /// trailing. Folded portrait's trailing bar keeps the close beside the status bar. The size class
+    /// decides, not the reported edge, because a horizontal bar reports no edge, which would bring the
+    /// vertical bar straight back.
+    func keepsHorizontalBar(verticalSizeClass: UserInterfaceSizeClass?) -> Bool {
+        self == .sheet && verticalSizeClass == .compact
     }
 }
 
