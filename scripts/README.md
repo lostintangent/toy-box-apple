@@ -13,7 +13,7 @@ Script tests are omitted. Bundle or release changes require both real release dr
 | Command | File | What it's for | Who runs it |
 | --- | --- | --- | --- |
 | `bun run setup-secrets SHA1 APPLE_ID TEAM_ID [OWNER/REPO]` | `desktop/setup-secrets.ts` | Configure Developer ID, notarization and Sparkle secrets once per certificate or Mac | Certificate owner only |
-| `bun run test` | `desktop/test.ts` | Run Mac Swift tests, reject missing summaries and sample hung tests before failing | Contributors, agents, CI |
+| `bun run test` | `desktop/test.ts` | Run Mac Swift tests, reject a run that stops before it ends and sample hung tests before failing | Contributors, agents, CI |
 | `bun run build` | `desktop/bundle/index.ts` | Build, bundle, ad-hoc sign and open the Mac app. `--no-open` builds only | Contributors, agents, CI |
 | `bun run validate` | `desktop/dogfood/validate.ts` | Build and launch an optimized, isolated Toy Box Test app on the demo | Agents |
 | `bun run development` | `desktop/dogfood/development.ts` | Build, development-sign and open Toy Box Dev beside the installed app, for Siri's developer preview | User, contributors |

@@ -112,15 +112,3 @@ export function releaseTag(value: string | undefined) {
 
 export const bundleIdentity = "dev.toybox.desktop";
 export const repositoryURL = "https://github.com/lostintangent/toy-box-apple";
-
-export function checkTestCompletion(log: string) {
-    const count = (pattern: RegExp) => [...log.matchAll(pattern)].length;
-    const started = count(/Test run started\./g);
-    const finished = count(/Test run with [0-9]+ tests? .*(passed|failed) after /g);
-    const suitesStarted = count(/Test Suite '(All|Selected) tests' started/g);
-    const suitesFinished = count(/Test Suite '(All|Selected) tests' (passed|failed)/g);
-    if ((!finished && !suitesFinished) || started !== finished || suitesStarted !== suitesFinished) {
-        throw new Error("error: a test run stopped before printing its summary, so its remaining tests never ran "
-            + `(Swift Testing ${finished} of ${started} finished, XCTest ${suitesFinished} of ${suitesStarted})`);
-    }
-}
