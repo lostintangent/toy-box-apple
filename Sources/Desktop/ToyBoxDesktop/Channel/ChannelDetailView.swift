@@ -17,7 +17,7 @@ struct ChannelDetailView: View {
     @Binding var mountsSurroundings: Bool
     var onBack: () -> Void
     /// Selects a channel in this window, as the sidebar does.
-    var onSelect: (String) -> Void
+    var onSelect: (ChannelTarget) -> Void
     @Environment(AppModel.self) private var model
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
@@ -149,7 +149,7 @@ struct ChannelDetailView: View {
             ContentUnavailableView {
                 Label("Can't connect to Toy Box", systemImage: "wifi.exclamationmark")
             } description: {
-                Text("\(model.serverURL)\n\(error)")
+                Text("\(store.api.baseURL.absoluteString)\n\(error)")
             } actions: {
                 Button("Retry") { store.reconnect() }
                 Button("Settings") { openSettings() }
@@ -198,13 +198,17 @@ struct ChannelDetailView: View {
     private var title: String { store.details?.name ?? catalogChannel?.name ?? "Channel" }
 
     /// The title menu keeps every channel one click away with the sidebar collapsed, in sidebar
-    /// order and with the sidebar's attention as system menu-item badges.
+    /// order and with the sidebar's attention as system menu-item badges. Several servers each get
+    /// a section, as in the sidebar.
     @ViewBuilder private var titleMenu: some View {
-        Picker("Channel", selection: Binding(get: { store.id }, set: { if $0 != store.id { onSelect($0) } })) {
-            ForEach(model.catalog?.channels ?? []) { channel in
-                Text(model.sidebarChannel(channel).name)
-                    .badge(Self.badge(model.sidebarAttention(channel)))
-                    .tag(channel.id)
+        let selected = store.target
+        Picker("Channel", selection: Binding(get: { selected }, set: { if let target = $0, target != selected { onSelect(target) } })) {
+            if model.catalogs.count > 1 {
+                ForEach(model.catalogs, id: \.api.baseURL) { catalog in
+                    Section(catalog.name) { channelItems(in: catalog) }
+                }
+            } else if let catalog {
+                channelItems(in: catalog)
             }
         }
         .pickerStyle(.inline)
@@ -215,15 +219,26 @@ struct ChannelDetailView: View {
         }
         Divider()
         Button("Edit Channel…", systemImage: "pencil") {
-            if let target = store.target { management.present(.editChannel(target)) }
+            if let selected { management.present(.editChannel(selected)) }
         }
         .disabled(!store.phase.isConnected)
-        Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { model.openInToyBox(channelID: store.id) }
+        Button("Open in Toy Box", systemImage: "arrow.up.forward.app") {
+            if let selected { model.openInToyBox(selected) }
+        }
         Divider()
         Button("Delete Channel…", systemImage: "trash", role: .destructive) {
             if let target = store.target { management.present(.deleteChannel(target)) }
         }
         .disabled(!store.phase.isConnected)
+    }
+
+    private func channelItems(in catalog: ChannelCatalogStore) -> some View {
+        let presentation = model.sidebarPresentation(for: catalog)
+        return ForEach(catalog.channels) { channel in
+            Text(presentation.channel(channel).name)
+                .badge(Self.badge(presentation.attention(channel)))
+                .tag(catalog.target(channel.id))
+        }
     }
 
     static func badge(_ attention: Channel.Attention?) -> Text? {
@@ -303,7 +318,9 @@ struct ChannelDetailView: View {
         .visibilityPriority(.low)
     }
 
-    private var catalogChannel: Channel? { model.catalog?.channels.first { $0.id == store.id } }
+    /// The catalog of this channel's server.
+    private var catalog: ChannelCatalogStore? { model.catalogs.first(at: store.api.baseURL.absoluteString) }
+    private var catalogChannel: Channel? { catalog?.channels.first { $0.id == store.id } }
 }
 
 /// Floats over a cached transcript whose stream dropped, like the phone's, so the rows, their

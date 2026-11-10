@@ -1133,7 +1133,7 @@ struct ShellTests {
             ]
             let navigation = ChannelHandoffNavigation()
             await navigation.continueActivity(activity, catalogs: { model.catalog.map { [$0] } ?? [] }) { _, id in
-                model.openHandoffChannel(id: id, generation: generation)
+                model.openHandoffChannel(model.target(id)!, generation: generation)
             }
             #expect(model.selectedStore === store)
             #expect(model.serverURL == server)
@@ -1151,11 +1151,11 @@ struct ShellTests {
                                  defaults: defaults, session: fixtureSession())
             let generation = model.beginHandoffNavigation()
             model.selectedChannelID = "second"
-            model.openHandoffChannel(id: "first", generation: generation)
+            model.openHandoffChannel(model.target("first")!, generation: generation)
             #expect(model.selectedChannelID == "second")
             let beforeSwitch = model.beginHandoffNavigation()
             try model.changeAddress(of: #require(model.catalog), to: "https://another.example")
-            model.openHandoffChannel(id: "first", generation: beforeSwitch)
+            model.openHandoffChannel(model.target("first")!, generation: beforeSwitch)
             #expect(model.selectedChannelID == nil)
             #expect(model.serverURL == "https://another.example")
         }
@@ -1311,9 +1311,10 @@ struct ShellTests {
             #expect(model.catalog == nil)
             #expect(model.configurationError == nil)
             #expect(defaults.string(forKey: "serverURL") == nil)
-            #expect(model.channelURL(channelID: "first") == nil)
+            let first = try #require(ChannelTarget(serverURL: "https://fixture.example", channelID: "first"))
+            #expect(model.channelURL(first) == nil)
             try model.addServer("https://fixture.example")
-            #expect(model.channelURL(channelID: "first") != nil)
+            #expect(model.channelURL(first) != nil)
         }
     }
 
@@ -1653,6 +1654,31 @@ struct ShellTests {
             #expect(model.selectedStore === store)
             #expect(model.visibleChannelID == "second")
             #expect(model.interaction(for: "second") === interaction)
+        }
+    }
+
+    @Test func aSelectionKeepsItsServerThroughARelaunchAndAReorderAndLeavesWithIt() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: [], environment: [:], defaults: defaults, session: fixtureSession())
+            try model.addServer("https://first.example")
+            let second = try model.addServer("https://second.example")
+            model.selection = second.target("second")
+            let store = try #require(model.selectedStore)
+            #expect(store.api.baseURL == second.api.baseURL)
+            #expect(model.newChannelServer == model.selection?.serverURL)
+
+            let relaunched = AppModel(arguments: [], environment: [:], defaults: defaults, session: fixtureSession())
+            await relaunched.refreshCatalog()
+            #expect(relaunched.selection == second.target("second"))
+
+            model.moveServers(fromOffsets: [1], toOffset: 0)
+            #expect(model.catalog === second)
+            #expect(model.selection == second.target("second"))
+            #expect(model.selectedStore === store)
+            model.removeServer(second)
+            #expect(model.selection == nil)
+            #expect(model.selectedStore == nil)
+            #expect(model.newChannelServer == model.serverURL)
         }
     }
 
@@ -2091,4 +2117,21 @@ private final class BadgeFixtureProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+}
+
+/// Tests that predate several servers name their channels on the first server.
+extension AppModel {
+    func target(_ channelID: String) -> ChannelTarget? { catalog?.target(channelID) }
+
+    var selectedChannelID: String? {
+        get { selection?.channelID }
+        set { selection = newValue.flatMap(target) }
+    }
+
+    var visibleChannelID: String? {
+        get { visibleChannel?.channelID }
+        set { visibleChannel = newValue.flatMap(target) }
+    }
+
+    func interaction(for channelID: String) -> ChannelInteraction { interaction(for: target(channelID)!) }
 }

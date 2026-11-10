@@ -31,6 +31,8 @@ struct ChannelSidebar: View {
     @ViewState private var revealing: ChannelCatalogStore.WaitingRequest.ID?
     /// The open card in global space while a typed reply lifts it above the list.
     @ViewState private var liftedCard: CGRect?
+    /// The servers whose sections are collapsed, by address.
+    @ViewState private var collapsed: Set<URL> = []
 
     init(searchFocused: FocusState<Bool>.Binding, isCollapsed: Bool) {
         self.searchFocused = searchFocused
@@ -48,15 +50,35 @@ struct ChannelSidebar: View {
     private struct Listed {
         var channel: Channel
         var target: ChannelTarget
+        var catalog: ChannelCatalogStore
+        var presentation: ChannelSidebarPresentation
     }
 
-    private var listed: [Listed] {
-        guard let catalog = model.catalog else { return [] }
+    /// With several servers, each gets a section under its own header.
+    private var isGrouped: Bool { model.catalogs.count > 1 }
+
+    private func isExpanded(_ catalog: ChannelCatalogStore) -> Bool {
+        !isGrouped || !collapsed.contains(catalog.api.baseURL)
+    }
+
+    private func expansion(of catalog: ChannelCatalogStore) -> Binding<Bool> {
         let server = catalog.api.baseURL
-        return talk.ordered(catalog.channels.filter { $0.matches(trimmedQuery) }, on: server).compactMap { channel in
-            ChannelTarget(serverURL: server.absoluteString, channelID: channel.id).map { Listed(channel: channel, target: $0) }
+        return Binding(get: { !collapsed.contains(server) }, set: { expanded in
+            if expanded { collapsed.remove(server) } else { collapsed.insert(server) }
+        })
+    }
+
+    /// A server's channels that match the search.
+    private func listed(in catalog: ChannelCatalogStore) -> [Listed] {
+        let presentation = model.sidebarPresentation(for: catalog)
+        let channels = talk.ordered(catalog.channels.filter { $0.matches(trimmedQuery) }, on: catalog.api.baseURL)
+        return channels.compactMap { channel in
+            catalog.target(channel.id).map { Listed(channel: channel, target: $0, catalog: catalog, presentation: presentation) }
         }
     }
+
+    /// Every row the list shows, through each expanded server in order.
+    private var listed: [Listed] { model.catalogs.filter(isExpanded).flatMap(listed(in:)) }
 
     /// How far a card reaches past its row's trailing side. A folded list ends where its rows do, so
     /// the card's content steps in there instead.
@@ -64,17 +86,13 @@ struct ChannelSidebar: View {
         min(max(listBounds.width - (cardRow?.maxX ?? listBounds.width), 0), NeedsYouCard.margin)
     }
 
-    private var initialLoading: Bool { model.catalog?.phase == .connecting }
-
     private var canCreate: Bool { model.canCreateChannel }
 
-    private var presentation: ChannelSidebarPresentation { model.sidebarPresentation }
-
-    /// Waiting requests, newest first, except the one the unfolded detail column already shows.
+    /// Waiting requests in the expanded sections, newest first, except the one the unfolded detail
+    /// column already shows.
     private var waiting: [ChannelCatalogStore.WaitingRequest] {
-        let shown = isCollapsed ? nil : model.selectedChannelID
-        return (model.catalog?.waitingRequests(openChannelIDs: model.openChannelIDs) ?? [])
-            .filter { $0.channel.id != shown }
+        let shown = isCollapsed ? nil : model.selection
+        return model.catalogs.filter(isExpanded).waitingRequests(open: model.openChannels).filter { $0.target != shown }
     }
 
     private func channelList(now: Date) -> some View {
@@ -86,65 +104,27 @@ struct ChannelSidebar: View {
         let targets = listed.map(\.target)
         let hiddenLines = cards.hiddenLines(in: waiting, order: targets)
         // Opening a channel, Settings or Screens, a management flow or Search ends a card held over the list.
-        let listContext: [AnyHashable?] = [model.selectedChannelID, model.cover, management.flow?.id,
+        let listContext: [AnyHashable?] = [model.selection, model.cover, management.flow?.id,
                                            searchFocused.wrappedValue]
+        let rows = Rows(waiting: waitingRows, open: open, hiddenLines: hiddenLines, now: now)
         return ScrollViewReader { proxy in
-            List(selection: $model.selectedChannelID) {
-                Section {
-                    if initialLoading {
-                        ForEach(0..<3) { _ in
-                            ChannelSidebarPlaceholder()
-                                .listRowInsets(.vertical, 0)
-                                .listRowSeparator(.hidden)
+            List(selection: $model.selection) {
+                if isGrouped {
+                    ForEach(model.catalogs, id: \.api.baseURL) { catalog in
+                        Section(isExpanded: expansion(of: catalog)) {
+                            ChannelSidebarServerNotice(catalog: catalog, canRetry: model.isActive) {
+                                Task { await model.refreshCatalog(catalog) }
+                            }
+                            section(catalog, items: listed.filter { $0.catalog === catalog }, rows: rows)
+                        } header: {
+                            ChannelSidebarServerHeader(catalog: catalog, isExpanded: expansion(of: catalog))
                         }
-                    } else {
-                        ForEach(listed, id: \.channel.id) { item in
-                            let (channel, target) = (item.channel, item.target)
-                            let waitingRow = waitingRows[target]
-                            let isOpen = open?.target == target
-                            let isCard = isOpen || cards.replying?.target == target || checks[target] != nil
-                            // A card opens and shrinks from its row's top, inside the row and in the card's
-                            // shape, which reaches past the row's sides. A card's row ends at the card's own
-                            // edge, so its corners stay round as it shrinks.
-                            ZStack(alignment: .top) { rowContent(waitingRow, of: channel, at: target, now: now) }
-                                .clipShape(CardShape(overflow: NeedsYouCard.margin + (isCard ? reach : NeedsYouCard.margin),
-                                                     animatesOverflow: false)
-                                    .offset(x: -NeedsYouCard.margin))
-                                // A waiting row opens its card rather than its channel.
-                                .selectionDisabled(waitingRow != nil)
-                                .opacity(cards.isLifted && !isOpen ? 0.4 : 1)
-                                .animation(.easeInOut(duration: 0.25), value: cards.isLifted)
-                                .listRowInsets(.vertical, 0)
-                                .contextMenu {
-                                    // UIKit lifts menus itself, so a dimmed row offers none while a note is open.
-                                    if !talk.isLifted { contextMenu(channel) }
-                                } preview: {
-                                    ChannelSidebarPreview(channel: presentation.channel(channel), agents: presentation.agents(channel))
-                                }
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    if !talk.isLifted {
-                                        Button(role: .destructive) {
-                                            if let target = model.catalog?.target(channel.id) {
-                                                management.present(.deleteChannel(target))
-                                            }
-                                        } label: {
-                                            Label("Delete", systemImage: "trash")
-                                        }
-                                        .labelStyle(.iconOnly)
-                                        .disabled(!model.canManageChannels)
-                                    }
-                                }
-                                // UIKit hides the line under a selected row until its highlight fades, which
-                                // lingers after Back on the folded phone.
-                                .talkRow(target, recorder: talk,
-                                         offered: !searchFocused.wrappedValue && !cards.isLifted && !isOpen,
-                                         line: hiddenLines.contains(target) ? .hidden : isCollapsed ? .visible : .automatic) {
-                                    talk(to: channel)
-                                }
-                        }
+                        .listSectionSeparator(.hidden)
                     }
+                } else if let catalog = model.catalog {
+                    Section { section(catalog, items: listed, rows: rows) }
+                        .listSectionSeparator(.hidden)
                 }
-                .listSectionSeparator(.hidden)
             }
             // A card the person opens comes fully into view as it opens and grows, since its question
             // scrolls only once it would run past the visible list.
@@ -167,18 +147,18 @@ struct ChannelSidebar: View {
             if phase == .interacting || phase == .decelerating { revealing = nil }
         }
         .talkList(talk, targets: targets, onGlass: !isCollapsed, endsWhenChanging: listContext) { target in
-            if let channel = listed.first(where: { $0.target == target })?.channel {
-                row(channel, at: target, now: now)
+            if let item = listed.first(where: { $0.target == target }) {
+                row(item, now: now)
             }
         }
         .needsYouList(cards, card: liftedCard, targets: targets, bounds: $listBounds,
                       endsWhenChanging: listContext) { entry, maxHeight in
-            if let channel = listed.first(where: { $0.target == entry.target })?.channel {
-                card(entry, in: channel, now: now, isLifted: true, maxHeight: maxHeight)
+            if let item = listed.first(where: { $0.target == entry.target }) {
+                card(entry, in: item, now: now, isLifted: true, maxHeight: maxHeight)
             }
         } row: { target in
-            if let channel = listed.first(where: { $0.target == target })?.channel {
-                row(channel, at: target, now: now)
+            if let item = listed.first(where: { $0.target == target }) {
+                row(item, now: now)
                     .padding(.leading, NeedsYouCard.margin)
                     .padding(.trailing, reach)
             }
@@ -188,12 +168,78 @@ struct ChannelSidebar: View {
         }
     }
 
+    /// What every row reads from the list as a whole.
+    private struct Rows {
+        var waiting: [ChannelTarget: NeedsYouCards.Row]
+        var open: ChannelCatalogStore.WaitingRequest?
+        var hiddenLines: Set<ChannelTarget>
+        var now: Date
+    }
+
+    /// A server's placeholders while it first connects, then its channels.
+    @ViewBuilder private func section(_ catalog: ChannelCatalogStore, items: [Listed], rows: Rows) -> some View {
+        if catalog.phase == .connecting {
+            ForEach(0..<3) { _ in
+                ChannelSidebarPlaceholder()
+                    .listRowInsets(.vertical, 0)
+                    .listRowSeparator(.hidden)
+            }
+        } else {
+            ForEach(items, id: \.target) { item in
+                listRow(item, rows: rows)
+            }
+        }
+    }
+
+    private func listRow(_ item: Listed, rows: Rows) -> some View {
+        let target = item.target
+        let waitingRow = rows.waiting[target]
+        let isOpen = rows.open?.target == target
+        let isCard = isOpen || cards.replying?.target == target || checks[target] != nil
+        // A card opens and shrinks from its row's top, inside the row and in the card's
+        // shape, which reaches past the row's sides. A card's row ends at the card's own
+        // edge, so its corners stay round as it shrinks.
+        return ZStack(alignment: .top) { rowContent(waitingRow, of: item, now: rows.now) }
+            .clipShape(CardShape(overflow: NeedsYouCard.margin + (isCard ? reach : NeedsYouCard.margin),
+                                 animatesOverflow: false)
+                .offset(x: -NeedsYouCard.margin))
+            // A waiting row opens its card rather than its channel.
+            .selectionDisabled(waitingRow != nil)
+            .opacity(cards.isLifted && !isOpen ? 0.4 : 1)
+            .animation(.easeInOut(duration: 0.25), value: cards.isLifted)
+            .listRowInsets(.vertical, 0)
+            .contextMenu {
+                // UIKit lifts menus itself, so a dimmed row offers none while a note is open.
+                if !talk.isLifted { contextMenu(item) }
+            } preview: {
+                ChannelSidebarPreview(channel: item.presentation.channel(item.channel),
+                                      agents: item.presentation.agents(item.channel))
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                if !talk.isLifted {
+                    Button(role: .destructive) {
+                        management.present(.deleteChannel(item.target))
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .labelStyle(.iconOnly)
+                    .disabled(!model.canManageChannels(on: item.catalog))
+                }
+            }
+            // UIKit hides the line under a selected row until its highlight fades, which
+            // lingers after Back on the folded phone.
+            .talkRow(target, recorder: talk,
+                     offered: !searchFocused.wrappedValue && !cards.isLifted && !isOpen,
+                     line: rows.hiddenLines.contains(target) ? .hidden : isCollapsed ? .visible : .automatic) {
+                talk(to: item)
+            }
+    }
+
     /// A channel's row: the open card, a waiting row with its question, or an ordinary row.
-    @ViewBuilder private func rowContent(_ waitingRow: NeedsYouCards.Row?, of channel: Channel, at target: ChannelTarget,
-                                         now: Date) -> some View {
+    @ViewBuilder private func rowContent(_ waitingRow: NeedsYouCards.Row?, of item: Listed, now: Date) -> some View {
         switch waitingRow {
         case .card(let entry):
-            card(entry, in: channel, now: now, maxHeight: listBounds.height - 16)
+            card(entry, in: item, now: now, maxHeight: listBounds.height - 16)
                 .background {
                     if cards.isLifted {
                         Color.clear.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { liftedCard = $0 }
@@ -208,13 +254,13 @@ struct ChannelSidebar: View {
                 }
         case .question(let entry):
             Button { cards.open(entry.id) } label: {
-                row(channel, at: target, now: now, question: entry.question)
+                row(item, now: now, question: entry.question)
             }
             .buttonStyle(.plain)
             .accessibilityHint("Shows the request")
         case nil:
-            NavigationLink(value: channel.id) {
-                row(channel, at: target, now: now)
+            NavigationLink(value: item.target) {
+                row(item, now: now)
             }
             .navigationLinkIndicatorVisibility(.hidden)
         }
@@ -222,12 +268,12 @@ struct ChannelSidebar: View {
 
     private func reveal(_ open: ChannelCatalogStore.WaitingRequest?, in proxy: ScrollViewProxy) {
         guard let open, open.id == revealing, !cards.isLifted, !isScrolling else { return }
-        withAnimation { proxy.scrollTo(open.channel.id) }
+        withAnimation { proxy.scrollTo(open.target) }
     }
 
-    private func card(_ entry: ChannelCatalogStore.WaitingRequest, in channel: Channel, now: Date,
+    private func card(_ entry: ChannelCatalogStore.WaitingRequest, in item: Listed, now: Date,
                       isLifted: Bool = false, maxHeight: CGFloat) -> NeedsYouCard {
-        NeedsYouCard(channel: presentation.channel(channel), entry: entry, cards: cards, choices: choices(entry),
+        NeedsYouCard(channel: item.presentation.channel(item.channel), entry: entry, cards: cards, choices: choices(entry),
                      now: now, isCollapsed: isCollapsed, isLifted: isLifted, maxHeight: maxHeight,
                      open: { openChannel(entry) }, choose: { choose($0, for: entry) }, reply: { reply(to: entry) })
     }
@@ -245,14 +291,17 @@ struct ChannelSidebar: View {
             emptyState
         }
         .safeAreaBar(edge: .bottom) {
-            ChannelSidebarFailure(
-                footer: model.sidebarFooter,
-                error: model.configurationError ?? model.catalog?.phase.message,
-                canRetry: model.catalog != nil && model.isActive,
-                retry: { Task { await model.refreshCatalog() } },
-                openSettings: { model.cover = .settings },
-                showsSettingsButton: sizeClass != .compact
-            )
+            // Several servers show each one's failure under its own header.
+            if !isGrouped {
+                ChannelSidebarFailure(
+                    footer: model.sidebarFooter,
+                    error: model.configurationError ?? model.catalog?.phase.message,
+                    canRetry: model.catalog != nil && model.isActive,
+                    retry: { Task { await model.refreshCatalog() } },
+                    openSettings: { model.cover = .settings },
+                    showsSettingsButton: sizeClass != .compact
+                )
+            }
         }
         .navigationTitle("Toy Box")
         .navigationBarTitleDisplayMode(.large)
@@ -269,7 +318,7 @@ struct ChannelSidebar: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("New Channel", systemImage: "plus") { management.present(.newChannel(server: model.serverURL)) }
+                Button("New Channel", systemImage: "plus") { management.present(.newChannel(server: model.newChannelServer)) }
                     .disabled(!canCreate)
             }
             ToolbarSpacer(.fixed, placement: .primaryAction)
@@ -290,19 +339,20 @@ struct ChannelSidebar: View {
         }
     }
 
-    private func row(_ channel: Channel, at target: ChannelTarget, now: Date, question: String? = nil) -> some View {
+    private func row(_ item: Listed, now: Date, question: String? = nil) -> some View {
+        let (channel, presentation) = (item.channel, item.presentation)
         let agents = presentation.agents(channel)
         return ChannelSidebarRow(
             channel: presentation.channel(channel), agents: agents,
             working: presentation.working(channel, agents: agents),
             attention: presentation.attention(channel), now: now, isCollapsed: isCollapsed,
-            talk: talk.target == target ? talk : nil, question: question, check: checks[target],
+            talk: talk.target == item.target ? talk : nil, question: question, check: checks[item.target],
             cardInset: NeedsYouCard.margin - reach
         )
     }
 
     private func choices(_ entry: ChannelCatalogStore.WaitingRequest) -> TranscriptRequestChoices? {
-        entry.choices(isConnected: model.catalog?.phase.failure == nil)
+        entry.choices(isConnected: model.catalogs.first(at: entry.serverURL)?.phase.failure == nil)
     }
 
     private func openChannel(_ entry: ChannelCatalogStore.WaitingRequest) {
@@ -311,20 +361,24 @@ struct ChannelSidebar: View {
     }
 
     private func choose(_ choice: String, for entry: ChannelCatalogStore.WaitingRequest) {
-        guard let catalog = model.catalog else { return }
+        guard let catalog = model.catalogs.first(at: entry.serverURL) else { return }
         Task { await cards.send(choice, to: entry, on: catalog.channel(id: entry.channel.id)) }
     }
 
     private func reply(to entry: ChannelCatalogStore.WaitingRequest) {
-        guard let catalog = model.catalog else { return }
+        guard let catalog = model.catalogs.first(at: entry.serverURL) else { return }
         cards.reply(to: entry, on: catalog.channel(id: entry.channel.id))
     }
 
-    private func talk(to channel: Channel) {
-        guard let catalog = model.catalog else { return }
-        talk.start(catalog.channel(id: channel.id), name: channel.name,
-                   contextualNames: presentation.agents(channel).map(\.name), catalog: catalog,
+    private func talk(to item: Listed) {
+        talk.start(item.catalog.channel(id: item.channel.id), name: item.channel.name,
+                   contextualNames: item.presentation.agents(item.channel).map(\.name), catalog: item.catalog,
                    order: listed.map(\.target))
+    }
+
+    /// With several servers, the empty state waits until every server has answered with nothing.
+    private var isEmpty: Bool {
+        model.catalogs.allSatisfy { $0.phase == .connected && listed(in: $0).isEmpty }
     }
 
     @ViewBuilder private var emptyState: some View {
@@ -337,12 +391,12 @@ struct ChannelSidebar: View {
                 Button("Settings") { model.cover = .settings }
                     .frame(minHeight: 44)
             }
-        } else if model.catalog?.phase == .connected, listed.isEmpty {
+        } else if model.catalog != nil, isEmpty {
             if trimmedQuery.isEmpty {
                 ContentUnavailableView {
                     Label("Your channels live here", systemImage: "bubble.left.and.bubble.right")
                 } actions: {
-                    Button("New Channel") { management.present(.newChannel(server: model.serverURL)) }
+                    Button("New Channel") { management.present(.newChannel(server: model.newChannelServer)) }
                         .frame(minHeight: 44)
                         .disabled(!canCreate)
                 }
@@ -357,27 +411,28 @@ struct ChannelSidebar: View {
         }
     }
 
-    @ViewBuilder private func contextMenu(_ channel: Channel) -> some View {
+    @ViewBuilder private func contextMenu(_ item: Listed) -> some View {
+        let channel = item.channel
         Button("Open Channel", systemImage: "bubble.left.and.bubble.right") {
-            model.selectedChannelID = channel.id
+            model.selection = item.target
         }
         Button("Open in Toy Box", systemImage: "arrow.up.forward.square") {
-            model.openInToyBox(channelID: channel.id)
+            model.openInToyBox(item.target)
         }
-        .disabled(model.channelURL(channelID: channel.id) == nil)
+        .disabled(model.channelURL(item.target) == nil)
         if let path = channel.directory, !path.isEmpty {
             Button("Copy Folder Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = path }
         }
         Divider()
         Button("Edit Channel", systemImage: "pencil") {
-            if let target = model.catalog?.target(channel.id) { management.present(.editChannel(target)) }
+            management.present(.editChannel(item.target))
         }
-        .disabled(!model.canManageChannels)
+        .disabled(!model.canManageChannels(on: item.catalog))
         Divider()
         Button("Delete Channel", systemImage: "trash", role: .destructive) {
-            if let target = model.catalog?.target(channel.id) { management.present(.deleteChannel(target)) }
+            management.present(.deleteChannel(item.target))
         }
-        .disabled(!model.canManageChannels)
+        .disabled(!model.canManageChannels(on: item.catalog))
     }
 }
 
@@ -426,5 +481,38 @@ private struct ChannelSidebarPlaceholder: View {
         .padding(.vertical, 12)
         .frame(minHeight: 72)
         .accessibilityHidden(true)
+    }
+}
+
+/// A server's section header when the list shows several: its connection dot and name, which
+/// collapse and expand its channels.
+private struct ChannelSidebarServerHeader: View {
+    let catalog: ChannelCatalogStore
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
+        let host = SidebarFooter.server(catalog.api.baseURL.absoluteString)
+        Button {
+            withAnimation { isExpanded.toggle() }
+        } label: {
+            HStack(spacing: 8) {
+                Circle().fill(footer.dot).frame(width: 8, height: 8)
+                Text(catalog.name).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            }
+            .font(.headline)
+            .foregroundStyle(.primary)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(catalog.name)
+        .accessibilityValue(catalog.name == host ? footer.accessibilityValue : "\(host), \(footer.accessibilityValue)")
+        .accessibilityHint(isExpanded ? "Hides this server's channels" : "Shows this server's channels")
+        .accessibilityAddTraits(.isHeader)
     }
 }

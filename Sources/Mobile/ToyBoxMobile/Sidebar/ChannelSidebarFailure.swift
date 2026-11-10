@@ -1,3 +1,4 @@
+import ChannelClient
 import SwiftUI
 import ToyBoxUI
 
@@ -34,6 +35,37 @@ struct ChannelSidebarFailure: View {
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
+        }
+    }
+}
+
+/// A failing server's notice under its header when the list shows several: the pill's words while
+/// its rows stay, otherwise the heading and error, each with Retry.
+struct ChannelSidebarServerNotice: View {
+    let catalog: ChannelCatalogStore
+    let canRetry: Bool
+    let retry: () -> Void
+
+    var body: some View {
+        let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
+        if let heading = footer.heading, let error = catalog.phase.message {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Label(footer.isReconnecting ? "Reconnecting to server" : heading,
+                          systemImage: "wifi.exclamationmark")
+                        .font(.footnote.weight(.semibold))
+                    Text(footer.isReconnecting ? heading : error)
+                        .font(.footnote)
+                        .foregroundStyle(ChannelInk.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityHint(footer.isReconnecting ? error : "")
+                Spacer(minLength: 0)
+                if canRetry {
+                    Button("Retry", action: retry).frame(minHeight: 44)
+                }
+            }
+            .listRowSeparator(.hidden)
         }
     }
 }

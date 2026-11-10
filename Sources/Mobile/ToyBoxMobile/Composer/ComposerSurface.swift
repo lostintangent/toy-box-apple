@@ -40,7 +40,7 @@ struct ComposerSurface: View {
     }
     private var canRestoreReaderFocus: Bool {
         scenePhase == .active && model.isActive && model.selectedStore === store
-            && model.visibleChannelID == store.id && store.phase != .deleted
+            && model.visibleChannel == store.target && store.phase != .deleted
             && !model.isCovered && management.flow == nil && !showPhotos && !showFiles
             && !(sizeClass == .compact && interaction.isInspectorPresented)
     }

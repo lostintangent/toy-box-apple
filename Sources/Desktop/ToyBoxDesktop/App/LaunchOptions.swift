@@ -2,7 +2,8 @@ import Foundation
 import ToyBoxUI
 
 struct LaunchOptions: Equatable, Sendable {
-    var serverURL: String?
+    /// Session-only servers in sidebar order, from each `--server`.
+    var servers: [String] = []
     var channelID: String?
     var appearance: AppAppearance?
     var width = 1280
@@ -18,7 +19,7 @@ struct LaunchOptions: Equatable, Sendable {
     /// Isolated launches never change the user's integrations with the saved server.
     func allowsUserIntegrations(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
         !isSnapshot && benchmark == nil && resizeBenchmark == nil && quickSendValidation == nil
-            && serverURL == nil && environment["TOY_BOX_SERVER_URL"] == nil
+            && servers.isEmpty && environment["TOY_BOX_SERVER_URL"] == nil
     }
 
     static func parse(_ arguments: [String], environment: [String: String] = [:]) throws -> LaunchOptions {
@@ -35,13 +36,15 @@ struct LaunchOptions: Equatable, Sendable {
                    "--benchmark-resize", "--benchmark", "--validate-quick-send"].contains(flag) else {
                 throw LaunchArgumentError("Unknown argument: \(flag)")
             }
-            guard seen.insert(flag).inserted else { throw LaunchArgumentError("Repeated argument: \(flag)") }
+            guard flag == "--server" || seen.insert(flag).inserted else {
+                throw LaunchArgumentError("Repeated argument: \(flag)")
+            }
             guard index + 1 < arguments.count, !arguments[index + 1].hasPrefix("--") else {
                 throw LaunchArgumentError("Missing value for \(flag)")
             }
             let value = arguments[index + 1]
             switch flag {
-            case "--server": options.serverURL = value
+            case "--server": options.servers.append(value)
             case "--channel":
                 guard !value.isEmpty else { throw LaunchArgumentError("--channel must not be empty") }
                 options.channelID = value

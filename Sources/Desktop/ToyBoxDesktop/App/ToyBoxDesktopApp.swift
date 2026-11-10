@@ -1,4 +1,5 @@
 import AppKit
+import ChannelKit
 import SwiftUI
 import ToyBoxControlIntents
 import ToyBoxUI
@@ -52,7 +53,8 @@ struct ToyBoxDesktopApp: App {
     var body: some Scene {
         let _ = configureWindowActions()
         WindowGroup("Channels", id: "channels", for: ChannelWindowValue.self) { $value in
-            root(channelID: value?.channelID ?? model.launchOptions.channelID)
+            root(channel: value.flatMap { model.target($0.channelID, on: $0.serverURL) }
+                ?? model.launchOptions.channelID.flatMap { model.target($0) })
         }
         .defaultSize(width: CGFloat(model.launchOptions.width), height: CGFloat(model.launchOptions.height))
         // Wait for the open-application event before deciding whether to open a first window.
@@ -135,8 +137,8 @@ struct ToyBoxDesktopApp: App {
         }
     }
 
-    private func root(channelID: String?) -> some View {
-        RootView(initialChannelID: channelID)
+    private func root(channel: ChannelTarget?) -> some View {
+        RootView(initialChannel: channel)
             .environment(model)
             .environment(\.channelTextScale, model.launchOptions.isSnapshot ? 1 : textScale)
             .environment(\.windowSnapshot, model.snapshot)
@@ -146,10 +148,19 @@ struct ToyBoxDesktopApp: App {
 
 struct ChannelWindowValue: Codable, Hashable {
     let channelID: String
+    /// The channel's server. Windows saved before several servers name none, and open on the first.
+    let serverURL: String?
     let windowID: UUID
 
     init(channelID: String) {
         self.channelID = channelID
+        serverURL = nil
+        windowID = UUID()
+    }
+
+    init(_ channel: ChannelTarget) {
+        channelID = channel.channelID
+        serverURL = channel.serverURL
         windowID = UUID()
     }
 }

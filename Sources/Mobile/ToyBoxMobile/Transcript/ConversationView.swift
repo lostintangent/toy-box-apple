@@ -519,7 +519,7 @@ struct ConversationView: View {
     /// Readers, the app's cover, management and compact Overview cover the conversation.
     /// The regular-width Overview column sits beside it.
     private var isUncovered: Bool {
-        model.isActive && model.visibleChannelID == store.id && !model.isCovered
+        model.isActive && model.visibleChannel == store.target && !model.isCovered
             && management.flow == nil && !interaction.isArtifactViewerPresented
             && !overviewPresentation.isCompactSheetPresented
             && !(sizeClass == .compact && (interaction.isInspectorPresented || showsWorkingNow || showsBookmarks))
@@ -877,7 +877,7 @@ private struct TranscriptPlaceholder: View {
                 ContentUnavailableView {
                     Label("Can't Connect to Toy Box", systemImage: "wifi.exclamationmark")
                 } description: {
-                    Text([URL(string: model.serverURL)?.host(), failure].compactMap(\.self).joined(separator: "\n"))
+                    Text([store.api.baseURL.host(), failure].compactMap(\.self).joined(separator: "\n"))
                 } actions: {
                     Button("Retry") { store.reconnect() }
                     Button("Settings") { model.cover = .settings }

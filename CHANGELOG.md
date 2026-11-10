@@ -1,6 +1,16 @@
 # Changelog
 
+## iPhone 0.1.27
+
+### Features
+
+- You can now connect to several Toy Box servers at once, like one at home and one at work, and the channel list shows each server's channels under its name, so you can keep up with all of them from one app.
+
 ## Mac 0.1.30
+
+### Features
+
+- You can now connect to several Toy Box servers at once, like one at home and one at work, and the sidebar shows each server's channels under its name, so all your channels are in one window.
 
 ### Bugs/Polish
 

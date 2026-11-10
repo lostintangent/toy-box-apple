@@ -33,13 +33,15 @@ final class AppModel {
     let outbox: ChannelOutbox
     /// Why a launch address isn't usable, which leaves no server at all.
     private(set) var configurationError: String?
-    private(set) var openChannelIDs: Set<String> = []
-    private(set) var activeChannelID: String?
+    /// The channel each window shows, on its server.
+    private(set) var openChannels: Set<ChannelTarget> = []
+    /// The key window's channel.
+    private(set) var activeChannel: ChannelTarget?
     let notifications = ChannelNotifications()
     private(set) var morningDigest: MorningDigest?
     let folders = ChannelFolders()
-    /// Retry or View > Refresh is in flight, which spins the sidebar footer. Polls never do.
-    private(set) var isRefreshingCatalog = false
+    /// The catalogs a Retry or View > Refresh is refreshing, which spins their status dots. Polls never do.
+    private var refreshing: Set<ObjectIdentifier> = []
     let menuBar = MenuBarPresence()
     var navigationRequest: ChannelNavigationRequest?
     var newChannelRequest: UUID?
@@ -49,7 +51,7 @@ final class AppModel {
     @ObservationIgnored let connections = ChannelConnections()
     @ObservationIgnored private let launchChannel = LaunchChannel()
     @ObservationIgnored private var launchChannelID: String?
-    @ObservationIgnored private var windows: [UUID: String] = [:]
+    @ObservationIgnored private var windows: [UUID: ChannelTarget] = [:]
     @ObservationIgnored private var keyWindowID: UUID?
     /// What each channel window shows Siri.
     @ObservationIgnored private var screens: [UUID: ChannelIntents.Screen] = [:]
@@ -86,8 +88,9 @@ final class AppModel {
             launchOptions.channelID.map { PerformanceBenchmark(scenario: scenario, channelID: $0) }
         }
         savesServers = launchOptions.allowsUserIntegrations()
-        let saved = savesServers ? ChannelCatalogStore.Saved.load(from: .standard) : []
-        serverURL = launchOptions.serverURL ?? saved.first?.url ?? AppConfiguration.defaultServerURL
+        let saved = savesServers ? ChannelCatalogStore.Saved.load(from: .standard)
+            : launchOptions.servers.map { ChannelCatalogStore.Saved(url: $0) }
+        serverURL = saved.first?.url ?? AppConfiguration.defaultServerURL
         var failure: (any Error)?
         catalogs = (saved.isEmpty ? [.init(url: serverURL)] : saved).compactMap { server in
             do { return try connect(ChannelAPI(serverURL: server.url), name: server.name) }
@@ -147,6 +150,30 @@ final class AppModel {
     }
 
     var api: ChannelAPI? { catalog?.api }
+
+    /// The first server's open channels, which the Dock, notifications and the menu bar read until
+    /// they span every server.
+    var openChannelIDs: Set<String> { openChannelIDs(on: catalog) }
+
+    /// The key window's channel when it's on the first server.
+    var activeChannelID: String? {
+        guard let activeChannel, activeChannel.serverURL == Self.address(of: catalog) else { return nil }
+        return activeChannel.channelID
+    }
+
+    func openChannelIDs(on catalog: ChannelCatalogStore?) -> Set<String> {
+        let server = Self.address(of: catalog)
+        return Set(openChannels.compactMap { $0.serverURL == server ? $0.channelID : nil })
+    }
+
+    /// A channel on its server, or on the first server for a reference that doesn't name one.
+    func target(_ channelID: String, on server: String? = nil) -> ChannelTarget? {
+        ChannelTarget(serverURL: server ?? serverURL, channelID: channelID)
+    }
+
+    private static func address(of catalog: ChannelCatalogStore?) -> String? {
+        catalog.flatMap { ChannelWaitingRequest.normalizedServer($0.api.baseURL.absoluteString) }
+    }
 
     func composerSession(for store: ChannelStore, draft: ComposerDraft) -> ChannelComposerSession {
         if let session = composerSessions[store.id], session.store === store, session.draft === draft {
@@ -230,7 +257,6 @@ final class AppModel {
             quickSend.dismiss()
             serverURL = address
         }
-        isRefreshingCatalog = false
         notifications.reset()
         dockAttention.reset()
         catalogGeneration = UUID()
@@ -246,10 +272,10 @@ final class AppModel {
 
     /// Records a window's channel and whether it's key. Every sidebar row reads the open
     /// channels, so a window that reports without a change updates nothing.
-    func updateWindow(_ id: UUID, channelID: String?, isKey: Bool) {
+    func updateWindow(_ id: UUID, channel: ChannelTarget?, isKey: Bool) {
         let key = isKey ? id : keyWindowID == id ? nil : keyWindowID
-        guard windows[id] != channelID || key != keyWindowID else { return }
-        windows[id] = channelID
+        guard windows[id] != channel || key != keyWindowID else { return }
+        windows[id] = channel
         keyWindowID = key
         windowsDidChange()
     }
@@ -280,11 +306,13 @@ final class AppModel {
 
     private func windowsDidChange() {
         let open = Set(windows.values)
-        if open != openChannelIDs { openChannelIDs = open }
+        if open != openChannels { openChannels = open }
         let active = keyWindowID.flatMap { windows[$0] }
-        if active != activeChannelID {
-            activeChannelID = active
-            if let active, !launchOptions.isSnapshot { launchChannel.remember(active, serverURL: serverURL) }
+        if active != activeChannel {
+            activeChannel = active
+            if let active, !launchOptions.isSnapshot, let catalog = catalogs.first(at: active.serverURL) {
+                launchChannel.remember(active.channelID, serverURL: catalog.api.baseURL.absoluteString)
+            }
         }
         catalogDidChange()
     }
@@ -396,24 +424,11 @@ final class AppModel {
         dockAttention.update(status: status, serverURL: serverURL, hasCatalog: hasCatalog)
     }
 
-    private var sidebarPresentation: ChannelSidebarPresentation {
-        .init(catalog: catalog, openChannelIDs: openChannelIDs)
-    }
+    private var sidebarPresentation: ChannelSidebarPresentation { sidebarPresentation(for: catalog) }
 
-    func sidebarChannel(_ channel: Channel) -> Channel {
-        sidebarPresentation.channel(channel)
-    }
-
-    func sidebarAttention(_ channel: Channel) -> Channel.Attention? {
-        sidebarPresentation.attention(channel)
-    }
-
-    func sidebarAgents(_ channel: Channel) -> [ChannelAgent] {
-        sidebarPresentation.agents(channel)
-    }
-
-    func sidebarWorking(_ channel: Channel, agents: [ChannelAgent]) -> [ChannelAgent] {
-        sidebarPresentation.working(channel, agents: agents)
+    /// How the sidebar shows a server's channels, given which of them windows have open.
+    func sidebarPresentation(for catalog: ChannelCatalogStore?) -> ChannelSidebarPresentation {
+        .init(catalog: catalog, openChannelIDs: openChannelIDs(on: catalog))
     }
 
     static func dockBadge(channels: [Channel], openChannelIDs: Set<String>) -> String? {
@@ -424,10 +439,12 @@ final class AppModel {
     }
 
     private func observeCatalog(generation: UUID) {
-        guard generation == catalogGeneration, let catalog else { return }
+        guard generation == catalogGeneration else { return }
         withObservationTracking {
-            _ = catalog.channels
-            _ = catalog.lastRefreshedAt
+            for catalog in catalogs {
+                _ = catalog.channels
+                _ = catalog.lastRefreshedAt
+            }
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self, generation == self.catalogGeneration else { return }
@@ -444,22 +461,27 @@ final class AppModel {
     }
 
     private func refreshFolders() {
-        guard let catalog else { return }
-        folders.refresh(paths: catalog.channels.compactMap(\.directory), server: catalog.api.baseURL)
-    }
-
-    /// Retry and View > Refresh, the catalog refreshes someone asks for.
-    func refreshCatalog() {
-        guard let catalog else { return }
-        isRefreshingCatalog = true
-        Task {
-            await catalog.refresh()
-            if self.catalog === catalog { isRefreshingCatalog = false }
+        for catalog in catalogs {
+            folders.refresh(paths: catalog.channels.compactMap(\.directory), server: catalog.api.baseURL)
         }
     }
 
-    func openInToyBox(channelID: String) {
-        guard let url = channelURL(channelID: channelID) else { return }
+    /// Retry and View > Refresh, the catalog refreshes someone asks for, on every server.
+    func refreshCatalog() {
+        for catalog in catalogs where refreshing.insert(ObjectIdentifier(catalog)).inserted {
+            Task {
+                await catalog.refresh()
+                refreshing.remove(ObjectIdentifier(catalog))
+            }
+        }
+    }
+
+    func isRefreshing(_ catalog: ChannelCatalogStore) -> Bool {
+        refreshing.contains(ObjectIdentifier(catalog))
+    }
+
+    func openInToyBox(_ channel: ChannelTarget) {
+        guard let url = catalogs.first(at: channel.serverURL)?.api.channelURL(channelID: channel.channelID) else { return }
         NSWorkspace.shared.open(url)
     }
 

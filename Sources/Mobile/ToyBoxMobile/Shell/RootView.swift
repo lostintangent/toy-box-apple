@@ -73,7 +73,10 @@ struct RootView: View {
         }
         .environment(management)
         .focusedSceneValue(\.channelCommands, commandActions)
-        .onChange(of: model.serverURL) { _, _ in
+        // Removing a server or changing its address ends what was open on it. Adding or reordering
+        // servers changes nothing.
+        .onChange(of: model.catalogs.map(ObjectIdentifier.init)) { old, new in
+            guard !Set(old).isSubset(of: new) else { return }
             handoff.cancel()
             management.flow = nil
             managementSessions.reset()
@@ -83,22 +86,20 @@ struct RootView: View {
             if flow == nil { managementSessions.reset() }
         }
         .onChange(of: management.createdChannel?.token) { _, token in
-            // The list selects only the first server's channels until it groups every server.
-            if token != nil, let created = management.createdChannel, let target = created.target,
-               model.catalogs.first(at: target.serverURL) === model.catalog {
-                model.selectedChannelID = created.channel.id
+            if token != nil, let created = management.createdChannel {
+                model.selection = created.target
             }
         }
-        .onChange(of: model.selectedChannelID) { _, id in
-            if id != nil { handoff.cancel() }
-            preferredCompactColumn = id == nil ? .sidebar : .detail
-            if id == nil { columnVisibility = .all }
+        .onChange(of: model.selection) { _, selection in
+            if selection != nil { handoff.cancel() }
+            preferredCompactColumn = selection == nil ? .sidebar : .detail
+            if selection == nil { columnVisibility = .all }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             model.setScenePhase(phase)
             if phase == .active { Task { await model.notifications.refreshAuthorization() } }
         }
-        .onChange(of: model.catalog?.isLoaded, initial: true) { _, _ in
+        .onChange(of: model.catalogs.map(\.isLoaded), initial: true) { _, _ in
             model.reconcileSelection()
         }
         .onChange(of: model.isResolvingNavigation) { _, resolving in
@@ -163,9 +164,9 @@ struct RootView: View {
             ChannelSidebar(searchFocused: $isSearchFocused, isCollapsed: sizeClass == .compact)
                 .navigationSplitViewColumnWidth(min: 240, ideal: 256, max: 320)
         } detail: {
-            if let store = model.selectedStore {
+            if let store = model.selectedStore, let interaction = selectedInteraction {
                 ChannelScreen(store: store)
-                    .environment(model.interaction(for: store.id))
+                    .environment(interaction)
                     .environment(model.artifactSession(for: store))
                     .environment(model.gallery(for: store))
             } else {
@@ -189,21 +190,21 @@ struct RootView: View {
         overview.reset()
         let generation = model.beginHandoffNavigation()
         Task {
-            await handoff.continueActivity(activity, catalogs: { model.catalog.map { [$0] } ?? [] }) { _, id in
-                model.openHandoffChannel(id: id, generation: generation)
+            await handoff.continueActivity(activity, catalogs: { model.catalog.map { [$0] } ?? [] }) { catalog, id in
+                if let target = catalog.target(id) { model.openHandoffChannel(target, generation: generation) }
             }
         }
     }
 
     private var selectedInteraction: ChannelInteraction? {
-        model.selectedStore.map { model.interaction(for: $0.id) }
+        model.selection.map(model.interaction)
     }
 
     @ViewBuilder
     private func overviewContent(at placement: OverviewPlacement) -> some View {
-        if let store = model.selectedStore {
+        if let store = model.selectedStore, let interaction = selectedInteraction {
             OverviewView(store: store, session: overview.session(for: store), placement: placement)
-                .environment(model.interaction(for: store.id))
+                .environment(interaction)
                 .environment(model.artifactSession(for: store))
                 .environment(management)
                 .environment(overview)
@@ -216,15 +217,21 @@ struct RootView: View {
         guard handoff.phase == .idle, model.isActive, model.catalog != nil, !model.isCovered, management.flow == nil,
               model.navigationNotice == nil else { return nil }
         let store = model.selectedStore.flatMap {
-            $0.id == model.visibleChannelID && $0.phase != .deleted ? $0 : nil
+            $0.target == model.visibleChannel && $0.phase != .deleted ? $0 : nil
         }
-        let interaction = store.map { model.interaction(for: $0.id) }
+        let interaction = store == nil ? nil : selectedInteraction
         guard interaction?.isArtifactViewerPresented != true else { return nil }
         let conversation = interaction.flatMap {
             overview.isCompactSheetPresented || (sizeClass == .compact && $0.isInspectorPresented) ? nil : $0
         }
-        let channels = model.catalog?.channels ?? []
-        let attention = Set(channels.filter { model.sidebarPresentation.attention($0) != nil }.map(\.id))
+        // Every server's channels in list order, by identifier, since channel IDs repeat across servers.
+        let channels = model.catalogs.flatMap { catalog in
+            catalog.channels.compactMap { catalog.target($0.id) }
+        }
+        let attention = Set(model.catalogs.flatMap { catalog in
+            let presentation = model.sidebarPresentation(for: catalog)
+            return catalog.channels.filter { presentation.attention($0) != nil }.compactMap { catalog.target($0.id)?.identifier }
+        })
         return WindowCommandActions(
             messageView: interaction?.messageView ?? .all,
             sidebarVisible: columnVisibility != .detailOnly,
@@ -237,9 +244,9 @@ struct RootView: View {
             },
             findInChannel: conversation.map { interaction in { interaction.findInChannel() } },
             findNext: conversation.map { interaction in { interaction.findNext($0) } },
-            newChannel: model.canCreateChannel ? { management.present(.newChannel(server: model.serverURL)) } : nil,
-            openInToyBox: store.flatMap { store in
-                model.channelURL(channelID: store.id) == nil ? nil : { model.openInToyBox(channelID: store.id) }
+            newChannel: model.canCreateChannel ? { management.present(.newChannel(server: model.newChannelServer)) } : nil,
+            openInToyBox: store?.target.flatMap { target in
+                model.channelURL(target) == nil ? nil : { model.openInToyBox(target) }
             },
             toggleSidebar: sizeClass == .regular ? {
                 columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
@@ -248,12 +255,12 @@ struct RootView: View {
             setMessageView: conversation.map { interaction in { interaction.messageView = $0 } },
             refresh: { Task { await model.refreshCatalog() } },
             nextChannel: channels.isEmpty ? nil : { direction in
-                selectChannel(ChannelNavigation.adjacent(in: channels.map(\.id), from: model.selectedChannelID,
-                                                         direction: direction))
+                selectChannel(ChannelNavigation.adjacent(in: channels.map(\.identifier),
+                                                         from: model.selection?.identifier, direction: direction))
             },
             nextAttention: attention.isEmpty ? nil : {
-                selectChannel(ChannelNavigation.nextAttention(in: channels.map(\.id), from: model.selectedChannelID,
-                                                              attentionIDs: attention))
+                selectChannel(ChannelNavigation.nextAttention(in: channels.map(\.identifier),
+                                                              from: model.selection?.identifier, attentionIDs: attention))
             },
             focusComposer: conversation.map { interaction in { interaction.focusComposer() } },
             jumpToLatest: conversation.map { interaction in { interaction.jumpToLatest() } },
@@ -266,12 +273,10 @@ struct RootView: View {
         )
     }
 
-    private func selectChannel(_ id: String?) {
-        guard let id else { return }
-        if sizeClass == .compact, let store = model.selectedStore {
-            model.interaction(for: store.id).isInspectorPresented = false
-        }
-        model.selectedChannelID = id
+    private func selectChannel(_ identifier: String?) {
+        guard let target = identifier.flatMap(ChannelTarget.init(identifier:)) else { return }
+        if sizeClass == .compact { selectedInteraction?.isInspectorPresented = false }
+        model.selection = target
         preferredCompactColumn = .detail
     }
 }
