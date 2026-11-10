@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import type { Subprocess } from "bun";
 import { checkTestCompletion, CommandFailure, command, machineLock, main, scratchPath, text } from "../shared/lib/index.ts";
 import { buildMobile, mobileEnvironment } from "./bundle/index.ts";
-import { prepareMobileSimulator, shutDownMobileSimulator } from "./dogfood/boot.ts";
+import { bootMobileSimulator, chooseMobileSimulator, shutDownMobileSimulator } from "./dogfood/boot.ts";
 
 export const mobileTestProducts = [
     "ChannelClientTests", "ToyBoxUITests",
@@ -107,10 +107,12 @@ if (import.meta.main) await main(async () => {
     }
     const unlock = await machineLock("mobile-simulator");
     try {
-        const simulator = await prepareMobileSimulator(false, options.includes("--if-available"));
-        if (!simulator) return;
+        const udid = await chooseMobileSimulator(false, options.includes("--if-available"));
+        if (!udid) return;
+        // Boot only once the build is done, since a CI runner's simulator can shut down during a long build.
+        const { bin } = await buildMobile(false, true);
+        const simulator = await bootMobileSimulator(udid);
         try {
-            const { bin } = await buildMobile(false, true);
             const developer = join(mobileEnvironment.DEVELOPER_DIR, "Platforms/iPhoneSimulator.platform/Developer");
             for (const name of mobileTestProducts) {
                 const log = await runSuite(simulator.udid, developer, bin, name);
