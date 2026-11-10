@@ -188,7 +188,9 @@ Drafts stay keyed to the address, so adding it back finds them.
   footer keeps its status line as Sidebar describes. Everything below applies with two or more.
 - **Grouped list.** The Mac sidebar and the phone list show one collapsible section per server, in
   Settings' order. Its header is the server's connection dot and name, with the status line's help
-  and VoiceOver value. On the Mac, the dot's leading edge lines up with the search field's. On the phone, the name is followed by how many channels the server has, in
+  and VoiceOver value. On the Mac, the header keeps the sidebar's own section header inset, which puts its dot 4 points inside
+  the search field's edge, and every header has the same room above it, whether it follows the
+  search field or another server's last row, matching the gap between two servers. On the phone, the name is followed by how many channels the server has, in
   the header's font and secondary color, once its catalog has loaded. A failing server's notice sits under its own header instead of at the
   bottom: the Mac's error block, still without buttons, and the phone pill's words with Retry.
   While a section is collapsed and any of its channels waits for the user's response, its header
