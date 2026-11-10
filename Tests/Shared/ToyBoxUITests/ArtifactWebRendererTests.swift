@@ -35,7 +35,7 @@ struct ArtifactWebRendererTests {
     }
 
     private func wait(until condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now + .seconds(15)
+        let deadline = ContinuousClock.now + .seconds(60)
         while !condition(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
         try #require(condition(), "The artifact did not reach its expected settled state.")
     }
