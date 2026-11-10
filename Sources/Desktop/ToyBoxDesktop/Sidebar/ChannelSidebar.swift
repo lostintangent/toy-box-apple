@@ -9,16 +9,24 @@ struct ChannelSidebar: View {
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
-    @Binding var selection: String?
+    @Binding var selection: ChannelTarget?
     var searchFocusRequest: UUID
     @ViewState private var query = ""
     @FocusState private var searchFocused: Bool
+    /// The servers whose sections are collapsed, by address.
+    @ViewState private var collapsed: Set<URL> = []
 
-    private var channels: [Channel] {
-        let channels = model.catalog?.channels ?? []
+    /// With several servers, each gets a section under its own header.
+    private var isGrouped: Bool { model.catalogs.count > 1 }
+
+    /// A server's channels that match the search.
+    private func channels(in catalog: ChannelCatalogStore?) -> [Listed] {
+        guard let catalog else { return [] }
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return channels }
-        return channels.filter { $0.matches(query) }
+        return catalog.channels.compactMap { channel in
+            guard query.isEmpty || channel.matches(query), let target = catalog.target(channel.id) else { return nil }
+            return Listed(channel: channel, target: target)
+        }
     }
 
     /// A server address the app can't use has no catalog phase to show.
@@ -28,12 +36,22 @@ struct ChannelSidebar: View {
 
     private var initialLoading: Bool { phase == .connecting }
 
-    private var busy: Bool { model.catalog != nil && (initialLoading || model.isRefreshingCatalog) }
+    private var busy: Bool { model.catalog.map(busy) ?? false }
+
+    /// The first load, or a refresh the person asked for.
+    private func busy(_ catalog: ChannelCatalogStore) -> Bool {
+        catalog.phase == .connecting || model.isRefreshing(catalog)
+    }
+
+    private var isEmpty: Bool {
+        isGrouped ? model.catalogs.allSatisfy { $0.phase == .connected && channels(in: $0).isEmpty }
+            : phase == .connected && channels(in: model.catalog).isEmpty
+    }
 
     /// The list's own selection, which follows `selection` except during a Command-click.
-    @ViewState private var listSelection: String?
+    @ViewState private var listSelection: ChannelTarget?
 
-    init(selection: Binding<String?>, searchFocusRequest: UUID) {
+    init(selection: Binding<ChannelTarget?>, searchFocusRequest: UUID) {
         _selection = selection
         self.searchFocusRequest = searchFocusRequest
         _listSelection = ViewState(initialValue: selection.wrappedValue)
@@ -41,11 +59,11 @@ struct ChannelSidebar: View {
 
     /// A Command-click opens its row in a new window. The list's own Command-click selects that
     /// row, or clears the current one, so the list is put back on this window's channel.
-    private var listSelectionBinding: Binding<String?> {
-        Binding(get: { listSelection }, set: { id in
-            listSelection = id
-            guard Self.isCommandClick else { selection = id; return }
-            if let clicked = id ?? selection { openWindow(value: ChannelWindowValue(channelID: clicked)) }
+    private var listSelectionBinding: Binding<ChannelTarget?> {
+        Binding(get: { listSelection }, set: { target in
+            listSelection = target
+            guard Self.isCommandClick else { selection = target; return }
+            if let clicked = target ?? selection { openWindow(value: ChannelWindowValue(clicked)) }
             Task { @MainActor in listSelection = selection }
         })
     }
@@ -58,25 +76,27 @@ struct ChannelSidebar: View {
 
     var body: some View {
         List(selection: listSelectionBinding) {
-            if initialLoading {
-                ForEach(0..<3) { _ in SidebarPlaceholder().listRowInsets(EdgeInsets()).listRowSeparator(.hidden) }
-            } else if model.catalog?.state != nil {
-                ForEach(channels) { channel in
-                    row(channel)
-                        .listRowInsets(EdgeInsets())
-                        .tag(channel.id)
-                        .contextMenu { contextMenu(channel) }
-                        .accessibilityAction { selection = channel.id }
+            if isGrouped {
+                ForEach(model.catalogs, id: \.api.baseURL) { catalog in
+                    Section(isExpanded: isExpanded(catalog)) {
+                        serverRows(catalog)
+                    } header: {
+                        SidebarServerHeader(catalog: catalog, busy: busy(catalog))
+                    }
                 }
+            } else if initialLoading {
+                placeholders
+            } else if let catalog = model.catalog, catalog.state != nil {
+                rows(catalog)
             }
         }
         .listStyle(.sidebar)
         .overlay {
-            if phase == .connected, channels.isEmpty { emptyState }
+            if isEmpty { emptyState }
         }
         .safeAreaBar(edge: .bottom) {
             SidebarConnectionFooter(
-                footer: SidebarFooter(phase: phase, isLoaded: model.catalog?.isLoaded == true),
+                footer: isGrouped ? nil : SidebarFooter(phase: phase, isLoaded: model.catalog?.isLoaded == true),
                 busy: busy, serverURL: model.serverURL,
                 error: model.configurationError ?? model.catalog?.phase.message,
                 openSettings: { openSettings() },
@@ -103,6 +123,47 @@ struct ChannelSidebar: View {
         model.snapshot?.markStateReady(state)
     }
 
+    private func isExpanded(_ catalog: ChannelCatalogStore) -> Binding<Bool> {
+        let server = catalog.api.baseURL
+        return Binding(get: { !collapsed.contains(server) }, set: { expanded in
+            if expanded { collapsed.remove(server) } else { collapsed.insert(server) }
+        })
+    }
+
+    /// A server's section: its failure under its header, then its placeholders or channels.
+    @ViewBuilder private func serverRows(_ catalog: ChannelCatalogStore) -> some View {
+        if let heading = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded).heading,
+           let error = catalog.phase.message {
+            // On the footer's leading edge, 4 points before the channel icons.
+            SidebarErrorBlock(heading: heading, error: error)
+                .padding(.leading, 4)
+                .padding(.trailing, 8)
+                .padding(.vertical, 4)
+                .listRowInsets(EdgeInsets())
+                .selectionDisabled()
+        }
+        if catalog.phase == .connecting {
+            placeholders
+        } else if catalog.state != nil {
+            rows(catalog)
+        }
+    }
+
+    private var placeholders: some View {
+        ForEach(0..<3) { _ in SidebarPlaceholder().listRowInsets(EdgeInsets()).listRowSeparator(.hidden) }
+    }
+
+    private func rows(_ catalog: ChannelCatalogStore) -> some View {
+        let presentation = model.sidebarPresentation(for: catalog)
+        return ForEach(channels(in: catalog)) { listed in
+            row(listed, presentation: presentation, api: catalog.api)
+                .listRowInsets(EdgeInsets())
+                .tag(listed.target)
+                .contextMenu { contextMenu(listed, api: catalog.api) }
+                .accessibilityAction { selection = listed.target }
+        }
+    }
+
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: query.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass")
@@ -117,32 +178,34 @@ struct ChannelSidebar: View {
         }.padding(20)
     }
 
-    private func row(_ channel: Channel) -> some View {
-        let current = model.sidebarChannel(channel)
-        let agents = model.sidebarAgents(channel)
+    private func row(_ listed: Listed, presentation: ChannelSidebarPresentation, api: ChannelAPI) -> some View {
+        let channel = listed.channel
+        let current = presentation.channel(channel)
+        let agents = presentation.agents(channel)
         return ChannelSidebarRow(
-            channel: current, agents: agents, working: model.sidebarWorking(channel, agents: agents),
-            attention: model.sidebarAttention(channel),
-            folder: folderAvailability(current),
+            channel: current, agents: agents, working: presentation.working(channel, agents: agents),
+            attention: presentation.attention(channel),
+            folder: folderAvailability(current, api: api),
             openFolder: { if let path = current.directory { model.folders.open(path) } },
-            onTap: { if !NSEvent.modifierFlags.contains(.command) { selection = channel.id } }
+            onTap: { if !NSEvent.modifierFlags.contains(.command) { selection = listed.target } }
         )
     }
 
-    private func folderAvailability(_ channel: Channel) -> ChannelFolderAvailability? {
-        guard let path = channel.directory, !path.isEmpty, let api = model.api else { return nil }
+    private func folderAvailability(_ channel: Channel, api: ChannelAPI) -> ChannelFolderAvailability? {
+        guard let path = channel.directory, !path.isEmpty else { return nil }
         return model.folderAvailability(path: path, server: api.baseURL)
     }
 
     @ViewBuilder
-    private func contextMenu(_ channel: Channel) -> some View {
+    private func contextMenu(_ listed: Listed, api: ChannelAPI) -> some View {
+        let channel = listed.channel
         Button("Open in New Window", systemImage: "macwindow.badge.plus") {
-            openWindow(value: ChannelWindowValue(channelID: channel.id))
+            openWindow(value: ChannelWindowValue(listed.target))
         }
-        Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { model.openInToyBox(channelID: channel.id) }
+        Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { model.openInToyBox(listed.target) }
         if let path = channel.directory, !path.isEmpty {
             Divider()
-            if folderAvailability(channel) == .openable {
+            if folderAvailability(channel, api: api) == .openable {
                 Button("Open Folder in Finder", systemImage: "folder") { model.folders.open(path) }
                 Menu("Open Folder With", systemImage: "arrow.up.forward.square") {
                     OpenFolderWithMenu(path: path, folders: model.folders)
@@ -152,12 +215,43 @@ struct ChannelSidebar: View {
         }
         Divider()
         Button("Edit Channel…", systemImage: "pencil") {
-            if let target = model.catalog?.target(channel.id) { management.present(.editChannel(target)) }
+            management.present(.editChannel(listed.target))
         }
         Divider()
         Button("Delete Channel…", systemImage: "trash", role: .destructive) {
-            if let target = model.catalog?.target(channel.id) { management.present(.deleteChannel(target)) }
+            management.present(.deleteChannel(listed.target))
         }
+    }
+}
+
+/// A channel the sidebar lists, on its server.
+private struct Listed: Identifiable {
+    let channel: Channel
+    let target: ChannelTarget
+    var id: ChannelTarget { target }
+}
+
+/// A server's section header when the sidebar lists several: its status dot, or a spinner in the
+/// dot's slot, then its name, with the status line's help and VoiceOver value.
+private struct SidebarServerHeader: View {
+    let catalog: ChannelCatalogStore
+    let busy: Bool
+    @ViewState private var showsSpinner = false
+
+    var body: some View {
+        let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
+        let address = catalog.api.baseURL.absoluteString
+        let host = SidebarFooter.server(address)
+        HStack(spacing: 6) {
+            SidebarStatusDot(footer: footer, spinning: showsSpinner)
+            Text(catalog.name).lineLimit(1).truncationMode(.middle)
+        }
+        .modifier(SpinnerDelay(busy: busy, spinning: $showsSpinner))
+        .help(footer.help(address))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(catalog.name)
+        .accessibilityValue(catalog.name == host ? footer.accessibilityValue : "\(host), \(footer.accessibilityValue)")
+        .accessibilityAddTraits(.isHeader)
     }
 }
 

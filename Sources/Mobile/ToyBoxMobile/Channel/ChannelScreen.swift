@@ -38,7 +38,7 @@ struct ChannelScreen: View {
 
     private var showsPermissionTip: Bool {
         permissionTipIsAvailable && model.notifications.canOfferPermissionTip
-            && model.visibleChannelID == store.id
+            && model.visibleChannel == store.target
             && !store.phase.isUnavailable && store.requestSequence != nil && !model.isCovered
             && management.flow == nil && !reader.requested && !overview.isCompactSheetPresented
             && !(sizeClass == .compact && interaction.isInspectorPresented)
@@ -98,8 +98,7 @@ struct ChannelScreen: View {
                     permissionTipIsAvailable = available
                 }
             }
-            .onAppear { model.visibleChannelID = store.id }
-            .onChange(of: store.id) { _, id in model.visibleChannelID = id }
+            .onChange(of: store.target, initial: true) { _, target in model.visibleChannel = target }
             .onChange(of: screenEntity, initial: true) { _, entity in model.screenEntity = entity }
             .channelActivity(store.id, showing: screenEntity)
             .onChange(of: store.artifacts, initial: true) { _, current in
@@ -124,7 +123,7 @@ struct ChannelScreen: View {
             }
             .onDisappear {
                 interaction.isArtifactViewerPresented = false
-                if model.visibleChannelID == store.id { model.visibleChannelID = nil }
+                if model.visibleChannel == store.target { model.visibleChannel = nil }
                 if model.screenEntity?.channelID == store.id { model.screenEntity = nil }
             }
             .toolbar {
@@ -133,7 +132,8 @@ struct ChannelScreen: View {
     }
 
     private var title: String {
-        store.details?.name ?? model.catalog?.channels.first { $0.id == store.id }?.name ?? ""
+        store.details?.name
+            ?? model.catalogs.first(at: store.api.baseURL.absoluteString)?.channels.first { $0.id == store.id }?.name ?? ""
     }
 
     @ViewBuilder
@@ -141,7 +141,7 @@ struct ChannelScreen: View {
         Group {
             if store.phase == .deleted {
                 DeletedChannelView(draft: model.composerSession(for: store).draft) {
-                    model.selectedChannelID = nil
+                    model.selection = nil
                 }
             } else {
                 ConversationView(store: store)
@@ -224,9 +224,9 @@ struct ChannelScreen: View {
         .disabled(store.phase == .deleted)
         ChannelFollowMenuAction(store: store)
         Button("Open in Toy Box", systemImage: "arrow.up.forward.square") {
-            model.openInToyBox(channelID: store.id)
+            if let target = store.target { model.openInToyBox(target) }
         }
-        .disabled(store.phase == .deleted || model.channelURL(channelID: store.id) == nil)
+        .disabled(store.phase == .deleted || store.target.flatMap(model.channelURL) == nil)
         Divider()
         Button("Edit Channel", systemImage: "pencil") {
             if let target = store.target { management.present(.editChannel(target)) }

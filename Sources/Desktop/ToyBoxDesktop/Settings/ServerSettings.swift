@@ -32,7 +32,7 @@ struct ServerSettings: View {
             Text("Servers")
         } footer: {
             if model.catalogs.count > 1 {
-                Text("Drag to reorder. The sidebar lists servers in this order.")
+                Text("Drag to reorder. The sidebar shows servers in this order.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }

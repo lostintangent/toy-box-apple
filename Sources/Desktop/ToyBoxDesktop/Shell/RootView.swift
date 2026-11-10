@@ -6,11 +6,12 @@ import ToyBoxUI
 /// The window: source-list sidebar and the selected channel. Each window owns its selection
 /// and management presenter, while the catalog and channel stores are shared app-wide.
 struct RootView: View {
-    var initialChannelID: String?
+    var initialChannel: ChannelTarget?
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
-    @SceneStorage("selectedChannelId") private var restoredSelectedId: String?
-    @ViewState private var selectedId: String?
+    /// The selection's `identifier`, or a bare channel ID saved before several servers.
+    @SceneStorage("selectedChannelId") private var restoredSelection: String?
+    @ViewState private var selection: ChannelTarget?
     @SceneStorage("sidebarVisible") private var sidebarVisible = true
     @ViewState private var management = ManagementPresenter()
     @ViewState private var artifactOpener = ArtifactOpener()
@@ -51,16 +52,20 @@ struct RootView: View {
     }
     /// Overview is the inspector column in wide windows and a sheet in narrow ones.
     private var isOverviewVisible: Bool { isNarrow ? isOverviewSheetPresented : interaction.isInspectorPresented }
+    private var selectedId: String? { selection?.channelID }
+    /// The catalog of the selection's server.
+    private var selectedCatalog: ChannelCatalogStore? { selection.flatMap { model.catalogs.first(at: $0.serverURL) } }
     /// The channel the detail shows, which Overview describes.
     private var selectedStore: ChannelStore? {
         guard handoff.phase == .idle, let selectedId else { return nil }
-        return model.catalog?.channel(id: selectedId)
+        return selectedCatalog?.channel(id: selectedId)
     }
     /// What the window shows Siri: its conversation, or the artifact open over it. An image open
     /// over it, or an artifact that's gone, names nothing. Overview and management sheets leave
-    /// the conversation in view.
+    /// the conversation in view. Siri reads only the first server for now.
     private var screenEntity: ScreenEntity? {
-        guard let selectedId, handoff.phase == .idle, imageViewer.session == nil else { return nil }
+        guard let selectedId, handoff.phase == .idle, imageViewer.session == nil,
+              selectedCatalog != nil, selectedCatalog === model.catalog else { return nil }
         guard artifactOpener.isPresented else { return .channel(selectedId) }
         guard !artifactOpener.isUnavailable, let artifact = artifactOpener.artifact else { return nil }
         return .artifact(channelID: selectedId, artifactID: artifact.id)
@@ -82,7 +87,7 @@ struct RootView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            ChannelSidebar(selection: Binding(get: { selectedId }, set: selectChannel),
+            ChannelSidebar(selection: Binding(get: { selection }, set: selectChannel),
                            searchFocusRequest: searchFocusRequest)
                 .settledLayout()
                 .toolbar(removing: .sidebarToggle)
@@ -145,13 +150,13 @@ struct RootView: View {
             reportScreen()
             model.snapshot?.attach(window: window, model: model)
             model.resizeBenchmark?.attach(window: window, model: model)
-            model.performanceBenchmark?.attach(window: window, model: model) { selectedId = $0 }
+            model.performanceBenchmark?.attach(window: window, model: model) { selection = model.target($0) }
         }, onChange: { isKey, size, isLiveResizing in
             // A resize reports every frame, so this changes state only when something the views
             // read changes. Anything more rebuilds the window on each frame.
             if isKey != isKeyWindow {
                 isKeyWindow = isKey
-                model.updateWindow(windowID, channelID: selectedId, isKey: isKey)
+                model.updateWindow(windowID, channel: selection, isKey: isKey)
             }
             // Tiling, zooming or a display change can set the window narrower than the open column
             // needs. AppKit can't lay out a split view below its minimum, and with a widened
@@ -173,9 +178,10 @@ struct RootView: View {
         }
         .onAppear {
             let launchChannelID = model.takeLaunchChannelID()
-            if selectedId == nil {
-                selectedId = model.launchOptions.isSnapshot ? initialChannelID
-                    : restoredSelectedId ?? initialChannelID ?? launchChannelID
+            if selection == nil {
+                selection = model.launchOptions.isSnapshot ? initialChannel
+                    : restoredSelection.flatMap { ChannelTarget(identifier: $0) ?? model.target($0) }
+                        ?? initialChannel ?? launchChannelID.flatMap { model.target($0) }
             }
             columnVisibility = model.launchOptions.isSnapshot || sidebarVisible ? .all : .detailOnly
             #if DEBUG
@@ -192,28 +198,27 @@ struct RootView: View {
             model.removeWindow(windowID)
         }
         .onChange(of: screenEntity, initial: true) { reportScreen() }
-        .onChange(of: selectedId) { _, id in
-            if id != nil { handoff.cancel() }
+        .onChange(of: selection) { _, selection in
+            if selection != nil { handoff.cancel() }
             imageViewer.close(animated: false)
             artifactOpener.close(animated: false)
             isOverviewSheetPresented = false
-            if !model.launchOptions.isSnapshot { restoredSelectedId = id }
-            model.updateWindow(windowID, channelID: id, isKey: isKeyWindow)
+            if !model.launchOptions.isSnapshot { restoredSelection = selection?.identifier }
+            model.updateWindow(windowID, channel: selection, isKey: isKeyWindow)
         }
-        .onChange(of: model.serverURL) { _, _ in
+        // Reordering servers keeps the window where it is. Removing the selection's server, or
+        // changing its address, starts it over.
+        .onChange(of: model.catalogs.map(ObjectIdentifier.init)) { _, _ in
+            guard selection != nil, selectedCatalog == nil else { return }
             handoff.cancel()
             mountsSurroundings = false
             imageViewer.close(animated: false)
-            selectedId = nil
+            selection = nil
             management.flow = nil
             artifactOpener.close(animated: false)
         }
         .onChange(of: management.createdChannel?.token) { _, _ in
-            // The sidebar selects only the first server's channels until it groups every server.
-            if let created = management.createdChannel, let target = created.target,
-               model.catalogs.first(at: target.serverURL) === model.catalog {
-                selectChannel(created.channel.id)
-            }
+            if let created = management.createdChannel { selectChannel(created.target) }
         }
         .onChange(of: management.flow) { _, flow in
             if flow != nil { handoff.cancel() }
@@ -253,10 +258,10 @@ struct RootView: View {
         artifactOpener.close(animated: false)
         management.flow = nil
         setOverviewVisible(false)
-        selectedId = nil
+        selection = nil
         Task {
-            await handoff.continueActivity(activity, catalogs: { model.catalog.map { [$0] } ?? [] }) { _, id in
-                selectedId = id
+            await handoff.continueActivity(activity, catalogs: { model.catalog.map { [$0] } ?? [] }) { catalog, id in
+                selection = catalog.target(id)
                 model.snapshot?.markStateReady("handoff-match")
             }
         }
@@ -281,8 +286,8 @@ struct RootView: View {
             management.present(.newChannel(server: model.serverURL))
             snapshot.markStateReady(state)
         case "edit-channel":
-            if let target = selectedId.flatMap({ model.catalog?.target($0) }) {
-                management.present(.editChannel(target))
+            if let selection {
+                management.present(.editChannel(selection))
                 snapshot.markStateReady(state)
             }
         case "overview-tasks", "overview-artifacts", "overview-routines":
@@ -295,7 +300,7 @@ struct RootView: View {
         if handoff.phase != .idle {
             handoffContent
                 .modifier(DetailMinimumWidth())
-        } else if let catalog = model.catalog, let selectedId {
+        } else if let catalog = selectedCatalog, let selectedId {
             ChannelDetailView(store: catalog.channel(id: selectedId),
                               placement: placement,
                               titleFit: titleFit,
@@ -306,8 +311,7 @@ struct RootView: View {
                               onBack: { selectChannel(nil) },
                               onSelect: { selectChannel($0) })
                 // A switch keeps the detail and its toolbar, which hand per-channel state to
-                // the new store. Only another server starts over.
-                .id(model.serverURL)
+                // the new store, even on another server.
                 .channelActivity(selectedId, showing: screenEntity,
                                  handoff: model.launchOptions.allowsUserIntegrations())
         } else {
@@ -327,8 +331,11 @@ struct RootView: View {
         if isNarrow { isOverviewSheetPresented = visible } else { interaction.isInspectorPresented = visible }
     }
 
+    /// New Channel starts on the selected channel's server.
+    private var newChannelServer: String { selection?.serverURL ?? model.serverURL }
+
     private var newChannelButton: some View {
-        Button("New Channel", systemImage: "plus") { management.present(.newChannel(server: model.serverURL)) }
+        Button("New Channel", systemImage: "plus") { management.present(.newChannel(server: newChannelServer)) }
             .help("New Channel (Command-N)")
             .disabled(model.api == nil)
     }
@@ -350,7 +357,7 @@ struct RootView: View {
     private func consumeNavigationRequest() {
         guard let request = model.navigationRequest, isKeyWindow else { return }
         handoff.cancel()
-        selectedId = request.channelID
+        selection = model.target(request.channelID)
         if let sequence = request.sequence { interaction.reveal(sequence: sequence) }
         model.navigationRequest = nil
     }
@@ -358,12 +365,12 @@ struct RootView: View {
     private func consumeNewChannelRequest() {
         guard model.newChannelRequest != nil, isKeyWindow else { return }
         handoff.cancel()
-        management.present(.newChannel(server: model.serverURL))
+        management.present(.newChannel(server: newChannelServer))
         model.newChannelRequest = nil
     }
 
     private var commandActions: WindowCommandActions {
-        let store = selectedId.flatMap { model.catalog?.channel(id: $0) }
+        let store = selectedId.flatMap { selectedCatalog?.channel(id: $0) }
         return WindowCommandActions(
             hasChannel: selectedId != nil && store?.phase != .deleted,
             hasRequest: store?.phase.isConnected == true && store?.requestSequence != nil,
@@ -371,11 +378,11 @@ struct RootView: View {
             messageView: interaction.messageView,
             imageZoom: imageZoom,
             isViewerPresented: artifactOpener.isPresented,
-            newChannel: { handoff.cancel(); management.present(.newChannel(server: model.serverURL)) },
-            openNewWindow: { if let selectedId { openWindow(value: ChannelWindowValue(channelID: selectedId)) } },
+            newChannel: { handoff.cancel(); management.present(.newChannel(server: newChannelServer)) },
+            openNewWindow: { if let selection { openWindow(value: ChannelWindowValue(selection)) } },
             openInToyBox: {
                 if artifactOpener.isPresented { artifactOpener.openInToyBox(app: model) }
-                else if let selectedId { model.openInToyBox(channelID: selectedId) }
+                else if let selection { model.openInToyBox(selection) }
             },
             openFolder: openableFolder(store: store).map { path in { model.folders.open(path) } },
             findChannel: { columnVisibility = .all; searchFocusRequest = UUID() },
@@ -406,32 +413,43 @@ struct RootView: View {
 
     private func openableFolder(store: ChannelStore?) -> String? {
         let directory = if let details = store?.details { details.directory } else {
-            model.catalog?.channels.first(where: { $0.id == selectedId })?.directory
+            selectedCatalog?.channels.first(where: { $0.id == selectedId })?.directory
         }
-        guard store?.phase != .deleted, let api = model.api, let path = directory, !path.isEmpty,
+        guard store?.phase != .deleted, let api = selectedCatalog?.api, let path = directory, !path.isEmpty,
               model.folderAvailability(path: path, server: api.baseURL) == .openable else { return nil }
         return path
     }
 
+    /// Every server's channels in sidebar order, by `identifier`, with those needing attention.
+    private var channelOrder: (all: [String], attention: Set<String>) {
+        var all: [String] = [], attention: Set<String> = []
+        for catalog in model.catalogs {
+            for channel in catalog.channels {
+                guard let id = catalog.target(channel.id)?.identifier else { continue }
+                all.append(id)
+                if channel.attention != nil { attention.insert(id) }
+            }
+        }
+        return (all, attention)
+    }
+
     private func selectAdjacent(_ direction: ChannelNavigation.Direction) {
-        let ids = model.catalog?.channels.map(\.id) ?? []
-        if let id = ChannelNavigation.adjacent(in: ids, from: selectedId, direction: direction) {
-            selectChannel(id)
+        if let id = ChannelNavigation.adjacent(in: channelOrder.all, from: selection?.identifier, direction: direction) {
+            selectChannel(ChannelTarget(identifier: id))
         }
     }
 
     private func selectNextAttention() {
-        let channels = model.catalog?.channels ?? []
-        let attention = Set(channels.filter { $0.attention != nil }.map(\.id))
-        if let id = ChannelNavigation.nextAttention(in: channels.map(\.id), from: selectedId,
-                                                    attentionIDs: attention) {
-            selectChannel(id)
+        let order = channelOrder
+        if let id = ChannelNavigation.nextAttention(in: order.all, from: selection?.identifier,
+                                                    attentionIDs: order.attention) {
+            selectChannel(ChannelTarget(identifier: id))
         }
     }
 
-    private func selectChannel(_ id: String?) {
+    private func selectChannel(_ channel: ChannelTarget?) {
         handoff.cancel()
-        selectedId = id
+        selection = channel
     }
 }
 

@@ -23,21 +23,23 @@ final class AppModel {
     private(set) var isActive = false
     private(set) var selectedStore: ChannelStore?
     private(set) var isResolvingNavigation = false
-    var visibleChannelID: String?
+    /// The channel screen in front, on its server.
+    var visibleChannel: ChannelTarget?
     /// What the visible channel screen shows, which Siri may read while it's in front.
     var screenEntity: ScreenEntity?
     var cover: Cover?
     var navigationNotice: String?
-    var selectedChannelID: String? {
+    /// The list's chosen channel, on its server.
+    var selection: ChannelTarget? {
         didSet {
-            guard oldValue != selectedChannelID else { return }
+            guard oldValue != selection else { return }
             cancelNavigation()
             if let selectedStore {
                 closeReaders(for: selectedStore.id)
             }
             if holdsSelectedConnection, let selectedStore { connections.release(selectedStore) }
             holdsSelectedConnection = false
-            selectedStore = selectedChannelID.flatMap { catalog?.channel(id: $0) }
+            selectedStore = selection.flatMap { catalogs.first(at: $0.serverURL)?.channel(id: $0.channelID) }
             connectSelection()
             rememberSelection()
         }
@@ -50,10 +52,10 @@ final class AppModel {
     /// A launch server stays in the session, so Settings never saves over the user's servers.
     @ObservationIgnored private let savesServers: Bool
     @ObservationIgnored private let session: URLSession
-    @ObservationIgnored private var restoredSelection = false
+    /// The server whose last opened channel opens once its catalog loads, unless a navigation wins.
+    @ObservationIgnored private weak var restoring: ChannelCatalogStore?
     @ObservationIgnored private var navigationGeneration = UUID()
-    @ObservationIgnored private var serverIdentity = ""
-    @ObservationIgnored private var interactions: [String: ChannelInteraction] = [:]
+    @ObservationIgnored private var interactions: [ChannelTarget: ChannelInteraction] = [:]
     @ObservationIgnored private var composerSessions: [String: ComposerSession] = [:]
     @ObservationIgnored private var artifactSessions: [String: (store: ChannelStore, session: ChannelArtifactSession)] = [:]
     @ObservationIgnored private var galleries: [String: (store: ChannelStore, gallery: TranscriptGallery)] = [:]
@@ -103,6 +105,7 @@ final class AppModel {
             }
         }
         if catalog != nil { firstServerDidChange() }
+        restoring = defaults.string(forKey: "lastServer").flatMap { catalogs.first(at: $0) } ?? catalog
     }
 
     /// The first server, which the list and everything outside Settings show until each reaches
@@ -118,8 +121,10 @@ final class AppModel {
     /// front and nothing covers it. Siri's own overlay makes the scene inactive, so this needs the
     /// foreground rather than the active scene.
     var onScreen: ChannelIntents.OnScreen? {
+        // Siri reads the first server until it reaches every one.
         guard isForeground, !isCovered, let screenEntity, let store = selectedStore,
-              store.id == visibleChannelID, screenEntity.channelID == store.id, store.phase != .deleted
+              store.target == visibleChannel, catalog?.target(store.id) == visibleChannel,
+              screenEntity.channelID == store.id, store.phase != .deleted
         else { return nil }
         switch screenEntity {
         case .channel:
@@ -133,16 +138,26 @@ final class AppModel {
 
     var sidebarFooter: SidebarFooter { SidebarFooter(phase: catalog?.phase, isLoaded: catalog?.isLoaded == true) }
 
-    var canManageChannels: Bool { isActive && catalog?.phase == .connected }
-    var canCreateChannel: Bool { canManageChannels }
+    var canManageChannels: Bool { canManageChannels(on: catalog) }
 
-    var sidebarPresentation: ChannelSidebarPresentation {
-        ChannelSidebarPresentation(catalog: catalog, openChannelIDs: openChannelIDs)
+    /// Management needs the active scene and the channel's own server connected.
+    func canManageChannels(on catalog: ChannelCatalogStore?) -> Bool { isActive && catalog?.phase == .connected }
+
+    /// New Channel starts on the selected channel's server.
+    var newChannelServer: String { selection?.serverURL ?? serverURL }
+    var canCreateChannel: Bool { canManageChannels(on: catalogs.first(at: newChannelServer)) }
+
+    var sidebarPresentation: ChannelSidebarPresentation { sidebarPresentation(for: catalog) }
+
+    /// How the list shows a server's channels, given which of them is on screen.
+    func sidebarPresentation(for catalog: ChannelCatalogStore?) -> ChannelSidebarPresentation {
+        let open = openChannels.compactMap { catalog?.target($0.channelID) == $0 ? $0.channelID : nil }
+        return ChannelSidebarPresentation(catalog: catalog, openChannelIDs: Set(open))
     }
 
     /// The channel on screen, whose live state the list and its requests read.
-    var openChannelIDs: Set<String> {
-        let visible = isActive ? visibleChannelID : nil
+    var openChannels: Set<ChannelTarget> {
+        let visible = isActive ? visibleChannel : nil
         return Set(visible.map { [$0] } ?? [])
     }
 
@@ -161,6 +176,7 @@ final class AppModel {
         let api = try ChannelAPI(serverURL: address, session: session)
         if let listed = catalogs.first(at: api.baseURL.absoluteString) { return listed }
         let catalog = connect(api, name: nil)
+        if catalogs.isEmpty { restoring = catalog }
         updateServers { $0.append(catalog) }
         return catalog
     }
@@ -176,6 +192,7 @@ final class AppModel {
         disconnect(catalog)
         let replacement = connect(api, name: moved.name)
         updateServers { $0[index] = replacement }
+        if selection == nil { restoring = replacement }
         return replacement
     }
 
@@ -202,7 +219,28 @@ final class AppModel {
         return catalog
     }
 
+    /// Closes a server's channels wherever they're open, and stops its connections.
     private func disconnect(_ catalog: ChannelCatalogStore) {
+        let server = ChannelWaitingRequest.normalizedServer(catalog.api.baseURL.absoluteString)
+        func belongs(_ store: ChannelStore) -> Bool { catalog.existingChannel(id: store.id) === store }
+        if selection?.serverURL == server { selection = nil }
+        if visibleChannel?.serverURL == server {
+            visibleChannel = nil
+            screenEntity = nil
+        }
+        for (target, interaction) in interactions where target.serverURL == server {
+            interaction.isArtifactViewerPresented = false
+            interactions[target] = nil
+        }
+        for (id, entry) in artifactSessions where belongs(entry.store) {
+            entry.session.close()
+            artifactSessions[id] = nil
+        }
+        for (id, entry) in galleries where belongs(entry.store) {
+            entry.gallery.close()
+            galleries[id] = nil
+        }
+        composerSessions = composerSessions.filter { !belongs($0.value.store) }
         catalog.stopPolling()
         catalog.outbox = nil
         connections.disconnectAll(in: catalog)
@@ -215,26 +253,15 @@ final class AppModel {
         if catalog !== first { firstServerDidChange() }
     }
 
-    /// The list and everything outside Settings show the first server, so a new first server
-    /// starts them over.
+    /// Everything outside the list reads the first server, so a new first server starts it over.
     private func firstServerDidChange() {
         integrationsGeneration = UUID()
         badgeRefresh = nil
         cancelNavigation()
-        selectedChannelID = nil
-        visibleChannelID = nil
-        screenEntity = nil
-        for id in Set(artifactSessions.keys).union(galleries.keys) { closeReaders(for: id) }
-        interactions = [:]
-        composerSessions = [:]
-        artifactSessions = [:]
-        galleries = [:]
         serverURL = catalog?.api.baseURL.absoluteString ?? ""
-        serverIdentity = ChannelWaitingRequest.normalizedServer(serverURL) ?? ""
         if let api { notifications.configure(api: api) }
         configurationError = nil
         navigationNotice = nil
-        restoredSelection = false
         resumeCatalogBaseline = nil
         if integrationsStarted {
             configureShareHistory()
@@ -276,22 +303,25 @@ final class AppModel {
     }
 
     func reconcileSelection() {
-        guard !restoredSelection, !isResolvingNavigation, let catalog, catalog.isLoaded else { return }
-        restoredSelection = true
-        guard selectedChannelID == nil, let id = rememberedSelections[serverIdentity] else { return }
+        guard let catalog = restoring, !isResolvingNavigation, catalog.isLoaded else { return }
+        restoring = nil
+        guard selection == nil, let server = ChannelWaitingRequest.normalizedServer(catalog.api.baseURL.absoluteString),
+              let id = rememberedSelections[server] else { return }
         if catalog.channels.contains(where: { $0.id == id }) {
-            selectedChannelID = id
+            selection = catalog.target(id)
         } else {
             navigationNotice = "The channel you last opened is no longer available."
             var selections = rememberedSelections
-            selections[serverIdentity] = nil
+            selections[server] = nil
             defaults.set(selections, forKey: "lastChannelByServer")
         }
     }
 
-    func refreshCatalog() async {
-        guard let catalog else { return }
-        await catalog.refresh()
+    /// Refreshes every server, or one whose Retry was chosen.
+    func refreshCatalog(_ only: ChannelCatalogStore? = nil) async {
+        await withDiscardingTaskGroup { group in
+            for catalog in only.map({ [$0] }) ?? catalogs { group.addTask { await catalog.refresh() } }
+        }
         reconcileSelection()
     }
 
@@ -354,8 +384,8 @@ final class AppModel {
         let context = withObservationTracking {
             let channels = catalog?.channels.map(sidebarPresentation.channel) ?? []
             let active = isActive && !isCovered
-                && selectedStore.map({ interaction(for: $0.id).isArtifactViewerPresented != true }) != false
-                ? visibleChannelID : nil
+                && selection.map({ interaction(for: $0).isArtifactViewerPresented != true }) != false
+                ? visibleChannel.flatMap { catalog?.target($0.channelID) == $0 ? $0.channelID : nil } : nil
             return (channels: channels, active: active,
                     withdraw: isActive && catalog?.isLoaded == true && catalog?.phase.message == nil
                         && catalog?.lastRefreshedAt != resumeCatalogBaseline,
@@ -381,18 +411,18 @@ final class AppModel {
 
     func beginHandoffNavigation() -> UUID {
         cancelNavigation()
-        restoredSelection = true
+        restoring = nil
         cover = nil
         navigationNotice = nil
-        selectedChannelID = nil
+        selection = nil
         return navigationGeneration
     }
 
-    func openHandoffChannel(id: String, generation: UUID) {
+    func openHandoffChannel(_ target: ChannelTarget, generation: UUID) {
         guard navigationGeneration == generation else { return }
-        closeReaders(for: id)
-        interaction(for: id).isInspectorPresented = false
-        selectedChannelID = id
+        closeReaders(for: target.channelID)
+        interaction(for: target).isInspectorPresented = false
+        selection = target
     }
 
     func openChannel(id: String, sequence: Int? = nil, focusComposer: Bool = false,
@@ -409,13 +439,13 @@ final class AppModel {
         if !catalog.isLoaded { await catalog.refresh() }
         guard navigationGeneration == generation, self.catalog === catalog else { return }
         isResolvingNavigation = false
-        restoredSelection = true
-        guard catalog.isLoaded, catalog.channels.contains(where: { $0.id == id }) else {
-            selectedChannelID = nil
+        restoring = nil
+        guard catalog.isLoaded, catalog.channels.contains(where: { $0.id == id }), let target = catalog.target(id) else {
+            selection = nil
             navigationNotice = "This channel isn't available."
             return
         }
-        let interaction = interaction(for: id)
+        let interaction = interaction(for: target)
         if let sequence {
             interaction.messageView = .all
             interaction.reveal(sequence: sequence)
@@ -424,15 +454,15 @@ final class AppModel {
         interaction.isInspectorPresented = false
         if focusComposer { interaction.focusComposer() }
         navigationNotice = nil
-        selectedChannelID = id
+        selection = target
     }
 
     func openExternalURL(_ url: URL) async {
         cancelNavigation()
         cover = nil
         if url == NeedsYouSnapshot.mainURL {
-            restoredSelection = true
-            selectedChannelID = nil
+            restoring = nil
+            selection = nil
         } else if let request = NeedsYouRequestLink(url: url) {
             await openChannel(id: request.channelID, sequence: request.sequence,
                               expectedServer: request.serverURL)
@@ -457,19 +487,19 @@ final class AppModel {
         isResolvingNavigation = false
     }
 
-    func openInToyBox(channelID: String) {
-        guard let url = channelURL(channelID: channelID) else { return }
+    func openInToyBox(_ channel: ChannelTarget) {
+        guard let url = channelURL(channel) else { return }
         UIApplication.shared.open(url)
     }
 
-    func channelURL(channelID: String) -> URL? {
-        api?.channelURL(channelID: channelID)
+    func channelURL(_ channel: ChannelTarget) -> URL? {
+        catalogs.first(at: channel.serverURL)?.api.channelURL(channelID: channel.channelID)
     }
 
-    func interaction(for channelID: String) -> ChannelInteraction {
-        if let interaction = interactions[channelID] { return interaction }
+    func interaction(for channel: ChannelTarget) -> ChannelInteraction {
+        if let interaction = interactions[channel] { return interaction }
         let interaction = ChannelInteraction(isInspectorPresented: false)
-        interactions[channelID] = interaction
+        interactions[channel] = interaction
         return interaction
     }
 
@@ -509,18 +539,22 @@ final class AppModel {
     private func closeReaders(for channelID: String) {
         artifactSessions[channelID]?.session.close()
         galleries[channelID]?.gallery.close()
-        interactions[channelID]?.isArtifactViewerPresented = false
+        for (target, interaction) in interactions where target.channelID == channelID {
+            interaction.isArtifactViewerPresented = false
+        }
     }
 
     private var rememberedSelections: [String: String] {
         defaults.dictionary(forKey: "lastChannelByServer") as? [String: String] ?? [:]
     }
 
+    /// Each server's last opened channel, and the server last opened, which launch restores.
     private func rememberSelection() {
-        guard let selectedChannelID else { return }
+        guard let selection else { return }
         var selections = rememberedSelections
-        selections[serverIdentity] = selectedChannelID
+        selections[selection.serverURL] = selection.channelID
         defaults.set(selections, forKey: "lastChannelByServer")
+        defaults.set(selection.serverURL, forKey: "lastServer")
     }
 }
 
