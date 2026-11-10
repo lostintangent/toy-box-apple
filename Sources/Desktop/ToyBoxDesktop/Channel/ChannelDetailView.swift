@@ -152,7 +152,7 @@ struct ChannelDetailView: View {
                 Text("\(store.api.baseURL.absoluteString)\n\(error)")
             } actions: {
                 Button("Retry") { store.reconnect() }
-                Button("Settings") { openSettings() }
+                Button("Settings") { model.settingsTab = .servers; openSettings() }
             }
             .safeAreaBar(edge: .bottom, spacing: 0) { composer }
         } else {

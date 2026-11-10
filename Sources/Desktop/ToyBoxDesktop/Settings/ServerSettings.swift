@@ -3,7 +3,7 @@ import ChannelClient
 import SwiftUI
 import ToyBoxUI
 
-/// General's servers: the list in Settings order, then the selected server's name, address and
+/// The Servers tab: the list in Settings order, then the selected server's name, address and
 /// status.
 struct ServerSettings: View {
     @Environment(AppModel.self) private var model
@@ -12,10 +12,15 @@ struct ServerSettings: View {
     @ViewState private var addsServer = false
     @ViewState private var confirmsRemoval = false
 
+    /// The form insets its rows by this much, and a list's rows inset their content by the same.
+    private static let formInset: CGFloat = 10
+    private static let rowHeight: CGFloat = 28
+
     var body: some View {
         Section {
             VStack(spacing: 0) {
-                list
+                // Spans the card, so its rows' own inset lines the dots up with the labels below.
+                list.padding(.horizontal, -Self.formInset)
                 Divider()
                 HStack(spacing: 2) {
                     Button("Add Server", systemImage: "plus") { addsServer = true }
@@ -26,11 +31,9 @@ struct ServerSettings: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
-                .padding(4)
+                .padding(.horizontal, 4)
+                .frame(height: Self.rowHeight)
             }
-            .listRowInsets(EdgeInsets())
-        } header: {
-            Text("Servers")
         } footer: {
             if model.catalogs.count > 1 {
                 Text("Drag to reorder. The sidebar shows servers in this order.")
@@ -65,10 +68,10 @@ struct ServerSettings: View {
             }
             .onMove { model.moveServers(fromOffsets: $0, toOffset: $1) }
         }
-        .listStyle(.inset)
+        .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .scrollDisabled(true)
-        .frame(height: CGFloat(max(model.catalogs.count, 4)) * 28 + 8)
+        .frame(height: CGFloat(model.catalogs.count) * Self.rowHeight)
         .onDeleteCommand { if canRemove { confirmsRemoval = true } }
     }
 

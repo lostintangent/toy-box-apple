@@ -68,6 +68,12 @@ struct ChannelSidebar: View {
         })
     }
 
+    /// Whether any of the server's channels waits for the person, as the Needs You cards and widget
+    /// count them.
+    private func waits(_ catalog: ChannelCatalogStore) -> Bool {
+        ![catalog].waitingRequests(open: model.openChannels).isEmpty
+    }
+
     /// A server's channels that match the search.
     private func listed(in catalog: ChannelCatalogStore) -> [Listed] {
         let presentation = model.sidebarPresentation(for: catalog)
@@ -117,7 +123,9 @@ struct ChannelSidebar: View {
                             }
                             section(catalog, items: listed.filter { $0.catalog === catalog }, rows: rows)
                         } header: {
-                            ChannelSidebarServerHeader(catalog: catalog, isExpanded: expansion(of: catalog))
+                            let expansion = expansion(of: catalog)
+                            ChannelSidebarServerHeader(catalog: catalog, isExpanded: expansion,
+                                                       waits: !expansion.wrappedValue && waits(catalog))
                         }
                         .listSectionSeparator(.hidden)
                     }
@@ -483,22 +491,41 @@ private struct ChannelSidebarPlaceholder: View {
     }
 }
 
-/// A server's section header when the list shows several: its connection dot and name, which
-/// collapse and expand its channels.
+/// A server's section header when the list shows several: its connection dot and name, then its
+/// channel count once its catalog has loaded, which collapse and expand its channels. A collapsed
+/// one trails the waiting symbol while any of its channels waits.
 private struct ChannelSidebarServerHeader: View {
     let catalog: ChannelCatalogStore
     @Binding var isExpanded: Bool
+    /// Whether it's collapsed with a channel waiting for the person.
+    let waits: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
         let host = SidebarFooter.server(catalog.api.baseURL.absoluteString)
+        let channels = catalog.state?.channels.count
+        let value = [channels.map { "\($0) \($0 == 1 ? "channel" : "channels")" },
+                     catalog.name == host ? nil : host,
+                     footer.accessibilityValue,
+                     waits ? "waiting for you" : nil].compactMap(\.self)
         Button {
             withAnimation { isExpanded.toggle() }
         } label: {
             HStack(spacing: 8) {
                 Circle().fill(footer.dot).frame(width: 8, height: 8)
                 Text(catalog.name).lineLimit(1).truncationMode(.middle)
+                if let channels {
+                    Text(channels, format: .number)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                }
                 Spacer(minLength: 0)
+                if waits {
+                    Image(systemName: Channel.Attention.waiting.symbol)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Channel.Attention.waiting.color(in: colorScheme))
+                }
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -511,7 +538,7 @@ private struct ChannelSidebarServerHeader: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(catalog.name)
-        .accessibilityValue(catalog.name == host ? footer.accessibilityValue : "\(host), \(footer.accessibilityValue)")
+        .accessibilityValue(value.joined(separator: ", "))
         .accessibilityHint(isExpanded ? "Hides this server's channels" : "Shows this server's channels")
         .accessibilityAddTraits(.isHeader)
     }

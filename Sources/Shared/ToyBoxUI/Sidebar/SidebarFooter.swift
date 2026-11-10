@@ -40,4 +40,42 @@ public struct SidebarFooter: Equatable {
 
     /// The server as the footer and menu bar name it: its host, and a port that isn't the default.
     public static func server(_ url: String) -> String { ChannelCatalogStore.Saved.name(of: url) }
+
+    /// Red, then orange, then the first load's gray, then green.
+    fileprivate var severity: Int {
+        switch dot {
+        case .red: 3
+        case .orange: 2
+        case .green: 0
+        default: 1
+        }
+    }
+}
+
+extension SidebarFooter {
+    /// How the Mac footer's status line sums up several servers. See Several servers in docs/spec.md.
+    public struct Summary: Equatable {
+        public let count: Int
+        /// The least healthy server's status, which never spins, since each header shows its own load.
+        public let footer: SidebarFooter
+        /// The least healthy server's name, or nil when every server is connected.
+        public let server: String?
+
+        /// The servers in Settings' order, where the first of the least healthy wins.
+        public init(servers: [(name: String, footer: SidebarFooter)]) {
+            let worst = servers.max { $0.footer.severity < $1.footer.severity }
+            count = servers.count
+            footer = worst?.footer ?? SidebarFooter(phase: .connecting, isLoaded: false)
+            server = worst?.footer.severity == 0 ? nil : worst?.name
+        }
+
+        @MainActor public init(catalogs: [ChannelCatalogStore]) {
+            self.init(servers: catalogs.map { ($0.name, SidebarFooter(phase: $0.phase, isLoaded: $0.isLoaded)) })
+        }
+
+        /// What the status line shows where one server's host would be.
+        public var title: String { "\(count) servers" }
+        /// The help's first line, which VoiceOver reads too.
+        public var status: String { server.map { "\(footer.verb) \($0)" } ?? "Connected to \(count) servers" }
+    }
 }

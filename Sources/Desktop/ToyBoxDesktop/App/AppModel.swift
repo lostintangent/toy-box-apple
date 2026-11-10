@@ -44,6 +44,8 @@ final class AppModel {
     private var refreshing: Set<ObjectIdentifier> = []
     let menuBar = MenuBarPresence()
     var navigationRequest: ChannelNavigationRequest?
+    /// The tab Settings shows, which anything about the server sets to Servers before opening it.
+    var settingsTab = SettingsTab.general
     var newChannelRequest: UUID?
     @ObservationIgnored var openChannelWindow: ((ChannelTarget) -> Void)?
     @ObservationIgnored var openMainWindow: (() -> Void)?
