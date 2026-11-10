@@ -5,6 +5,8 @@ import SwiftUI
 import ToyBoxUI
 import UserNotifications
 
+enum SettingsTab { case general, servers, notifications }
+
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.channelIntelligence) private var intelligence
@@ -23,9 +25,13 @@ struct SettingsView: View {
     @ViewState private var intelligenceAvailability: IntelligenceAvailability?
 
     var body: some View {
-        TabView {
-            fitted(general).tabItem { Label("General", systemImage: "gearshape") }
+        @Bindable var model = model
+        TabView(selection: $model.settingsTab) {
+            fitted(general).tabItem { Label("General", systemImage: "gearshape") }.tag(SettingsTab.general)
+            fitted(Form { ServerSettings() }.formStyle(.grouped))
+                .tabItem { Label("Servers", systemImage: "server.rack") }.tag(SettingsTab.servers)
             fitted(notifications).tabItem { Label("Notifications", systemImage: "bell") }
+                .tag(SettingsTab.notifications)
         }
         .onAppear {
             intelligenceAvailability = intelligence.availability
@@ -48,7 +54,6 @@ struct SettingsView: View {
 
     private var general: some View {
         Form {
-            ServerSettings()
             Section {
                 Picker("Appearance", selection: $appearance) {
                     ForEach(AppAppearance.allCases) { value in Text(value.title).tag(value) }

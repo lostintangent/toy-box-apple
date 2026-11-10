@@ -166,6 +166,7 @@ struct QuickSendView: View {
                 Button("Open Settings") {
                     model.quickSend.dismiss()
                     NSApplication.shared.activate()
+                    model.settingsTab = .servers
                     openSettings()
                 }
             } else if let target = model.quickSend.replyTarget {

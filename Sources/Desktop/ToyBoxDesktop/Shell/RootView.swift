@@ -303,6 +303,7 @@ struct RootView: View {
         case "quick-send-servers":
             model.quickSend.presentForSnapshot(appearance: snapshot.appearance)
         case "settings-servers", "settings-server-renamed", "settings-server-removed":
+            model.settingsTab = .servers
             openSettings()
         default: break
         }

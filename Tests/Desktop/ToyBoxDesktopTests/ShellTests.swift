@@ -827,11 +827,32 @@ struct SidebarConnectionFooterTests {
         #expect(SidebarFooter.server(url) == shown)
     }
 
+    @Test func severalServersSumUpAsTheLeastHealthy() {
+        let offline = URLError(.cannotConnectToHost)
+        let connected = SidebarFooter(phase: .connected, isLoaded: true)
+        let loading = SidebarFooter(phase: .connecting, isLoaded: false)
+        let reconnecting = SidebarFooter(phase: .failed(offline), isLoaded: true)
+        let failing = SidebarFooter(phase: .failed(offline), isLoaded: false)
+        func summary(_ footers: SidebarFooter...) -> SidebarFooter.Summary {
+            .init(servers: footers.enumerated().map { ("s\($0.offset)", $0.element) })
+        }
+
+        let healthy = summary(connected, connected)
+        #expect(healthy.title == "2 servers")
+        #expect(healthy.server == nil && healthy.footer == connected)
+        #expect(healthy.status == "Connected to 2 servers")
+
+        #expect(summary(connected, loading).status == "Connecting to s1")
+        #expect(summary(loading, reconnecting, connected).status == "Reconnecting to s1")
+        #expect(summary(reconnecting, failing, loading).status == "Can't connect to s1")
+        #expect(summary(connected, reconnecting, reconnecting).server == "s1", "The first of the least healthy wins")
+    }
+
     @Test func theSpinnerKeepsTheSameStatusLineSize() {
         func size(spinning: Bool) -> CGSize {
             NSHostingView(rootView:
                 SidebarStatusLine(footer: SidebarFooter(phase: .failed(URLError(.timedOut)), isLoaded: true),
-                                  spinning: spinning, serverURL: "http://localhost:3100")
+                                  spinning: spinning, title: "localhost:3100")
             ).fittingSize
         }
         let resting = size(spinning: false)

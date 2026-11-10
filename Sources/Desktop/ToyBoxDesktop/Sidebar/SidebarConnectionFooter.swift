@@ -3,15 +3,14 @@ import SwiftUI
 import ToyBoxUI
 
 /// The bottom of the sidebar: the error block when there is one, then a status dot and the server,
-/// which opens Settings, and a trailing Open Screen. It has no background of its own, so rows
-/// scroll beneath it under the system scroll edge effect. With one server, it is also the sidebar's
-/// only progress indicator.
+/// which opens Settings on the Servers tab, and a trailing Open Screen. It has no background of its
+/// own, so rows scroll beneath it under the system scroll edge effect. With one server, it is also
+/// the sidebar's only progress indicator.
 struct SidebarConnectionFooter: View {
-    /// Nil with several servers, whose headers carry their own status, which leaves only Open Screen.
-    let footer: SidebarFooter?
+    let status: Status
     /// The first load or a View > Refresh the person chose is in flight. Background polling never is.
     let busy: Bool
-    let serverURL: String
+    /// One server's failure. Several servers show theirs under their own headers.
     let error: String?
     let openSettings: () -> Void
     /// File > Open Screen…, or nil without a server.
@@ -27,20 +26,18 @@ struct SidebarConnectionFooter: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let heading = footer?.heading, let error {
+            if case .server(let footer, _) = status, let heading = footer.heading, let error {
                 SidebarErrorBlock(heading: heading, error: error)
                     .padding(.horizontal, Self.leading)
             }
             HStack {
-                if let footer {
-                    Button(action: openSettings) {
-                        SidebarStatusLine(footer: footer, spinning: showsSpinner, serverURL: serverURL)
-                    }
-                    .buttonStyle(HoverFillButtonStyle(shape: Capsule()))
-                    .help(footer.help(serverURL))
-                    .accessibilityLabel("Server")
-                    .accessibilityValue("\(SidebarFooter.server(serverURL)), \(footer.accessibilityValue)")
+                Button(action: openSettings) {
+                    SidebarStatusLine(footer: status.footer, spinning: showsSpinner, title: status.title)
                 }
+                .buttonStyle(HoverFillButtonStyle(shape: Capsule()))
+                .help(status.help)
+                .accessibilityLabel(status.accessibilityLabel)
+                .accessibilityValue(status.accessibilityValue)
                 Spacer(minLength: 0)
                 Button("Open Screen", systemImage: "display") { openScreen?() }
                     .labelStyle(.iconOnly)
@@ -56,6 +53,47 @@ struct SidebarConnectionFooter: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(SpinnerDelay(busy: busy, delay: spinnerDelay, spinning: $showsSpinner))
+    }
+
+    /// One server's address, or several servers summed up, as Connection footer describes.
+    enum Status {
+        case server(SidebarFooter, url: String)
+        case servers(SidebarFooter.Summary)
+
+        var footer: SidebarFooter {
+            switch self {
+            case .server(let footer, _): footer
+            case .servers(let summary): summary.footer
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .server(_, let url): SidebarFooter.server(url)
+            case .servers(let summary): summary.title
+            }
+        }
+
+        var help: String {
+            switch self {
+            case .server(let footer, let url): footer.help(url)
+            case .servers(let summary): "\(summary.status)\nChange servers in Settings."
+            }
+        }
+
+        var accessibilityLabel: String {
+            switch self {
+            case .server: "Server"
+            case .servers: "Servers"
+            }
+        }
+
+        var accessibilityValue: String {
+            switch self {
+            case .server(let footer, let url): "\(SidebarFooter.server(url)), \(footer.accessibilityValue)"
+            case .servers(let summary): summary.status
+            }
+        }
     }
 }
 
@@ -122,18 +160,18 @@ extension SidebarFooter {
     func help(_ serverURL: String) -> String { "\(verb) \(serverURL)\nChange the server in Settings." }
 }
 
-/// The dot, or a spinner in its slot, then the server.
+/// The dot, or a spinner in its slot, then the server or how many there are.
 struct SidebarStatusLine: View {
     let footer: SidebarFooter
     let spinning: Bool
-    let serverURL: String
+    let title: String
     @Environment(\.channelTextScale) private var scale
 
     var body: some View {
         HStack(spacing: 6) {
             SidebarStatusDot(footer: footer, spinning: spinning)
             // Secondary from the button's style, and primary while it's lit.
-            Text(SidebarFooter.server(serverURL))
+            Text(title)
                 .font(.system(size: 11 * scale))
                 .lineLimit(1)
                 .truncationMode(.middle)

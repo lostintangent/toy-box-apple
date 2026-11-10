@@ -78,10 +78,12 @@ struct ChannelSidebar: View {
         List(selection: listSelectionBinding) {
             if isGrouped {
                 ForEach(model.catalogs, id: \.api.baseURL) { catalog in
-                    Section(isExpanded: isExpanded(catalog)) {
+                    let expansion = isExpanded(catalog)
+                    Section(isExpanded: expansion) {
                         serverRows(catalog)
                     } header: {
-                        SidebarServerHeader(catalog: catalog, busy: busy(catalog))
+                        SidebarServerHeader(catalog: catalog, busy: busy(catalog),
+                                            waits: !expansion.wrappedValue && waits(catalog))
                     }
                 }
             } else if initialLoading {
@@ -91,15 +93,19 @@ struct ChannelSidebar: View {
             }
         }
         .listStyle(.sidebar)
+        // The sidebar leaves this much less room under the search field than between two
+        // sections, so the first server's header gets the same room as the others.
+        .safeAreaPadding(.top, isGrouped ? 4 : 0)
         .overlay {
             if isEmpty { emptyState }
         }
         .safeAreaBar(edge: .bottom) {
             SidebarConnectionFooter(
-                footer: isGrouped ? nil : SidebarFooter(phase: phase, isLoaded: model.catalog?.isLoaded == true),
-                busy: busy, serverURL: model.serverURL,
+                status: isGrouped ? .servers(.init(catalogs: model.catalogs))
+                    : .server(SidebarFooter(phase: phase, isLoaded: model.catalog?.isLoaded == true), url: model.serverURL),
+                busy: !isGrouped && busy,
                 error: model.configurationError ?? model.catalog?.phase.message,
-                openSettings: { openSettings() },
+                openSettings: { model.settingsTab = .servers; openSettings() },
                 openScreen: model.api == nil ? nil : {
                     openWindow(id: "screens", value: ScreenWindowValue(serverURL: selection?.serverURL ?? model.serverURL))
                 }
@@ -129,13 +135,19 @@ struct ChannelSidebar: View {
     }
 
     /// The `sidebar-servers` capture state waits until no server is still connecting, so a server
-    /// that doesn't answer shows its failure under its header.
+    /// that doesn't answer shows its failure under its header. `sidebar-servers-collapsed` then
+    /// collapses the first server, and `sidebar-servers-reconnecting` waits for a loaded server to
+    /// stop answering.
     private func prepareServersSnapshot() async {
-        let state = "sidebar-servers"
-        guard model.snapshot?.requestedState == state else { return }
-        while model.catalogs.contains(where: { $0.phase == .connecting }) {
+        guard let state = model.snapshot?.requestedState,
+              ["sidebar-servers", "sidebar-servers-collapsed", "sidebar-servers-reconnecting"].contains(state)
+        else { return }
+        let reconnecting = { model.catalogs.contains { SidebarFooter(phase: $0.phase, isLoaded: $0.isLoaded).isReconnecting } }
+        while model.catalogs.contains(where: { $0.phase == .connecting })
+                || state == "sidebar-servers-reconnecting" && !reconnecting() {
             do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
         }
+        if state == "sidebar-servers-collapsed", let first = model.catalogs.first { collapsed.insert(first.api.baseURL) }
         model.snapshot?.markStateReady(state)
     }
 
@@ -146,13 +158,18 @@ struct ChannelSidebar: View {
         })
     }
 
+    /// Whether any of the server's channels waits for the person, as the menu bar and widgets count them.
+    private func waits(_ catalog: ChannelCatalogStore) -> Bool {
+        !catalog.waitingRequests(openChannelIDs: model.openChannelIDs(on: catalog)).isEmpty
+    }
+
     /// A server's section: its failure under its header, then its placeholders or channels.
     @ViewBuilder private func serverRows(_ catalog: ChannelCatalogStore) -> some View {
         if let heading = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded).heading,
            let error = catalog.phase.message {
-            // On the footer's leading edge, 4 points before the channel icons.
+            // On its header dot's edge, 14 points in.
             SidebarErrorBlock(heading: heading, error: error)
-                .padding(.leading, 4)
+                .padding(.leading, -2)
                 .padding(.trailing, 8)
                 .padding(.vertical, 4)
                 .listRowInsets(EdgeInsets())
@@ -248,27 +265,42 @@ private struct Listed: Identifiable {
 }
 
 /// A server's section header when the sidebar lists several: its status dot, or a spinner in the
-/// dot's slot, then its name, with the status line's help and VoiceOver value.
+/// dot's slot, then its name, with the status line's help and VoiceOver value. A collapsed one
+/// trails the waiting symbol while any of its channels waits.
 private struct SidebarServerHeader: View {
     let catalog: ChannelCatalogStore
     let busy: Bool
+    /// Whether it's collapsed with a channel waiting for the person.
+    let waits: Bool
+    @Environment(\.colorScheme) private var colorScheme
     @ViewState private var showsSpinner = false
+
+    /// How far before a header's trailing edge the rows' attention badges end.
+    private static let chevronSlot: CGFloat = 22
 
     var body: some View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
         let address = catalog.api.baseURL.absoluteString
         let host = SidebarFooter.server(address)
+        let value = catalog.name == host ? footer.accessibilityValue : "\(host), \(footer.accessibilityValue)"
         HStack(spacing: 6) {
             SidebarStatusDot(footer: footer, spinning: showsSpinner)
             Text(catalog.name).lineLimit(1).truncationMode(.middle)
+            if waits {
+                Spacer(minLength: 4)
+                // Sized as a row's badge and ending on the rows' badges, which leaves the hover
+                // chevron its own slot after it.
+                Image(systemName: Channel.Attention.waiting.symbol).font(.system(size: 13))
+                    .foregroundStyle(Channel.Attention.waiting.color(in: colorScheme))
+                    .frame(width: 16, height: 16)
+                    .padding(.trailing, Self.chevronSlot)
+            }
         }
-        // Section headers start 14 points in, so this puts the dot on the footer's 20-point edge.
-        .padding(.leading, 6)
         .modifier(SpinnerDelay(busy: busy, spinning: $showsSpinner))
         .help(footer.help(address))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(catalog.name)
-        .accessibilityValue(catalog.name == host ? footer.accessibilityValue : "\(host), \(footer.accessibilityValue)")
+        .accessibilityValue(waits ? "\(value), waiting for you" : value)
         .accessibilityAddTraits(.isHeader)
     }
 }
