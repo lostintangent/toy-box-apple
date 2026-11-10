@@ -187,7 +187,7 @@ struct RootView: View {
         overview.reset()
         let generation = model.beginHandoffNavigation()
         Task {
-            await handoff.continueActivity(activity, currentCatalog: { model.catalog }) { id in
+            await handoff.continueActivity(activity, catalogs: { model.catalog.map { [$0] } ?? [] }) { _, id in
                 model.openHandoffChannel(id: id, generation: generation)
             }
         }

@@ -1271,7 +1271,8 @@ struct MenuBarExtraTests {
     private func waiting(
         _ channel: Channel, _ request: ChannelRequestMessage? = nil
     ) -> ChannelCatalogStore.WaitingRequest {
-        .init(channel: channel, sequence: channel.requestSequence ?? 0, request: request)
+        .init(serverURL: "http://localhost:3210", channel: channel, sequence: channel.requestSequence ?? 0,
+              request: request)
     }
 
     @Test func theIconFollowsTheMostUrgentState() {

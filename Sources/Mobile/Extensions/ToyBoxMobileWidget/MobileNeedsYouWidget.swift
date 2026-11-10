@@ -61,7 +61,7 @@ enum MobileWidgetSnapshotReader {
         do {
             let file = try MobileSharedContainer.url().appending(path: NeedsYouSnapshot.fileName)
             let snapshot = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
-            guard snapshot.version == 1 else {
+            guard snapshot.version == NeedsYouSnapshot.currentVersion else {
                 logger.error("The widget snapshot version is unsupported.")
                 return nil
             }

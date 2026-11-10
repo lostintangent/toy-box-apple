@@ -251,7 +251,7 @@ struct RootView: View {
         setOverviewVisible(false)
         selectedId = nil
         Task {
-            await handoff.continueActivity(activity, currentCatalog: { model.catalog }) { id in
+            await handoff.continueActivity(activity, catalogs: { model.catalog.map { [$0] } ?? [] }) { _, id in
                 selectedId = id
                 model.snapshot?.markStateReady("handoff-match")
             }

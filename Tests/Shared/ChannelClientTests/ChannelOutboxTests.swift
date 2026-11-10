@@ -161,7 +161,7 @@ struct ChannelOutboxTests {
         catalog.onSendConfirmed = { confirmed.append($0) }
 
         let id = await outbox.send(" Hello ", to: "test", on: catalog.api.baseURL)
-        #expect(outbox.messages(in: "test").map(\.text) == ["Hello"])
+        #expect(outbox.messages(in: "test", on: catalog.api.baseURL).map(\.text) == ["Hello"])
         #expect(outbox.isDelivering)
         #expect(Self.files(folder) == [id.uuidString + ".json"])
         try await eventually { !clock.sleepers.isEmpty }
@@ -169,7 +169,7 @@ struct ChannelOutboxTests {
 
         catalog.setActive(false)
         catalog.setActive(true)
-        try await eventually { outbox.messages(in: "test").isEmpty }
+        try await eventually { outbox.messages(in: "test", on: catalog.api.baseURL).isEmpty }
         #expect(served.posted == Array(repeating: .init(channel: "test", id: id.uuidString, content: "Hello"), count: 2))
         #expect(confirmed == ["test"])
         #expect(!outbox.isDelivering)
@@ -194,7 +194,7 @@ struct ChannelOutboxTests {
         await outbox.send("First", to: "test", on: catalog.api.baseURL)
         await outbox.send("Second", to: "test", on: catalog.api.baseURL)
         try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/channels/test/read") == 2 }
-        #expect(outbox.messages(in: "test").isEmpty)
+        #expect(outbox.messages(in: "test", on: catalog.api.baseURL).isEmpty)
         #expect(outbox.isDelivering)
         mock.finishPendingResponses()
         try await eventually { !outbox.isDelivering }
@@ -239,9 +239,9 @@ struct ChannelOutboxTests {
             try await change(latest: 6)
             #expect(catalog.channels.first?.attention == nil, "Sending")
             mock.finishPendingResponses(path: "/api/v1/channels/test/messages")
-            try await eventually { outbox.messages(in: "test").isEmpty }
+            try await eventually { outbox.messages(in: "test", on: catalog.api.baseURL).isEmpty }
         } else {
-            try await eventually { outbox.messages(in: "test").isEmpty }
+            try await eventually { outbox.messages(in: "test", on: catalog.api.baseURL).isEmpty }
             try await change(latest: 6)
         }
         #expect(catalog.channels.first?.attention == nil, "Sent")
@@ -266,7 +266,7 @@ struct ChannelOutboxTests {
         let relaunched = outbox(folder, clock: clock)
         let catalog = try await catalog(mock, outbox: relaunched)
         try await eventually(observing: mock) { served.postedIDs == [id.uuidString] }
-        try await eventually { relaunched.messages(in: "test").isEmpty }
+        try await eventually { relaunched.messages(in: "test", on: server).isEmpty }
     }
 
     @Test func aRefusedMessageStopsAsNotSentUntilRetrySendsItUnderItsIDOrDeleteRemovesIt() async throws {
@@ -283,7 +283,7 @@ struct ChannelOutboxTests {
 
         let retried = await outbox.send("Hello", to: "test", on: catalog.api.baseURL)
         let deleted = await outbox.send("Again", to: "test", on: catalog.api.baseURL)
-        try await eventually { outbox.messages(in: "test").allSatisfy { $0.state == .notSent } }
+        try await eventually { outbox.messages(in: "test", on: catalog.api.baseURL).allSatisfy { $0.state == .notSent } }
         #expect(clock.sleepers.isEmpty)
         #expect(!outbox.isDelivering)
         await outbox.settled()
@@ -293,7 +293,7 @@ struct ChannelOutboxTests {
 
         outbox.withdraw(deleted)
         outbox.sendAgain(retried)
-        try await eventually { outbox.messages(in: "test").isEmpty }
+        try await eventually { outbox.messages(in: "test", on: catalog.api.baseURL).isEmpty }
         #expect(served.postedIDs == [retried, deleted, retried].map(\.uuidString))
         await outbox.settled()
         #expect(Self.files(folder).isEmpty)
@@ -383,10 +383,10 @@ struct ChannelOutboxTests {
         let second = await outbox.send("Second", to: "test", on: catalog.api.baseURL)
         let elsewhere = await outbox.send("Elsewhere", to: "other", on: catalog.api.baseURL)
         try await eventually { outbox.message(elsewhere) == nil }
-        #expect(outbox.messages(in: "test").map(\.id) == [first, second])
+        #expect(outbox.messages(in: "test", on: catalog.api.baseURL).map(\.id) == [first, second])
 
         clock.advance(by: 1)
-        try await eventually { outbox.messages(in: "test").isEmpty }
+        try await eventually { outbox.messages(in: "test", on: catalog.api.baseURL).isEmpty }
         #expect(served.posted.filter { $0.channel == "test" }.map(\.content) == ["First", "First", "Second"])
     }
 
@@ -441,25 +441,25 @@ struct ChannelOutboxTests {
 
         let id = await outbox.send("Yes", to: "test", on: catalog.api.baseURL)
         #expect(outbox.message(id)?.request == 5)
-        #expect(outbox.answers(5, in: "test"))
-        #expect(!outbox.answers(5, in: "other"))
+        #expect(outbox.answers(5, in: "test", on: catalog.api.baseURL))
+        #expect(!outbox.answers(5, in: "other", on: catalog.api.baseURL))
         #expect(catalog.waitingRequests().isEmpty)
 
         try await eventually { outbox.message(id)?.state == .notSent }
-        #expect(!outbox.answers(5, in: "test"))
+        #expect(!outbox.answers(5, in: "test", on: catalog.api.baseURL))
         #expect(catalog.waitingRequests().map(\.sequence) == [5])
 
         outbox.sendAgain(id)
         try await eventually { outbox.message(id) == nil }
-        #expect(outbox.answers(5, in: "test"))
+        #expect(outbox.answers(5, in: "test", on: catalog.api.baseURL))
         #expect(catalog.waitingRequests().isEmpty)
 
         // A catalog from before the reply still lists the request, so it stays answered.
         await catalog.refresh()
-        #expect(outbox.answers(5, in: "test"))
+        #expect(outbox.answers(5, in: "test", on: catalog.api.baseURL))
         served.catalog.withLock { $0 = Self.catalog([Self.channel(request: 7)]) }
         await catalog.refresh()
-        #expect(!outbox.answers(5, in: "test"))
+        #expect(!outbox.answers(5, in: "test", on: catalog.api.baseURL))
         #expect(catalog.waitingRequests().map(\.sequence) == [7])
     }
 
@@ -474,8 +474,10 @@ struct ChannelOutboxTests {
         let outbox = outbox(folder, clock: clock)
         let currentCatalog = try await catalog(currentMock, outbox: outbox)
 
-        let id = await outbox.send("Hello", to: "test", on: try otherMock.api().baseURL)
-        #expect(outbox.messages(in: "test").isEmpty)
+        let otherServer = try otherMock.api().baseURL
+        let id = await outbox.send("Hello", to: "test", on: otherServer)
+        #expect(outbox.messages(in: "test", on: currentCatalog.api.baseURL).isEmpty)
+        #expect(outbox.messages(in: "test", on: otherServer).map(\.id) == [id])
         #expect(!outbox.isDelivering)
         #expect(outbox.message(id)?.state == .sending)
 
@@ -484,6 +486,35 @@ struct ChannelOutboxTests {
         #expect(other.postedIDs == [id.uuidString])
         #expect(current.posted.isEmpty)
         withExtendedLifetime((currentCatalog, otherCatalog)) {}
+    }
+
+    @Test func aServerThatCantBeReachedHoldsOnlyItsOwnMessages() async throws {
+        let folder = Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let clock = TestClock()
+        let work = Served(Self.catalog())
+        let workMock = Self.transport(work) { _, _ in throw URLError(.cannotConnectToHost) }
+        let home = Served(Self.catalog())
+        let homeMock = Self.transport(home) { _, _ in MockResponse(status: 201) }
+        let outbox = outbox(folder, clock: clock)
+        let workCatalog = try await catalog(workMock, outbox: outbox)
+        let homeCatalog = try await catalog(homeMock, outbox: outbox)
+
+        let held = await outbox.send("For work", to: "test", on: workCatalog.api.baseURL)
+        try await eventually { !clock.sleepers.isEmpty }
+        let sent = await outbox.send("For home", to: "test", on: homeCatalog.api.baseURL)
+        try await eventually { outbox.message(sent) == nil }
+        #expect(home.posted == [.init(channel: "test", id: sent.uuidString, content: "For home")])
+        #expect(outbox.message(held)?.state == .sending)
+
+        workCatalog.outbox = nil
+        #expect(outbox.messages(in: "test", on: workCatalog.api.baseURL).map(\.id) == [held],
+                "A server that goes keeps its messages for when it's back")
+        let later = await outbox.send("Again", to: "test", on: homeCatalog.api.baseURL)
+        try await eventually { outbox.message(later) == nil }
+        #expect(home.postedIDs == [sent, later].map(\.uuidString))
+        #expect(work.posted.count == 1)
+        withExtendedLifetime((workCatalog, homeCatalog)) {}
     }
 
     @Test func aChannelTheCatalogNoLongerListsTakesItsMessagesWithIt() async throws {
@@ -530,7 +561,7 @@ struct ChannelOutboxTests {
         let app = outbox(folder, clock: clock)
         let catalog = try await catalog(mock, outbox: app)
         try await eventually(observing: mock) { served.postedIDs == [shared, waiting, shared].map(\.uuidString) }
-        try await eventually { app.messages(in: "test").isEmpty }
+        try await eventually { app.messages(in: "test", on: catalog.api.baseURL).isEmpty }
         let posts = mock.requests.filter { $0.httpMethod == "POST" && $0.url?.lastPathComponent == "messages" }
         #expect(posts.map(\.timeoutInterval) == [10, 60, 60], "Only the share's attempt gives up early")
         withExtendedLifetime(catalog) {}

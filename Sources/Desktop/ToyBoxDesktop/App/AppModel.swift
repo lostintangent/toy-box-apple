@@ -153,7 +153,7 @@ final class AppModel {
             if self.serverURL != api.baseURL.absoluteString { quickSend.dismiss() }
             catalog?.stopPolling()
             catalog?.outbox = nil
-            connections.disconnectAll()
+            if let catalog { connections.disconnectAll(in: catalog) }
             composerSessions = [:]
             self.serverURL = api.baseURL.absoluteString
             if persist, !launchOptions.isSnapshot {

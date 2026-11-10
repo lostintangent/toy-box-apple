@@ -10,7 +10,7 @@ struct MobileWidgetSnapshotPublisherTests {
         let fixture = try WidgetHTTPFixture(catalog: Self.catalog(waiting: true))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
-        try MobilePushRegistrationStore(directory: directory).select(serverURL: fixture.serverURL)
+        try MobilePushRegistrationStore(directory: directory).register(serverURL: fixture.serverURL)
         let now = Date(timeIntervalSince1970: 1793086200)
         let first = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         let waiting = try #require(try await first.refresh(session: fixture.session, now: now))
@@ -21,7 +21,7 @@ struct MobileWidgetSnapshotPublisherTests {
         #expect(waiting.requests.first?.requestedAt == (try? Date("2026-10-27T07:30:00Z", strategy: .iso8601)))
         let request = try #require(waiting.requests.first)
         let row = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
-        #expect(Set(row.keys) == ["channelID", "channelName", "sequence", "quote", "requestedAt"])
+        #expect(Set(row.keys) == ["serverURL", "channelID", "channelName", "sequence", "quote", "requestedAt"])
         #expect(!waiting.isOffline)
         #expect(waiting.updatedAt == now)
         #expect(fixture.paths == ["/api/v1/channels"])
@@ -43,9 +43,8 @@ struct MobileWidgetSnapshotPublisherTests {
         let fixture = try WidgetHTTPFixture(catalog: Self.catalog(waiting: true))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
-        try MobilePushRegistrationStore(directory: directory).select(serverURL: fixture.serverURL)
-        var saved = Self.snapshot(now: Date(timeIntervalSince1970: 1793086200))
-        saved.serverURL = fixture.serverURL
+        try MobilePushRegistrationStore(directory: directory).register(serverURL: fixture.serverURL)
+        let saved = Self.snapshot(now: Date(timeIntervalSince1970: 1793086200), serverURL: fixture.serverURL)
         let original = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         try original.publish(saved, now: saved.updatedAt)
         fixture.fail("/api/v1/channels")
@@ -59,12 +58,52 @@ struct MobileWidgetSnapshotPublisherTests {
         #expect(offline.isStale(at: saved.updatedAt.addingTimeInterval(60)))
     }
 
+    @Test @MainActor func aServerThatFailsKeepsItsOwnPartWhileAnotherRefreshes() async throws {
+        let failing = try WidgetHTTPFixture(catalog: Self.catalog(waiting: true))
+        let reached = try WidgetHTTPFixture(catalog: Self.catalog(waiting: true))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let registrations = try MobilePushRegistrationStore(directory: directory)
+        try registrations.register(serverURL: failing.serverURL)
+        try registrations.register(serverURL: reached.serverURL)
+        let earlier = Date(timeIntervalSince1970: 1793086200)
+        let publisher = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
+        try publisher.publish(Self.snapshot(now: earlier, serverURL: failing.serverURL), now: earlier)
+        failing.fail("/api/v1/channels")
+        let now = earlier.addingTimeInterval(60)
+        let snapshot = try #require(try await publisher.refresh(session: reached.session, now: now))
+        #expect(snapshot.servers.map(\.serverURL) == [failing.serverURL, reached.serverURL])
+        #expect(snapshot.servers.map(\.isOffline) == [true, false])
+        #expect(snapshot.servers.map(\.updatedAt) == [earlier, now])
+        #expect(snapshot.isOffline && snapshot.updatedAt == earlier, "The widget is as old as its oldest server")
+        #expect(snapshot.waitingCount == 2)
+        #expect(snapshot.requests.map(\.serverURL) == [failing.serverURL, reached.serverURL])
+    }
+
+    @Test @MainActor func anOlderSnapshotIsWrittenOverAndANewerOneIsRefused() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(#"""
+        {"version":1,"serverURL":"https://server.test","updatedAt":0,"isOffline":false,"isAvailable":true,
+         "waitingCount":1,"requests":[]}
+        """#.utf8).write(to: file)
+        let publisher = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
+        try publisher.update(catalogs: [Self.unloaded("https://server.test")])
+        let written = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
+        #expect(written.version == NeedsYouSnapshot.currentVersion)
+        #expect(!written.isAvailable && written.waitingCount == 0, "Nothing carries over from an older version")
+
+        try Data(#"{"version":\#(NeedsYouSnapshot.currentVersion + 1)}"#.utf8).write(to: file)
+        #expect(throws: (any Error).self) { try MobileWidgetSnapshotPublisher(directory: directory, reload: {}) }
+    }
+
     @Test @MainActor func anOldServersRefreshCannotOverwriteANewSelection() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
         let selected = MobilePushRegistration(serverURL: "https://other.test", registrationID: UUID().uuidString)
-        var saved = Self.snapshot(now: .now)
-        saved.serverURL = selected.serverURL
+        let saved = Self.snapshot(now: .now, serverURL: selected.serverURL)
         let registrationData = try JSONEncoder().encode(selected)
         let snapshotData = try JSONEncoder().encode(saved)
         let registrationFile = directory.appendingPathComponent(MobilePushRegistrationStore.fileName)
@@ -75,7 +114,7 @@ struct MobileWidgetSnapshotPublisherTests {
                     to: directory.appendingPathComponent(NeedsYouSnapshot.fileName), options: .atomic)
             }
         })
-        try MobilePushRegistrationStore(directory: directory).select(serverURL: fixture.serverURL)
+        try MobilePushRegistrationStore(directory: directory).register(serverURL: fixture.serverURL)
         let publisher = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         await #expect(throws: CancellationError.self) {
             try await publisher.refresh(session: fixture.session)
@@ -106,22 +145,23 @@ struct MobileWidgetSnapshotPublisherTests {
         #expect(refreshed.isStale(at: refreshed.updatedAt.addingTimeInterval(30 * 60)))
     }
 
-    @Test @MainActor func anOfflineRelaunchKeepsOnlyTheSelectedServersCachedRequest() throws {
+    @Test @MainActor func anOfflineRelaunchKeepsOnlyItsServersCachedRequest() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
         let first = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         let snapshot = Self.snapshot(now: .now)
         try first.publish(snapshot)
         let restored = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
-        try restored.update(catalog: nil, serverURL: snapshot.serverURL)
+        try restored.update(catalogs: [Self.unloaded("https://SERVER.test")])
         let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
         let cached = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
         #expect(cached.isOffline)
         #expect(cached.isAvailable)
-        #expect(cached.requests == snapshot.requests)
-        try restored.update(catalog: nil, serverURL: "https://other.test")
+        #expect(cached.requests.map(\.sequence) == snapshot.requests.map(\.sequence))
+        #expect(cached.requests.map(\.serverURL) == ["https://SERVER.test"], "Its requests open as it's now spelled")
+        try restored.update(catalogs: [Self.unloaded("https://other.test")])
         let switched = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
-        #expect(switched.serverURL == "https://other.test")
+        #expect(switched.servers.map(\.serverURL) == ["https://other.test"])
         #expect(!switched.isAvailable)
         #expect(switched.waitingCount == 0)
         #expect(switched.requests.isEmpty)
@@ -137,7 +177,7 @@ struct MobileWidgetSnapshotPublisherTests {
         try publisher.publish(snapshot, now: now)
         #expect(reloads == 1)
 
-        try publisher.update(catalog: nil, serverURL: snapshot.serverURL)
+        try publisher.update(catalogs: [Self.unloaded("https://server.test")])
         let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
         let cached = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
         #expect(cached.isOffline)
@@ -148,19 +188,24 @@ struct MobileWidgetSnapshotPublisherTests {
         let fileNumber = try #require(
             FileManager.default.attributesOfItem(atPath: file.path)[.systemFileNumber] as? NSNumber)
 
-        try publisher.update(catalog: nil, serverURL: snapshot.serverURL)
+        try publisher.update(catalogs: [Self.unloaded("https://server.test")])
         let repeated = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
         #expect(repeated == cached)
         #expect(reloads == 2)
         #expect(try FileManager.default.attributesOfItem(atPath: file.path)[.systemFileNumber] as? NSNumber == fileNumber)
     }
 
-    private static func snapshot(now: Date) -> NeedsYouSnapshot {
-        NeedsYouSnapshot(
-            serverURL: "https://server.test", updatedAt: now, isOffline: false, isAvailable: true,
-            waitingCount: 1, requests: [.init(channelID: "studio", channelName: "Studio", sequence: 15,
-                                            quote: "Ready to ship?", requestedAt: now)]
-        )
+    private static func snapshot(now: Date, serverURL: String = "https://server.test") -> NeedsYouSnapshot {
+        NeedsYouSnapshot(servers: [.init(
+            serverURL: serverURL, updatedAt: now, isOffline: false, isAvailable: true,
+            waitingCount: 1, requests: [.init(serverURL: serverURL, channelID: "studio", channelName: "Studio",
+                                            sequence: 15, quote: "Ready to ship?", requestedAt: now)]
+        )])
+    }
+
+    /// A server's catalog before it has loaded, as the app has while it can't reach it.
+    @MainActor private static func unloaded(_ serverURL: String) throws -> ChannelCatalogStore {
+        ChannelCatalogStore(api: try ChannelAPI(serverURL: serverURL))
     }
 
     private static func catalog(waiting: Bool) -> ChannelCatalog {

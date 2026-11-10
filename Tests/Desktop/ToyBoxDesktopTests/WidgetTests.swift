@@ -163,7 +163,8 @@ import Testing
         let requested = now.addingTimeInterval(-600)
         let stamp = ISO8601DateFormatter().string(from: requested)
         let status = MenuBarStatus(requests: (1...6).map { index in
-            .init(channel: Channel(id: "channel-\(index)", name: "Channel \(index)",
+            .init(serverURL: "http://localhost",
+                  channel: Channel(id: "channel-\(index)", name: "Channel \(index)",
                                    model: .init(provider: "test", name: "test"), requestSequence: index,
                                    updatedAt: stamp),
                   sequence: index, request: index == 1 ? nil : ChannelRequestMessage(
@@ -184,7 +185,8 @@ import Testing
         #expect(try JSONDecoder().decode(NeedsYouSnapshot.self, from: JSONEncoder().encode(snapshot)) == snapshot)
         var row = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot.requests[1]))
             as? [String: Any])
-        #expect(Set(row.keys) == ["channelID", "channelName", "sequence", "quote", "requestedAt"])
+        #expect(Set(row.keys) == ["serverURL", "channelID", "channelName", "sequence", "quote", "requestedAt"])
+        #expect(snapshot.requests[1].serverURL == "http://localhost/", "A request keeps its server as the app saved it")
         row["agentName"] = "Lead"
         row["avatarPNG"] = Data([1, 2, 3]).base64EncodedString()
         let legacy = try JSONSerialization.data(withJSONObject: row)
@@ -201,7 +203,7 @@ import Testing
         #expect(!snapshot.isStale(at: now.addingTimeInterval(NeedsYouSnapshot.freshnessInterval - 1)))
         #expect(snapshot.isStale(at: now.addingTimeInterval(NeedsYouSnapshot.freshnessInterval)))
         var offline = snapshot
-        offline.isOffline = true
+        offline.servers[0].isOffline = true
         #expect(offline.isStale(at: now))
     }
 }

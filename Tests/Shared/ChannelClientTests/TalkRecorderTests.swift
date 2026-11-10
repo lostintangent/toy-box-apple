@@ -46,7 +46,7 @@ struct TalkRecorderTests {
         #expect(recorder.tentativeWords == " beside")
         recognizer.finalWords = [("beside the desks", true)]
         await recorder.send()
-        #expect(server.outbox.messages(in: "test").map(\.text) == ["Put the library beside the desks"],
+        #expect(server.outbox.messages(in: "test", on: server.catalog.api.baseURL).map(\.text) == ["Put the library beside the desks"],
                 "Plain words go to the outbox with no mention")
         #expect(recorder.phase == .sent && !recorder.isLifted && recorder.hidesTrailingColumn,
                 "The card closes as soon as the outbox has the note, while it's still sending")
@@ -87,7 +87,7 @@ struct TalkRecorderTests {
         #expect(recorder.ordered(channels).map(\.id) == channels.map(\.id), "Settling lets the row go")
         #expect(beats.motions == [.open, .sent, .settle, .open, .sent, .settle, .settle])
         #expect(announcements.count == 2)
-        try await eventually { server.outbox.messages(in: "test").isEmpty }
+        try await eventually { server.outbox.messages(in: "test", on: server.catalog.api.baseURL).isEmpty }
         #expect(server.posts.map(\.content) == ["Put the library beside the desks", "And a lamp"])
         #expect(Set(server.posts.map(\.id)).count == 2, "Each note is its own message")
     }
@@ -130,7 +130,7 @@ struct TalkRecorderTests {
         #expect(draft.text == kept)
         recognizer.send("Late words", isFinal: true)
         #expect(draft.text == kept)
-        #expect(server.posts.isEmpty && server.outbox.messages(in: "test").isEmpty)
+        #expect(server.posts.isEmpty && server.outbox.messages(in: "test", on: server.catalog.api.baseURL).isEmpty)
     }
 
     @Test func theCardStaysOnItsRowAndGrowsUpOnlyOnceItsBottomMeetsTheRooms() {

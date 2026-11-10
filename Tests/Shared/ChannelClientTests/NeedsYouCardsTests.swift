@@ -37,8 +37,8 @@ struct NeedsYouCardsTests {
         #expect(cards.reveals(b.id, after: a.id), "A card the person opens scrolls into view")
 
         await cards.send("Near the entrance", to: b, on: server.catalog.channel(id: "b"))
-        #expect(server.outbox.messages(in: "b").map(\.text) == ["Near the entrance"])
-        #expect(server.outbox.messages(in: "b").map(\.request) == [7], "A choice answers the card's request")
+        #expect(server.outbox.messages(in: "b", on: server.catalog.api.baseURL).map(\.text) == ["Near the entrance"])
+        #expect(server.outbox.messages(in: "b", on: server.catalog.api.baseURL).map(\.request) == [7], "A choice answers the card's request")
         #expect(cards.replying == nil && cards.phase == nil && cards.words.isEmpty,
                 "The card shrinks straight back into its row while the reply is still sending")
         #expect(checks.rows == ["b": .sent], "Its row wears the check")
@@ -50,7 +50,7 @@ struct NeedsYouCardsTests {
         try await eventually(observing: server.mock) { server.mock.pendingResponseCount == 1 }
         #expect(server.posts.map(\.content) == ["Near the entrance"], "A choice goes as written")
         server.mock.finishPendingResponses()
-        try await eventually { server.outbox.messages(in: "b").isEmpty }
+        try await eventually { server.outbox.messages(in: "b", on: server.catalog.api.baseURL).isEmpty }
         #expect(server.catalog.waitingRequests() == [a],
                 "A confirmed answer never reopens while the catalog catches up")
 
@@ -65,7 +65,7 @@ struct NeedsYouCardsTests {
         try await beats.end(.seconds(0.45))
         try await eventually { checks.rows.isEmpty }
         #expect(beats.motions == [.open, .sent, .sent, .settle, .settle])
-        try await eventually { server.outbox.messages(in: "a").isEmpty }
+        try await eventually { server.outbox.messages(in: "a", on: server.catalog.api.baseURL).isEmpty }
         #expect(Set(server.posts.map(\.id)).count == 2)
     }
 
@@ -152,7 +152,7 @@ struct NeedsYouCardsTests {
         #expect(cards.replying == nil && !cards.isLifted && cards.words.isEmpty)
         #expect(draft.text == (leaves ? "An earlier draft\n\nBeside the desks" : "An earlier draft"))
         #expect(cards.open(in: server.catalog.waitingRequests()) == a, "The request still waits")
-        #expect(server.outbox.messages(in: "a").isEmpty && server.posts.isEmpty)
+        #expect(server.outbox.messages(in: "a", on: server.catalog.api.baseURL).isEmpty && server.posts.isEmpty)
     }
 
     private func cards(announce: @escaping @MainActor (String) -> Void = { _ in }) -> NeedsYouCards {

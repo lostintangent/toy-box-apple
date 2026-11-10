@@ -63,17 +63,18 @@ final class MobileNotificationRegistration {
         self.remove = remove
         self.subscribe = subscribe
         self.unsubscribe = unsubscribe
-        current = store.current
+        current = store.registrations.first
     }
 
     @discardableResult
     func select(api: ChannelAPI) throws -> Bool {
         let previous = current
-        let selected = try store.select(serverURL: api.baseURL.absoluteString)
+        let selected = try store.register(serverURL: api.baseURL.absoluteString)
         let changed = previous?.registrationID != selected.registrationID
         if changed { isReady = false }
         if changed, let previous {
             let oldAPI = try self.api ?? ChannelAPI(serverURL: previous.serverURL)
+            try store.remove(registrationID: previous.registrationID)
             removals.append((oldAPI, previous.registrationID))
         }
         self.api = api

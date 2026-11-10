@@ -35,8 +35,10 @@ final class WidgetSnapshotPublisher {
             if !loadedPrevious {
                 loadedPrevious = true
                 do {
-                    let cached = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
-                    if cached.version == 1 { previous = cached }
+                    let data = try Data(contentsOf: file)
+                    if try NeedsYouSnapshot.version(of: data) == NeedsYouSnapshot.currentVersion {
+                        previous = try JSONDecoder().decode(NeedsYouSnapshot.self, from: data)
+                    }
                 } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
                     // The first launch has no snapshot yet.
                 } catch {
@@ -44,9 +46,8 @@ final class WidgetSnapshotPublisher {
                 }
             }
             var snapshot = Self.snapshot(status: status, serverURL: serverURL, hasCatalog: hasCatalog, now: now)
-            if !hasCatalog, let previous, previous.serverURL == serverURL {
-                snapshot = previous
-                snapshot.isOffline = true
+            if !hasCatalog, previous?.servers.contains(where: { $0.serverURL == serverURL }) == true {
+                snapshot = NeedsYouSnapshot(servers: [.offline(serverURL, in: previous, at: now)])
             }
             guard let snapshot = snapshot.replacing(previous, at: now) else { return }
             let data = try JSONEncoder().encode(snapshot)
@@ -59,8 +60,8 @@ final class WidgetSnapshotPublisher {
     }
 
     static func snapshot(status: MenuBarStatus, serverURL: String, hasCatalog: Bool, now: Date) -> NeedsYouSnapshot {
-        NeedsYouSnapshot(serverURL: serverURL, updatedAt: now, isOffline: status.unreachableHost != nil,
-                         isAvailable: hasCatalog, waiting: status.requests)
+        NeedsYouSnapshot(servers: [.init(serverURL: serverURL, updatedAt: now, isOffline: status.unreachableHost != nil,
+                                         isAvailable: hasCatalog, waiting: status.requests)])
     }
 }
 

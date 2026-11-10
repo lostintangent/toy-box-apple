@@ -45,4 +45,31 @@ struct ChannelWaitingRequestsTests {
         #expect(transport.requests.compactMap(\.url?.path).allSatisfy { !$0.hasSuffix("/messages") })
         #expect(catalog.existingChannel(id: "a") == nil, "Reading a request never opens its channel")
     }
+
+    @Test func everyServersRequestsMergeNewestFirstEachOnItsOwnServer() async throws {
+        let workList = ChannelCatalog(lead: testLeadProfile, channels: [
+            listed("test", request: asked(3, in: "test", "Work's?", at: "09:00")),
+            listed("a", request: asked(4, in: "a", "Older?", at: "07:00")),
+        ])
+        let homeList = ChannelCatalog(lead: testLeadProfile, channels: [
+            listed("test", request: asked(8, in: "test", "Home's?", at: "09:00")),
+            listed("b", request: asked(9, in: "b", "Newest?", at: "10:00")),
+        ])
+        let work = MockTransport { _, _ in try .json(workList) }
+        let home = MockTransport { _, _ in try .json(homeList) }
+        let catalogs = [ChannelCatalogStore(api: try work.api()), ChannelCatalogStore(api: try home.api())]
+        for catalog in catalogs { await catalog.refresh() }
+        let servers = catalogs.map { ChannelOutbox.key($0.api.baseURL) }
+        let homeTarget = try #require(ChannelTarget(serverURL: servers[1], channelID: "test"))
+        var state = testState(revision: 1, messages: [])
+        state.channel.requestSequence = nil
+        _ = try catalogs[1].channel(id: "test").apply(.init(type: "snapshot", state: state))
+
+        let merged = catalogs.waitingRequests()
+        #expect(merged.map(\.sequence) == [9, 3, 8, 4], "A tie keeps Settings order")
+        #expect(merged.map(\.serverURL) == [servers[1], servers[0], servers[1], servers[0]])
+        #expect(Set(merged.map(\.id)).count == 4, "One channel ID on two servers is two requests")
+        let open = catalogs.waitingRequests(open: [homeTarget])
+        #expect(open.map(\.sequence) == [9, 3, 4], "Only the open channel's own server reads its stream")
+    }
 }
