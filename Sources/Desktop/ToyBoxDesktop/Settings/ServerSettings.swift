@@ -1,3 +1,4 @@
+import AppKit
 import ChannelClient
 import SwiftUI
 import ToyBoxUI
@@ -44,6 +45,7 @@ struct ServerSettings: View {
         } message: {
             Text("Toy Box disconnects from it and removes its channels from this Mac. Drafts stay saved, so adding it back finds them.")
         }
+        .task(id: model.snapshot?.requestedState) { await prepareSnapshot() }
         if let selected {
             ServerDetails(catalog: selected, changedAddress: select)
                 .id(Self.address(selected))
@@ -94,6 +96,44 @@ struct ServerSettings: View {
         guard let selected, let index = model.catalogs.firstIndex(where: { $0 === selected }) else { return }
         model.removeServer(selected)
         select(model.catalogs[min(index, model.catalogs.count - 1)])
+    }
+
+    /// The `settings-servers`, `settings-server-renamed` and `settings-server-removed` capture
+    /// states wait until no server is still connecting, then show the server that can't connect,
+    /// the first server named Studio, or the list once the server that can't connect is removed.
+    private func prepareSnapshot() async {
+        guard let state = model.snapshot?.requestedState,
+              ["settings-servers", "settings-server-renamed", "settings-server-removed"].contains(state) else { return }
+        do {
+            while model.catalogs.contains(where: { $0.phase == .connecting }) {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let unreachable = model.catalogs.first { $0.phase.failure != nil }
+            switch state {
+            case "settings-server-renamed":
+                // The name field reads its server's name when it appears, so rename while another
+                // server is showing, the way a rename made in the field is saved on leaving it.
+                guard let first = model.catalogs.first else { return }
+                select(unreachable)
+                try await Task.sleep(for: .milliseconds(100))
+                model.rename(first, to: "Studio")
+                select(first)
+            default:
+                select(unreachable)
+            }
+            if state == "settings-server-removed" {
+                try await Task.sleep(for: .milliseconds(100))
+                remove()
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        } catch { return }
+        let windows = NSApp.windows.filter { $0.isVisible && $0.identifier?.rawValue.contains("Settings") == true }
+        guard windows.count == 1 else {
+            let found = NSApp.windows.map { "\($0.identifier?.rawValue ?? "nil") \"\($0.title)\"" }
+            model.snapshot?.failState(state, message: "Found \(windows.count) Settings windows among \(found)")
+            return
+        }
+        model.snapshot?.markStateReady(state, capturing: windows)
     }
 
     static func address(_ catalog: ChannelCatalogStore) -> String { catalog.api.baseURL.absoluteString }

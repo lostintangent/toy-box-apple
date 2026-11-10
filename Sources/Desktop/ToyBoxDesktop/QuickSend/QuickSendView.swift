@@ -120,6 +120,20 @@ struct QuickSendView: View {
             catch { return }
             catalogConnectingLong = true
         }
+        .task(id: model.snapshot?.requestedState) { await prepareChooserSnapshot() }
+    }
+
+    /// The `quick-send-servers` capture state opens the chooser once no server is still connecting,
+    /// and captures it with the panel.
+    private func prepareChooserSnapshot() async {
+        let state = "quick-send-servers"
+        guard model.snapshot?.requestedState == state else { return }
+        do {
+            while catalogs.contains(where: { $0.phase == .connecting }) { try await Task.sleep(for: .milliseconds(50)) }
+            showsChooser = true
+            while model.quickSend.windows.count < 2 { try await Task.sleep(for: .milliseconds(50)) }
+        } catch { return }
+        model.snapshot?.markStateReady(state, capturing: model.quickSend.windows)
     }
 
     private var requestContextNotice: String? {

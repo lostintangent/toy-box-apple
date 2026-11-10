@@ -9,6 +9,7 @@ struct RootView: View {
     var initialChannel: ChannelTarget?
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     /// The selection's `identifier`.
     @SceneStorage("selectedChannelId") private var restoredSelection: String?
     @ViewState private var selection: ChannelTarget?
@@ -291,6 +292,10 @@ struct RootView: View {
             }
         case "overview-tasks", "overview-artifacts", "overview-routines":
             setOverviewVisible(true)
+        case "quick-send-servers":
+            model.quickSend.presentForSnapshot(appearance: snapshot.appearance)
+        case "settings-servers", "settings-server-renamed", "settings-server-removed":
+            openSettings()
         default: break
         }
     }

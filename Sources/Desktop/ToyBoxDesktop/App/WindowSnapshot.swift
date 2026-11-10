@@ -15,6 +15,8 @@ final class WindowSnapshot {
     @ObservationIgnored private var launchWatchdog: Task<Void, Never>?
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private var stateError: String?
+    /// The windows a state captures instead of the main window, like Quick Send and its chooser.
+    @ObservationIgnored private var capturedWindows: [NSWindow] = []
 
     init(options: LaunchOptions) {
         self.options = options
@@ -27,9 +29,15 @@ final class WindowSnapshot {
         }
     }
 
-    func markStateReady(_ name: String) {
+    var appearance: NSAppearance? { NSAppearance(named: options.appearance == .dark ? .darkAqua : .aqua) }
+
+    /// Marks the state ready to capture, from the main window or from other windows of this app
+    /// shown on one display.
+    func markStateReady(_ name: String, capturing windows: [NSWindow] = []) {
         // A Handoff may resolve before the snapshot window attaches.
         guard name == options.snapshotState else { return }
+        for window in windows { window.appearance = appearance }
+        capturedWindows = windows
         isStateReady = true
     }
 
@@ -44,7 +52,7 @@ final class WindowSnapshot {
         self.window = window
         window.isRestorable = false
         window.setFrameAutosaveName("")
-        window.appearance = NSAppearance(named: options.appearance == .dark ? .darkAqua : .aqua)
+        window.appearance = appearance
         applyRequestedSize()
         task = Task { [weak self] in
             guard let self else { return }
@@ -115,22 +123,27 @@ final class WindowSnapshot {
               let output = destination ?? options.snapshotURL else {
             throw LaunchArgumentError("The app window is unavailable for capture")
         }
-        guard !validateSize || (abs(window.frame.width - CGFloat(options.width)) < 1
-              && abs(window.frame.height - CGFloat(options.height)) < 1) else {
-            throw LaunchArgumentError("The window could not use the requested \(options.width)x\(options.height) size")
-        }
-        frameView.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
         let bitmap: NSBitmapImageRep
-        do {
-            bitmap = try await Self.compositedCapture(of: window)
-        } catch {
-            FileHandle.standardError.write(Data("""
-                Snapshot warning: ScreenCaptureKit failed (\(error.localizedDescription)). Falling back to \
-                drawing the views, which leaves glass, list rows and scrolled content blank.
+        if destination == nil, !capturedWindows.isEmpty {
+            for window in capturedWindows { window.displayIfNeeded() }
+            bitmap = try await Self.compositedCapture(of: capturedWindows)
+        } else {
+            guard !validateSize || (abs(window.frame.width - CGFloat(options.width)) < 1
+                  && abs(window.frame.height - CGFloat(options.height)) < 1) else {
+                throw LaunchArgumentError("The window could not use the requested \(options.width)x\(options.height) size")
+            }
+            frameView.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            do {
+                bitmap = try await Self.compositedCapture(of: window)
+            } catch {
+                FileHandle.standardError.write(Data("""
+                    Snapshot warning: ScreenCaptureKit failed (\(error.localizedDescription)). Falling back to \
+                    drawing the views, which leaves glass, list rows and scrolled content blank.
 
-                """.utf8))
-            bitmap = try Self.drawnCapture(of: window, frameView: frameView)
+                    """.utf8))
+                bitmap = try Self.drawnCapture(of: window, frameView: frameView)
+            }
         }
         guard let png = bitmap.representation(using: .png, properties: [:]) else {
             throw LaunchArgumentError("The window bitmap could not be encoded as PNG")
@@ -160,6 +173,36 @@ final class WindowSnapshot {
             contentFilter: SCContentFilter(desktopIndependentWindow: shareable), configuration: configuration)
         let bitmap = NSBitmapImageRep(cgImage: image)
         bitmap.size = window.frame.size
+        return bitmap
+    }
+
+    /// Captures windows of this app as the window server composites them, over nothing else,
+    /// cropped to their frames. They must share a display.
+    private static func compositedCapture(of windows: [NSWindow]) async throws -> NSBitmapImageRep {
+        guard let first = windows.first, let screen = first.screen, windows.allSatisfy({ $0.screen == screen }),
+              let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        else { throw LaunchArgumentError("The captured windows must share a display") }
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        let numbers = Set(windows.map { CGWindowID($0.windowNumber) })
+        let shareable = content.windows.filter { numbers.contains($0.windowID) }
+        guard shareable.count == windows.count,
+              let display = content.displays.first(where: { $0.displayID == displayID }) else {
+            throw LaunchArgumentError("ScreenCaptureKit could not find the captured windows")
+        }
+        let frame = windows.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+        let configuration = SCStreamConfiguration()
+        // The display's points count from its top left, and AppKit's from the bottom left.
+        configuration.sourceRect = CGRect(x: frame.minX - screen.frame.minX, y: screen.frame.maxY - frame.maxY,
+                                          width: frame.width, height: frame.height)
+        configuration.width = Int(frame.width * screen.backingScaleFactor)
+        configuration.height = Int(frame.height * screen.backingScaleFactor)
+        configuration.captureResolution = .best
+        configuration.showsCursor = false
+        configuration.backgroundColor = CGColor.clear
+        let image = try await SCScreenshotManager.captureImage(
+            contentFilter: SCContentFilter(display: display, including: shareable), configuration: configuration)
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        bitmap.size = frame.size
         return bitmap
     }
 
