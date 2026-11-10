@@ -44,14 +44,18 @@ struct ChannelSidebar: View {
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-    private var channels: [Channel] {
-        guard let catalog = model.catalog else { return [] }
-        return talk.ordered(catalog.channels.filter { $0.matches(trimmedQuery) }, on: catalog.api.baseURL)
+    /// A listed channel on its server, which the cards key their rows by.
+    private struct Listed {
+        var channel: Channel
+        var target: ChannelTarget
     }
 
-    /// A listed channel on its server, which the cards key their rows by.
-    private func target(_ channel: Channel) -> ChannelTarget? {
-        model.catalog.flatMap { ChannelTarget(serverURL: $0.api.baseURL.absoluteString, channelID: channel.id) }
+    private var listed: [Listed] {
+        guard let catalog = model.catalog else { return [] }
+        let server = catalog.api.baseURL
+        return talk.ordered(catalog.channels.filter { $0.matches(trimmedQuery) }, on: server).compactMap { channel in
+            ChannelTarget(serverURL: server.absoluteString, channelID: channel.id).map { Listed(channel: channel, target: $0) }
+        }
     }
 
     /// How far a card reaches past its row's trailing side. A folded list ends where its rows do, so
@@ -78,7 +82,8 @@ struct ChannelSidebar: View {
         let waiting = waiting
         let open = cards.open(in: waiting)
         let waitingRows = cards.rows(in: waiting)
-        let targets = channels.compactMap(target)
+        let listed = listed
+        let targets = listed.map(\.target)
         let hiddenLines = cards.hiddenLines(in: waiting, order: targets)
         // Opening a channel, Settings or Screens, a management flow or Search ends a card held over the list.
         let listContext: [AnyHashable?] = [model.selectedChannelID, model.cover, management.flow?.id,
@@ -93,48 +98,47 @@ struct ChannelSidebar: View {
                                 .listRowSeparator(.hidden)
                         }
                     } else {
-                        ForEach(channels) { channel in
-                            if let target = target(channel) {
-                                let waitingRow = waitingRows[target]
-                                let isOpen = open?.target == target
-                                let isCard = isOpen || cards.replying?.target == target || checks[target] != nil
-                                // A card opens and shrinks from its row's top, inside the row and in the card's
-                                // shape, which reaches past the row's sides. A card's row ends at the card's own
-                                // edge, so its corners stay round as it shrinks.
-                                ZStack(alignment: .top) { rowContent(waitingRow, of: channel, at: target, now: now) }
-                                    .clipShape(CardShape(overflow: NeedsYouCard.margin + (isCard ? reach : NeedsYouCard.margin),
-                                                         animatesOverflow: false)
-                                        .offset(x: -NeedsYouCard.margin))
-                                    // A waiting row opens its card rather than its channel.
-                                    .selectionDisabled(waitingRow != nil)
-                                    .opacity(cards.isLifted && !isOpen ? 0.4 : 1)
-                                    .animation(.easeInOut(duration: 0.25), value: cards.isLifted)
-                                    .listRowInsets(.vertical, 0)
-                                    .contextMenu {
-                                        // UIKit lifts menus itself, so a dimmed row offers none while a note is open.
-                                        if !talk.isLifted { contextMenu(channel) }
-                                    } preview: {
-                                        ChannelSidebarPreview(channel: presentation.channel(channel), agents: presentation.agents(channel))
-                                    }
-                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                        if !talk.isLifted {
-                                            Button(role: .destructive) {
-                                                management.present(.deleteChannel(channelId: channel.id))
-                                            } label: {
-                                                Label("Delete", systemImage: "trash")
-                                            }
-                                            .labelStyle(.iconOnly)
-                                            .disabled(!model.canManageChannels)
+                        ForEach(listed, id: \.channel.id) { item in
+                            let (channel, target) = (item.channel, item.target)
+                            let waitingRow = waitingRows[target]
+                            let isOpen = open?.target == target
+                            let isCard = isOpen || cards.replying?.target == target || checks[target] != nil
+                            // A card opens and shrinks from its row's top, inside the row and in the card's
+                            // shape, which reaches past the row's sides. A card's row ends at the card's own
+                            // edge, so its corners stay round as it shrinks.
+                            ZStack(alignment: .top) { rowContent(waitingRow, of: channel, at: target, now: now) }
+                                .clipShape(CardShape(overflow: NeedsYouCard.margin + (isCard ? reach : NeedsYouCard.margin),
+                                                     animatesOverflow: false)
+                                    .offset(x: -NeedsYouCard.margin))
+                                // A waiting row opens its card rather than its channel.
+                                .selectionDisabled(waitingRow != nil)
+                                .opacity(cards.isLifted && !isOpen ? 0.4 : 1)
+                                .animation(.easeInOut(duration: 0.25), value: cards.isLifted)
+                                .listRowInsets(.vertical, 0)
+                                .contextMenu {
+                                    // UIKit lifts menus itself, so a dimmed row offers none while a note is open.
+                                    if !talk.isLifted { contextMenu(channel) }
+                                } preview: {
+                                    ChannelSidebarPreview(channel: presentation.channel(channel), agents: presentation.agents(channel))
+                                }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    if !talk.isLifted {
+                                        Button(role: .destructive) {
+                                            management.present(.deleteChannel(channelId: channel.id))
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
                                         }
+                                        .labelStyle(.iconOnly)
+                                        .disabled(!model.canManageChannels)
                                     }
-                                    // UIKit hides the line under a selected row until its highlight fades, which
-                                    // lingers after Back on the folded phone.
-                                    .talkRow(target, recorder: talk,
-                                             offered: !searchFocused.wrappedValue && !cards.isLifted && !isOpen,
-                                             line: hiddenLines.contains(target) ? .hidden : isCollapsed ? .visible : .automatic) {
-                                        talk(to: channel)
-                                    }
-                            }
+                                }
+                                // UIKit hides the line under a selected row until its highlight fades, which
+                                // lingers after Back on the folded phone.
+                                .talkRow(target, recorder: talk,
+                                         offered: !searchFocused.wrappedValue && !cards.isLifted && !isOpen,
+                                         line: hiddenLines.contains(target) ? .hidden : isCollapsed ? .visible : .automatic) {
+                                    talk(to: channel)
+                                }
                         }
                     }
                 }
@@ -161,17 +165,17 @@ struct ChannelSidebar: View {
             if phase == .interacting || phase == .decelerating { revealing = nil }
         }
         .talkList(talk, targets: targets, onGlass: !isCollapsed, endsWhenChanging: listContext) { target in
-            if let channel = channels.first(where: { $0.id == target.channelID }) {
+            if let channel = listed.first(where: { $0.target == target })?.channel {
                 row(channel, at: target, now: now)
             }
         }
         .needsYouList(cards, card: liftedCard, targets: targets, bounds: $listBounds,
                       endsWhenChanging: listContext) { entry, maxHeight in
-            if let channel = channels.first(where: { $0.id == entry.channel.id }) {
+            if let channel = listed.first(where: { $0.target == entry.target })?.channel {
                 card(entry, in: channel, now: now, isLifted: true, maxHeight: maxHeight)
             }
         } row: { target in
-            if let channel = channels.first(where: { $0.id == target.channelID }) {
+            if let channel = listed.first(where: { $0.target == target })?.channel {
                 row(channel, at: target, now: now)
                     .padding(.leading, NeedsYouCard.margin)
                     .padding(.trailing, reach)
@@ -318,7 +322,7 @@ struct ChannelSidebar: View {
         guard let catalog = model.catalog else { return }
         talk.start(catalog.channel(id: channel.id), name: channel.name,
                    contextualNames: presentation.agents(channel).map(\.name), catalog: catalog,
-                   order: channels.compactMap(target))
+                   order: listed.map(\.target))
     }
 
     @ViewBuilder private var emptyState: some View {
@@ -331,7 +335,7 @@ struct ChannelSidebar: View {
                 Button("Settings") { model.cover = .settings }
                     .frame(minHeight: 44)
             }
-        } else if model.catalog?.phase == .connected, channels.isEmpty {
+        } else if model.catalog?.phase == .connected, listed.isEmpty {
             if trimmedQuery.isEmpty {
                 ContentUnavailableView {
                     Label("Your channels live here", systemImage: "bubble.left.and.bubble.right")
