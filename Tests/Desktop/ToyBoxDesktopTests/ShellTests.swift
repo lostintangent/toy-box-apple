@@ -314,7 +314,7 @@ struct QuickSendIntakeTests {
 struct ShellTests {
     @Test func ordinaryLaunchKeepsNativeDefaults() throws {
         let options = try LaunchOptions.parse([])
-        #expect(options.serverURL == nil)
+        #expect(options.servers.isEmpty)
         #expect(options.channelID == nil)
         #expect(options.appearance == nil)
         #expect(options.width == 1280)
@@ -365,13 +365,22 @@ struct ShellTests {
         #expect(!updates.canCheckForUpdates)
     }
 
+    @Test func serverRepeatsAsSessionOnlyServersInOrder() throws {
+        let options = try LaunchOptions.parse(["--server", "http://127.0.0.1:3210", "--server", "http://127.0.0.1:3211"])
+        #expect(options.servers == ["http://127.0.0.1:3210", "http://127.0.0.1:3211"])
+        #expect(!options.allowsUserIntegrations(environment: [:]))
+        #expect(throws: LaunchArgumentError("Repeated argument: --channel")) {
+            try LaunchOptions.parse(["--channel", "a", "--channel", "b"])
+        }
+    }
+
     @Test func snapshotParsesEveryRequestedSurface() throws {
         let options = try LaunchOptions.parse([
             "--server", "https://example.test/toy-box",
             "--channel", "studio-demo", "--appearance", "dark",
             "--size", "760x560", "--snapshot", "/tmp/shell-test.png", "--state", "inspector"
         ])
-        #expect(options.serverURL == "https://example.test/toy-box")
+        #expect(options.servers == ["https://example.test/toy-box"])
         #expect(options.channelID == "studio-demo")
         #expect(options.appearance == .dark)
         #expect(options.width == 760)

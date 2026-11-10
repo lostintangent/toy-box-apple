@@ -88,8 +88,9 @@ final class AppModel {
             launchOptions.channelID.map { PerformanceBenchmark(scenario: scenario, channelID: $0) }
         }
         savesServers = launchOptions.allowsUserIntegrations()
-        let saved = savesServers ? ChannelCatalogStore.Saved.load(from: .standard) : []
-        serverURL = launchOptions.serverURL ?? saved.first?.url ?? AppConfiguration.defaultServerURL
+        let saved = savesServers ? ChannelCatalogStore.Saved.load(from: .standard)
+            : launchOptions.servers.map { ChannelCatalogStore.Saved(url: $0) }
+        serverURL = saved.first?.url ?? AppConfiguration.defaultServerURL
         var failure: (any Error)?
         catalogs = (saved.isEmpty ? [.init(url: serverURL)] : saved).compactMap { server in
             do { return try connect(ChannelAPI(serverURL: server.url), name: server.name) }

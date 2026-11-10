@@ -131,7 +131,7 @@ struct DockMenuTests {
         var validation = LaunchOptions()
         validation.quickSendValidation = .trace
         var server = LaunchOptions()
-        server.serverURL = "http://127.0.0.1:3210"
+        server.servers = ["http://127.0.0.1:3210"]
         for options in [snapshot, benchmark, resize, validation, server] {
             #expect(!DockAttention.isAllowed(options, bundleID: "dev.toybox.desktop", environment: [:]))
         }

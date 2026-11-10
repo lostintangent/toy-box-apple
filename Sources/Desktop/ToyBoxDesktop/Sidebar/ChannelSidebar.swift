@@ -108,7 +108,10 @@ struct ChannelSidebar: View {
         .searchFocused($searchFocused)
         .onChange(of: selection) { _, id in listSelection = id }
         .onChange(of: searchFocusRequest) { _, _ in searchFocused = true }
-        .task(id: model.snapshot?.requestedState) { await prepareRetrySnapshot() }
+        .task(id: model.snapshot?.requestedState) {
+            await prepareRetrySnapshot()
+            await prepareServersSnapshot()
+        }
     }
 
     /// The `sidebar-retry` capture state refreshes the catalog once it has failed, as View > Refresh
@@ -120,6 +123,17 @@ struct ChannelSidebar: View {
             do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
         }
         model.refreshCatalog()
+        model.snapshot?.markStateReady(state)
+    }
+
+    /// The `sidebar-servers` capture state waits until no server is still connecting, so a server
+    /// that doesn't answer shows its failure under its header.
+    private func prepareServersSnapshot() async {
+        let state = "sidebar-servers"
+        guard model.snapshot?.requestedState == state else { return }
+        while model.catalogs.contains(where: { $0.phase == .connecting }) {
+            do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
+        }
         model.snapshot?.markStateReady(state)
     }
 

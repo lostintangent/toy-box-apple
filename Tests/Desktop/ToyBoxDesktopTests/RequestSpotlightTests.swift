@@ -118,7 +118,7 @@ struct RequestSpotlightTests {
         options.quickSendValidation = .trace
         #expect(!ChannelSpotlight.indexes(options, bundleID: "dev.toybox.desktop", environment: [:]))
         options = .init()
-        options.serverURL = "http://127.0.0.1:3210"
+        options.servers = ["http://127.0.0.1:3210"]
         #expect(!ChannelSpotlight.indexes(options, bundleID: "dev.toybox.desktop", environment: [:]))
         options = .init()
         options.snapshotURL = URL(filePath: "/tmp/spotlight.png")

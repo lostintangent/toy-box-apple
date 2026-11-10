@@ -9,7 +9,7 @@ struct RootView: View {
     var initialChannel: ChannelTarget?
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
-    /// The selection's `identifier`, or a bare channel ID saved before several servers.
+    /// The selection's `identifier`.
     @SceneStorage("selectedChannelId") private var restoredSelection: String?
     @ViewState private var selection: ChannelTarget?
     @SceneStorage("sidebarVisible") private var sidebarVisible = true
@@ -180,7 +180,7 @@ struct RootView: View {
             let launchChannelID = model.takeLaunchChannelID()
             if selection == nil {
                 selection = model.launchOptions.isSnapshot ? initialChannel
-                    : restoredSelection.flatMap { ChannelTarget(identifier: $0) ?? model.target($0) }
+                    : restoredSelection.flatMap(ChannelTarget.init(identifier:))
                         ?? initialChannel ?? launchChannelID.flatMap { model.target($0) }
             }
             columnVisibility = model.launchOptions.isSnapshot || sidebarVisible ? .all : .detailOnly
