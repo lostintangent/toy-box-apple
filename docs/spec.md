@@ -194,7 +194,8 @@ Drafts stay keyed to the address, so adding it back finds them.
   search field or another server's last row, matching the gap between two servers. On the phone, the name is followed by how many channels the server has, in
   the header's font and secondary color, once its catalog has loaded. A failing server shows only
   its header's orange or red dot, never a notice in the list, so the list always shows every
-  server and its channels. On the Mac the header's help adds the readable failure.
+  server and its channels. On the Mac the header's help adds the readable failure, and on the
+  phone tapping the dot shows it in a popover (see Phone channel search).
   While a section is collapsed and any of its channels waits for the user's response, its header
   also shows the waiting attention symbol, trailing in its color and without a count, so
   collapsing a server never hides a request. It hides while the section is open, and VoiceOver
@@ -855,12 +856,17 @@ footer spinner, and with several each server's header names it (see
 Settings owns server identity and connection details. The list has pull to refresh, and search
 uses the shared name/purpose/directory filtering. Pull to refresh holds its spinner until the
 finger lifts, so a fast fetch never ends it mid-pull. Command-F focuses channel search when the
-list is active, without replacing in-conversation Find. While the catalog reconnects with its rows
-kept, the bottom holds the transcript's glass pill, a spinner beside "Reconnecting to server" over
-"Channels may be out of date", and the whole pill is a button that retries at once. VoiceOver reads
-it as one button with the readable failure as its hint. Any other catalog failure shows its
-heading, useful error, Retry and reachable Settings there. Cached rows alone do not prove a live
-connection.
+list is active, without replacing in-conversation Find. The list never shows a connection error, a
+pill or a Retry, because pull to refresh already retries. A failing server shows only its orange or
+red dot, with the same colors as the Mac's (see Sidebar). With several servers it's the header's
+dot. With one, a dot follows the large Toy Box title only while the catalog is failing, and the
+title stays the system's large title, so the list never moves. Tapping the dot, through a 44-point
+hit area, opens a popover with the status line, like "Reconnecting to 127.0.0.1:3211", over the
+readable failure in secondary, then a Server Settings button, which opens Settings because a wrong
+address is the one failure a retry can't fix. The rest of a header still collapses and expands.
+VoiceOver reads the dot as a button whose label is the status line and whose hint is the failure.
+With Differentiate Without Color, the dot becomes the Mac's `exclamationmark.circle.fill`. Cached
+rows alone do not prove a live connection.
 
 **Phone channel toolbar.** The bar holds only the channel's title, Overview and Message View. Like
 the Mac's, the title is a floating glass button: the channel name in a `.topBarLeading` toolbar
