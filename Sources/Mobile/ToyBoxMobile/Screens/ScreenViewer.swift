@@ -26,8 +26,8 @@ struct ScreenViewer: View {
                     ScreenView.Status(connection: connection)
                         .allowsHitTesting(connection.state.phase != .live)
                 }
-                // Under the home indicator, but above the keyboard, where a host's text field usually is.
-                .ignoresSafeArea(.container, edges: .bottom)
+                // Under the home indicator and the keyboard, which slides over the screen rather than moving it.
+                .ignoresSafeArea(edges: .bottom)
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Screen: \(connection.state.title ?? connection.screenID)")
                 .navigationTitle(connection.state.title ?? "Screen")
@@ -59,14 +59,15 @@ struct ScreenViewer: View {
 
         func makeCoordinator() -> Coordinator { Coordinator(keyboardTaps: keyboardTaps) }
 
-        func makeUIView(context: Context) -> ScreenCanvas {
-            let canvas = ScreenCanvas()
-            canvas.report = { [connection] in connection.viewerSize = $0 }
-            canvas.send = { [connection] in connection.send($0) }
-            return canvas
+        func makeUIView(context: Context) -> ScreenCanvas.Container {
+            let container = ScreenCanvas.Container()
+            container.canvas.report = { [connection] in connection.viewerSize = $0 }
+            container.canvas.send = { [connection] in connection.send($0) }
+            return container
         }
 
-        func updateUIView(_ canvas: ScreenCanvas, context: Context) {
+        func updateUIView(_ container: ScreenCanvas.Container, context: Context) {
+            let canvas = container.canvas
             canvas.isActive = isActive
             canvas.show(connection.picture)
             canvas.hasControl = connection.state.hasControl
@@ -85,9 +86,10 @@ struct ScreenViewer: View {
 
 /// A screen's latest frame, fitted and centered at 1×, that pinches to 8× and pans like a photo. A pinch stops at
 /// 1× and 8× rather than springing back, so the screen stays where it's left. Only a settled zoom or a new viewer
-/// size is reported, and a new frame keeps the zoom and position. A new viewer size, from a rotation or the keyboard,
-/// keeps the zoom and what's in view, so 1× simply fits again. In control, one finger drives the host while two
-/// pinch and pan, and keys go to the host.
+/// size is reported, and a new frame keeps the zoom and position. A new viewer size, from a rotation, keeps the zoom
+/// and what's in view, so 1× simply fits again. The keyboard slides over the picture without moving it, adding just
+/// enough room to pan its bottom edge above the keyboard. In control, one finger drives the host while two pinch and
+/// pan, and keys go to the host.
 final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
     /// The full frame at its fitted size, with the changed region over it. It's the view that zooms.
     let pictureView = UIView()
@@ -102,6 +104,18 @@ final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
     }
     var hasControl = false {
         didSet { if hasControl != oldValue { controlChanged() } }
+    }
+    /// How far the keyboard reaches up over the canvas.
+    var keyboardHeight: CGFloat = 0 {
+        didSet {
+            guard keyboardHeight != oldValue else { return }
+            center()
+            // The room goes with the keyboard, so a picture panned into it settles back. A new viewer size places
+            // the picture itself.
+            guard bounds.size == viewport else { return }
+            let lowest = max(-contentInset.top, contentSize.height + contentInset.bottom - bounds.height)
+            if contentOffset.y > lowest { contentOffset.y = lowest }
+        }
     }
     private let touches = Touches()
     let typing = ScreenTyping()
@@ -173,8 +187,9 @@ final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
         shown = (CGPoint(x: visible.midX / picture.width, y: visible.midY / picture.height), edges)
     }
 
-    /// Keeps a side of the view that was against an edge of the picture against it, so a host's text field at the
-    /// bottom of its window stays in view above the keyboard, and otherwise keeps the point at the center there.
+    /// Keeps a side of the view that was against an edge of the picture against it, with the bottom one above the
+    /// keyboard, so a host's text field at the bottom of its window stays in view, and otherwise keeps the point at the
+    /// center there.
     private func offset(showing shown: (center: CGPoint, edges: UIRectEdge)) -> CGPoint {
         let least = CGPoint(x: -contentInset.left, y: -contentInset.top)
         let picture = pictureView.bounds
@@ -238,11 +253,13 @@ final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
         }
     }
 
-    /// Centers a picture smaller than the viewer, as the image viewer does.
+    /// Centers a picture smaller than the viewer, as the image viewer does, with just enough room below it to pan its
+    /// bottom edge above the keyboard, so a fitted picture that's already clear of it can't be dragged.
     private func center() {
         let horizontal = max(0, (bounds.width - contentSize.width) / 2)
         let vertical = max(0, (bounds.height - contentSize.height) / 2)
-        let inset = UIEdgeInsets(top: vertical, left: horizontal, bottom: vertical, right: horizontal)
+        let bottom = max(vertical, keyboardHeight)
+        let inset = UIEdgeInsets(top: vertical, left: horizontal, bottom: bottom, right: horizontal)
         if contentInset != inset { contentInset = inset }
     }
 
@@ -369,6 +386,41 @@ final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
 
         func gestureRecognizer(_ recognizer: UIGestureRecognizer,
                                shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
+}
+
+extension ScreenCanvas {
+    /// Holds the canvas and tells it how far the keyboard covers it, from the keyboard's layout guide on this view,
+    /// which unlike the canvas doesn't scroll.
+    final class Container: UIView {
+        let canvas = ScreenCanvas()
+        /// Spans the keyboard's part of the view, so the keyboard moving lays this view out.
+        private let keyboard = UIView()
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            canvas.frame = bounds
+            canvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            addSubview(canvas)
+            keyboard.isHidden = true
+            keyboard.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(keyboard)
+            // The canvas reaches under the home indicator, so only the keyboard itself covers it.
+            keyboardLayoutGuide.usesBottomSafeArea = false
+            NSLayoutConstraint.activate([
+                keyboard.leadingAnchor.constraint(equalTo: leadingAnchor),
+                keyboard.trailingAnchor.constraint(equalTo: trailingAnchor),
+                keyboard.topAnchor.constraint(equalTo: keyboardLayoutGuide.topAnchor),
+                keyboard.bottomAnchor.constraint(equalTo: bottomAnchor),
+            ])
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            canvas.keyboardHeight = max(0, bounds.maxY - keyboardLayoutGuide.layoutFrame.minY)
+        }
     }
 }
 

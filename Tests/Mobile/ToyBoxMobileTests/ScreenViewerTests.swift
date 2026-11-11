@@ -58,7 +58,7 @@ struct ScreenViewerTests {
         let kept = CGPoint(x: 0.25, y: 0.5625)
         #expect(distance(of: canvas, from: kept) < 1, "UIKit rounds the offset to the pixel")
 
-        // The keyboard shows.
+        // The viewer gets shorter.
         resize(width: 400, height: 464)
         let pixels = canvas.traitCollection.displayScale
         #expect(canvas.zoomScale == 4)
@@ -74,13 +74,50 @@ struct ScreenViewerTests {
         resize(width: 400, height: 800)
         canvas.contentOffset.y = canvas.contentSize.height - 800
         resize(width: 400, height: 464)
-        #expect(canvas.bounds.maxY == canvas.contentSize.height, "The host's bottom stays above the keyboard")
+        #expect(canvas.bounds.maxY == canvas.contentSize.height, "A side against the picture's edge stays against it")
         #expect(canvas.contentOffset.x == 200)
 
         canvas.setZoomScale(1, animated: false)
         resize(width: 400, height: 800)
         #expect(canvas.pictureView.frame == CGRect(x: 0, y: 0, width: 400, height: 250), "1× simply fits again")
         #expect(canvas.contentOffset == CGPoint(x: 0, y: -275))
+    }
+
+    @Test func theKeyboardSlidesOverThePictureWithJustEnoughRoomToPanItsBottomEdgeAboveIt() throws {
+        let (window, canvas, reports) = try fixture()
+        let requests = reports.count
+        let lowest = { canvas.contentSize.height + canvas.contentInset.bottom - canvas.bounds.height }
+        let bottomEdge = { canvas.pictureView.frame.maxY - canvas.contentOffset.y }
+
+        // At 1×, the picture has 275 points below it.
+        canvas.keyboardHeight = 200
+        #expect(canvas.contentOffset.y == -275)
+        #expect(lowest() == -275, "A fitted picture already clear of the keyboard can't be dragged")
+
+        canvas.keyboardHeight = 336
+        #expect(canvas.contentOffset.y == -275, "Nothing moves")
+        #expect(canvas.pictureView.frame == CGRect(x: 0, y: 0, width: 400, height: 250))
+        canvas.contentOffset.y = lowest()
+        #expect(bottomEdge() == 464, "Only the covered part pans")
+
+        canvas.keyboardHeight = 0
+        #expect(canvas.contentOffset.y == -275, "The room goes with the keyboard")
+
+        canvas.setZoomScale(4, animated: false)
+        canvas.scrollViewDidEndZooming(canvas, with: canvas.pictureView, atScale: 4)
+        canvas.contentOffset = CGPoint(x: 600, y: 100)
+        let zoomed = reports.count
+        canvas.keyboardHeight = 336
+        #expect(canvas.zoomScale == 4)
+        #expect(canvas.contentOffset == CGPoint(x: 600, y: 100), "Nothing moves")
+        canvas.contentOffset.y = lowest()
+        #expect(bottomEdge() == 464)
+
+        canvas.keyboardHeight = 0
+        #expect(canvas.contentOffset.y == 200)
+        #expect(bottomEdge() == 800)
+        #expect(reports.count == zoomed && zoomed == requests + 1, "The keyboard never asks for frames")
+        withExtendedLifetime(window) {}
     }
 
     @Test func controlLeavesPanningToTwoFingers() throws {
