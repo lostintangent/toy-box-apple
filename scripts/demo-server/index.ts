@@ -5,9 +5,12 @@ import { createDemoServer, type DemoServer } from "./channels/demo-server.ts";
 import { type Snapshot } from "./channels/types.ts";
 import { createDemoPushRoutes } from "./channels/push-routes.ts";
 import { writeHistoryPage } from "./channels/history-channel.ts";
+import { createDemoScreens } from "./channels/screens.ts";
 
 export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snapshot" | "onChange">) {
     const push = createDemoPushRoutes();
+    const screens = createDemoScreens();
+    demo.server.on("upgrade", screens.upgrade);
     const catalog = createCatalogRoute(() => {
         const { lead: { name, role, avatar }, channel, request, members } = demo.snapshot();
         return { lead: { name, role, avatar }, channels: [catalogEntry(channel, request)], members, working: [] };
@@ -28,6 +31,7 @@ export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snap
             });
             return;
         }
+        if (screens.handle(request, response, url)) return;
         const snapshot = demo.snapshot();
         if (request.method === "GET"
             && url.pathname === `/api/v1/channels/${encodeURIComponent(snapshot.channel.id)}/messages`) {
@@ -49,7 +53,7 @@ export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snap
         }
         originalHandler(request, response);
     });
-    return { push, catalog };
+    return { push, catalog, screens };
 }
 
 if (import.meta.main) {
@@ -79,7 +83,7 @@ if (import.meta.main) {
             new URL("./fixtures/interaction-notes-long.md", import.meta.url)
         ).text());
     }
-    const { catalog } = installDemoCatalogRoutes(demo);
+    const { catalog, screens } = installDemoCatalogRoutes(demo);
     demo.server.on("error", error => { console.error(error); process.exitCode = 1; });
     demo.server.listen(port, "127.0.0.1", () => {
         console.log(`Toy Box fixture: http://127.0.0.1:${port} · channel ${demo.snapshot().channel.id}`);
@@ -88,6 +92,7 @@ if (import.meta.main) {
     for (const signal of ["SIGINT", "SIGTERM"] as const) {
         process.once(signal, () => {
             catalog.close();
+            screens.close();
             void demo.close().catch(error => { console.error(error); process.exitCode = 1; });
         });
     }

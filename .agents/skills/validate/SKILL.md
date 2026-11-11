@@ -35,5 +35,6 @@ replace saved Settings.
 `TOY_BOX_DEMO_BOOKMARKS=empty` starts either demo with no bookmarks.
 
 Never take control of a real host's screen, including one listed by the live server, since control
-moves the user's real pointer and keyboard. Prove screen control against `bun run demo`'s synthetic
-screen, and leave the real check to the user.
+moves the user's real pointer and keyboard. Prove screen control on `bun run demo`'s Demo Canvas,
+which paints what it receives and logs it at `GET /demo/screens/input` (`DELETE` clears it), and
+its Won't Take Focus screen, which refuses control. Leave the real check to the user.
