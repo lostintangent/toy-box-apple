@@ -10,6 +10,7 @@
 
 ### Bugs/Polish
 
+- Bringing up the keyboard on a screen you control leaves the screen right where it was, so you never lose your place, and a two-finger drag lifts anything the keyboard covers into view.
 - A screen you control looks just as it does when you watch it, with no frame around it, and the Take Control button alone tells you you're in control.
 
 ## Mac 0.1.32
