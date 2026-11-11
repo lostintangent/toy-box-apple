@@ -12,20 +12,21 @@ struct OverviewTests {
         pasteboard.clearContents()
         pasteboard.setString("héllo", forType: .string)
         let (window, surface, sent) = try fixture(pasteboard: pasteboard)
-        func key(_ type: NSEvent.EventType, _ code: UInt16, _ flags: NSEvent.ModifierFlags = []) throws -> Bool {
+        // Through the app's dispatch, as a real key arrives.
+        func key(_ type: NSEvent.EventType, _ code: UInt16, _ flags: NSEvent.ModifierFlags = []) throws {
             let event = try #require(NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: 0,
                                                       windowNumber: window.windowNumber, context: nil, characters: "",
                                                       charactersIgnoringModifiers: "", isARepeat: false, keyCode: code))
-            return surface.handle(event)
+            NSApplication.shared.sendEvent(event)
         }
 
         // A real event's flags carry each side's bit too, here the left Command key's.
-        #expect(try key(.flagsChanged, 55, NSEvent.ModifierFlags(rawValue: NSEvent.ModifierFlags.command.rawValue | 0x8)))
-        #expect(try key(.keyDown, 8, .command), "Command-C goes to the host, not the Edit menu")
-        #expect(try key(.keyUp, 8, .command))
-        #expect(try key(.keyDown, 9, .command), "Command-V pastes the clipboard instead")
-        #expect(try key(.keyUp, 9, .command))
-        #expect(try key(.flagsChanged, 55))
+        try key(.flagsChanged, 55, NSEvent.ModifierFlags(rawValue: NSEvent.ModifierFlags.command.rawValue | 0x8))
+        try key(.keyDown, 8, .command)
+        try key(.keyUp, 8, .command)
+        try key(.keyDown, 9, .command)
+        try key(.keyUp, 9, .command)
+        try key(.flagsChanged, 55)
         #expect(sent.inputs == [
             .key("MetaLeft", down: true), .key("KeyC", down: true), .key("KeyC", down: false),
             .key("MetaLeft", down: false), .text("héllo"), .key("MetaLeft", down: true),
@@ -34,8 +35,8 @@ struct OverviewTests {
 
         sent.inputs.removeAll()
         window.makeFirstResponder(nil)
-        #expect(try !key(.keyDown, 0), "Without keyboard focus, keys stay in the app")
-        #expect(sent.inputs.isEmpty)
+        try key(.keyDown, 0)
+        #expect(sent.inputs.isEmpty, "Without keyboard focus, keys stay in the app")
     }
 
     @Test func aControlledScreenClicksThroughTheFittedPictureAndLetsGoWhenTheWindowDoes() throws {

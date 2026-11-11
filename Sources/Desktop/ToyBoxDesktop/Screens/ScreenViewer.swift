@@ -156,7 +156,7 @@ final class ScreenControlSurface: NSView {
     // The keyboard
 
     /// Sends a key in this window to the host while the screen has keyboard focus, and reports whether it did.
-    func handle(_ event: NSEvent) -> Bool {
+    private func handle(_ event: NSEvent) -> Bool {
         guard let window, event.window === window, window.firstResponder === self else { return false }
         switch event.type {
         case .keyDown where event.keyCode == 9

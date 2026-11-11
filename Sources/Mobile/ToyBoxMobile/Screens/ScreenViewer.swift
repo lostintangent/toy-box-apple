@@ -355,7 +355,7 @@ final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
     }
 }
 
-/// The keyboard Keyboard shows. What it types goes out as text, and Delete and Return as keys, without
+/// The keyboard the Keyboard button shows. What it types goes out as text, and Delete and Return as keys, without
 /// corrections. A hardware keyboard's keys go out by code instead.
 final class ScreenTyping: UIView, UIKeyInput {
     var typed: (String) -> Void = { _ in }
