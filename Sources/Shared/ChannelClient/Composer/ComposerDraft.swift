@@ -547,7 +547,7 @@ public final class ComposerDraft {
         if let failure {
             isSavedLocally = false
             error = "This draft could not be saved locally: \(failure)"
-        } else if isNewest {
+        } else if isNewest, !isSavedLocally {
             isSavedLocally = true
         }
         if isNewest { isSaving = false }
