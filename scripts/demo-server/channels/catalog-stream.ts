@@ -1,6 +1,6 @@
 // The catalog route the way the server serves it. A plain GET gets the catalog as JSON. One that
-// accepts text/event-stream gets a stream that opens with the catalog, sends each channel and
-// member change after it, and keeps alive every 5 seconds.
+// accepts text/event-stream gets a stream that opens with the catalog, sends each channel, member
+// and working change after it, and keeps alive every 5 seconds.
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 type Entity = { id: string; channelId?: string };
@@ -17,11 +17,18 @@ export function catalogEntry(channel: Entity, request: object | null) {
     return { ...entry, request: listed };
 }
 
+/** The sorted IDs of the agents a snapshot's presence shows working, which are the ones running,
+ *  since the server shows exactly those as working. */
+export function workingAgents(presence: Record<string, { state: string }>) {
+    return Object.entries(presence).filter(([, status]) => status.state === "working").map(([id]) => id).sort();
+}
+
 export function createCatalogRoute(read: () => Catalog) {
     const clients = new Set<ServerResponse>();
-    const index = ({ channels, members }: Catalog) => ({
+    const index = ({ channels, members, working }: Catalog) => ({
         channels: new Map(channels.map(channel => [channel.id, JSON.stringify(channel)])),
         members: new Map(members.map(member => [memberKey(member), JSON.stringify(member)])),
+        working: JSON.stringify(working),
     });
     let sent = index(read());
     const send = (event: unknown) => {
@@ -43,7 +50,8 @@ export function createCatalogRoute(read: () => Catalog) {
             clients.add(response);
             response.on("close", () => clients.delete(response));
         },
-        /** Sends every channel and member that changed since the last call to each open stream. */
+        /** Sends every channel and member that changed since the last call, and who's working when
+         *  that changed, to each open stream. */
         publish() {
             const catalog = read();
             const next = index(catalog);
@@ -61,6 +69,7 @@ export function createCatalogRoute(read: () => Catalog) {
                 const { channelId, id: agentId } = JSON.parse(member) as Entity;
                 if (!next.members.has(key)) send({ type: "channel.member.deleted", channelId, agentId });
             }
+            if (sent.working !== next.working) send({ type: "working", working: catalog.working });
             sent = next;
         },
         close() {

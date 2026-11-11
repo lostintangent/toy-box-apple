@@ -7,12 +7,12 @@ import Testing
 
 @MainActor
 struct ChannelSidebarPresentationTests {
-    @Test func visibleChannelsUseLiveSlicesAndClosedChannelsUseTheCatalog() async throws {
+    @Test func visibleChannelsUseLiveSlicesAndEveryChannelUsesTheCatalogsWorking() async throws {
         var listed = testState().channel
         listed.requestSequence = 12
         let served = ChannelCatalog(lead: testLeadProfile, channels: [listed], working: ["test"])
         let mock = MockTransport { _, count in
-            count == 1 ? try .json(served) : MockResponse(status: 503)
+            count == 2 ? MockResponse(status: 503) : try .json(served)
         }
         let catalog = ChannelCatalogStore(api: try mock.api())
         await catalog.refresh()
@@ -21,7 +21,6 @@ struct ChannelSidebarPresentationTests {
         live.channel.name = "Live name"
         live.channel.updatedAt = "2026-10-02T00:00:00Z"
         live.lead.name = "Live lead"
-        live.presence = ["test": .init(state: "working")]
         _ = try store.apply(.init(type: "snapshot", state: live))
 
         let open = ChannelSidebarPresentation(catalog: catalog, openChannelIDs: ["test"])
@@ -35,17 +34,24 @@ struct ChannelSidebarPresentationTests {
         #expect(closed.agents(listed).map(\.name) == ["Lead"])
         #expect(open.working(listed, agents: open.agents(listed)).map(\.name) == ["Live lead"])
         #expect(closed.working(listed, agents: closed.agents(listed)).map(\.name) == ["Lead"])
+        #expect(store.presence["test"]?.state == "working")
+
+        store.disconnect()
+        #expect(open.working(listed, agents: open.agents(listed)).count == 1,
+                "A quiet disconnect keeps who's working until the channel becomes unavailable")
 
         await catalog.refresh()
         #expect(catalog.phase.message != nil)
         #expect(closed.working(listed, agents: closed.agents(listed)).isEmpty)
+        #expect(open.working(listed, agents: open.agents(listed)).isEmpty)
+        #expect(store.presence["test"]?.state == "idle", "The transcript agrees with the sidebar")
+
+        await catalog.refresh()
         #expect(open.working(listed, agents: open.agents(listed)).count == 1)
-        store.disconnect()
-        #expect(open.working(listed, agents: open.agents(listed)).count == 1,
-                "A quiet disconnect keeps the last presence until the channel becomes unavailable")
         _ = try store.apply(.init(type: "deleted", channelId: "test"))
         #expect(store.phase.isUnavailable)
         #expect(open.working(listed, agents: open.agents(listed)).isEmpty)
+        #expect(closed.working(listed, agents: closed.agents(listed)).count == 1)
 
         let absent = ChannelSidebarPresentation(catalog: nil, openChannelIDs: ["test"])
         #expect(absent.channel(listed) == listed)
@@ -54,10 +60,14 @@ struct ChannelSidebarPresentationTests {
         #expect(absent.attention(listed) == .waiting)
     }
 
-    @Test func livePresenceDoesNotInvalidateTheChannelProjection() throws {
-        let catalog = ChannelCatalogStore(api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let store = catalog.channel(id: "test")
+    @Test func whoIsWorkingDoesNotInvalidateTheChannelProjection() async throws {
         let state = testState(revision: 1)
+        let mock = MockTransport { _, count in
+            try .json(ChannelCatalog(lead: testLeadProfile, channels: [state.channel], working: count == 1 ? [] : ["test"]))
+        }
+        let catalog = ChannelCatalogStore(api: try mock.api())
+        await catalog.refresh()
+        let store = catalog.channel(id: "test")
         _ = try store.apply(.init(type: "snapshot", state: state))
         let projection = ChannelSidebarPresentation(catalog: catalog, openChannelIDs: ["test"])
         let changed = Mutex(false)
@@ -66,7 +76,8 @@ struct ChannelSidebarPresentationTests {
         } onChange: {
             changed.withLock { $0 = true }
         }
-        _ = try store.apply(.init(type: "presence", revision: 2, presence: ["test": .init(state: "working")]))
+        await catalog.refresh()
+        #expect(store.presence["test"]?.state == "working")
         #expect(!changed.withLock { $0 })
     }
 }

@@ -17,7 +17,7 @@ struct TranscriptRevealCatchUpTests {
         _ = try store.apply(.init(type: "message", revision: 2, message: revealTestMessage(15)))
         #expect(await arrived.task.value)
         #expect(resumed.result == nil)
-        _ = try store.apply(.init(type: "resumed", presence: [:]))
+        _ = try store.apply(.init(type: "resumed"))
         #expect(await resumed.task.value)
     }
 

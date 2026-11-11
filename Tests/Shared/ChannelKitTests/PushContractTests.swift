@@ -81,7 +81,7 @@ struct PushContractTests {
         #expect(state["startedAt"] == nil)
     }
 
-    @Test func activityProjectionUsesRootProgressAndLivePresenceRatherThanOldAgentStatus() throws {
+    @Test func activityProjectionUsesRootProgressAndRunningAgentsRatherThanOldAgentStatus() throws {
         let file = try #require(Bundle.module.url(forResource: "channel-snapshot", withExtension: "json",
                                                   subdirectory: "Fixtures"))
         var state = try JSONDecoder().decode(ChannelState.self, from: Data(contentsOf: file))
@@ -93,10 +93,9 @@ struct PushContractTests {
         state.channel.requestSequence = 15
         state.lead.status = .init(state: "waiting")
         state.members = [.init(id: "member", name: "Member", status: .init(state: "working"))]
-        state.presence = [state.lead.id: .init(state: "working"), "member": .init(state: "waiting"),
-                          "removed": .init(state: "working")]
         let now = Date(timeIntervalSince1970: 1793086200)
-        let projection = ChannelActivityAttributes.ContentState(state: state, updatedAt: now)
+        let projection = ChannelActivityAttributes.ContentState(state: state, working: [state.lead.id, "removed"],
+                                                                updatedAt: now)
         #expect(projection.workingAgents.map(\.id) == [state.lead.id])
         #expect(projection.tasksDone == 1)
         #expect(projection.tasksTotal == 2)
@@ -105,17 +104,16 @@ struct PushContractTests {
         #expect(projection.ending == nil)
         #expect(projection.staleDate == now.addingTimeInterval(15 * 60))
 
-        state.presence = [:]
-        let quiet = ChannelActivityAttributes.ContentState(state: state, updatedAt: now)
+        let quiet = ChannelActivityAttributes.ContentState(state: state, working: [], updatedAt: now)
         #expect(quiet.workingAgents.isEmpty)
         #expect(quiet.ending == nil)
         state.channel.tasks[1].status = "done"
-        let completed = ChannelActivityAttributes.ContentState(state: state, updatedAt: now)
+        let completed = ChannelActivityAttributes.ContentState(state: state, working: [], updatedAt: now)
         #expect(completed.ending == .completed)
         #expect(completed.waitingRequestSequence == 15)
         #expect(completed.staleDate == nil)
         state.channel.tasks = []
-        let removed = ChannelActivityAttributes.ContentState(state: state, updatedAt: now)
+        let removed = ChannelActivityAttributes.ContentState(state: state, working: [], updatedAt: now)
         #expect(removed.tasksTotal == 0)
         #expect(removed.ending == .tasksRemoved)
         #expect(removed.staleDate == nil)

@@ -1,10 +1,9 @@
 import Foundation
 
-public struct ChannelObservationEvent: Codable, Equatable, Sendable {
+public struct ChannelSubscriptionEvent: Codable, Equatable, Sendable {
     public var type: String
     public var revision: Int?
     public var state: ChannelState?
-    public var presence: [String: ChannelAgentPresence]?
     public var channelId: String?
     public var message: ChannelMessage?
     public var sequence: Int?
@@ -18,8 +17,7 @@ public struct ChannelObservationEvent: Codable, Equatable, Sendable {
     public var status: ChannelAgent.Status?
     public var bookmarks: [Int]?
 
-    public init(type: String, revision: Int? = nil, state: ChannelState? = nil,
-                presence: [String: ChannelAgentPresence]? = nil, channelId: String? = nil,
+    public init(type: String, revision: Int? = nil, state: ChannelState? = nil, channelId: String? = nil,
                 message: ChannelMessage? = nil, sequence: Int? = nil, agentId: String? = nil,
                 reaction: String? = nil, tasks: [ChannelTask]? = nil,
                 model: ModelConfiguration? = nil, updatedAt: String? = nil,
@@ -28,7 +26,6 @@ public struct ChannelObservationEvent: Codable, Equatable, Sendable {
         self.type = type
         self.revision = revision
         self.state = state
-        self.presence = presence
         self.channelId = channelId
         self.message = message
         self.sequence = sequence
@@ -46,16 +43,10 @@ public struct ChannelObservationEvent: Codable, Equatable, Sendable {
 
 extension ChannelState {
     /// The state after one server event, the same as Toy Box's `reduceChannelState`.
-    public func applying(_ event: ChannelObservationEvent) -> ChannelState {
+    public func applying(_ event: ChannelSubscriptionEvent) -> ChannelState {
         let previous = self
         if event.type == "snapshot", let snapshot = event.state { return snapshot }
         var next = previous
-        if event.type == "presence" || event.type == "resumed" {
-            let incoming = event.presence ?? [:]
-            next.presence = event.type == "resumed"
-                ? incoming : previous.presence.merging(incoming) { _, new in new }
-            return next
-        }
         guard let revision = event.revision, revision > previous.revision else { return previous }
         next.revision = revision
         switch event.type {
@@ -103,7 +94,6 @@ extension ChannelState {
                     case "member_left":
                         if let member = content.member {
                             next.members.removeAll { $0.id == member.id }
-                            next.presence.removeValue(forKey: member.id)
                             next.channel.tasks = next.channel.tasks.unassigning(agentId: member.id)
                         }
                     case "artifact_shared":
@@ -171,7 +161,7 @@ private func upsertMember(_ state: inout ChannelState, _ member: ChannelAgent) {
 }
 
 private func reduceReaction(_ message: ChannelMessage,
-                            _ event: ChannelObservationEvent) -> ChannelMessage {
+                            _ event: ChannelSubscriptionEvent) -> ChannelMessage {
     guard message.sequence == event.sequence, !message.isSystem, let agentId = event.agentId else {
         return message
     }

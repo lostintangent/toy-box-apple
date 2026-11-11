@@ -93,10 +93,10 @@ struct ManagementReconciliationTests {
     @Test func snapshotReadRejectsMissingMismatchedAndNonSnapshotState() async throws {
         var other = testState()
         other.channel.id = "other"
-        let invalid: [ChannelObservationEvent] = [
+        let invalid: [ChannelSubscriptionEvent] = [
             .init(type: "snapshot"),
             .init(type: "snapshot", state: other),
-            .init(type: "resumed", presence: [:])
+            .init(type: "resumed")
         ]
         for event in invalid {
             let mock = MockTransport { _, _ in try .stream([event]) }
@@ -141,7 +141,7 @@ struct ManagementReconciliationTests {
                                                 members: present ? state.members : []))
             }
             if request.url?.query != nil {
-                return try .stream([.init(type: "resumed", presence: [:])])
+                return try .stream([.init(type: "resumed")])
             }
             return try .stream([.init(type: "snapshot", state: didCommit ? updated : initial)])
         }
@@ -248,7 +248,7 @@ struct ManagementReconciliationTests {
         #expect(catalog.phase.failure as? ChannelAPIError == expected)
         #expect(catalog.phase.message == expected.localizedDescription)
         #expect(catalog.state == initial)
-        #expect(catalog.working == ["test"])
+        #expect(catalog.working.isEmpty)
         #expect(catalog.lastRefreshedAt == refreshedAt)
         #expect(!catalog.isFetching)
         let review = try await catalog.reconcileManagementWrite()

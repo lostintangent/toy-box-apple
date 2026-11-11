@@ -68,7 +68,7 @@ struct TransportTests {
         }
         let api = try mock.api()
         await #expect(throws: ChannelAPIError.invalidEvent("snapshot")) {
-            for try await _ in api.observe(channelId: "test") {}
+            for try await _ in api.subscribe(channelId: "test") {}
         }
     }
 
@@ -78,7 +78,7 @@ struct TransportTests {
         }
         let api = try mock.api()
         await #expect(throws: ChannelAPIError.heartbeatTimeout) {
-            for try await _ in api.observe(channelId: "test", heartbeatTimeout: 0.15) {}
+            for try await _ in api.subscribe(channelId: "test", heartbeatTimeout: 0.15) {}
         }
         // URLSession queues stopLoading after the throwing byte iterator has terminated.
         try await eventually(observing: mock) { mock.stops == 1 }
@@ -88,7 +88,7 @@ struct TransportTests {
     @Test(arguments: [false, true])
     @MainActor func storeReconnectsFromAppliedRevisionZero(holdsResumed: Bool) async throws {
         let initial = testState()
-        let resumed = ChannelObservationEvent(type: "resumed", presence: ["test": .init(state: "working")])
+        let resumed = ChannelSubscriptionEvent(type: "resumed")
         let mock = MockTransport { _, count in
             if count == 1 { return try .stream([.init(type: "snapshot", state: initial)], keepOpen: false) }
             return try .stream(holdsResumed ? [] : [resumed])
@@ -106,12 +106,38 @@ struct TransportTests {
         try await eventually(observing: mock) { mock.requests.count == 2 && store.phase.isConnected }
         #expect(mock.requests[0].url?.query == nil)
         #expect(mock.requests[1].url?.query == "after=0")
-        #expect(store.state?.presence["test"]?.state == "working")
+    }
+
+    /// Toy Box is dropping presence from the channel stream. Until then a server sends it in the
+    /// snapshot, in `presence` events and with `resumed`, and the store reads none of it.
+    @Test(arguments: [true, false])
+    @MainActor func theStoreReadsAChannelStreamWithOrWithoutPresence(servesPresence: Bool) async throws {
+        var snapshot = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(testState()))
+            as? [String: Any])
+        let presence = ["test": ["state": "working", "text": "Streamed"]]
+        if servesPresence { snapshot["presence"] = presence }
+        func frame(_ event: [String: Any]) throws -> String {
+            "data: " + String(decoding: try JSONSerialization.data(withJSONObject: event), as: UTF8.self) + "\n\n"
+        }
+        let update = servesPresence ? try frame(["type": "presence", "presence": presence]) : ""
+        let opening = try frame(["type": "snapshot", "state": snapshot]) + update
+        let resuming = try update + frame(servesPresence ? ["type": "resumed", "presence": presence] : ["type": "resumed"])
+        let mock = MockTransport { _, count in
+            MockResponse(contentType: "text/event-stream", body: Data((count == 1 ? opening : resuming).utf8),
+                         keepOpen: count > 1)
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(), reconnectPolicy: .init(initialDelay: 0.01))
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually(observing: mock) { mock.requests.count == 2 && store.phase.isConnected }
+        #expect(mock.requests[1].url?.query == "after=0")
+        #expect(store.state == testState())
+        #expect(store.presence == ["test": .init(state: "idle")])
     }
 
     @Test @MainActor func aRejectedEventClosesItsStreamBeforeReconnecting() async throws {
         let mock = MockTransport { _, _ in
-            try .stream([.init(type: "resumed", presence: ["test": .init(state: "working")])])
+            try .stream([.init(type: "resumed")])
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
                                  reconnectPolicy: .init(initialDelay: 5, grace: 0))
@@ -191,15 +217,15 @@ struct TransportTests {
         let initial = testState()
         let mock = MockTransport { _, _ in try .stream([.init(type: "snapshot", state: initial)]) }
         let api = try mock.api()
-        let unread = api.observe(channelId: "test")
+        let unread = api.subscribe(channelId: "test")
         let cancelledFirst = Task {
             withUnsafeCurrentTask { $0?.cancel() }
-            var events = api.observe(channelId: "test").makeAsyncIterator()
+            var events = api.subscribe(channelId: "test").makeAsyncIterator()
             return try await events.next()
         }
         let nothing = try await cancelledFirst.value
         #expect(nothing == nil)
-        for try await event in api.observe(channelId: "test") {
+        for try await event in api.subscribe(channelId: "test") {
             #expect(event.type == "snapshot")
             break
         }

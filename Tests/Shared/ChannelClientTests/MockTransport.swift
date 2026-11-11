@@ -16,7 +16,7 @@ struct MockResponse: Sendable {
         MockResponse(status: status, body: try JSONEncoder().encode(value))
     }
 
-    static func stream(_ events: [ChannelObservationEvent], keepOpen: Bool = true) throws -> MockResponse {
+    static func stream(_ events: [ChannelSubscriptionEvent], keepOpen: Bool = true) throws -> MockResponse {
         let data = try events.map { "data: " + String(decoding: try JSONEncoder().encode($0), as: UTF8.self) + "\n\n" }
             .joined()
         return MockResponse(contentType: "text/event-stream", body: Data(data.utf8), keepOpen: keepOpen)

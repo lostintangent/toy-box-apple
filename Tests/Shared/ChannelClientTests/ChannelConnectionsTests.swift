@@ -116,7 +116,7 @@ struct ChannelConnectionsTests {
                 return try .stream([.init(type: "snapshot", state: later)])
             }
             return try .stream([.init(type: "message", revision: 3, message: testMessage(3)),
-                                .init(type: "resumed", presence: [:])])
+                                .init(type: "resumed")])
         }
         let connections = ChannelConnections(linger: .zero)
         let store = ChannelStore(id: "a", api: try mock.api())

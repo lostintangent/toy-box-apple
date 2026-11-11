@@ -11,7 +11,12 @@ struct StoreSliceTests {
     }
 
     /// Applies one event and returns the observed properties that announced a change.
-    private func changes(in store: ChannelStore, applying event: ChannelObservationEvent) throws -> Set<String> {
+    private func changes(in store: ChannelStore, applying event: ChannelSubscriptionEvent) throws -> Set<String> {
+        try changes(in: store) { _ = try store.apply(event) }
+    }
+
+    /// Makes one change and returns the observed properties that announced it.
+    private func changes(in store: ChannelStore, making change: () throws -> Void) rethrows -> Set<String> {
         let changes = Changes()
         let reads: [(String, () -> Void)] = [
             ("state", { _ = store.state }),
@@ -30,7 +35,7 @@ struct StoreSliceTests {
         for (name, read) in reads {
             withObservationTracking(read) { changes.names.withLock { _ = $0.insert(name) } }
         }
-        _ = try store.apply(event)
+        try change()
         return changes.names.withLock { $0 }
     }
 
@@ -56,13 +61,15 @@ struct StoreSliceTests {
                 == ["state", "messages", "request", "requestSequence"])
         #expect(store.requestSequence == 3)
 
-        #expect(try changes(in: store, applying: .init(type: "presence", presence: ["ana": .init(state: "working")]))
-                == ["state", "presence"])
+        #expect(try changes(in: store, applying: .init(type: "presence")).isEmpty)
+        #expect(changes(in: store) { store.working = ["ana"] } == ["presence"])
+        #expect(store.presence["ana"] == .init(state: "working"))
 
         let status = ChannelAgent.Status(state: "working", text: "Reading", lookingAt: 3)
         #expect(try changes(in: store, applying: .init(type: "status", revision: 4, agentId: "ana", status: status))
-                == ["state", "agentStatuses"])
+                == ["state", "agentStatuses", "presence"])
         #expect(store.agentStatuses["ana"] == status)
+        #expect(store.presence["ana"] == .init(state: "working", text: "Reading"))
         #expect(store.roster.allSatisfy { $0.status == nil })
 
         #expect(try changes(in: store, applying: .init(type: "tasks", revision: 5,
@@ -84,7 +91,8 @@ struct StoreSliceTests {
 
         let joined = system(9, .init(type: "member_joined", member: .init(id: "bo", name: "Bo")))
         #expect(try changes(in: store, applying: .init(type: "message", revision: 9, message: joined))
-                == ["state", "messages", "roster"])
+                == ["state", "messages", "roster", "presence"])
+        #expect(store.presence["bo"] == .init(state: "idle"))
     }
 
     @Test func aRecoverySnapshotWithTheSameContentMovesOnlyState() throws {
@@ -101,14 +109,13 @@ struct StoreSliceTests {
         state.lead.status = .init(state: "waiting", text: "Review")
         state.channel.purpose = "Plans"
         state.channel.preview = .init(kind: "url", url: "http://localhost:5173")
-        state.presence = ["test": .init(state: "idle")]
         state.routines = [.init(id: "r1", title: "Daily", schedule: "0 9 * * *", prompt: "Summarize")]
         _ = try store.apply(.init(type: "snapshot", state: state))
         #expect(store.details == ChannelDetails(state.channel))
         #expect(store.details?.preview == state.channel.preview)
         #expect(store.roster == [ChannelAgent.lead(id: "test", profile: testLeadProfile)])
         #expect(store.agentStatuses == ["test": .init(state: "waiting", text: "Review")])
-        #expect(store.presence == state.presence)
+        #expect(store.presence == ["test": .init(state: "waiting", text: "Review")])
         #expect(store.messages == state.messages)
         #expect(store.routines == state.routines)
         #expect(store.requestSequence == nil && store.request == nil)

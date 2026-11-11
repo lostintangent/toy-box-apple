@@ -90,7 +90,14 @@ public final class ChannelStore {
     public private(set) var roster: [ChannelAgent] = []
     /// Each agent's reported status by agent ID, as `ChannelState`'s agents carry it.
     public private(set) var agentStatuses: [String: ChannelAgent.Status] = [:]
+    /// How each agent appears by agent ID, from its status and whether the catalog lists it as
+    /// working. The channel's stream doesn't carry presence.
     public private(set) var presence: [String: ChannelAgentPresence] = [:]
+    /// The IDs of the agents running now, which the catalog store keeps current. It's empty while
+    /// the catalog is unavailable, so nobody shows as working on a stale list.
+    @ObservationIgnored var working: Set<String> = [] {
+        didSet { if working != oldValue, let state { syncPresence(state) } }
+    }
     public private(set) var messages: [ChannelMessage] = []
     public private(set) var request: ChannelMessage?
     public private(set) var requestSequence: Int?
@@ -140,7 +147,7 @@ public final class ChannelStore {
     /// What a stream opened after the published revision has replayed so far, held until `resumed`
     /// so a channel that moved far ahead catches up in one change instead of replaying on screen.
     /// Nil unless a resume is under way. Internal and observed, so tests can wait for held events.
-    private(set) var heldReplay: [ChannelObservationEvent]?
+    private(set) var heldReplay: [ChannelSubscriptionEvent]?
     @ObservationIgnored private var arrivals: StreamArrivals?
     @ObservationIgnored private let sleep: @Sendable (TimeInterval) async throws -> Void
     @ObservationIgnored private var capturedUnread = false
@@ -181,7 +188,7 @@ public final class ChannelStore {
         }
         // Retry keeps a failure on screen until the stream connects.
         if phase.message == nil { startGrace(token: token) }
-        var first: AsyncThrowingStream<ChannelObservationEvent, any Error>? = openStream()
+        var first: AsyncThrowingStream<ChannelSubscriptionEvent, any Error>? = openStream()
         observation = Task.detached(priority: Task.currentPriority) { [weak self] in
             // Reading a stream opens its request, so only this loop ever connects, and each stream
             // lives only inside `do`, so leaving it for any reason closes the request.
@@ -208,7 +215,7 @@ public final class ChannelStore {
     }
 
     /// Applies an observed event. Returns whether observation continues.
-    private func receive(_ event: ChannelObservationEvent, token: UUID) throws -> Bool {
+    private func receive(_ event: ChannelSubscriptionEvent, token: UUID) throws -> Bool {
         guard !Task.isCancelled, generation == token else { return false }
         return try !apply(event)
     }
@@ -229,16 +236,16 @@ public final class ChannelStore {
         return reconnectPolicy.delay(attempt: attempt)
     }
 
-    private func reopen(token: UUID) -> AsyncThrowingStream<ChannelObservationEvent, any Error>? {
+    private func reopen(token: UUID) -> AsyncThrowingStream<ChannelSubscriptionEvent, any Error>? {
         guard !Task.isCancelled, generation == token else { return nil }
         isBackingOff = false
         return openStream()
     }
 
     /// Asks for everything after the published revision, or a snapshot when nothing is published.
-    private func openStream() -> AsyncThrowingStream<ChannelObservationEvent, any Error> {
+    private func openStream() -> AsyncThrowingStream<ChannelSubscriptionEvent, any Error> {
         heldReplay = state == nil ? nil : []
-        return api.observe(channelId: id, after: state?.revision, arrivals: arrivals)
+        return api.subscribe(channelId: id, after: state?.revision, arrivals: arrivals)
     }
 
     private func streamArrived(token: UUID) {
@@ -461,7 +468,9 @@ public final class ChannelStore {
         bookmarkList = ChannelBookmark.list(bookmarks, in: messages)
     }
 
-    func apply(_ event: ChannelObservationEvent) throws -> Bool {
+    func apply(_ event: ChannelSubscriptionEvent) throws -> Bool {
+        // Presence comes from the catalog. A server that still streams it changes nothing here.
+        if event.type == "presence" { return false }
         if event.type == "deleted" {
             heldReplay = nil
             stopGrace()
@@ -522,7 +531,7 @@ public final class ChannelStore {
         var statuses: [String: ChannelAgent.Status] = [:]
         for agent in state.agents { statuses[agent.id] = agent.status }
         agentStatuses = statuses
-        presence = state.presence
+        syncPresence(state)
         if messages != state.messages {
             messages = state.messages
             artifactShares = ChannelArtifact.Share.shares(in: state.messages)
@@ -533,6 +542,12 @@ public final class ChannelStore {
         artifacts = state.artifacts
         routines = state.routines
         syncBookmarks()
+    }
+
+    private func syncPresence(_ state: ChannelState) {
+        var presence: [String: ChannelAgentPresence] = [:]
+        for agent in state.agents { presence[agent.id] = agent.presence(isRunning: working.contains(agent.id)) }
+        self.presence = presence
     }
 
     /// Which change failed, so an alert can say whether it was adding or removing the bookmark.
@@ -562,9 +577,13 @@ public final class ChannelCatalogStore {
         }
     }
     public var members: [ChannelAgent] { state?.members ?? [] }
+    /// The IDs of the agents running now on this server, the one source of who's working in every
+    /// channel. It's empty while the catalog is unavailable, so activity clears instead of going stale.
     public private(set) var working: Set<String> = []
     public private(set) var isActive = true
-    public private(set) var phase: ChannelCatalogPhase = .connecting
+    public private(set) var phase: ChannelCatalogPhase = .connecting {
+        didSet { syncWorking() }
+    }
     /// Whether a catalog has arrived. It stays true through failures, so the rows stay.
     public var isLoaded: Bool { state != nil }
     /// When the catalog was last known current. Each catalog and change the stream delivers moves it,
@@ -640,6 +659,7 @@ public final class ChannelCatalogStore {
         if let existing = detailStores[id] { return existing }
         let store = ChannelStore(id: id, api: api, reconnectPolicy: reconnectPolicy)
         store.outbox = outbox
+        store.working = working
         detailStores[id] = store
         return store
     }
@@ -729,14 +749,20 @@ public final class ChannelCatalogStore {
             catalog.channels[index].read(through: seen[catalog.channels[index].id] ?? 0)
         }
         state = catalog
-        working = Set(catalog.working)
         lastRefreshedAt = .now
         keepaliveRefreshDue = now().addingTimeInterval(Self.keepaliveRefreshInterval)
         failingSince = nil
         phase = .connected
+        syncWorking()
         outbox?.catalogChanged(self, recovered: recovered)
         guard recovered else { return }
         for store in detailStores.values { store.retryPromptly() }
+    }
+
+    /// Shares who's working with every channel's store, so their presence agrees with the sidebar.
+    private func syncWorking() {
+        working = phase.failure == nil ? Set(state?.working ?? []) : []
+        for store in detailStores.values { store.working = working }
     }
 
     /// Opens the catalog's stream at once and keeps it open, reconnecting after a backoff, until
@@ -757,7 +783,7 @@ public final class ChannelCatalogStore {
         let token = streamGeneration
         isLive = false
         isBackingOff = false
-        var first: AsyncThrowingStream<SSEItem<ChannelCatalogEvent>, any Error>? = api.observeCatalog()
+        var first: AsyncThrowingStream<SSEItem<ChannelCatalogEvent>, any Error>? = api.subscribeToCatalog()
         let started = now()
         stream = Task.detached(priority: Task.currentPriority) { [weak self] in
             // Reading a stream opens its request, and each stream lives only inside `do`, so leaving
@@ -829,7 +855,7 @@ public final class ChannelCatalogStore {
         -> (stream: AsyncThrowingStream<SSEItem<ChannelCatalogEvent>, any Error>, opened: Date)? {
         guard !Task.isCancelled, streamGeneration == token else { return nil }
         isBackingOff = false
-        return (api.observeCatalog(), now())
+        return (api.subscribeToCatalog(), now())
     }
 
     /// Returns the refreshes waiting on the stream's next catalog or failure.

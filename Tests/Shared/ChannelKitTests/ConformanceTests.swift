@@ -15,7 +15,7 @@ struct ConformanceTests {
         var steps: [Step]
         struct Step: Decodable {
             var name: String
-            var event: ChannelObservationEvent
+            var event: ChannelSubscriptionEvent
             var expected: ChannelState
         }
     }
@@ -33,7 +33,6 @@ struct ConformanceTests {
         #expect(state.request?.id == "fixture-request")
         #expect(state.channel.requestSequence == state.request?.sequence)
         #expect(state.members.first?.status?.workingOn == 9)
-        #expect(state.presence["ada-engineer"]?.state == "working")
         #expect(state.messages.first(where: { $0.id == "fixture-progress" })?.reactions?.count == 2)
         #expect(state.artifacts.count == 2)
         #expect(state.routines.count == 1)
@@ -42,6 +41,32 @@ struct ConformanceTests {
         for agent in state.agents {
             if let avatar = agent.avatar { #expect(throws: Never.self) { try SVGPath.parse(avatar.mark) } }
         }
+    }
+
+    /// The snapshot's `presence` is what Toy Box derived from each agent's status and whether it was
+    /// running, so the rule rebuilds it from the agents it lists as working.
+    @Test func presenceMatchesTheServersFromTheRunningAgents() throws {
+        struct Served: Decodable { var presence: [String: ChannelAgentPresence] }
+        let data = try fixture("channel-snapshot")
+        let state = try JSONDecoder().decode(ChannelState.self, from: data)
+        let served = try JSONDecoder().decode(Served.self, from: data).presence
+        let running = Set(served.filter { $0.value.state == "working" }.keys)
+        #expect(running == ["ada-engineer", "iris-systems", "moss-reviewer", "pixel-designer"])
+        var derived: [String: ChannelAgentPresence] = [:]
+        for agent in state.agents { derived[agent.id] = agent.presence(isRunning: running.contains(agent.id)) }
+        #expect(derived == served)
+    }
+
+    @Test func presenceTrustsRunningOverAStaleStatus() {
+        var agent = ChannelAgent(id: "ada", name: "Ada", status: .init(state: "working", text: "Compiling", workingOn: 9))
+        #expect(agent.presence(isRunning: true) == .init(state: "working", text: "Compiling"))
+        #expect(agent.presence(isRunning: false) == .init(state: "idle"))
+        agent.status = .init(state: "waiting", text: "Moss's review", wakeAt: "2026-10-03T20:20:00.000Z")
+        #expect(agent.presence(isRunning: true) == .init(state: "working"))
+        #expect(agent.presence(isRunning: false) == agent.status)
+        agent.status = nil
+        #expect(agent.presence(isRunning: true) == .init(state: "working"))
+        #expect(agent.presence(isRunning: false) == .init(state: "idle"))
     }
 
     @Test func canonicalTransitionConformance() throws {

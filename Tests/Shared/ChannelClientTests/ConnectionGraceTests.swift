@@ -7,19 +7,17 @@ import Testing
 @MainActor
 @Suite("Connection grace", .timeLimit(.minutes(1)))
 struct ConnectionGraceTests {
-    private let resumed = ChannelObservationEvent(type: "resumed", presence: ["test": .init(state: "working")])
+    private let resumed = ChannelSubscriptionEvent(type: "resumed")
     private let unavailable = ChannelAPIError.http(
         status: 503, message: HTTPURLResponse.localizedString(forStatusCode: 503)
     ).localizedDescription
 
     /// The stream drops, a retry fails at once, and the next retry is held open.
     private func droppingTransport() -> MockTransport {
-        var state = testState()
-        state.presence = ["test": .init(state: "working")]
-        let working = state
+        let state = testState()
         return MockTransport { _, count in
             switch count {
-            case 1: try .stream([.init(type: "snapshot", state: working)], keepOpen: false)
+            case 1: try .stream([.init(type: "snapshot", state: state)], keepOpen: false)
             case 2: MockResponse(status: 503)
             default: try .stream([])
             }
@@ -30,6 +28,7 @@ struct ConnectionGraceTests {
         let mock = droppingTransport()
         let store = ChannelStore(id: "test", api: try mock.api(),
                                  reconnectPolicy: .init(initialDelay: 0.01, grace: 60))
+        store.working = ["test"]
         store.connect()
         defer { store.disconnect() }
         try await eventually(observing: mock) { mock.requests.count == 3 && mock.pendingResponseCount == 1 }
