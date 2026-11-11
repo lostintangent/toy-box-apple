@@ -805,12 +805,24 @@ struct SidebarConnectionFooterTests {
         }
     }
 
-    @Test func everyFailureNamesItselfAboveTheDot() {
+    @Test func aFailureShowsOnlyAsTheDotWithItsMessageInTheHelp() {
         let offline = URLError(.cannotConnectToHost)
         let footers = [SidebarFooter(phase: .connecting, isLoaded: false), SidebarFooter(phase: .connected, isLoaded: true),
                        SidebarFooter(phase: .failed(offline), isLoaded: true), SidebarFooter(phase: .failed(offline), isLoaded: false)]
-        #expect(footers.map(\.heading) == [nil, nil, "Channels may be out of date", "Can't connect to Toy Box"])
         #expect(footers.map(\.dot) == [.secondary, .green, .orange, .red])
+
+        let url = "http://localhost:3100"
+        let badGateway = ChannelCatalogPhase.failed(ChannelAPIError.http(status: 502, message: "bad gateway"))
+        let failing = SidebarConnectionFooter.Status.server(SidebarFooter(phase: badGateway, isLoaded: true),
+                                                            url: url, failure: badGateway.message)
+        #expect(failing.help == "Reconnecting to http://localhost:3100\nbad gateway (HTTP 502)\nChange the server in Settings.")
+        #expect(failing.failure == "bad gateway (HTTP 502)", "VoiceOver reads the failure as the hint")
+
+        let connected = SidebarConnectionFooter.Status.server(footers[1], url: url, failure: nil)
+        #expect(connected.help == "Connected to http://localhost:3100\nChange the server in Settings.")
+        let servers = SidebarConnectionFooter.Status.servers(.init(servers: [("a", footers[1]), ("b", footers[3])]))
+        #expect(servers.help == "Can't connect to b\nChange servers in Settings.")
+        #expect(servers.failure == nil, "Each server's own header reads its failure")
     }
 
     @Test(arguments: [
