@@ -298,7 +298,7 @@ The apps decode only the current shapes, with no fallback for an older server.
 | Request | Use |
 | --- | --- |
 | `GET /api/v1/channels` | Catalog `{channels, members, lead, working}` for the sidebar. `lead` is the profile every channel's lead shares, under the channel's ID, and is always present. `working` lists running agent IDs. Its channels carry no `tasks`, which only a channel's snapshot carries, and each carries `request`, its waiting message without reactions, or `null`, whose sequence is always `requestSequence`. With `Accept: text/event-stream` it streams: `snapshot` with the catalog, then `working`, `channel.upserted`, `channel.deleted`, `channel.member.upserted` and `channel.member.deleted`, with a keepalive every 5 seconds. There's no cursor, so every reconnect starts with a fresh `snapshot` |
-| `GET /api/v1/channels/:id` (SSE) | `snapshot`, then live events. With `after`: replay, then `resumed` with full presence. The store holds the replay and publishes it with `resumed` as one change, so a reopened channel never redraws what it missed event by event. A drop mid-replay publishes nothing, and the retry asks again after the published revision. `presence` is sparse and merges. `deleted` is terminal |
+| `GET /api/v1/channels/:id` (SSE) | `snapshot`, then live events. With `after`: replay, then `resumed`. The store holds the replay and publishes it with `resumed` as one change, so a reopened channel never redraws what it missed event by event. A drop mid-replay publishes nothing, and the retry asks again after the published revision. Presence isn't read from this stream, which is dropping it: the client ignores `presence` events and any `resumed` payload, and decodes a snapshot without `presence`. `deleted` is terminal |
 | `GET /api/v1/channels/:id/messages?before=N` | Older page of up to 100 messages `{revision, messages}` |
 | `POST /api/v1/channels/:id/messages` | `{id, content, attachments?}` with a client UUID. 201 returns the message, and the stored one for an ID the channel already has. An ID from another channel is 409 |
 | `POST /api/v1/channels/:id/read` | `{sequence}` monotonic read, which acknowledges completion but never a request. Returns `{seenThrough}` |
@@ -1139,9 +1139,11 @@ Context menu, in groups:
 4. Delete Channel…, separated and destructive, never triggered by the unmodified Delete key.
 
 **Catalog activity:** the catalog includes `working`, the IDs of leads and members whose
-sessions are running. This is the same fact the browser reads from workspace session state and
-the stream uses for presence. Sidebar rows for closed channels use it, while an open channel uses
-its live presence. Activity can lag by one catalog refresh. It must clear when observation is lost
+sessions are running. This is the same fact the browser reads from workspace session state, and it's the one source of
+who's working for every channel, open or closed: the sidebar, the working summary, Overview,
+reactions and Live Activities. As the web derives it, an agent is working while `working` lists it,
+with its status text when its status is working, and otherwise waiting when its status says so and
+idle when not. Activity can lag by one catalog refresh. It must clear when observation is lost
 rather than keep animating.
 
 **Connection footer.** The bottom of the sidebar names the server this window talks to, as the
