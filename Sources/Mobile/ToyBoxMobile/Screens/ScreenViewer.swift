@@ -86,14 +86,12 @@ struct ScreenViewer: View {
 /// A screen's latest frame, fitted and centered at 1×, that pinches to 8× and pans like a photo. A pinch stops at
 /// 1× and 8× rather than springing back, so the screen stays where it's left. Only a settled zoom or a new viewer
 /// size is reported, and a new frame keeps the zoom and position. A new viewer size, from a rotation or the keyboard,
-/// keeps the zoom and what's in view, so 1× simply fits again. In control, an accent ring follows the picture's
-/// edge, one finger drives the host while two pinch and pan, and keys go to the host.
+/// keeps the zoom and what's in view, so 1× simply fits again. In control, one finger drives the host while two
+/// pinch and pan, and keys go to the host.
 final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
     /// The full frame at its fitted size, with the changed region over it. It's the view that zooms.
     let pictureView = UIView()
     private let regionView = UIView()
-    /// Over the picture's edge rather than on it, so it stays 2 points at any zoom.
-    let ringView = UIView()
     private var picture = Screen.Picture()
     /// Receives the pixels the viewer shows the screen at, or nil while it can't show any.
     var report: (CGSize?) -> Void = { _ in }
@@ -131,11 +129,6 @@ final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
         pictureView.layer.masksToBounds = true
         pictureView.addSubview(regionView)
         addSubview(pictureView)
-        ringView.isUserInteractionEnabled = false
-        ringView.isHidden = true
-        ringView.layer.borderWidth = 2
-        ringView.layer.cornerCurve = .continuous
-        addSubview(ringView)
         touches.isEnabled = false
         touches.handle = { [weak self] touch, phase in self?.handle(touch, phase) }
         addGestureRecognizer(touches)
@@ -144,8 +137,6 @@ final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
         typing.deleted = { [weak self] in self.map { $0.send($0.keyboard.deleteBackward()) } }
         addSubview(typing)
         registerForTraitChanges([UITraitDisplayScale.self]) { (canvas: ScreenCanvas, _) in canvas.reportSize() }
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (canvas: ScreenCanvas, _) in canvas.tintColorDidChange() }
-        tintColorDidChange()
     }
 
     required init?(coder: NSCoder) { nil }
@@ -218,7 +209,6 @@ final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
 
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
         center()
-        placeRing()
     }
 
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
@@ -246,19 +236,6 @@ final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
             regionView.frame = CGRect(x: CGFloat(region.x) * scale, y: CGFloat(region.y) * scale,
                                       width: CGFloat(region.width) * scale, height: CGFloat(region.height) * scale)
         }
-        placeRing()
-    }
-
-    /// Lays the ring over the picture as it's zoomed, inside its edge and around its corners.
-    private func placeRing() {
-        ringView.isHidden = !hasControl || pictureView.bounds.isEmpty
-        ringView.frame = pictureView.frame
-        ringView.layer.cornerRadius = pictureView.layer.cornerRadius * zoomScale
-    }
-
-    override func tintColorDidChange() {
-        super.tintColorDidChange()
-        ringView.layer.borderColor = tintColor.resolvedColor(with: traitCollection).cgColor
     }
 
     /// Centers a picture smaller than the viewer, as the image viewer does.
@@ -285,7 +262,6 @@ final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
         hold?.cancel()
         touches.isEnabled = hasControl
         panGestureRecognizer.minimumNumberOfTouches = hasControl ? 2 : 1
-        placeRing()
         // A hardware keyboard's keys reach the canvas, and the software keyboard waits for Keyboard.
         if hasControl { becomeFirstResponder() } else if typing.isFirstResponder || isFirstResponder {
             typing.resignFirstResponder()

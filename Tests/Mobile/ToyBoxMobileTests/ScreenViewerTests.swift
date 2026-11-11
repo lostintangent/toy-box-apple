@@ -83,24 +83,14 @@ struct ScreenViewerTests {
         #expect(canvas.contentOffset == CGPoint(x: 0, y: -275))
     }
 
-    @Test func controlRingsThePictureAtAnyZoomAndLeavesPanningToTwoFingers() throws {
+    @Test func controlLeavesPanningToTwoFingers() throws {
         let (window, canvas, _) = try fixture()
-        #expect(canvas.ringView.isHidden)
         #expect(canvas.panGestureRecognizer.minimumNumberOfTouches == 1)
 
         canvas.hasControl = true
-        #expect(!canvas.ringView.isHidden)
-        #expect(canvas.ringView.frame == canvas.pictureView.frame)
-        #expect(canvas.ringView.layer.cornerRadius == canvas.pictureView.layer.cornerRadius)
         #expect(canvas.panGestureRecognizer.minimumNumberOfTouches == 2)
 
-        canvas.setZoomScale(4, animated: false)
-        #expect(canvas.ringView.frame == canvas.pictureView.frame)
-        #expect(canvas.ringView.layer.cornerRadius == canvas.pictureView.layer.cornerRadius * 4)
-        #expect(canvas.ringView.layer.borderWidth == 2, "The ring stays 2 points at any zoom")
-
         canvas.hasControl = false
-        #expect(canvas.ringView.isHidden)
         #expect(canvas.panGestureRecognizer.minimumNumberOfTouches == 1)
         withExtendedLifetime(window) {}
     }

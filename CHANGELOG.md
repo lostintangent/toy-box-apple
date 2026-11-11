@@ -1,5 +1,17 @@
 # Changelog
 
+## Mac 0.1.33
+
+### Bugs/Polish
+
+- A screen you control looks just as it does when you watch it, with no frame around it, and the Take Control button alone tells you you're in control.
+
+## iPhone 0.1.30
+
+### Bugs/Polish
+
+- A screen you control looks just as it does when you watch it, with no frame around it, and the Take Control button alone tells you you're in control.
+
 ## Mac 0.1.32
 
 ### Features
