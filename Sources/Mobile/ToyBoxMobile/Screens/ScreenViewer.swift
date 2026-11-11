@@ -26,7 +26,8 @@ struct ScreenViewer: View {
                     ScreenView.Status(connection: connection)
                         .allowsHitTesting(connection.state.phase != .live)
                 }
-                .ignoresSafeArea(edges: .bottom)
+                // Under the home indicator, but above the keyboard, where a host's text field usually is.
+                .ignoresSafeArea(.container, edges: .bottom)
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Screen: \(connection.state.title ?? connection.screenID)")
                 .navigationTitle(connection.state.title ?? "Screen")
