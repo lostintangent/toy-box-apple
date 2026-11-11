@@ -134,6 +134,7 @@ struct ChannelSidebar: View {
                         .listSectionSeparator(.hidden)
                 }
             }
+            .accessibilityIdentifier("channel-list")
             // A card the person opens comes fully into view as it opens and grows, since its question
             // scrolls only once it would run past the visible list.
             .onChange(of: open?.id) { previous, card in
@@ -257,9 +258,7 @@ struct ChannelSidebar: View {
                 .opacity(cards.isLifted && liftedCard != nil ? 0 : 1)
                 .padding(.leading, -NeedsYouCard.margin)
                 .padding(.trailing, -reach)
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { row in
-                    if cardFrame?.size != row.size { cardFrame = row }
-                }
+                .onResize(in: .global) { cardFrame = $0 }
         case .question(let entry):
             Button { cards.open(entry.id) } label: {
                 row(item, now: now, question: entry.question)

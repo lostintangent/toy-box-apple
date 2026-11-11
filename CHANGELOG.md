@@ -4,6 +4,7 @@
 
 ### Bugs/Polish
 
+- Scrolling the channel list with a request open no longer freezes the app, even with several servers.
 - Opening a long channel no longer freezes the app while the conversation settles at your place.
 
 ## Mac 0.1.33
