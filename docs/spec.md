@@ -870,7 +870,7 @@ restores the bar. No hand-built safe-area text field or duplicate gear in the ra
 Toy Box title at the top, with New Channel and then Screens (an outline `display`) in separate
 glass groups, and no More menu or Refresh item. A native placement limitation in the unfolded column
 never justifies substituting custom controls.
-With one server, the phone list has no healthy or connecting connection dot, server label or busy
+With one server, the phone list has no connection dot, server label or busy
 footer spinner, and with several each server's header names it (see
 [Several servers](#several-servers)).
 Settings owns server identity and connection details. The list has pull to refresh, and search
@@ -878,11 +878,9 @@ uses the shared name/purpose/directory filtering. Pull to refresh holds its spin
 finger lifts, so a fast fetch never ends it mid-pull. Command-F focuses channel search when the
 list is active, without replacing in-conversation Find. The list never shows a connection error, a
 pill or a Retry, because pull to refresh already retries. A failing server shows only its orange or
-red dot, with the same colors as the Mac's (see Sidebar). With several servers it's the header's
-dot. With one, a dot follows the large Toy Box title only while the catalog is failing. For as
-long as there's one server, the large title is a `.largeTitle` toolbar item that matches the
-system's own exactly, with `.navigationTitle` kept for the inline title, Back and VoiceOver, so
-the title never shifts and the list never moves when the dot comes or goes. Tapping the dot, through a 44-point
+red dot, with the same colors as the Mac's (see Sidebar), and only in its header when there are
+several servers. With one server the list shows no dot at all, and its status lives in Settings'
+server list, as on the Mac. Tapping a header's dot, through a 44-point
 hit area, opens a popover with the status line, like "Reconnecting to 127.0.0.1:3211", over the
 readable failure in secondary, then a Server Settings button, which opens Settings because a wrong
 address is the one failure a retry can't fix. The rest of a header still collapses and expands.
