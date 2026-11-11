@@ -230,6 +230,19 @@ Drafts stay keyed to the address, so adding it back finds them.
   that's already listed selects that server instead. Removing one asks first, then disconnects it
   and removes its channels from Spotlight, notifications, widgets and Live Activities. The last
   server can't be removed, only given a new address, so Welcome appears only on first launch.
+- **Updating a server.** Settings' server list updates each server and restarts it onto the new
+  release, the same way on both apps, through `GET /api/v1/server`, `POST /api/v1/server/update`
+  and `POST /api/v1/server/restart`. The server answers `version`, the release it runs, and
+  `installedVersion`, the release on disk, which is null when no package manager owns the install.
+  A row whose server has an installed version offers Check for Updates, which shows a spinner
+  in its place while the server installs whatever is newer. A restart is pending exactly when
+  `installedVersion` isn't null and differs from `version`, and then the row shows Restart
+  instead, whichever device ran the update. Restart has no confirmation, and its row keeps a
+  spinner until the server reconnects running the installed version. A server with no installed
+  version shows neither. The apps read `GET /api/v1/server` while Settings shows the list,
+  after each check and each time a server reconnects. These are management writes: an update
+  that times out or drops may still have installed, so the row reads the server again before
+  offering another try.
 
 ### Sending
 
