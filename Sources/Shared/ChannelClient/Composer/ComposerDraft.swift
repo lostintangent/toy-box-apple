@@ -3,6 +3,7 @@ import CoreGraphics
 import CryptoKit
 import Foundation
 import Observation
+import Synchronization
 import UniformTypeIdentifiers
 
 public struct ComposerImage: Codable, Equatable, Identifiable, Sendable {
@@ -51,13 +52,13 @@ public final class ComposerDraft {
         }
     }
 
-    private struct SavedImage: Codable {
+    private struct SavedImage: Codable, Sendable {
         var id: UUID
         var name: String
         var mimeType: String
     }
 
-    private struct Saved: Codable {
+    private struct Saved: Codable, Sendable {
         var text: String
         var images: [SavedImage]
     }
@@ -77,11 +78,15 @@ public final class ComposerDraft {
     private var failedImageIDs: Set<UUID> = []
     private var changedImageIDs: Set<UUID> = []
     private var reattachments: [UUID: UUID] = [:]
+    /// False once a write fails, and true again only when the newest draft is on disk.
     public private(set) var isSavedLocally = true
+    /// Whether a write of this draft is still running or waiting.
+    private(set) var isSaving = false
     public private(set) var isNew = true
     public var error: String?
     private let fileURL: URL?
-    private let imagesURL: URL?
+    private let writer: Writer?
+    @ObservationIgnored private var saveGeneration = 0
     private let imageIsReadable: @MainActor (Data) -> Bool
     // AppKit also renders SVG sources for which ImageIO reports zero images.
     private let rasterizeImage: (@Sendable (Data, Int) async -> CGImage?)?
@@ -124,7 +129,8 @@ public final class ComposerDraft {
         self.imageIsReadable = imageIsReadable
         self.rasterizeImage = rasterizeImage
         self.fileURL = fileURL
-        imagesURL = fileURL?.deletingPathExtension()
+        let imagesURL = fileURL?.deletingPathExtension()
+        writer = fileURL.map(Writer.init(fileURL:))
         isSavedLocally = fileURL != nil
         if let fileURL, let imagesURL, FileManager.default.fileExists(atPath: fileURL.path) {
             isNew = false
@@ -514,36 +520,118 @@ public final class ComposerDraft {
         save()
     }
 
+    /// Waits for every draft's writes, for an app that's quitting or leaving the foreground. It
+    /// returns at once when nothing is waiting, and typing never calls it.
+    public nonisolated static func finishSaving() {
+        Writer.queue.sync {}
+    }
+
     private func save() {
         isNew = false
-        guard !restoring, let fileURL, let imagesURL else { return }
-        do {
-            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
-                                                    withIntermediateDirectories: true)
-            try FileManager.default.createDirectory(at: imagesURL, withIntermediateDirectories: true,
-                                                    attributes: [.posixPermissions: 0o700])
+        guard !restoring, let writer else { return }
+        saveGeneration += 1
+        if !isSaving { isSaving = true }
+        let snapshot = Snapshot(generation: saveGeneration, text: text, images: images,
+                                changedImageIDs: changedImageIDs)
+        changedImageIDs = []
+        writer.save(snapshot) { [weak self] generation, failure in
+            // The main queue keeps the writer's order, so an older result never lands after a newer one.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.saved(generation: generation, failure: failure) }
+            }
+        }
+    }
+
+    private func saved(generation: Int, failure: String?) {
+        let isNewest = generation == saveGeneration
+        if let failure {
+            isSavedLocally = false
+            error = "This draft could not be saved locally: \(failure)"
+        } else if isNewest {
+            isSavedLocally = true
+        }
+        if isNewest { isSaving = false }
+    }
+
+    private struct Snapshot: Sendable {
+        var generation: Int
+        var text: String
+        var images: [ComposerImage]
+        /// Images whose bytes changed since they were last written, so a file of the same ID is stale.
+        var changedImageIDs: Set<UUID>
+
+        func write(to fileURL: URL) throws {
+            let files = FileManager.default
+            let imagesURL = fileURL.deletingPathExtension()
+            try files.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try files.createDirectory(at: imagesURL, withIntermediateDirectories: true,
+                                      attributes: [.posixPermissions: 0o700])
             for image in images where !image.data.isEmpty {
                 let imageURL = imagesURL.appendingPathComponent(image.id.uuidString)
-                if changedImageIDs.contains(image.id) || !FileManager.default.fileExists(atPath: imageURL.path) {
+                if changedImageIDs.contains(image.id) || !files.fileExists(atPath: imageURL.path) {
                     try image.data.write(to: imageURL, options: .atomic)
-                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: imageURL.path)
+                    try files.setAttributes([.posixPermissions: 0o600], ofItemAtPath: imageURL.path)
                 }
-
             }
             let metadata = images.map { SavedImage(id: $0.id, name: $0.name, mimeType: $0.mimeType) }
             let encoded = try JSONEncoder().encode(Saved(text: text, images: metadata))
             try encoded.write(to: fileURL, options: .atomic)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+            try files.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
             let retained = Set(images.map { $0.id.uuidString })
-            for url in try FileManager.default.contentsOfDirectory(at: imagesURL, includingPropertiesForKeys: nil)
+            for url in try files.contentsOfDirectory(at: imagesURL, includingPropertiesForKeys: nil)
                 where !retained.contains(url.lastPathComponent) {
-                try FileManager.default.removeItem(at: url)
+                try files.removeItem(at: url)
             }
-            changedImageIDs = []
-            isSavedLocally = true
-        } catch {
-            isSavedLocally = false
-            self.error = "This draft could not be saved locally: \(error.localizedDescription)"
+        }
+    }
+
+    /// Writes drafts off the main actor, one at a time across every draft and in the order they
+    /// were saved. A draft keeps at most one save waiting behind its running write, and a newer save
+    /// replaces it, so a burst of keys costs one more write.
+    private final class Writer: Sendable {
+        private struct Pending {
+            var waiting: Snapshot?
+            /// Images from a failed write, which the next write must still save.
+            var unwritten: Set<UUID> = []
+        }
+
+        static let queue = DispatchQueue(label: "dev.toybox.composer-drafts", qos: .userInitiated)
+        private let fileURL: URL
+        private let pending = Mutex(Pending())
+
+        init(fileURL: URL) {
+            self.fileURL = fileURL
+        }
+
+        func save(_ snapshot: Snapshot, finished: @escaping @Sendable (Int, String?) -> Void) {
+            let isScheduled = pending.withLock { pending in
+                var snapshot = snapshot
+                snapshot.changedImageIDs.formUnion(pending.unwritten)
+                pending.unwritten = []
+                let replaced = pending.waiting
+                if let replaced { snapshot.changedImageIDs.formUnion(replaced.changedImageIDs) }
+                pending.waiting = snapshot
+                return replaced != nil
+            }
+            guard !isScheduled else { return }
+            Self.queue.async { self.writeWaiting(finished: finished) }
+        }
+
+        private func writeWaiting(finished: @Sendable (Int, String?) -> Void) {
+            guard let snapshot = pending.withLock({ pending in
+                defer { pending.waiting = nil }
+                return pending.waiting
+            }) else { return }
+            do {
+                try snapshot.write(to: fileURL)
+                finished(snapshot.generation, nil)
+            } catch {
+                pending.withLock { pending in
+                    if pending.waiting == nil { pending.unwritten.formUnion(snapshot.changedImageIDs) }
+                    else { pending.waiting?.changedImageIDs.formUnion(snapshot.changedImageIDs) }
+                }
+                finished(snapshot.generation, error.localizedDescription)
+            }
         }
     }
 
