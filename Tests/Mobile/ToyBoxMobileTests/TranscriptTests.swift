@@ -108,6 +108,26 @@ struct TranscriptTests {
         }
     }
 
+    @Test func jumpToLatestWaitsForSettledGeometryWhileALandingScrolls() {
+        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        scroll.rows = (0..<40).map { .init(id: "r\($0)", order: $0) }
+        for index in 0..<40 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        scroll.metrics = .init(viewport: viewport, origin: 1000, documentEnd: 4000)
+
+        // The landing is still on its way, so the far-from-the-end geometry leaves the button alone.
+        let landing = scroll.update(.land(.end))
+        #expect(scroll.moves(landing))
+        #expect(scroll.showsJumpToLatest(after: landing) == nil)
+
+        scroll.metrics?.origin = 3400
+        #expect(scroll.showsJumpToLatest(after: scroll.update()) == false)
+
+        scroll.isReaderScrolling = true
+        scroll.metrics?.origin = 1000
+        #expect(scroll.showsJumpToLatest(after: scroll.update()) == true)
+    }
+
     @Test func aPostureChangeSettlesAtTheEndAfterTheStackDropsItsPlacement() {
         let viewport = TranscriptPlacement.Viewport(width: 466, height: 669, topInset: 82, bottomInset: 186)
         let scroll = TranscriptScroll()

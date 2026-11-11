@@ -172,6 +172,21 @@ final class TranscriptScroll {
         reachesOlder && current() == rows
     }
 
+    /// Whether a placement asks the scroll view to move, so the current geometry is about to be replaced.
+    func moves(_ placement: Model?) -> Bool {
+        guard let placement else { return false }
+        if let origin = placement.origin { return metrics.map { abs(origin - $0.origin) > 0.5 } ?? false }
+        return placement.needsMeasurement != nil
+    }
+
+    /// Whether Jump to Latest shows, read only from settled geometry, or nil to leave it as it is.
+    /// While a placement moves the scroll, the distance is about to change, and toggling the button
+    /// would resize the bar under the scroll and send the placement again.
+    func showsJumpToLatest(after placement: Model?) -> Bool? {
+        guard !moves(placement) else { return nil }
+        return hasLanded && distanceToEnd > Model.followingThreshold
+    }
+
     var distanceToEnd: CGFloat { layout.map(Model.distanceToEnd(in:)) ?? 0 }
     var visibleRows: [String] { layout.map(Model.visibleRows(in:)) ?? [] }
 }
@@ -476,30 +491,25 @@ struct ConversationView: View {
     }
 
     private func place(_ placement: TranscriptPlacement?) {
-        var isMoving = false
-        if let placement {
-            if let origin = placement.origin {
-                if let metrics = scroll.metrics, abs(origin - metrics.origin) > 0.5 {
-                    let y = origin + metrics.viewport.topInset
-                    let endOrigin = metrics.documentEnd - metrics.viewport.height + metrics.viewport.bottomInset
-                    // SwiftUI ignores a position it already holds, as when a dropped request is
-                    // placed again, so the end is asked for by edge instead.
-                    if position.point?.y == y, origin >= endOrigin - 0.5 {
-                        position.scrollTo(edge: .bottom)
-                    } else {
-                        position.scrollTo(y: y)
-                    }
-                    isMoving = true
+        let isMoving = scroll.moves(placement)
+        if let origin = placement?.origin {
+            if isMoving, let metrics = scroll.metrics {
+                let y = origin + metrics.viewport.topInset
+                let endOrigin = metrics.documentEnd - metrics.viewport.height + metrics.viewport.bottomInset
+                // SwiftUI ignores a position it already holds, as when a dropped request is
+                // placed again, so the end is asked for by edge instead.
+                if position.point?.y == y, origin >= endOrigin - 0.5 {
+                    position.scrollTo(edge: .bottom)
                 } else {
-                    scroll.holdsPlacementThroughInput = false
+                    position.scrollTo(y: y)
                 }
-            } else if let id = placement.needsMeasurement {
-                position.scrollTo(id: id, anchor: .top)
-                isMoving = true
+            } else {
+                scroll.holdsPlacementThroughInput = false
             }
+        } else if let id = placement?.needsMeasurement {
+            position.scrollTo(id: id, anchor: .top)
         }
-        let away = scroll.hasLanded && scroll.distanceToEnd > TranscriptPlacement.followingThreshold
-        if away != showsJumpToLatest {
+        if let away = scroll.showsJumpToLatest(after: placement), away != showsJumpToLatest {
             withAnimation(.easeOut(duration: 0.2)) { showsJumpToLatest = away }
         }
         // The current geometry is about to be replaced, so it says nothing about what the reader saw.

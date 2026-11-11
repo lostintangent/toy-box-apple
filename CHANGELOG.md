@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.31
+
+### Bugs/Polish
+
+- Opening a long channel no longer freezes the app while the conversation settles at your place.
+
 ## Mac 0.1.33
 
 ### Bugs/Polish
