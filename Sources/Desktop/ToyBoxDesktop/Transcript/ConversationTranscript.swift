@@ -160,8 +160,10 @@ struct ConversationTranscript: View {
                     find.close()
                     interaction.isFinding = false
                 }
-                .task(id: store.phase.isConnected) {
-                    guard store.phase.isConnected, !hasLanded else { return }
+                // A reveal that ends without revealing, however it ends, leaves the landing to run
+                // again here, so the opening's hidden rows always come back.
+                .task(id: store.phase.isConnected && !isRevealing) {
+                    guard store.phase.isConnected, !hasLanded, !isRevealing else { return }
                     await land(using: proxy)
                 }
                 .task(id: interaction.isArtifactViewerPresented ? nil : interaction.revealRequestToken) {
@@ -653,14 +655,14 @@ struct ConversationTranscript: View {
         let failure = await store.loadHistory(through: sequence)
         guard revealIsCurrent(token, findToken: findToken) else { return nil }
         guard let message = store.state?.messages.first(where: { $0.sequence == sequence }) else {
-            return await missReveal(sequence, token: token, failure: failure, using: proxy)
+            return missReveal(sequence, token: token, failure: failure)
         }
         if !rows.contains(where: { $0.messages.contains { $0.id == message.id } }) {
             interaction.messageView = .all
         }
         if find.isPresented { expandedMessageIds.insert(message.id) }
         guard let row = rows.first(where: { $0.messages.contains { $0.id == message.id } }) else {
-            return await missReveal(sequence, token: token, failure: failure, using: proxy)
+            return missReveal(sequence, token: token, failure: failure)
         }
         let membership = message.system?.type == "member_joined" || message.system?.type == "member_left"
         let individualSystem = ChannelArtifactGroup.Verb(systemType: message.system?.type) != nil
@@ -681,15 +683,13 @@ struct ConversationTranscript: View {
 
     /// Messages are never deleted, so a caught-up channel without the target shows no notice.
     /// The transcript lands as usual, and a failed page keeps its own history error.
-    private func missReveal(_ sequence: Int, token: UUID, failure: String?,
-                            using proxy: ScrollViewProxy) async -> RevealProgress.Outcome {
+    private func missReveal(_ sequence: Int, token: UUID, failure: String?) -> RevealProgress.Outcome {
         #if DEBUG
         Self.logger.debug("Reveal of \(sequence) found no message: \(failure ?? "not in the caught-up history")")
         #endif
         let outcome = RevealProgress.Outcome.failed(failure ?? "Couldn't reveal this message.")
         interaction.finishReveal(token, outcome)
         isRevealing = false
-        if !hasLanded { await land(using: proxy) }
         return outcome
     }
 
@@ -874,6 +874,8 @@ private final class TranscriptLayoutTurns {
         busyTurns = 0
         repeat {
             await withCheckedContinuation { continuation in
+                // A landing cancelled while it waits is replaced by the next, which ends its wait.
+                waiter?.resume()
                 waiter = continuation
                 guard observer == nil else { return }
                 // After Core Animation's commit, which lays out and draws.
