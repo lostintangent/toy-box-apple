@@ -220,6 +220,8 @@ struct ConversationView: View {
     /// A reveal requested before landing, such as a request alert's, opens on its message. The
     /// rows stay hidden while it pages, so the reader never sees New first.
     @ViewState private var landsOnReveal = false
+    /// The request whose reveal is running, which a repeated change mustn't start twice.
+    @ViewState private var startedReveal: UUID?
     /// Whether the scroll view has reported its geometry, which a reveal needs before it can place a row.
     @ViewState private var hasGeometry = false
     @ViewState private var requestedRead = 0
@@ -407,9 +409,13 @@ struct ConversationView: View {
         .onChange(of: interaction.jumpToLatestRequest) { jumpToLatest() }
         // A request routed before the conversation appears waits here for the channel to load and
         // for its first layout. A store that's already loaded would otherwise reveal before either.
-        .task(id: store.isLoaded && hasGeometry ? interaction.revealRequestToken : nil) {
-            guard store.isLoaded, hasGeometry, let request = interaction.revealRequest else { return }
-            await reveal(sequence: request.sequence, token: request.token)
+        // SwiftUI can end the conversation's tasks as it opens without starting them again, so a
+        // reveal belongs to its request and runs to its end, where it lands if it didn't reveal.
+        .onChange(of: store.isLoaded && hasGeometry ? interaction.revealRequestToken : nil, initial: true) {
+            guard store.isLoaded, hasGeometry, let request = interaction.revealRequest,
+                  request.token != startedReveal else { return }
+            startedReveal = request.token
+            Task { await reveal(sequence: request.sequence, token: request.token) }
         }
         .onChange(of: scenePhase) { markRead() }
         .onChange(of: isUncovered) { markRead() }
@@ -562,15 +568,11 @@ struct ConversationView: View {
 
     private func reveal(sequence: Int, token: UUID) async {
         defer {
-            // Opening the conversation can cancel and restart this task, so a cancelled first
-            // landing leaves the request to the next one.
-            if scroll.hasLanded || !Task.isCancelled {
-                interaction.consumeRevealRequest(token)
-                // A reveal that couldn't open the conversation falls back to the usual landing.
-                if !scroll.hasLanded {
-                    landsOnReveal = false
-                    land(items)
-                }
+            interaction.consumeRevealRequest(token)
+            // A reveal that couldn't open the conversation falls back to the usual landing.
+            if !scroll.hasLanded {
+                landsOnReveal = false
+                land(items)
             }
         }
         func target() -> TranscriptItem? { items.first { $0.messages.contains { $0.sequence == sequence } } }
@@ -585,7 +587,7 @@ struct ConversationView: View {
         }
         guard await store.catchUp(toReveal: sequence), interaction.revealRequestToken == token else { return }
         failure = await store.loadHistory(through: sequence)
-        guard !Task.isCancelled, interaction.revealRequestToken == token else { return }
+        guard interaction.revealRequestToken == token else { return }
         guard store.messages.contains(where: { $0.sequence == sequence }) else { return miss() }
         if target() == nil { interaction.messageView = .all }
         guard let item = target() else { return miss() }

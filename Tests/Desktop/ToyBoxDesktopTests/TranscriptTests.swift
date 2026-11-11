@@ -777,6 +777,30 @@ struct TranscriptTests {
         #expect(abs(harness.bottomGap) < 2 && harness.isVisible("m40"))
     }
 
+    /// A reveal that interrupts the opening and then fails, like one that times out, leaves the
+    /// opening to land as usual, so its hidden rows always come back.
+    @MainActor
+    @Test func aRevealThatInterruptsTheOpeningAndFailsStillLandsIt() async throws {
+        var turn = 0
+        var interrupted = false
+        // The harness returns once the transcript lands.
+        let harness = try await TranscriptHarness(
+            messages: (41...100).map(transcriptTestMessage), history: (1...40).map(transcriptTestMessage),
+            holdsHistory: true, seenThrough: 70, revealTimeout: .zero,
+            onTurn: { harness in
+                turn += 1
+                if turn == 2 { harness.interaction.reveal(sequence: 5) }
+                guard harness.store.isLoadingOlder else { return }
+                interrupted = interrupted || !harness.capture.hasLanded
+                harness.releaseHistory()
+            })
+        defer { await harness.close() }
+        // A reconnect would land it again, so the landing has to come from the one connection.
+        #expect(interrupted && harness.streamRequests == 1)
+        #expect(harness.interaction.revealProgress?.outcome == .failed("Couldn't reveal this message. Try Reveal again."))
+        #expect(harness.rowsOpacity == 1)
+    }
+
     @MainActor
     @Test func closingFindAtTheBottomRestoresFollowingButKeepsReadSuspended() async throws {
         let find = TranscriptFind()
@@ -2701,6 +2725,10 @@ private final class TranscriptHarness {
 
     var readRequests: Int {
         TranscriptServerProtocol.fixtures.withLock { $0[host]?.requests.filter { $0.hasSuffix("/read") }.count ?? 0 }
+    }
+
+    var streamRequests: Int {
+        TranscriptServerProtocol.fixtures.withLock { $0[host]?.requests.filter { $0.hasSuffix("/channels/harness") }.count ?? 0 }
     }
 
     var historyRequests: Int {
