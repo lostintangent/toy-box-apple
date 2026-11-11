@@ -33,7 +33,8 @@ public struct ScreenView: View {
         return CGSize(width: space.width * displayScale, height: space.height * displayScale)
     }
 
-    /// The latest full frame with its changed region over it, clipped to a window's corners.
+    /// The latest full frame with its changed region over it, clipped to a window's corners, and ringed
+    /// in the accent color while this viewer controls the host.
     private struct Picture: View {
         let connection: ScreenConnection
         let space: CGSize
@@ -42,6 +43,7 @@ public struct ScreenView: View {
             let picture = connection.picture
             if let image = picture.image, picture.size.width > 0, picture.size.height > 0 {
                 let scale = min(space.width / picture.size.width, space.height / picture.size.height)
+                let shape = RoundedRectangle(cornerRadius: picture.radius * scale, style: .continuous)
                 ZStack(alignment: .topLeading) {
                     Image(decorative: image, scale: 1).resizable()
                     if let region = picture.region {
@@ -52,8 +54,33 @@ public struct ScreenView: View {
                     }
                 }
                 .frame(width: picture.size.width * scale, height: picture.size.height * scale)
-                .clipShape(RoundedRectangle(cornerRadius: picture.radius * scale, style: .continuous))
+                .clipShape(shape)
+                .overlay {
+                    if connection.state.hasControl { shape.strokeBorder(.tint, lineWidth: 2) }
+                }
             }
+        }
+    }
+
+    /// The viewer's Take Control toggle, enabled while the screen is live. It follows the server, so
+    /// it turns off when anyone else takes control, and in control it's prominent, like the picture's
+    /// accent ring.
+    public struct ControlToggle: View {
+        private let connection: ScreenConnection
+
+        public init(connection: ScreenConnection) {
+            self.connection = connection
+        }
+
+        public var body: some View {
+            let hasControl = connection.state.hasControl
+            let title = hasControl ? "Release Control" : "Take Control"
+            let button = Button(title, systemImage: hasControl ? "hand.point.up.left.fill" : "hand.point.up.left") {
+                if hasControl { connection.releaseControl() } else { connection.takeControl() }
+            }
+            .help(title)
+            .disabled(connection.state.phase != .live)
+            if hasControl { button.buttonStyle(.glassProminent) } else { button }
         }
     }
 

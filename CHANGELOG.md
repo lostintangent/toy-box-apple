@@ -2,9 +2,23 @@
 
 ## Mac 0.1.32
 
+### Features
+
+- You can now take control of a screen from its viewer, and your mouse, scrolling and typing go straight to it until you release control or switch away.
+
 ### Bugs/Polish
 
 - Server names in the sidebar are easier to read, in the same gray as the status line below them.
+
+## iPhone 0.1.29
+
+### Features
+
+- You can now take control of a screen from your phone, and tap, drag and type on it as if you were sitting at it.
+
+### Bugs/Polish
+
+- Turning your phone while you look at a screen keeps it zoomed in on what you were looking at.
 
 ## iPhone 0.1.28
 
