@@ -6,7 +6,7 @@ import UIKit
 
 /// A screen over the whole app, pinch-zoomable to 8× and live while the app is active. Zoom and pan
 /// stay in UIKit, like Photos, and the status sits over them, so a frame never touches the zoom. The
-/// bar never minimizes, since a pan would then resize the canvas and fit the screen again. In control,
+/// bar never minimizes, since a pan would then resize the canvas and ask the host for new frames. In control,
 /// one finger drives the host and the Keyboard button types on it.
 struct ScreenViewer: View {
     @ViewState private var connection: ScreenConnection
@@ -85,7 +85,8 @@ struct ScreenViewer: View {
 
 /// A screen's latest frame, fitted and centered at 1×, that pinches to 8× and pans like a photo. A pinch stops at
 /// 1× and 8× rather than springing back, so the screen stays where it's left. Only a settled zoom or a new viewer
-/// size is reported, and a new frame keeps the zoom and position. In control, an accent ring follows the picture's
+/// size is reported, and a new frame keeps the zoom and position. A new viewer size, from a rotation or the keyboard,
+/// keeps the zoom and what's in view, so 1× simply fits again. In control, an accent ring follows the picture's
 /// edge, one finger drives the host while two pinch and pan, and keys go to the host.
 final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
     /// The full frame at its fitted size, with the changed region over it. It's the view that zooms.
@@ -111,6 +112,9 @@ final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
     /// Presses a still, waiting touch once it has held long enough.
     private var hold: Task<Void, Never>?
     private var viewport = CGSize.zero
+    /// What the view last showed, for a new viewer size to keep: the point at its center, as a fraction of the
+    /// picture, and the picture's edges it reached.
+    private var shown = (center: CGPoint(x: 0.5, y: 0.5), edges: UIRectEdge.all)
     /// The latest pinch's settled scale, so a pinch under way never asks for new frames.
     private(set) var settledScale: CGFloat = 1
 
@@ -157,14 +161,50 @@ final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
         guard viewport != bounds.size else { return }
+        let kept = shown
         viewport = bounds.size
-        // A rotated viewer fits the screen again.
-        setZoomScale(1, animated: false)
-        settledScale = 1
         fit()
         center()
-        contentOffset = CGPoint(x: -contentInset.left, y: -contentInset.top)
+        contentOffset = offset(showing: kept)
         reportSize()
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        // UIKit clamps the offset as the size changes, before the new size is laid out, so that's not what was shown.
+        guard bounds.size == viewport, !pictureView.bounds.isEmpty else { return }
+        let visible = convert(bounds, to: pictureView), picture = pictureView.bounds
+        let slack = 0.5 / zoomScale
+        var edges = UIRectEdge()
+        if visible.minX <= picture.minX + slack { edges.insert(.left) }
+        if visible.maxX >= picture.maxX - slack { edges.insert(.right) }
+        if visible.minY <= picture.minY + slack { edges.insert(.top) }
+        if visible.maxY >= picture.maxY - slack { edges.insert(.bottom) }
+        shown = (CGPoint(x: visible.midX / picture.width, y: visible.midY / picture.height), edges)
+    }
+
+    /// Keeps a side of the view that was against an edge of the picture against it, so a host's text field at the
+    /// bottom of its window stays in view above the keyboard, and otherwise keeps the point at the center there.
+    private func offset(showing shown: (center: CGPoint, edges: UIRectEdge)) -> CGPoint {
+        let least = CGPoint(x: -contentInset.left, y: -contentInset.top)
+        let picture = pictureView.bounds
+        guard !picture.isEmpty else { return least }
+        let most = CGPoint(x: max(least.x, contentSize.width + contentInset.right - bounds.width),
+                           y: max(least.y, contentSize.height + contentInset.bottom - bounds.height))
+        let point = CGPoint(x: shown.center.x * picture.width, y: shown.center.y * picture.height)
+        let center = pictureView.convert(point, to: self)
+        var offset = CGPoint(x: min(max(center.x - bounds.width / 2, least.x), most.x),
+                             y: min(max(center.y - bounds.height / 2, least.y), most.y))
+        switch (shown.edges.contains(.left), shown.edges.contains(.right)) {
+        case (true, false): offset.x = least.x
+        case (false, true): offset.x = most.x
+        default: break
+        }
+        switch (shown.edges.contains(.top), shown.edges.contains(.bottom)) {
+        case (true, false): offset.y = least.y
+        case (false, true): offset.y = most.y
+        default: break
+        }
+        return offset
     }
 
     override func didMoveToWindow() {

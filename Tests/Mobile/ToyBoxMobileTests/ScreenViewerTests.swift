@@ -45,20 +45,42 @@ struct ScreenViewerTests {
         withExtendedLifetime(window) {}
     }
 
-    @Test func rotatingFitsTheScreenAgain() throws {
+    @Test func aNewViewerSizeKeepsTheZoomAndWhatIsInView() throws {
         let (window, canvas, reports) = try fixture()
-        canvas.setZoomScale(3, animated: false)
-        canvas.scrollViewDidEndZooming(canvas, with: canvas.pictureView, atScale: 3)
+        func resize(width: CGFloat, height: CGFloat) {
+            window.frame = CGRect(x: 0, y: 0, width: width, height: height)
+            canvas.frame = window.bounds
+            canvas.layoutIfNeeded()
+        }
+        canvas.setZoomScale(4, animated: false)
+        canvas.scrollViewDidEndZooming(canvas, with: canvas.pictureView, atScale: 4)
+        canvas.contentOffset = CGPoint(x: 200, y: 162.5)
+        let kept = CGPoint(x: 0.25, y: 0.5625)
+        #expect(distance(of: canvas, from: kept) < 1, "UIKit rounds the offset to the pixel")
 
-        window.frame = CGRect(x: 0, y: 0, width: 800, height: 400)
-        canvas.frame = window.bounds
-        canvas.layoutIfNeeded()
+        // The keyboard shows.
+        resize(width: 400, height: 464)
         let pixels = canvas.traitCollection.displayScale
-        #expect(canvas.zoomScale == 1)
-        #expect(canvas.pictureView.frame == CGRect(x: 0, y: 0, width: 640, height: 400))
-        #expect(canvas.contentInset.left == 80)
-        #expect(canvas.contentOffset == CGPoint(x: -80, y: 0))
-        #expect(reports.last == CGSize(width: 800 * pixels, height: 400 * pixels))
+        #expect(canvas.zoomScale == 4)
+        #expect(distance(of: canvas, from: kept) < 1)
+        #expect(reports.last == CGSize(width: 400 * pixels * 4, height: 464 * pixels * 4))
+
+        // It rotates, so the picture fits differently at 1×.
+        resize(width: 800, height: 400)
+        #expect(canvas.zoomScale == 4)
+        #expect(canvas.pictureView.bounds.size == CGSize(width: 640, height: 400))
+        #expect(distance(of: canvas, from: kept) < 1)
+
+        resize(width: 400, height: 800)
+        canvas.contentOffset.y = canvas.contentSize.height - 800
+        resize(width: 400, height: 464)
+        #expect(canvas.bounds.maxY == canvas.contentSize.height, "The host's bottom stays above the keyboard")
+        #expect(canvas.contentOffset.x == 200)
+
+        canvas.setZoomScale(1, animated: false)
+        resize(width: 400, height: 800)
+        #expect(canvas.pictureView.frame == CGRect(x: 0, y: 0, width: 400, height: 250), "1× simply fits again")
+        #expect(canvas.contentOffset == CGPoint(x: 0, y: -275))
     }
 
     @Test func controlRingsThePictureAtAnyZoomAndLeavesPanningToTwoFingers() throws {
@@ -103,6 +125,14 @@ struct ScreenViewerTests {
         canvas.toggleKeyboard()
         canvas.hasControl = false
         #expect(!canvas.typing.isFirstResponder && !canvas.isFirstResponder)
+    }
+
+    /// How far the canvas's center is from a point of the picture, given as a fraction of it, in points.
+    private func distance(of canvas: ScreenCanvas, from point: CGPoint) -> CGFloat {
+        let picture = canvas.pictureView.bounds
+        let shown = CGPoint(x: point.x * picture.width, y: point.y * picture.height)
+        let center = canvas.pictureView.convert(shown, to: canvas)
+        return hypot(center.x - canvas.bounds.midX, center.y - canvas.bounds.midY)
     }
 
     private func fixture() throws -> (UIWindow, ScreenCanvas, Reports) {
