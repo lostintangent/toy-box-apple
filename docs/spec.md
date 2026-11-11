@@ -234,15 +234,22 @@ Drafts stay keyed to the address, so adding it back finds them.
   release, the same way on both apps, through `GET /api/v1/server`, `POST /api/v1/server/update`
   and `POST /api/v1/server/restart`. The server answers `version`, the release it runs, and
   `installedVersion`, the release on disk, which is null when no package manager owns the install.
-  A row whose server has an installed version offers Check for Updates, which shows a spinner
-  in its place while the server installs whatever is newer. A restart is pending exactly when
-  `installedVersion` isn't null and differs from `version`, and then the row shows Restart
-  instead, whichever device ran the update. Restart has no confirmation, and its row keeps a
-  spinner until the server reconnects running the installed version. A server with no installed
-  version shows neither. The apps read `GET /api/v1/server` while Settings shows the list,
-  after each check and each time a server reconnects. These are management writes: an update
-  that times out or drops may still have installed, so the row reads the server again before
-  offering another try.
+  Each row shows its server's version in secondary ink after the name. One Check for Updates
+  serves the whole list: on the Mac at the trailing end of the list's bar, beside Add and Remove,
+  and on the phone as a row after Add Server with `arrow.triangle.2.circlepath`. It's there
+  whenever a server has an installed version, and it asks every connected one to install whatever
+  is newer, skipping servers that are offline or have none. Each row being checked shows a
+  spinner in its version's place, and the button dims until every check ends. Then a row reads
+  Up to date when nothing was newer, or the error in words after a yellow
+  `exclamationmark.triangle.fill`, in the row on the Mac and under the address on the phone.
+  Results stay until the next check or until Settings closes. A restart is pending exactly when
+  `installedVersion` isn't null and differs from `version`, whichever device ran the update, and
+  then the row shows a prominent Restart, after "0.3.10 installed" on the Mac. Restart has no
+  confirmation, and its row reads Restarting… with a spinner until the server reconnects running
+  the installed version. A failed restart shows its error the same way, with the old server still
+  running. The apps read `GET /api/v1/server` while Settings shows the list, after each check and
+  each time a server reconnects. These are management writes: an update that times out or drops
+  may still have installed, so the row reads the server again before offering another try.
 
 ### Sending
 
