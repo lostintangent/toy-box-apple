@@ -3,10 +3,12 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import Observation
+import os
 
-/// One viewer's live view of a screen. The socket is open only while the viewer is on screen, and it
-/// reconnects until the screen ends. Frames decode off the main actor in order, and each is
-/// acknowledged once it's published. Its tasks hold it weakly, so deinit closes only the socket.
+/// One viewer's live view of a screen, which can take control of it. The socket is open only while
+/// the viewer is on screen, and it reconnects until the screen ends. Frames decode off the main actor
+/// in order, and each is acknowledged once it's published. Its tasks hold it weakly, so deinit closes
+/// only the socket, and the server releases control with it.
 @MainActor @Observable
 public final class ScreenConnection {
     /// Connecting until the first frame is drawn, then live, unless the server says otherwise.
@@ -17,6 +19,9 @@ public final class ScreenConnection {
         public private(set) var status: Screen.Status?
         public private(set) var title: String?
         public private(set) var reason: String?
+        /// Whether this viewer controls the host, as the server last said. Another viewer taking
+        /// control, a pause, an end or a lost socket turns it off, and it never returns on its own.
+        public internal(set) var hasControl = false
         var hasPicture = false
         /// A lost socket reconnects after 250 ms, doubling up to 4 s until the server answers.
         private(set) var retryDelay = firstRetry
@@ -33,14 +38,15 @@ public final class ScreenConnection {
         }
 
         mutating func receive(_ message: Screen.Message) {
-            (title, status, reason) = (message.title, message.status, message.reason)
+            guard case let .state(title, status, reason, hasControl) = message else { return }
+            (self.title, self.status, self.reason, self.hasControl) = (title, status, reason, hasControl)
             retryDelay = Self.firstRetry
         }
 
         /// Clears what a lost socket showed, and returns how long to wait before reconnecting. A
         /// screen that ended said so before its socket closed, so it stays closed.
         mutating func lose() -> Duration? {
-            hasPicture = false
+            (hasPicture, hasControl) = (false, false)
             guard status != .ended else { return nil }
             status = nil
             defer { retryDelay = min(retryDelay * 2, Self.lastRetry) }
@@ -81,6 +87,35 @@ public final class ScreenConnection {
         open()
     }
 
+    /// Asks to control the live host, taking control from any other viewer. Control arrives with the
+    /// server's next state.
+    public func takeControl() {
+        guard state.status == .live else { return }
+        send(.takeControl)
+    }
+
+    /// Lets go of the host, which releases any key or button still down. Without control it does
+    /// nothing, so it's safe whenever the viewer loses focus.
+    public func releaseControl() {
+        guard state.hasControl else { return }
+        state.hasControl = false
+        send(.releaseControl)
+    }
+
+    /// Sends input in order, in the server's sizes, while this viewer has control. Without it, the
+    /// input is dropped.
+    public func send(_ actions: [Screen.Input]) {
+        guard state.hasControl else { return }
+        for batch in Screen.Input.batches(actions) { send(.input(batch)) }
+    }
+
+    /// Queues a request on the open socket, which sends in the order it's asked. A failed send fails
+    /// the socket's receive too, which reconnects.
+    private func send(_ request: Screen.Request) {
+        guard let socket, let data = try? JSONEncoder().encode(request) else { return }
+        socket.send(.string(String(decoding: data, as: UTF8.self))) { _ in }
+    }
+
     /// Sends the settled size to an open socket. A reconnecting viewer opens at its latest size.
     private func resize() {
         settling?.cancel()
@@ -114,8 +149,14 @@ public final class ScreenConnection {
     private func receive(_ message: URLSessionWebSocketTask.Message, on socket: URLSessionWebSocketTask) async throws {
         switch message {
         case .string(let text):
-            if let message = try? JSONDecoder().decode(Screen.Message.self, from: Data(text.utf8)) {
-                state.receive(message)
+            switch try? JSONDecoder().decode(Screen.Message.self, from: Data(text.utf8)) {
+            case .error(let description):
+                // A refused take or input, like one after the window's app lost focus, ends control,
+                // so taking it again retries.
+                Self.logger.info("Screen \(self.screenID, privacy: .public) refused: \(description, privacy: .public)")
+                releaseControl()
+            case let message?: state.receive(message)
+            case nil: break
             }
         case .data(let packet):
             let (frame, image) = try await Task.detached(priority: .userInitiated) { try Self.decode(packet) }.value
@@ -130,6 +171,8 @@ public final class ScreenConnection {
         try picture.apply(frame, image: image)
         if !state.hasPicture { state.hasPicture = true }
     }
+
+    nonisolated private static let logger = Logger(subsystem: "dev.toybox", category: "Screens")
 
     private nonisolated static func decode(_ packet: Data) throws -> (Screen.Frame, CGImage?) {
         let (frame, jpeg) = try Screen.Frame.unpack(packet)
