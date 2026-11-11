@@ -1700,7 +1700,11 @@ and video posters. While an image loads, show a neutral tile at its final size
 never show the filename. Read inline images' pixel size from the image header before decoding,
 so the first layout is final. A remote image an earlier load cached reads its size from the cached
 file's header the same way, so scrolling back to it never resizes its row. Remote images without a
-known size use 120 x 90 and resize once.
+known size use 120 x 90 and resize once. An image that can't load keeps that same tile, with
+`photo.badge.exclamationmark` centered in secondary and no filename or error text, on both apps.
+Clicking or tapping it tries again. On the Mac its help reads "Couldn't load this image. Click to
+try again.", and VoiceOver reads the tile's usual label with the value "Couldn't load" and the hint
+"Tries again".
 Videos have a poster, duration when known, and an explicit Play action.
 Other files show document icon, name and Open. Resolve resources against the server base URL.
 An unavailable file keeps its name and an explicit retryable error, not a blank thumbnail.
