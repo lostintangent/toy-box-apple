@@ -379,6 +379,53 @@ struct ShellTests {
         }
     }
 
+    @Test func aCardInTheListReportsItsFrameOnlyWhenItResizesNotAsTheListScrolls() async throws {
+        let card = ResizingCard()
+        let list = List {
+            ForEach(0..<30, id: \.self) { index in
+                if index == 8 {
+                    Text("Card").frame(maxWidth: .infinity).frame(height: card.height)
+                        .onResize(in: .global) { card.frames.append($0) }
+                } else {
+                    Text("Row \(index)").frame(height: 61 + CGFloat(index % 3) / 3)
+                }
+            }
+        }
+        .listStyle(.plain)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
+        let host = UIHostingController(rootView: list)
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        @MainActor func settle(until done: () -> Bool) async {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+            repeat {
+                window.layoutIfNeeded()
+                await Task.yield()
+            } while !done() && ContinuousClock.now < deadline
+        }
+        await settle { !card.frames.isEmpty }
+        let scroll = try #require(scrollViews(in: window).first { $0 is UICollectionView })
+
+        // The card moves through fractional positions, like a finger's, at which a frame in global
+        // space can differ in its size's last digits.
+        for step in 1...60 {
+            scroll.contentOffset.y = CGFloat(step) * 7 / 3
+            await settle { true }
+        }
+        #expect(card.frames.count == 1, "Reported \(card.frames.map(\.size)) while only moving.")
+        #expect(abs((card.frames.first?.height ?? 0) - (288 + 1 / 3)) < 0.01)
+
+        card.height = 300
+        await settle { card.frames.count == 2 }
+        #expect(card.frames.last?.height == 300, "A real resize still reports.")
+        #expect(card.frames.last?.minY != card.frames.first?.minY, "The frame is in global space, where it scrolled.")
+    }
+
+    private func scrollViews(in view: UIView) -> [UIScrollView] {
+        [view as? UIScrollView].compactMap(\.self) + view.subviews.flatMap(scrollViews)
+    }
+
     /// Expects the titles of the columns a window's channel split view settles on showing: its one screen
     /// while collapsed, and otherwise the list and the channel, unless the list is hidden.
     private func expectColumns(_ expected: [String], in window: UIWindow, _ comment: Comment? = nil,
@@ -2287,4 +2334,10 @@ extension AppModel {
     }
 
     func interaction(for channelID: String) -> ChannelInteraction { interaction(for: target(channelID)!) }
+}
+
+/// A list row's height, and the frames it reports as it resizes.
+@MainActor @Observable private final class ResizingCard {
+    var height: CGFloat = 288 + 1 / 3
+    var frames: [CGRect] = []
 }
