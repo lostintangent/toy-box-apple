@@ -33,8 +33,11 @@ struct AgentMentionsTests {
         #expect(engineer.matches(mentionQuery: ""))
         #expect(engineer.matches(mentionQuery: "LOVELACE"))
         #expect(engineer.matches(mentionQuery: "ada-lovelace"))
-        #expect(engineer.matches(mentionQuery: "ENGINEER"))
+        #expect(!engineer.matches(mentionQuery: "ENGINEER"), "A role never matches")
         #expect(!engineer.matches(mentionQuery: "unknown"))
+        let reviewer = ChannelAgent(id: "moss", name: "Moss", role: "Works with Pixel")
+        #expect(!reviewer.matches(mentionQuery: "pix"), "Nor does another agent its role names")
+        #expect(reviewer.matches(mentionQuery: "mo"))
     }
 
     @Test func canonicalAudience() {
@@ -80,8 +83,9 @@ struct AgentMentionsTests {
         ]
         #expect(AgentMentions.Choice.choices(matching: "", among: agents).map(\.name)
                 == ["Everyone", "Lead", "Ada", "Pixel", "Zebra"])
-        #expect(AgentMentions.Choice.choices(matching: "design", among: agents).filter { !$0.isCreate }.map(\.name)
-                == ["Pixel", "Zebra"])
+        #expect(AgentMentions.Choice.choices(matching: "a", among: agents).filter { !$0.isCreate }.map(\.name)
+                == ["Lead", "Ada", "Zebra"])
+        #expect(AgentMentions.Choice.choices(matching: "design", among: agents).allSatisfy { $0.isCreate })
         #expect(AgentMentions.Choice.choices(matching: "pixel", among: agents).allSatisfy { !$0.isCreate })
         let create = AgentMentions.Choice.choices(matching: "new-person", among: agents).last
         #expect(create?.isCreate == true)
