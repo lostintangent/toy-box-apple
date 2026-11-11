@@ -87,10 +87,11 @@ extension ChannelAgent {
         return truncated.isEmpty ? "teammate" : truncated
     }
 
+    /// Whether the text after an @ appears in this agent's handle or name, ignoring case. Roles
+    /// often name other agents, so they never match.
     public func matches(mentionQuery query: String) -> Bool {
         let normalized = query.lowercased()
-        return normalized.isEmpty || [handle, name, role ?? ""]
-            .contains { $0.lowercased().contains(normalized) }
+        return normalized.isEmpty || [handle, name].contains { $0.lowercased().contains(normalized) }
     }
 }
 

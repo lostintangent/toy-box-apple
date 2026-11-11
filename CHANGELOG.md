@@ -5,6 +5,7 @@
 ### Bugs/Polish
 
 - A server that stops answering no longer fills the sidebar with an error. Its status dot changes color, and hovering over it tells you what went wrong.
+- Typing @ and a name suggests just the agents with that name, instead of everyone whose role happens to mention it.
 
 ## iPhone 0.1.31
 
@@ -12,6 +13,7 @@
 
 - Scrolling the channel list with a request open no longer freezes the app, even with several servers.
 - Opening a long channel no longer freezes the app while the conversation settles at your place.
+- Typing @ and a name suggests just the agents with that name, instead of everyone whose role happens to mention it.
 
 ## Mac 0.1.33
 
