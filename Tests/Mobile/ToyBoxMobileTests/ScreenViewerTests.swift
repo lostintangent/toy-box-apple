@@ -61,6 +61,50 @@ struct ScreenViewerTests {
         #expect(reports.last == CGSize(width: 800 * pixels, height: 400 * pixels))
     }
 
+    @Test func controlRingsThePictureAtAnyZoomAndLeavesPanningToTwoFingers() throws {
+        let (window, canvas, _) = try fixture()
+        #expect(canvas.ringView.isHidden)
+        #expect(canvas.panGestureRecognizer.minimumNumberOfTouches == 1)
+
+        canvas.hasControl = true
+        #expect(!canvas.ringView.isHidden)
+        #expect(canvas.ringView.frame == canvas.pictureView.frame)
+        #expect(canvas.ringView.layer.cornerRadius == canvas.pictureView.layer.cornerRadius)
+        #expect(canvas.panGestureRecognizer.minimumNumberOfTouches == 2)
+
+        canvas.setZoomScale(4, animated: false)
+        #expect(canvas.ringView.frame == canvas.pictureView.frame)
+        #expect(canvas.ringView.layer.cornerRadius == canvas.pictureView.layer.cornerRadius * 4)
+        #expect(canvas.ringView.layer.borderWidth == 2, "The ring stays 2 points at any zoom")
+
+        canvas.hasControl = false
+        #expect(canvas.ringView.isHidden)
+        #expect(canvas.panGestureRecognizer.minimumNumberOfTouches == 1)
+        withExtendedLifetime(window) {}
+    }
+
+    @Test func keyboardTypesOnTheHostAndHidesAgainWithoutLettingGoOfControl() throws {
+        let (window, canvas, _) = try fixture()
+        window.makeKey()
+        var sent: [Screen.Input] = []
+        canvas.send = { sent += $0 }
+        canvas.hasControl = true
+        #expect(canvas.isFirstResponder, "A hardware keyboard's keys reach the host without Keyboard")
+
+        canvas.toggleKeyboard()
+        #expect(canvas.typing.isFirstResponder)
+        canvas.typing.insertText("hi\n")
+        canvas.typing.deleteBackward()
+        #expect(sent == [.text("hi"), .key("Enter", down: true), .key("Enter", down: false),
+                         .key("Backspace", down: true), .key("Backspace", down: false)])
+
+        canvas.toggleKeyboard()
+        #expect(canvas.isFirstResponder)
+        canvas.toggleKeyboard()
+        canvas.hasControl = false
+        #expect(!canvas.typing.isFirstResponder && !canvas.isFirstResponder)
+    }
+
     private func fixture() throws -> (UIWindow, ScreenCanvas, Reports) {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 800))
         window.isHidden = false
