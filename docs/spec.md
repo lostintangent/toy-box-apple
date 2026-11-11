@@ -1627,7 +1627,10 @@ message. Reference renders of day labels, the New divider, system rows and both 
 Opening uses only the latest 100 messages supplied by the snapshot and never fetches older pages.
 Land on the first unread row when its boundary is in the loaded page, otherwise the end. Both apps
 land only once the store is connected, so a reopened channel lands on that boundary rather than on
-its cached end. Until then the cached conversation rests at its end, unread. If the
+its cached end. Until then the cached conversation rests at its end, unread. Landing may hide the
+rows only until the first layout pass puts its target in place, never until layout goes quiet,
+so streaming or a busy app can't leave an opened channel blank. Later corrections move the rows in
+view. If the
 first unread predates the snapshot and older history exists, show no synthetic New divider or
 catch-up summary. Scrolling up loads the real unread boundary in its original place.
 When a catch-up summary is eligible, land on its card instead (see Catch-up summaries).
