@@ -102,9 +102,9 @@ struct ChannelSidebar: View {
         .safeAreaBar(edge: .bottom) {
             SidebarConnectionFooter(
                 status: isGrouped ? .servers(.init(catalogs: model.catalogs))
-                    : .server(SidebarFooter(phase: phase, isLoaded: model.catalog?.isLoaded == true), url: model.serverURL),
+                    : .server(SidebarFooter(phase: phase, isLoaded: model.catalog?.isLoaded == true), url: model.serverURL,
+                              failure: model.configurationError ?? model.catalog?.phase.message),
                 busy: !isGrouped && busy,
-                error: model.configurationError ?? model.catalog?.phase.message,
                 openSettings: { model.settingsTab = .servers; openSettings() },
                 openScreen: model.api == nil ? nil : {
                     openWindow(id: "screens", value: ScreenWindowValue(serverURL: selection?.serverURL ?? model.serverURL))
@@ -135,7 +135,7 @@ struct ChannelSidebar: View {
     }
 
     /// The `sidebar-servers` capture state waits until no server is still connecting, so a server
-    /// that doesn't answer shows its failure under its header. `sidebar-servers-collapsed` then
+    /// that doesn't answer shows its red dot. `sidebar-servers-collapsed` then
     /// collapses the first server, and `sidebar-servers-reconnecting` waits for a loaded server to
     /// stop answering.
     private func prepareServersSnapshot() async {
@@ -163,18 +163,9 @@ struct ChannelSidebar: View {
         !catalog.waitingRequests(openChannelIDs: model.openChannelIDs(on: catalog)).isEmpty
     }
 
-    /// A server's section: its failure under its header, then its placeholders or channels.
+    /// A server's section: its placeholders or channels, and never its failure, which its header's
+    /// dot marks.
     @ViewBuilder private func serverRows(_ catalog: ChannelCatalogStore) -> some View {
-        if let heading = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded).heading,
-           let error = catalog.phase.message {
-            // On its header dot's edge, 14 points in.
-            SidebarErrorBlock(heading: heading, error: error)
-                .padding(.leading, -2)
-                .padding(.trailing, 8)
-                .padding(.vertical, 4)
-                .listRowInsets(EdgeInsets())
-                .selectionDisabled()
-        }
         if catalog.phase == .connecting {
             placeholders
         } else if catalog.state != nil {
@@ -265,8 +256,8 @@ private struct Listed: Identifiable {
 }
 
 /// A server's section header when the sidebar lists several: its status dot, or a spinner in the
-/// dot's slot, then its name, with the status line's help and VoiceOver value. A collapsed one
-/// trails the waiting symbol while any of its channels waits.
+/// dot's slot, then its name, with the status line's help, VoiceOver value and failure as the hint.
+/// A collapsed one trails the waiting symbol while any of its channels waits.
 private struct SidebarServerHeader: View {
     let catalog: ChannelCatalogStore
     let busy: Bool
@@ -280,6 +271,7 @@ private struct SidebarServerHeader: View {
 
     var body: some View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
+        let failure = catalog.phase.message
         let address = catalog.api.baseURL.absoluteString
         let host = SidebarFooter.server(address)
         let value = catalog.name == host ? footer.accessibilityValue : "\(host), \(footer.accessibilityValue)"
@@ -298,10 +290,11 @@ private struct SidebarServerHeader: View {
             }
         }
         .modifier(SpinnerDelay(busy: busy, spinning: $showsSpinner))
-        .help(footer.help(address))
+        .help(footer.help(address, failure: failure))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(catalog.name)
         .accessibilityValue(waits ? "\(value), waiting for you" : value)
+        .accessibilityHint(failure ?? "")
         .accessibilityAddTraits(.isHeader)
     }
 }

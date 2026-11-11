@@ -1,5 +1,11 @@
 # Changelog
 
+## Mac 0.1.34
+
+### Bugs/Polish
+
+- A server that stops answering no longer fills the sidebar with an error. Its status dot changes color, and hovering over it tells you what went wrong.
+
 ## iPhone 0.1.31
 
 ### Bugs/Polish
