@@ -2140,7 +2140,8 @@ never red, which reads as recording or error.
 Mentions remain plain `@handle` text. The completion popover anchors to the caret, opens above the
 composer when needed, is 300 wide and at most 320 high, and scrolls its own list. Order: Everyone,
 Lead, alphabetically matching members, then Create [Name] where canonical matching permits it.
-Rows are at least 44 high with 24-point avatars, name and one-line role. Up/Down select, Return or
+An agent matches when what follows the @ appears in its name or handle, ignoring case, and never
+in its role, since roles often name other agents. This holds on both apps. Rows are at least 44 high with 24-point avatars, name and one-line role. Up/Down select, Return or
 Tab without Shift accept, Escape cancels. Shift-Tab and Shift-Return pass through to the
 composer, and Option-Tab still inserts a tab. Accepting inserts one trailing space and restores the caret. A
 member's secondary Edit action opens a sheet without accepting the mention. A Create action
