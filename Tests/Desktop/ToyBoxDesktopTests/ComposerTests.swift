@@ -69,6 +69,7 @@ struct ComposerTests {
             session.invalidateRequest(replacementSequence: 9)
             #expect(session.requestChangeNotice == "A newer request is waiting.")
             draft.text = ""
+            ComposerDraft.finishSaving()
             let restored = ComposerDraft(fileURL: url)
             let reopened = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8),
                                                     requester: .init(id: "ada", name: "Ada Lovelace"), draft: restored)
@@ -127,6 +128,7 @@ struct ComposerTests {
             let merged = prefill.appending(extra)
             #expect(merged.id != prefill.id && merged.id != extra.id)
             inbox.receive(merged)
+            ComposerDraft.finishSaving()
             let staged = ComposerDraft(fileURL: incomingURL)
             #expect(staged.text == "Selected text\nhttps://example.com\n\nAnother selection")
             #expect(staged.images.count == 1)
@@ -141,6 +143,7 @@ struct ComposerTests {
             let revision = draft.revision
             #expect(!inbox.apply(to: session))
             #expect(draft.revision == revision)
+            ComposerDraft.finishSaving()
             #expect(ComposerDraft(fileURL: url).text == draft.text)
             #expect(!ComposerDraft(fileURL: incomingURL).hasContent)
             inbox.receive(.init(images: [.init(name: "Corrupt.png", mimeType: "image/png", data: Data([1, 2, 3]))]))
@@ -461,10 +464,14 @@ struct ComposerTests {
     @Test func persistenceFailureIsVisibleAndDoesNotEraseText() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-composer-\(UUID())")
         try Data("Not a directory".utf8).write(to: directory)
-        defer { remove(directory) }
+        defer {
+            ComposerDraft.finishSaving()
+            remove(directory)
+        }
         let draft = ComposerDraft(fileURL: directory.appendingPathComponent("draft.json"))
         draft.text = "Keep this text"
         #expect(draft.text == "Keep this text")
+        try await waitUntil("the failed save is reported") { draft.error != nil }
         #expect(draft.error?.contains("could not be saved") == true)
         #expect(!draft.isSavedLocally)
         let server = try #require(URL(string: "http://localhost:3210"))
@@ -475,6 +482,7 @@ struct ComposerTests {
         let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: target)
         #expect(inbox.apply(to: session))
         #expect(target.text == "Keep this text\n\nShared content")
+        try await waitUntil("the clear's failed save is reported") { inbox.draft.error != nil }
         #expect(inbox.draft.error?.contains("could not be saved") == true)
         let revision = target.revision
         #expect(!inbox.apply(to: session))
@@ -1581,7 +1589,10 @@ struct ComposerTests {
     private func withDraft(_ body: (ComposerDraft, URL) async throws -> Void) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-composer-\(UUID())")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { remove(directory) }
+        defer {
+            ComposerDraft.finishSaving()
+            remove(directory)
+        }
         let url = directory.appendingPathComponent("draft.json")
         try await body(ComposerDraft(fileURL: url), url)
     }

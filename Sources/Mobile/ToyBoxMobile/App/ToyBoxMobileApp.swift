@@ -6,6 +6,7 @@ import ToyBoxUI
 struct ToyBoxMobileApp: App {
     @UIApplicationDelegateAdaptor(MobileAppDelegate.self) private var appDelegate
     @AppStorage("appearance") private var appearance: AppAppearance = .system
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -19,5 +20,8 @@ struct ToyBoxMobileApp: App {
                 #endif
         }
         .commands { ChannelCommands() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { ComposerDraft.finishSaving() }
+        }
     }
 }

@@ -13,6 +13,7 @@ struct ComposerDraftTests {
         try await withDraft { draft, url in
             #expect(!draft.hasContent)
             draft.text = "@lead First draft"
+            try await saved(draft)
             let restored = makeDraft(fileURL: url)
             #expect(draft.error == nil)
             #expect(restored.text == draft.text)
@@ -48,12 +49,14 @@ struct ComposerDraftTests {
             draft.append(image)
             #expect(draft.hasContent)
             #expect(!draft.hasUnreadableImage)
+            try await saved(draft)
             let restored = makeDraft(fileURL: url)
             #expect(restored.images.first?.data == image.data)
             let metadata = try #require(String(data: Data(contentsOf: url), encoding: .utf8))
             #expect(!metadata.contains(image.data.base64EncodedString()))
             draft.removeImage(id: image.id)
             #expect(draft.images.isEmpty)
+            try await saved(draft)
             let imageURL = url.deletingPathExtension().appendingPathComponent(image.id.uuidString)
             #expect(!FileManager.default.fileExists(atPath: imageURL.path))
         }
@@ -63,6 +66,7 @@ struct ComposerDraftTests {
         try await withDraft { draft, url in
             let image = try sampleImage()
             draft.append(image)
+            try await saved(draft)
             let imageURL = url.deletingPathExtension().appendingPathComponent(image.id.uuidString)
             try FileManager.default.removeItem(at: imageURL)
             let restored = makeDraft(fileURL: url)
@@ -78,6 +82,7 @@ struct ComposerDraftTests {
             draft.clear(ifUnchanged: draft.revision)
             #expect(!draft.hasContent)
             #expect(draft.images.isEmpty)
+            try await saved(draft)
             let restored = makeDraft(fileURL: url)
             #expect(!restored.hasContent)
         }
@@ -98,6 +103,7 @@ struct ComposerDraftTests {
             #expect(draft.hasUnreadableImage)
             #expect(draft.images.last?.data == readable.data)
             #expect(draft.error?.contains("before sending") == true)
+            try await saved(draft)
             let restored = makeDraft(fileURL: url)
             #expect(restored.images.count == attachments.count)
             #expect(restored.hasUnreadableImage)
@@ -167,19 +173,51 @@ struct ComposerDraftTests {
     @Test func retryingASaveRecoversWithoutChangingTheDraft() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-draft-\(UUID())")
         try Data("Not a directory".utf8).write(to: directory)
-        defer { remove(directory) }
+        defer {
+            ComposerDraft.finishSaving()
+            remove(directory)
+        }
         let url = directory.appendingPathComponent("draft.json")
         let draft = makeDraft(fileURL: url)
         draft.text = "Keep this text"
         let revision = draft.revision
+        try await eventually { draft.error != nil }
+        #expect(draft.error?.contains("could not be saved") == true)
         #expect(!draft.isSavedLocally)
         try FileManager.default.removeItem(at: directory)
         draft.retrySave()
+        #expect(!draft.isSavedLocally, "A draft counts as saved only once it's on disk.")
+        try await saved(draft)
         #expect(draft.isSavedLocally)
         #expect(draft.error == nil)
         #expect(draft.revision == revision)
         let restored = makeDraft(fileURL: url)
         #expect(restored.text == "Keep this text")
+    }
+
+    @Test func aBurstOfKeysEndsWithTheNewestDraftOnDiskWhenTheAppLeaves() async throws {
+        try await withDraft { draft, url in
+            let typed = "Typing while the disk is busy"
+            for character in typed { draft.text.append(character) }
+            #expect(draft.isSaving)
+            ComposerDraft.finishSaving()
+            #expect(makeDraft(fileURL: url).text == typed)
+            try await saved(draft)
+            #expect(draft.isSavedLocally)
+            #expect(draft.error == nil)
+        }
+    }
+
+    @Test func aClearAfterSendingLandsAfterEveryEarlierWrite() async throws {
+        try await withDraft { draft, url in
+            draft.append(try sampleImage())
+            draft.text = "Sent"
+            draft.text += " just now"
+            draft.clear(ifUnchanged: draft.revision)
+            try await saved(draft)
+            #expect(!makeDraft(fileURL: url).hasContent)
+            #expect(try FileManager.default.contentsOfDirectory(atPath: url.deletingPathExtension().path).isEmpty)
+        }
     }
 
     @Test func cameraPhotosBecomeOrientedJPEGAndThumbnailsStayCachedWhileTyping() async throws {
@@ -270,6 +308,7 @@ struct ComposerDraftTests {
                 draft.restore(content: "Legacy caption", attachments: [image.attachment])
                 let original = try #require(draft.images.first)
                 let legacyThumbnail = try #require(await draft.loadThumbnail(for: original))
+                try await saved(draft)
                 let restored = imageIODraft(fileURL: url)
                 #expect(restored.isLoadingImages)
                 #expect(restored.thumbnail(for: original) === legacyThumbnail)
@@ -286,6 +325,7 @@ struct ComposerDraftTests {
                 #expect(restored.text == "Legacy caption edited during conversion")
                 #expect(restored.error == nil)
                 #expect(await restored.loadThumbnail(for: prepared) !== legacyThumbnail)
+                try await saved(restored)
                 let bytes = try Data(contentsOf: url.deletingPathExtension().appendingPathComponent(prepared.id.uuidString))
                 #expect(bytes == prepared.data)
                 let reopened = imageIODraft(fileURL: url)
@@ -338,6 +378,7 @@ struct ComposerDraftTests {
             #expect(!draft.hasUnreadableImage)
             #expect(!draft.isLoadingImages)
             #expect(draft.error == nil)
+            try await saved(draft)
             let bytes = try Data(contentsOf: url.deletingPathExtension().appendingPathComponent(slot.id.uuidString))
             #expect(bytes == prepared.data)
             let reopened = imageIODraft(fileURL: url)
@@ -374,12 +415,15 @@ struct ComposerDraftTests {
             draft.restore(content: "Keep this caption", attachments: [
                 .init(name: "Missing.png", mimeType: "image/png"),
             ])
+            try await saved(draft)
             let slot = try #require(draft.images.first)
             let previousError = try #require(draft.error)
+            #expect(previousError.contains("could not be saved"))
             let image = try sampleImage()
             let replacement = url.deletingLastPathComponent().appendingPathComponent(image.name)
             try image.data.write(to: replacement)
             #expect(await draft.reattachImage(id: slot.id, from: replacement))
+            try await saved(draft)
             #expect(!draft.isSavedLocally)
             #expect(draft.error == previousError)
             #expect(draft.images.first?.data == image.data)
@@ -498,9 +542,16 @@ struct ComposerDraftTests {
     private func withDraft(_ body: (ComposerDraft, URL) async throws -> Void) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-composer-\(UUID())")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { remove(directory) }
+        defer {
+            ComposerDraft.finishSaving()
+            remove(directory)
+        }
         let url = directory.appendingPathComponent("draft.json")
         try await body(makeDraft(fileURL: url), url)
+    }
+
+    private func saved(_ draft: ComposerDraft) async throws {
+        try await eventually { !draft.isSaving }
     }
 
     private func finishLoading(_ draft: ComposerDraft) async throws {

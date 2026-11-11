@@ -1,4 +1,5 @@
 import AppKit
+import ChannelClient
 import ChannelKit
 import SwiftUI
 import ToyBoxControlIntents
@@ -227,6 +228,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillBecomeActive(_ notification: Notification) {
         comeForward()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        ComposerDraft.finishSaving()
     }
 
     /// Makes a background launch an ordinary app once it's activated or shows a window.
