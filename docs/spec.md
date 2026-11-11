@@ -2179,7 +2179,11 @@ composer, not the whole window. Show attached images as 56-point thumbnails in a
 with an accessible Remove button and filename. Invalid files produce a specific inline error.
 Do not silently drop unsupported attachments or invent a size limit different from the server's.
 Text drafts persist locally per normalized server URL and channel ID, including after failed
-delivery. Preserve attachments across channel switches. Restored attachments that are no longer
+delivery. Saving never holds up typing, even when the disk is busy: each change shows at once and
+is written in the background, one write at a time, with only the newest draft waiting, so a burst
+of keys costs one more write. A clear after sending lands after any earlier write. Quitting or
+leaving the app finishes the write, and a draft only counts as saved locally once it's on disk.
+Preserve attachments across channel switches. Restored attachments that are no longer
 readable explicitly require reattachment, and must not appear ready to send.
 
 Editing remains available while offline, an intentional native improvement. Send and management
