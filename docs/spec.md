@@ -192,8 +192,9 @@ Drafts stay keyed to the address, so adding it back finds them.
   line at rest. The header keeps the sidebar's own section header inset, which puts its dot 4 points inside
   the search field's edge, and every header has the same room above it, whether it follows the
   search field or another server's last row, matching the gap between two servers. On the phone, the name is followed by how many channels the server has, in
-  the header's font and secondary color, once its catalog has loaded. A failing server's notice sits under its own header instead of at the
-  bottom: the Mac's error block, still without buttons, and the phone pill's words with Retry.
+  the header's font and secondary color, once its catalog has loaded. A failing server shows only
+  its header's orange or red dot, never a notice in the list, so the list always shows every
+  server and its channels. On the Mac the header's help adds the readable failure.
   While a section is collapsed and any of its channels waits for the user's response, its header
   also shows the waiting attention symbol, trailing in its color and without a count, so
   collapsing a server never hides a request. It hides while the section is open, and VoiceOver
@@ -959,7 +960,7 @@ navigation keeps list focus until explicitly moving into the conversation.
 | Filter has no messages | "No messages for you yet", Show All Messages. Keep paging older history until exhausted |
 | Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without connecting, the transcript's floating pill says "Reconnecting to server" over "Messages may be out of date" (see Reconnecting notice), the channel's only outage notice. It has no Retry, because the channel keeps trying and tries again at once when the network comes back or moves, the app becomes active again or the catalog recovers (see Connections). The notice stays until the channel connects. A reconnect that goes live sooner shows nothing. Until then agent status, working presence and every connection notice stay as they were while live. Disable delivery and management actions, not editing. Time away from the app never counts toward the three seconds |
 | Disconnected without any state | `wifi.exclamationmark`, "Can't connect to Toy Box", server host, readable failure, Retry and Settings |
-| Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar), after the catalog's stream has failed for about three seconds or at once for a refresh the user asked for. Never replace them with "No channels". When it recovers, every channel waiting out a backoff retries at once |
+| Catalog refresh fails | Keep existing rows, mark them stale and turn the connection footer's dot orange, with the readable failure in its help (see Sidebar), after the catalog's stream has failed for about three seconds or at once for a refresh the user asked for. Never replace them with "No channels". When it recovers, every channel waiting out a backoff retries at once |
 | Failed send | The message stays on its row in the transcript as Not sent, with its text and attachments, Retry and Delete, after the outbox's own retries (see [Sending](#sending)) |
 | Channel deleted | Stop observation, dismiss its inspector, show "This channel was deleted". Back to Channels and Copy Draft if nonempty. Never silently discard a draft or redirect to another channel |
 | Invalid URL or authorization failure | Show the actual category and server, Settings/Retry as appropriate. No fabricated successful connection |
@@ -1158,18 +1159,20 @@ tall as the large glass Open Screen button at its end, with 10 points above and 
 centers in the bar. The dot's leading edge sits 20 points from the sidebar's leading edge, 4
 before the channel icons, and its center sits 24 points above the sidebar's bottom edge.
 
-| Catalog state | Dot | Above the status line |
-| --- | --- | --- |
-| First load | `.secondary`, then a spinner after 300 ms | Nothing. The placeholder rows already show loading |
-| Last refresh succeeded | `.green` | Nothing |
-| Refresh failing, rows kept | `.orange` | The error block: "Channels may be out of date" over the readable failure. Recovery retries every failed channel at once |
-| Never loaded, invalid URL or authorization failure | `.red` | The same block, headed "Can't connect to Toy Box" |
+| Catalog state | Dot |
+| --- | --- |
+| First load | `.secondary`, then a spinner after 300 ms. The placeholder rows already show loading |
+| Last refresh succeeded | `.green` |
+| Refresh failing, rows kept | `.orange`. Recovery retries every failed channel at once |
+| Never loaded, invalid URL or authorization failure | `.red` |
 
-The error block moves into the same bar, 10 points above the status line and on the same 20-point
-leading edge, so a problem and the server it concerns read as one footer. The status line never
-repeats the block's words. The block has no buttons: the catalog keeps retrying on its own, the
-dot already marks the problem and the status line already opens Settings. Differentiate Without Color holds because every state other than
-connected shows either the loading placeholders or the block's heading directly above the dot.
+The dot is the sidebar's only sign of a problem. The sidebar never shows an error message, so it
+always holds the list and the footer, and nothing appears above the status line. The status line's
+help puts the readable failure, like "bad gateway (HTTP 502)", on its own line between the status
+and "Change the server in Settings.", and VoiceOver reads it as the button's hint. The catalog keeps
+retrying on its own and the status line already opens Settings, so there is no Retry. With
+Differentiate Without Color, an orange or red dot becomes an `exclamationmark.circle.fill` of the
+same color and size, so a problem never depends on color alone.
 
 The footer is the sidebar's only progress indicator. When the first load or a refresh the user
 asked for (View > Refresh, which refreshes only the channel list) takes longer than 300 ms, the dot's slot shows a native
@@ -1179,7 +1182,7 @@ clip it, so it overhangs the 7-point slot by 1.5 points on each side and the hos
 When the attempt resolves, it crossfades back to the resulting dot. The catalog's stream never shows
 the spinner. A dropped stream also stays quiet and reconnects with backoff until it has failed for
 about three seconds, the same grace a channel gets, so coming back to the app never flashes the
-orange dot or the block. A refresh the user asked for reports its failure at once. Never overlay a spinner or "Loading Channels" on the list. The static placeholder rows
+orange dot. A refresh the user asked for reports its failure at once. Never overlay a spinner or "Loading Channels" on the list. The static placeholder rows
 show the shape and the footer shows the activity.
 
 In an inactive window the system draws a hairline above the bar, just as it does under the
