@@ -1,5 +1,11 @@
 # Changelog
 
+## Mac 0.1.32
+
+### Bugs/Polish
+
+- Server names in the sidebar are easier to read, in the same gray as the status line below them.
+
 ## iPhone 0.1.28
 
 ### Bugs/Polish

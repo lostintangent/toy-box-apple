@@ -285,7 +285,8 @@ private struct SidebarServerHeader: View {
         let value = catalog.name == host ? footer.accessibilityValue : "\(host), \(footer.accessibilityValue)"
         HStack(spacing: 6) {
             SidebarStatusDot(footer: footer, spinning: showsSpinner)
-            Text(catalog.name).lineLimit(1).truncationMode(.middle)
+            // The footer's status line at rest.
+            Text(catalog.name).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
             if waits {
                 Spacer(minLength: 4)
                 // Sized as a row's badge and ending on the rows' badges, which leaves the hover
