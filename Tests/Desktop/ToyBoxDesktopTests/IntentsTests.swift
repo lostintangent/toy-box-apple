@@ -615,7 +615,7 @@ extension IntentsTests {
 
             #expect(host.confirmations == [.init(channel: "Studio demo", message: text, recipient: recipient)])
             #expect(RequestRecorder.requests.filter { $0.hasPrefix("POST ") } == ["POST /api/v1/channels/studio-demo/messages"])
-            var snapshot = api.observe(channelId: "studio-demo").makeAsyncIterator()
+            var snapshot = api.subscribe(channelId: "studio-demo").makeAsyncIterator()
             let state = try #require(try await snapshot.next()?.state)
             let posted = state.messages.filter { $0.text.hasSuffix(text) }
             #expect(posted.map(\.text) == [recipient.map { "@\(ChannelAgent.handle(forName: $0)) \(text)" } ?? text])
@@ -640,7 +640,7 @@ extension IntentsTests {
 
             #expect(host.confirmations == [.init(channel: "Studio demo", message: text)])
             #expect(RequestRecorder.requests.filter { !$0.hasPrefix("GET ") } == ["POST /api/v1/channels/studio-demo/messages"])
-            var snapshot = api.observe(channelId: "studio-demo").makeAsyncIterator()
+            var snapshot = api.subscribe(channelId: "studio-demo").makeAsyncIterator()
             let state = try #require(try await snapshot.next()?.state)
             let posted = state.messages.filter { $0.text == text }
             #expect(posted.count == 1 && posted.first?.sender == .user)
@@ -686,7 +686,7 @@ extension IntentsTests {
             let writes = RequestRecorder.requests.filter { !$0.hasPrefix("GET ") }
             #expect(writes == ["POST /api/v1/channels/studio-demo/messages"])
             #expect(host.confirmations == [.init(channel: before.channel.name, message: text, recipient: agent.name)])
-            var stream = api.observe(channelId: before.channel.id).makeAsyncIterator()
+            var stream = api.subscribe(channelId: before.channel.id).makeAsyncIterator()
             let after = try #require(try await stream.next()?.state)
             #expect(after.channel.requestSequence == nil)
             #expect(after.messages.filter { $0.text.hasSuffix(text) }.map(\.text) == ["@\(agent.handle) \(text)"])

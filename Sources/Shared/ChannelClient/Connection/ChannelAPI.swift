@@ -221,7 +221,7 @@ public struct ChannelAPI: Sendable {
     }
 
     func snapshot(channelId: String) async throws -> ChannelState {
-        for try await event in observe(channelId: channelId) {
+        for try await event in subscribe(channelId: channelId) {
             guard event.type == "snapshot", let state = event.state, state.channel.id == channelId else {
                 throw ChannelAPIError.invalidEvent("snapshot")
             }

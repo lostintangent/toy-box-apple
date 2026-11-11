@@ -11,7 +11,8 @@
 //   POST /perf/working?channel=ID&count=N
 //
 // It makes the lead and then members working until N are, adding members when the channel has
-// fewer, and the rest idle.
+// fewer, and the rest idle. The catalog lists who's working, as the server's does. The fixture's
+// channels share members, so a member working in one shows as working in each.
 //
 // What these routes stream stays out of the demo server's history, so a reconnect drops it.
 // Each benchmark launch starts a fresh fixture.
@@ -20,7 +21,7 @@
 import http from "node:http";
 import { createHistoryFixture, historyChannelID, writeHistoryPage } from "./channels/history-channel.ts";
 import { createScrollFixture, scrollChannelID, writeScrollImage } from "./channels/scroll.ts";
-import { catalogEntry, createCatalogRoute } from "./channels/catalog-stream.ts";
+import { catalogEntry, createCatalogRoute, workingAgents } from "./channels/catalog-stream.ts";
 import { createDemoServer, loadDemoFixture, type DemoServer } from "./channels/demo-server.ts";
 import { type Agent, type Message, type Response, type Snapshot, type Status } from "./channels/types.ts";
 
@@ -47,6 +48,7 @@ const streams = Object.fromEntries(Object.keys(demos).map(id => [id, new Set<Res
 const injected = Object.fromEntries(Object.keys(demos).map(id => [id, 0]));
 const revisions = Object.fromEntries(Object.keys(demos).map(id => [id, 0]));
 const added = Object.fromEntries(Object.keys(demos).map(id => [id, [] as Agent[]]));
+const running = new Set(Object.values(demos).flatMap(demo => workingAgents(demo.snapshot().presence)));
 const catalog = createCatalogRoute(() => {
     const snapshots = Object.values(demos).map(demo => demo.snapshot());
     const { name, role, avatar } = snapshots[0].lead;
@@ -54,7 +56,7 @@ const catalog = createCatalogRoute(() => {
         lead: { name, role, avatar },
         channels: snapshots.map(({ channel, request }) => catalogEntry(channel, request)),
         members: snapshots.flatMap(snapshot => snapshot.members),
-        working: [],
+        working: [...running].sort(),
     };
 });
 for (const demo of Object.values(demos)) demo.onChange(catalog.publish);
@@ -148,8 +150,10 @@ function setWorking(response: Response, url: URL) {
         broadcast(channel, {
             type: "status", revision: base.revision + ++revisions[channel], agentId: agent.id, status: statuses.get(index),
         });
+        if (index < count) running.add(agent.id);
+        else running.delete(agent.id);
     });
-    broadcast(channel, { type: "presence", presence: Object.fromEntries(agents.map((agent, index) => [agent.id, statuses.get(index)])) });
+    catalog.publish();
     json(response, 200, { working: count, agents: agents.length });
 }
 

@@ -419,8 +419,7 @@ final class AppModel {
                              unreachableHost: unreachable)
     }
 
-    /// Keeps the status item, the widget and the Dock in step with activity, including an open
-    /// channel's live presence.
+    /// Keeps the status item, the widget and the Dock in step with activity, including who's working.
     private func observeMenuBarActivity() {
         let status = withObservationTracking {
             for catalog in catalogs { _ = catalog.lastRefreshedAt }

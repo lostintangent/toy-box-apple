@@ -53,18 +53,18 @@ struct CatalogTests {
         let catalog = ChannelCatalogStore(api: try mock.api())
         await catalog.refresh()
         let refreshedAt = catalog.lastRefreshedAt
-        #expect(await announcements(in: catalog) { await catalog.refresh() } == ["phase"])
+        #expect(await announcements(in: catalog) { await catalog.refresh() } == ["phase", "working"])
         #expect(await announcements(in: catalog) { await catalog.refresh() }.isEmpty)
         #expect(catalog.phase == .failed(ChannelAPIError.http(status: 503, message: "Catalog unavailable.")))
         #expect(catalog.state == initial)
-        #expect(catalog.working == ["test"])
+        #expect(catalog.working.isEmpty, "Nobody shows as working on a catalog that's unavailable")
         #expect(catalog.lastRefreshedAt == refreshedAt)
 
         #expect(await announcements(in: catalog) { await catalog.refresh() } == ["phase"])
         #expect(catalog.phase == .failed(ChannelAPIError.http(status: 401, message: "Sign in.")))
 
         #expect(await announcements(in: catalog) { await catalog.refresh() }
-                == ["state", "working", "phase", "lastRefreshedAt"])
+                == ["state", "phase", "lastRefreshedAt"])
         #expect(catalog.phase == .connected)
         #expect(catalog.state == recovered)
     }
@@ -76,15 +76,36 @@ struct CatalogTests {
         #expect(ChannelCatalogPhase.connecting.failure == nil)
     }
 
-    @Test @MainActor func aRefreshSetsWhoIsWorkingAndKeepsEachChannelsStore() async throws {
-        let mock = MockTransport { _, _ in
-            try .json(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel],
-                                     working: ["test", "member"]))
+    @Test @MainActor func whoIsWorkingReachesEveryChannelsPresenceUntilTheCatalogFails() async throws {
+        var state = testState(revision: 1)
+        state.members = [.init(id: "member", name: "Member", status: .init(state: "working", text: "Reading"))]
+        let channel = state.channel
+        let mock = MockTransport { _, count in
+            count == 2 ? Self.unavailable()
+                : try .json(ChannelCatalog(lead: testLeadProfile, channels: [channel], working: ["test", "member"]))
         }
         let catalog = ChannelCatalogStore(api: try mock.api())
+        let opened = catalog.channel(id: "test")
+        _ = try opened.apply(.init(type: "snapshot", state: state))
+        let idle: [String: ChannelAgentPresence] = ["test": .init(state: "idle"), "member": .init(state: "idle")]
+        let working: [String: ChannelAgentPresence] = [
+            "test": .init(state: "working"), "member": .init(state: "working", text: "Reading"),
+        ]
+        #expect(opened.presence == idle)
+
         await catalog.refresh()
         #expect(catalog.working == ["test", "member"])
-        #expect(catalog.channel(id: "test") === catalog.channel(id: "test"))
+        #expect(catalog.channel(id: "test") === opened)
+        #expect(opened.presence == working)
+        let later = catalog.channel(id: "later")
+        _ = try later.apply(.init(type: "snapshot", state: state))
+        #expect(later.presence == working, "A store opened later starts with who's working")
+
+        await catalog.refresh()
+        #expect(catalog.phase.failure != nil)
+        #expect(opened.presence == idle && later.presence == idle)
+        await catalog.refresh()
+        #expect(opened.presence == working)
     }
 
     private static let served = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel])
@@ -368,7 +389,7 @@ struct CatalogTests {
         await refresh.value
         #expect(!catalog.isFetching)
         #expect(catalog.state == initial)
-        #expect(catalog.working == ["test"])
+        #expect(catalog.working == (hadFailure ? [] : ["test"]))
         #expect(catalog.lastRefreshedAt == refreshedAt)
         #expect(catalog.phase == (hadFailure ? .failed(expectedFailure) : .connected))
     }

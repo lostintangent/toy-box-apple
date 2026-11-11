@@ -73,9 +73,9 @@ public extension ChannelAPI {
     /// The server sends a keepalive well inside `heartbeatTimeout`, so that much silence fails the
     /// stream. The request's own timeout enforces it, since URLSession times out a stream that
     /// receives nothing for its timeout interval.
-    func observe(channelId: String, after: Int? = nil,
-                 heartbeatTimeout: TimeInterval = 35) -> AsyncThrowingStream<ChannelObservationEvent, any Error> {
-        observe(channelId: channelId, after: after, heartbeatTimeout: heartbeatTimeout, arrivals: nil)
+    func subscribe(channelId: String, after: Int? = nil,
+                   heartbeatTimeout: TimeInterval = 35) -> AsyncThrowingStream<ChannelSubscriptionEvent, any Error> {
+        subscribe(channelId: channelId, after: after, heartbeatTimeout: heartbeatTimeout, arrivals: nil)
     }
 
     /// Notes each byte of an accepted stream in `arrivals`, before any event completes.
@@ -83,9 +83,9 @@ public extension ChannelAPI {
     /// The task that reads the stream opens its request, at the first event it asks for, and the
     /// request closes when that task stops reading. So a stream nobody reads never connects, and a
     /// reader cancelled first never touches a session its owner may since have invalidated.
-    internal func observe(channelId: String, after: Int?, heartbeatTimeout: TimeInterval = 35,
-                          arrivals: StreamArrivals?) -> AsyncThrowingStream<ChannelObservationEvent, any Error> {
-        let reader = SSEReader<ChannelObservationEvent>(
+    internal func subscribe(channelId: String, after: Int?, heartbeatTimeout: TimeInterval = 35,
+                            arrivals: StreamArrivals?) -> AsyncThrowingStream<ChannelSubscriptionEvent, any Error> {
+        let reader = SSEReader<ChannelSubscriptionEvent>(
             session: streamSession,
             request: streamRequest(channelId: channelId, after: after, timeout: heartbeatTimeout),
             arrivals: arrivals
@@ -104,7 +104,7 @@ public extension ChannelAPI {
     /// The catalog stream: a snapshot, then each change, with a keepalive while nothing changes.
     /// It has no cursor, so every reconnect opens with a fresh snapshot. It opens the way a
     /// channel's stream does, and fails on the same silence.
-    internal func observeCatalog(heartbeatTimeout: TimeInterval = 35)
+    internal func subscribeToCatalog(heartbeatTimeout: TimeInterval = 35)
         -> AsyncThrowingStream<SSEItem<ChannelCatalogEvent>, any Error> {
         var request = URLRequest(url: endpoint(["api", "v1", "channels"]),
                                  cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: heartbeatTimeout)
@@ -201,11 +201,10 @@ private final class SSEReader<Event: Decodable & Sendable>: @unchecked Sendable 
     }
 }
 
-private func validate(_ event: ChannelObservationEvent) throws {
+private func validate(_ event: ChannelSubscriptionEvent) throws {
     let valid: Bool
     switch event.type {
     case "snapshot": valid = event.state != nil
-    case "presence", "resumed": valid = event.presence != nil
     case "deleted": valid = event.channelId != nil
     case "message": valid = event.revision != nil && event.message != nil
     case "reaction": valid = event.revision != nil && event.sequence != nil && event.agentId != nil

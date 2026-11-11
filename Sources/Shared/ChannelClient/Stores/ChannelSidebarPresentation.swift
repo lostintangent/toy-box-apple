@@ -10,7 +10,7 @@ public struct ChannelSidebarPresentation {
         self.openChannelIDs = openChannelIDs
     }
 
-    /// Reads live details and the request independently of presence and transcript events.
+    /// Reads live details and the request independently of status and transcript events.
     /// Activity times remain the catalog's so live state does not reorder the list.
     public func channel(_ channel: Channel) -> Channel {
         guard openChannelIDs.contains(channel.id), let store = catalog?.channel(id: channel.id),
@@ -32,11 +32,11 @@ public struct ChannelSidebarPresentation {
         return catalogAgents(channelID: channel.id)
     }
 
+    /// The catalog's `working`, for open and closed channels alike. An open channel that becomes
+    /// unavailable clears it, as its transcript and Overview do.
     public func working(_ channel: Channel, agents: [ChannelAgent]) -> [ChannelAgent] {
-        if openChannelIDs.contains(channel.id), let store = catalog?.channel(id: channel.id) {
-            return store.phase.isUnavailable ? [] : agents.filter { store.presence[$0.id]?.state == "working" }
-        }
-        guard let catalog, catalog.phase.message == nil else { return [] }
+        guard let catalog else { return [] }
+        if openChannelIDs.contains(channel.id), catalog.channel(id: channel.id).phase.isUnavailable { return [] }
         return agents.filter { catalog.working.contains($0.id) }
     }
 

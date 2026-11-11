@@ -497,11 +497,11 @@ struct TranscriptTests {
         defer { await harness.close() }
 
         var events = messages.dropFirst(30).enumerated().map { index, message in
-            ChannelObservationEvent(type: "message", revision: index + 2, message: message)
+            ChannelSubscriptionEvent(type: "message", revision: index + 2, message: message)
         }
         if readElsewhere { events.append(.init(type: "read", revision: 62, seenThrough: 90)) }
         log.isRecording = true
-        try await harness.reopen(replaying: events + [.init(type: "resumed", presence: [:])])
+        try await harness.reopen(replaying: events + [.init(type: "resumed")])
         try await harness.waitUntil { harness.capture.hasLanded }
         try await harness.settled()
         log.isRecording = false
@@ -753,7 +753,7 @@ struct TranscriptTests {
         try await harness.settled()
         #expect(harness.interaction.revealProgress?.outcome == .loading)
         harness.push(transcriptTestMessage(41), revision: 2)
-        harness.deliver(.init(type: "resumed", presence: [:]))
+        harness.deliver(.init(type: "resumed"))
         try await harness.waitUntil { harness.interaction.revealProgress?.outcome != .loading }
         #expect(harness.interaction.revealProgress == RevealProgress(token: token, sequence: 41, outcome: .revealed))
         #expect(harness.visibleWindowFrames()["m41"] != nil)
@@ -767,7 +767,7 @@ struct TranscriptTests {
         defer { await harness.close() }
         try await harness.reopen(replaying: [])
         let token = harness.interaction.reveal(sequence: 99)
-        harness.deliver(.init(type: "resumed", presence: [:]))
+        harness.deliver(.init(type: "resumed"))
         try await harness.waitUntil {
             harness.capture.hasLanded && harness.interaction.revealProgress?.outcome != .loading
         }
@@ -1410,10 +1410,10 @@ struct TranscriptTests {
             revision: 1,
             channel: Channel(id: "capsule", name: "Capsule", model: .init(provider: "test", name: "test"),
                              latestSequence: 0, seenThrough: 0, updatedAt: "2026-10-22T12:00:00Z"),
-            lead: agents[0], members: [agents[1]],
-            presence: [agents[0].id: .init(state: "working"), agents[1].id: .init(state: "working")])
+            lead: agents[0], members: [agents[1]])
         let bitmap = try await renderedTranscriptBitmap(
-            TranscriptWorkingRow(agents: state.agents, presence: state.presence)
+            TranscriptWorkingRow(agents: state.agents,
+                                 presence: [agents[0].id: .init(state: "working"), agents[1].id: .init(state: "working")])
                 .frame(width: 240, height: 28, alignment: .leading),
             size: CGSize(width: 240, height: 28))
         let scale = CGFloat(bitmap.pixelsWide) / 240
@@ -2672,7 +2672,7 @@ private final class TranscriptHarness {
     /// Leaves the channel and opens it again, as switching back to one viewed a while ago does. The store
     /// kept its last state while disconnected, and its reconnect asks for everything after that, which the
     /// server replays one event at a time, a display frame apart, before `resumed`.
-    func reopen(replaying events: [ChannelObservationEvent]) async throws {
+    func reopen(replaying events: [ChannelSubscriptionEvent]) async throws {
         store.disconnect()
         let previous = TranscriptServerProtocol.fixtures.withLock { fixtures in
             fixtures[host]?.snapshot = Data()
@@ -2838,7 +2838,7 @@ private final class TranscriptHarness {
         deliver(.init(type: "message", revision: revision, message: message))
     }
 
-    func deliver(_ event: ChannelObservationEvent) {
+    func deliver(_ event: ChannelSubscriptionEvent) {
         let data = try? TranscriptServerProtocol.event(event)
         let stream = TranscriptServerProtocol.fixtures.withLock { $0[host]?.stream }
         if let data { stream?.deliver(data) }
@@ -2910,7 +2910,7 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
 
     static let fixtures = Mutex<[String: Fixture]>([:])
 
-    static func event(_ event: ChannelObservationEvent) throws -> Data {
+    static func event(_ event: ChannelSubscriptionEvent) throws -> Data {
         Data(("data: " + String(decoding: try JSONEncoder().encode(event), as: UTF8.self) + "\n\n").utf8)
     }
 

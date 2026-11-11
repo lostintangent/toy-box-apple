@@ -2991,9 +2991,8 @@ Waiting comes from the catalog's `waitingRequests` in ChannelClient, shared by t
 notifications and both platforms' widgets. It lists the sidebar's waiting channels newest request
 first and quotes each from the catalog's `request`, or an open channel's store, whose own stream
 can deliver a request first. Nothing reads history to find one.
-Working must come from the one function the sidebar row uses (live
-presence for an open channel, otherwise the catalog's `working`), so the menu bar, the sidebar
-and the Dock can never disagree. Render identities with `AgentAvatarView`. Opening the inbox does
+Working must come from the one function the sidebar row uses, which reads the catalog's
+`working`, so the menu bar, the sidebar and the Dock can never disagree. Render identities with `AgentAvatarView`. Opening the inbox does
 not refresh the catalog. The catalog's stream already delivers each change as it happens.
 Opening it, reading a quote and expanding Reply never mark a channel read.
 

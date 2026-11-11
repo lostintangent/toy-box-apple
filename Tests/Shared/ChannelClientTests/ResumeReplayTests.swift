@@ -50,7 +50,7 @@ struct ResumeReplayTests {
         return state
     }()
 
-    private let resumed = ChannelObservationEvent(type: "resumed", presence: ["ana": .init(state: "working")])
+    private let resumed = ChannelSubscriptionEvent(type: "resumed")
 
     private func system(_ sequence: Int, _ content: ChannelSystemContent) -> ChannelMessage {
         .init(id: "s\(sequence)", sequence: sequence, timestamp: "2026-10-01T00:0\(sequence % 10):00Z",
@@ -58,8 +58,8 @@ struct ResumeReplayTests {
     }
 
     /// What a busy channel did while it was closed: 200 messages, then a change to every other slice.
-    private func missed() -> [ChannelObservationEvent] {
-        var events = (2...201).map { ChannelObservationEvent(type: "message", revision: $0, message: testMessage($0)) }
+    private func missed() -> [ChannelSubscriptionEvent] {
+        var events = (2...201).map { ChannelSubscriptionEvent(type: "message", revision: $0, message: testMessage($0)) }
         let request = ChannelMessage(id: "m202", sequence: 202, timestamp: "2026-10-01T00:02:00Z",
                                      sender: .agent("ana"), content: .text("Which one?"), request: true)
         let artifact = ChannelArtifact(file: .init(kind: "machine", path: "/tmp/plan.md"), title: "Plan")
@@ -107,6 +107,7 @@ struct ResumeReplayTests {
         }
         let store = try store(mock)
         defer { store.disconnect() }
+        store.working = ["ana"]
         try await openAndClose(store, mock)
 
         let changes = SliceChanges(store)
@@ -132,7 +133,7 @@ struct ResumeReplayTests {
         #expect(store.messages.map(\.sequence) == Array(1...202) + Array(205...208))
         #expect(store.requestSequence == 202 && store.request?.id == "m202")
         #expect(store.agentStatuses["ana"]?.text == "Reading")
-        #expect(store.presence["ana"]?.state == "working")
+        #expect(store.presence["ana"] == .init(state: "working", text: "Reading"))
         #expect(store.tasks.map(\.id) == ["t1"])
         #expect(store.roster.map(\.id) == ["test", "ana", "bo"])
         #expect(store.artifacts.map(\.title) == ["Plan"])
@@ -142,7 +143,7 @@ struct ResumeReplayTests {
         #expect(store.unreadAfter == 1)
 
         // Once resumed, each live event publishes as it arrives.
-        let live = ChannelObservationEvent(type: "message", revision: 209, message: testMessage(209))
+        let live = ChannelSubscriptionEvent(type: "message", revision: 209, message: testMessage(209))
         #expect(mock.sendPendingBody(try MockResponse.stream([live]).body) == 1)
         try await eventually { store.messages.last?.id == "m209" }
         #expect(changes.counts["messages"] == 2)

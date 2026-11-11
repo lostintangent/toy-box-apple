@@ -170,7 +170,7 @@ final class ChannelFollowController {
             let activity = try client.request(
                 .init(channelID: store.id, channelName: state.channel.name,
                       registrationID: registration.registrationID, startedAt: date),
-                .init(state: state, updatedAt: date)
+                .init(state: state, working: server.catalog.working, updatedAt: date)
             )
             let follow = Follow(target: target, activity: activity, store: store, registration: registration)
             entry = follow

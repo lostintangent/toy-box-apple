@@ -345,8 +345,8 @@ struct OverviewTests {
             members: [.init(id: "member", name: "Agent", role: "Engineer")])
         let agentID = state.lead.id
         let reason = "WAITING MMMM MMMM MMMM MMMM MMMM"
-        state.presence = [agentID: .init(state: "waiting", text: reason, wakeAt: wake),
-                          "member": .init(state: "waiting", text: reason)]
+        state.lead.status = .init(state: "waiting", text: reason, wakeAt: wake)
+        state.members[0].status = .init(state: "waiting", text: reason)
         _ = try store.apply(.init(type: "snapshot", state: state))
         let session = ChannelOverview(store: store)
         let interaction = ChannelInteraction()
@@ -403,7 +403,8 @@ struct OverviewTests {
         interaction.isInspectorPresented = true
         try await settle(announcement: true)
         state.revision += 1
-        state.presence[agentID] = .init(state: "working", text: "Compiling", wakeAt: wake)
+        state.lead.status = .init(state: "working", text: "Compiling", wakeAt: wake)
+        store.working = [agentID]
         _ = try store.apply(.init(type: "snapshot", state: state))
         try await settle(announcement: false)
         #expect(MobileAutomationTree(windows: [window]).elements.first {
@@ -1158,13 +1159,14 @@ struct OverviewTests {
         let store = ChannelStore(id: "channel", api: api,
                                  reconnectPolicy: .init(initialDelay: 60, maximumDelay: 60, grace: 3), sleep: { _ in })
         defer { store.disconnect() }
-        var state = ChannelState(
+        let state = ChannelState(
             revision: 1,
             channel: .init(id: "channel", name: "Workshop", model: .init(provider: "test", name: "test"),
                            updatedAt: "2026-10-26T00:00:00Z"),
             lead: .init(id: "channel", name: "Lead"),
-            members: [.init(id: "ada", name: "Ada"), .init(id: "bo", name: "Bo")])
-        state.presence = ["ada": .init(state: "working", text: "Compiling"), "bo": .init(state: "idle")]
+            members: [.init(id: "ada", name: "Ada", status: .init(state: "working", text: "Compiling")),
+                      .init(id: "bo", name: "Bo")])
+        store.working = ["ada"]
         _ = try store.apply(.init(type: "snapshot", state: state))
         let session = ChannelOverview(store: store)
         let host = UIHostingController(rootView:
@@ -1196,18 +1198,14 @@ struct OverviewTests {
         #expect(!working.contains("overview-agent-channel") && !working.contains("overview-agent-bo"))
         #expect(elements().first { $0.identifier == "overview-team-working-filter" }?.value == "On")
 
-        state.revision += 1
-        state.presence = ["bo": .init(state: "idle")]
-        _ = try store.apply(.init(type: "snapshot", state: state))
+        store.working = []
         await Task.yield()
         host.view.layoutIfNeeded()
         #expect(elements().contains { $0.label == "No agents working" })
         #expect(elements().contains { $0.identifier == "overview-add-agent" })
         #expect(!elements().contains { $0.identifier == "overview-agent-ada" })
 
-        state.revision += 1
-        state.presence = ["ada": .init(state: "working", text: "Compiling")]
-        _ = try store.apply(.init(type: "snapshot", state: state))
+        store.working = ["ada"]
         // An unreachable server fails the channel without a deletion, which would replace the list.
         store.connect()
         for await isUnavailable in Observations({ store.phase.isUnavailable }) where isUnavailable { break }

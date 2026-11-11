@@ -51,14 +51,15 @@ public struct ChannelActivityAttributes: Codable, Hashable, Sendable {
             self.ending = ending
         }
 
-        public init(state: ChannelState, updatedAt: Date) {
+        /// `working` is the catalog's, the IDs of the agents running now.
+        public init(state: ChannelState, working: Set<String>, updatedAt: Date) {
             let progress = state.channel.tasks.progress
             let ending: Ending?
             if progress.total == 0 { ending = .tasksRemoved }
             else if progress.done == progress.total { ending = .completed }
             else { ending = nil }
             self.init(
-                workingAgents: state.agents.filter { state.presence[$0.id]?.state == "working" }.map(WorkingAgent.init),
+                workingAgents: state.agents.filter { working.contains($0.id) }.map(WorkingAgent.init),
                 tasksDone: progress.done, tasksTotal: progress.total,
                 waitingRequestSequence: state.channel.requestSequence,
                 updatedAt: updatedAt, ending: ending

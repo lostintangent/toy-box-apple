@@ -213,7 +213,7 @@ extension MorningDigest {
             try Task.checkCancellation()
             if let updated = try? Date(channel.updatedAt, strategy: .iso8601), updated <= window.since { continue }
             var snapshot: ChannelState?
-            for try await event in api.observe(channelId: channel.id) {
+            for try await event in api.subscribe(channelId: channel.id) {
                 guard event.type == "snapshot", let state = event.state else {
                     throw ChannelAPIError.invalidEvent("snapshot")
                 }
