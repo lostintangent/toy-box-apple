@@ -59,14 +59,33 @@ extension Screen {
         }
     }
 
-    /// What the server says as text when a viewer connects and whenever the screen changes. Its only
-    /// other text, an error, has no status, so it fails to decode like any type from a newer server.
-    public struct Message: Decodable, Equatable, Sendable {
-        /// Known once the screen opens.
-        public var title: String?
-        public var status: Status
-        /// Why the screen is paused or ended.
-        public var reason: String?
+    /// What the server says as text: the screen's state when a viewer connects and whenever it
+    /// changes, or an error for a command it refused. Any other type fails to decode, like any type
+    /// from a newer server.
+    public enum Message: Decodable, Equatable, Sendable {
+        /// The title is known once the screen opens, and the reason says why it's paused or ended.
+        /// Control belongs to one viewer across every screen, and a server that predates it never
+        /// gives it.
+        case state(title: String? = nil, status: Status, reason: String? = nil, hasControl: Bool = false)
+        case error(String)
+
+        private enum CodingKeys: String, CodingKey { case type, title, status, reason, hasControl, message }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            switch try container.decode(String.self, forKey: .type) {
+            case "state":
+                self = try .state(title: container.decodeIfPresent(String.self, forKey: .title),
+                                  status: container.decode(Status.self, forKey: .status),
+                                  reason: container.decodeIfPresent(String.self, forKey: .reason),
+                                  hasControl: container.decodeIfPresent(Bool.self, forKey: .hasControl) ?? false)
+            case "error":
+                self = try .error(container.decode(String.self, forKey: .message))
+            case let type:
+                throw DecodingError.dataCorruptedError(forKey: .type, in: container,
+                                                       debugDescription: "Unknown screen message type \(type).")
+            }
+        }
     }
 
     /// What a viewer shows: the latest full frame, and at most one region drawn over it. A region
@@ -92,6 +111,18 @@ extension Screen {
             }
             size = CGSize(width: frame.width, height: frame.height)
             radius = frame.radius ?? 0
+        }
+
+        /// Where a point lands on the frame, fitted and centered in `bounds`, as fractions of it from
+        /// its top left. A point off the frame, including its far edges, which the host can't press,
+        /// lands nowhere.
+        public func position(of point: CGPoint, fittedIn bounds: CGRect) -> CGPoint? {
+            guard size.width > 0, size.height > 0, bounds.width > 0, bounds.height > 0 else { return nil }
+            let scale = min(bounds.width / size.width, bounds.height / size.height)
+            let (width, height) = (size.width * scale, size.height * scale)
+            let x = (point.x - bounds.minX - (bounds.width - width) / 2) / width
+            let y = (point.y - bounds.minY - (bounds.height - height) / 2) / height
+            return (0..<1).contains(x) && (0..<1).contains(y) ? CGPoint(x: x, y: y) : nil
         }
     }
 }
