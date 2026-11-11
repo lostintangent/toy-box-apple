@@ -24,6 +24,7 @@
     "lint:workflows": "SHELLCHECK_OPTS=--severity=warning go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
   },
   "devDependencies": {
-    "@types/bun": "1.4.4"
+    "@types/bun": "1.4.4",
+    "@types/ws": "8.18.1"
   }
 }
