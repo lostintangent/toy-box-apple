@@ -239,10 +239,10 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   in Add Server and Welcome. To use another server, the user adds it and removes the old one.
   Adding an address that's already listed selects that server. Adding a server whose `id` is
   already saved at another address moves that server there instead, as if removed from the old
-  address and added at the new one but keeping its place, name, links and drafts, and selects
-  it, so a server that moved is simply added again. Removing one asks first, then disconnects it
-  and removes its channels from Spotlight, notifications, widgets and Live Activities. The last
-  server can't be removed, so Welcome appears only on first launch.
+  address and added at the new one but keeping its place, name, links, drafts and unsent
+  messages, and selects it, so a server that moved is simply added again. Removing one asks first,
+  then disconnects it and removes its channels from Spotlight, notifications, widgets and Live
+  Activities. The last server can't be removed, so Welcome appears only on first launch.
 - **Naming a server.** Name renames the server itself, for every device and every lead, through
   `PATCH /api/v1/server {name}`, which answers the server. The field has no caption. It saves on
   Return or when the field loses focus, if the name changed, and clearing it gives the server back
