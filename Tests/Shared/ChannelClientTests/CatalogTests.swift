@@ -282,7 +282,7 @@ struct CatalogTests {
         }
         await catalog.refresh()
         // A stream's failure carries only its status.
-        let message = streaming ? HTTPURLResponse.localizedString(forStatusCode: 503) : "Catalog unavailable."
+        let message = streaming ? nil : "Catalog unavailable."
         #expect(catalog.phase == .failed(ChannelAPIError.http(status: 503, message: message)))
         #expect(catalog.state == (streaming ? Self.served : nil))
         #expect(mock.requests.count == (streaming ? 2 : 1))

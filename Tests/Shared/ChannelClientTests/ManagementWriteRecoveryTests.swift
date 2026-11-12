@@ -53,7 +53,7 @@ struct ManagementWriteRecoveryTests {
             Issue.record("A failed read must not be presented as reconciliation.")
             return
         }
-        #expect(message.contains("HTTP 500"))
+        #expect(message == "Management failed.")
         #expect(recovery.blocksWrites && recovery.result == nil)
         recovery.finishReview()
         #expect(recovery.blocksWrites)

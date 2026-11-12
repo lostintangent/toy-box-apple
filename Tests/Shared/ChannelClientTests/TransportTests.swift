@@ -37,6 +37,15 @@ struct TransportTests {
         #expect(posted.attachments == [reference])
     }
 
+    @Test(arguments: [
+        (422, #"{"error":"npm couldn't reach the registry."}"#, "npm couldn't reach the registry."),
+        (502, #"{"error":" "}"#, "bad gateway (HTTP 502)"),
+        (502, "<html>Bad Gateway</html>", "bad gateway (HTTP 502)"),
+    ])
+    func aFailureReadsInTheServersOwnWordsOrItsStatusWithTheCode(status: Int, body: String, shown: String) {
+        #expect(ChannelAPI.failure(status: status, data: Data(body.utf8)).localizedDescription == shown)
+    }
+
     @Test func managementMethodsAndNullablePatches() async throws {
         let channel = testState().channel
         let member = ChannelAgent(id: "member", name: "Ada", channelId: "test")

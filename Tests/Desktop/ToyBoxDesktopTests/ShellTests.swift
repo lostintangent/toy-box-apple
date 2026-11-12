@@ -812,7 +812,7 @@ struct SidebarConnectionFooterTests {
         #expect(footers.map(\.dot) == [.secondary, .green, .orange, .red])
 
         let url = "http://localhost:3100"
-        let badGateway = ChannelCatalogPhase.failed(ChannelAPIError.http(status: 502, message: "bad gateway"))
+        let badGateway = ChannelCatalogPhase.failed(ChannelAPIError.http(status: 502, message: nil))
         let failing = SidebarConnectionFooter.Status.server(SidebarFooter(phase: badGateway, isLoaded: true),
                                                             url: url, failure: badGateway.message)
         #expect(failing.help == "Reconnecting to http://localhost:3100\nbad gateway (HTTP 502)\nChange the server in Settings.")

@@ -16,9 +16,7 @@ struct NetworkReturnTests {
     private let wifi = NetworkPath(isSatisfied: true, interface: "en0")
     private let cellular = NetworkPath(isSatisfied: true, interface: "pdp_ip0")
     private let offline = NetworkPath(isSatisfied: false, interface: nil)
-    private let unavailable = ChannelAPIError.http(
-        status: 503, message: HTTPURLResponse.localizedString(forStatusCode: 503)
-    ).localizedDescription
+    private let unavailable = ChannelAPIError.http(status: 503, message: nil).localizedDescription
     /// Backoff that outlasts the test's time limit, and a short grace.
     private let patient = ReconnectPolicy(initialDelay: 600, maximumDelay: 600, grace: 0.05)
 

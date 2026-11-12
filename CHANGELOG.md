@@ -14,6 +14,7 @@
 - Opening a channel shows its conversation right away, instead of sometimes leaving it blank while agents are working or a request waits for you.
 - Typing a message keeps up with every key, even while agents are working or your Mac is busy.
 - An image that can't load no longer fills the conversation with its file path and an error. It keeps its place, and clicking it tries again.
+- When your server turns something down, like a name that's already taken, its message now reads just as the server wrote it, without a technical code tacked on.
 
 ## iPhone 0.1.31
 
@@ -30,6 +31,7 @@
 - Opening a channel with a request waiting for you no longer sometimes leaves its conversation blank.
 - Typing a message keeps up with every key, even while agents are working.
 - An image that can't load keeps its place in the conversation, and tapping it tries again.
+- When your server turns something down, like a name that's already taken, its message now reads just as the server wrote it, without a technical code tacked on.
 
 ## Mac 0.1.33
 

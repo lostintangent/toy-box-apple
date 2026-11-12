@@ -8,9 +8,7 @@ import Testing
 @Suite("Connection grace", .timeLimit(.minutes(1)))
 struct ConnectionGraceTests {
     private let resumed = ChannelSubscriptionEvent(type: "resumed")
-    private let unavailable = ChannelAPIError.http(
-        status: 503, message: HTTPURLResponse.localizedString(forStatusCode: 503)
-    ).localizedDescription
+    private let unavailable = ChannelAPIError.http(status: 503, message: nil).localizedDescription
 
     /// The stream drops, a retry fails at once, and the next retry is held open.
     private func droppingTransport() -> MockTransport {
