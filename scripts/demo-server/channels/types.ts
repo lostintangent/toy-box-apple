@@ -18,6 +18,7 @@ export type Snapshot = Omit<typeof fixture, "lead" | "members" | "messages" | "r
     bookmarks: number[];
     channel: Omit<typeof fixture.channel, "requestSequence" | "completedSequence"> & {
         requestSequence: number | null; completedSequence: number | null;
+        avatar?: { mark: string; color: string } | { image: string };
     };
 };
 export type Response = ServerResponse;

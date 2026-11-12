@@ -14,6 +14,8 @@ public final class MobileShareSession {
         public let serverURL: String
         public let id: String
         public let name: String
+        /// Nil until the channel list loads, for a channel suggested by the share sheet.
+        public let avatar: ChannelAvatar?
     }
 
     /// A channel the sheet offers, on its server.
@@ -60,7 +62,7 @@ public final class MobileShareSession {
         if let identifier = intent?.conversationIdentifier, let suggested = ChannelTarget(identifier: identifier),
            let catalog = catalogs.first(at: suggested.serverURL) {
             target = Target(serverURL: catalog.api.baseURL.absoluteString, id: suggested.channelID,
-                            name: intent?.speakableGroupName?.spokenPhrase ?? suggested.channelID)
+                            name: intent?.speakableGroupName?.spokenPhrase ?? suggested.channelID, avatar: nil)
         }
     }
 
@@ -112,14 +114,14 @@ public final class MobileShareSession {
         guard phase == .composing, let target, let catalog = catalogs.first(at: target.serverURL),
               catalog.isLoaded else { return }
         self.target = catalog.channels.first { $0.id == target.id }.map {
-            Target(serverURL: target.serverURL, id: target.id, name: $0.name)
+            Target(serverURL: target.serverURL, id: target.id, name: $0.name, avatar: $0.avatar)
         }
     }
 
     public func choose(_ choice: Choice) {
         guard !isLocked else { return }
         target = Target(serverURL: choice.catalog.api.baseURL.absoluteString, id: choice.channel.id,
-                        name: choice.channel.name)
+                        name: choice.channel.name, avatar: choice.channel.avatar)
     }
 
     /// Returns once the one attempt settles, even offline, and the app shows any failure in the channel.
@@ -130,6 +132,7 @@ public final class MobileShareSession {
         await outbox.send(content.message(note: note), attachments: content.attachments,
                           to: target.id, on: catalog.api.baseURL)
         phase = .sent
-        await history?.recordSend(serverURL: target.serverURL, channelID: target.id, name: target.name).value
+        await history?.recordSend(serverURL: target.serverURL, channelID: target.id, name: target.name,
+                                  avatar: target.avatar).value
     }
 }

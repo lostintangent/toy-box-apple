@@ -7,7 +7,6 @@ import SwiftUI
 public struct AgentAvatarView: View {
     public let agent: ChannelAgent
     public var size: CGFloat
-    @Environment(\.colorSchemeContrast) private var contrast
 
     public init(agent: ChannelAgent, size: CGFloat = 32) {
         self.agent = agent
@@ -23,19 +22,8 @@ public struct AgentAvatarView: View {
                     .scaledToFit()
                     .frame(width: size * 0.6, height: size * 0.6)
                     .foregroundStyle(.secondary)
-            } else if let avatar = agent.avatar, let fill = Color(hex: avatar.color),
-                      let mark = try? SVGPath.parse(avatar.mark),
-                      let ink = avatar.resolvedInk.flatMap({ Color(hex: $0) }) {
-                if contrast == .increased {
-                    Circle().fill(fill)
-                } else {
-                    Circle().fill(fill.gradient)
-                }
-                AvatarMark(path: mark)
-                    .stroke(ink,
-                            style: StrokeStyle(lineWidth: 2.25 * size * 0.64 / 24,
-                                               lineCap: .round, lineJoin: .round))
-                    .frame(width: size * 0.64, height: size * 0.64)
+            } else if let face = agent.avatar.flatMap({ AvatarFace($0, size: size) }) {
+                face
             } else {
                 Circle().fill(Color.cyan.opacity(0.15))
                 Text(agent.name.prefix(1).uppercased())
@@ -46,6 +34,36 @@ public struct AgentAvatarView: View {
         .frame(width: size, height: size)
         .clipShape(Circle())
         .accessibilityHidden(true)
+    }
+}
+
+/// A profile's mark on its color, filling the shape its caller clips it to. Members and channels
+/// draw their marks with it.
+struct AvatarFace: View {
+    private let fill: Color
+    private let mark: Path
+    private let ink: Color
+    private let size: CGFloat
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    /// Nil when the avatar's color or mark doesn't parse.
+    init?(_ avatar: AgentAvatar, size: CGFloat) {
+        guard let fill = Color(hex: avatar.color), let mark = try? SVGPath.parse(avatar.mark),
+              let ink = avatar.resolvedInk.flatMap({ Color(hex: $0) }) else { return nil }
+        (self.fill, self.mark, self.ink, self.size) = (fill, mark, ink, size)
+    }
+
+    var body: some View {
+        ZStack {
+            if contrast == .increased {
+                Rectangle().fill(fill)
+            } else {
+                Rectangle().fill(fill.gradient)
+            }
+            AvatarMark(path: mark)
+                .stroke(ink, style: StrokeStyle(lineWidth: 2.25 * size * 0.64 / 24, lineCap: .round, lineJoin: .round))
+                .frame(width: size * 0.64, height: size * 0.64)
+        }
     }
 }
 

@@ -105,7 +105,7 @@ private struct ChannelSidebarRowContent: View {
     }
 
     private var icon: some View {
-        ChannelMark(emphasized: emphasized)
+        ChannelMark()
     }
 
     private var showsFolder: Bool {

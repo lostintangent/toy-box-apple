@@ -34,6 +34,24 @@ struct MobileShareTests {
         #expect(donor.donated.count == 23)
     }
 
+    @Test func aSuggestionShowsTheChannelsOwnAvatar() async throws {
+        func pixel(_ avatar: ChannelAvatar?) async throws -> [UInt8] {
+            let png = try #require(await MobileShareHistory.markImage(avatar, serverURL: "https://toy.example"))
+            let image = try #require(CGImageSourceCreateWithData(png as CFData, nil)
+                .flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) })
+            #expect(image.width == 180 && image.height == 180)
+            var rgba = [UInt8](repeating: 0, count: 4)
+            let context = try #require(CGContext(
+                data: &rgba, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(x: -90, y: -150, width: 180, height: 180))
+            return Array(rgba.prefix(3))
+        }
+        let hash = try await pixel(nil)
+        let mark = try await pixel(.mark(.init(mark: "M4 12H20", color: "#d03030")))
+        #expect(hash[2] > hash[0] && mark[0] > mark[2])
+    }
+
     @Test func theAppAndTheExtensionShareOneHistoryAcrossServers() async throws {
         let donor = FakeDonor()
         let (app, directory) = try Self.history(donor)
@@ -191,9 +209,9 @@ struct MobileShareTests {
         let studio = try #require(ChannelTarget(serverURL: fixture.serverURL, channelID: "studio"))
         let renamed = MobileShareSession(history: history, intent: Self.intent(studio, name: "Old Name"),
                                          session: fixture.session)
-        #expect(renamed.target == .init(serverURL: fixture.serverURL + "/", id: "studio", name: "Old Name"))
+        #expect(renamed.target == .init(serverURL: fixture.serverURL + "/", id: "studio", name: "Old Name", avatar: nil))
         await renamed.refreshChannels()
-        #expect(renamed.target == .init(serverURL: fixture.serverURL + "/", id: "studio", name: "Studio"))
+        #expect(renamed.target == .init(serverURL: fixture.serverURL + "/", id: "studio", name: "Studio", avatar: nil))
         #expect(renamed.agents.map(\.name) == ["Server Lead", "Builder"])
 
         let gone = try #require(ChannelTarget(serverURL: fixture.serverURL, channelID: "gone"))

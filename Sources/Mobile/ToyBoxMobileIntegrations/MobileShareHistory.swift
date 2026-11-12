@@ -87,10 +87,11 @@ public final class MobileShareHistory {
         return enqueue { [donor] in if !removed.isEmpty { try await donor.delete(removed) } }
     }
 
-    /// Moves a channel to the front of the recents and suggests it again. A send on a server the app
-    /// doesn't have changes nothing.
+    /// Moves a channel to the front of the recents and suggests it again, with its avatar. A send on a
+    /// server the app doesn't have changes nothing.
     @discardableResult
-    public func recordSend(serverURL: String, channelID: String, name: String) -> Task<Void, Never> {
+    public func recordSend(serverURL: String, channelID: String, name: String,
+                           avatar: ChannelAvatar? = nil) -> Task<Void, Never> {
         guard var next = load(), let target = ChannelTarget(serverURL: serverURL, channelID: channelID),
               next.servers.contains(where: { ChannelWaitingRequest.normalizedServer($0.url) == target.serverURL })
         else { return enqueue {} }
@@ -101,7 +102,8 @@ public final class MobileShareHistory {
         write(next)
         return enqueue { [donor] in
             if !evicted.isEmpty { try await donor.delete(evicted) }
-            try await donor.donate(Self.interaction(target, name: name))
+            let mark = await Self.markImage(avatar, serverURL: serverURL)
+            try await donor.donate(Self.interaction(target, name: name, mark: mark))
         }
     }
 
@@ -117,21 +119,24 @@ public final class MobileShareHistory {
         return enqueue { [donor] in try await donor.delete(identifiers) }
     }
 
-    static func interaction(_ target: ChannelTarget, name: String) -> INInteraction {
+    static func interaction(_ target: ChannelTarget, name: String, mark: Data?) -> INInteraction {
         let intent = INSendMessageIntent(
             recipients: nil, outgoingMessageType: .outgoingMessageText, content: nil,
             speakableGroupName: INSpeakableString(spokenPhrase: name),
             conversationIdentifier: target.identifier, serviceName: nil, sender: nil, attachments: nil)
-        if let mark = markImage { intent.setImage(INImage(imageData: mark), forParameterNamed: \.speakableGroupName) }
+        if let mark { intent.setImage(INImage(imageData: mark), forParameterNamed: \.speakableGroupName) }
         let interaction = INInteraction(intent: intent, response: nil)
         interaction.direction = .outgoing
         interaction.groupIdentifier = target.identifier
         return interaction
     }
 
-    /// The channel mark at 3x, drawn into its own bitmap rather than `ImageRenderer.uiImage`.
-    private static let markImage: Data? = {
-        let renderer = ImageRenderer(content: ChannelMark(size: 60))
+    /// The channel's avatar at 3x, drawn into its own bitmap rather than `ImageRenderer.uiImage`. An
+    /// image loads first, since a renderer draws only what's already there.
+    static func markImage(_ avatar: ChannelAvatar?, serverURL: String) async -> Data? {
+        let api = try? ChannelAPI(serverURL: serverURL)
+        if case .image(let address)? = avatar, let api { await ChannelAvatarImages.shared.load(address, api: api) }
+        let renderer = ImageRenderer(content: ChannelMark(avatar, api: api, size: 60))
         var png: Data?
         renderer.render { size, draw in
             guard let space = CGColorSpace(name: CGColorSpace.sRGB), let context = CGContext(
@@ -147,7 +152,7 @@ public final class MobileShareHistory {
             if CGImageDestinationFinalize(destination) { png = data as Data }
         }
         return png
-    }()
+    }
 
     private func load() -> Saved? {
         do { return try JSONDecoder().decode(Saved.self, from: Data(contentsOf: file)) }

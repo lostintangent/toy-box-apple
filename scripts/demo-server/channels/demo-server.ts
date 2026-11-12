@@ -1,5 +1,6 @@
 // An isolated public-API fixture for client tests and screenshots. No agents or model calls.
 import http, { type ServerResponse } from 'node:http';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { type Snapshot as FixtureSnapshot } from './types.ts';
@@ -39,9 +40,24 @@ export function demoBookmarks(seeded: number[]): number[] {
   throw new Error(`TOY_BOX_DEMO_BOOKMARKS must be empty, not "${value}"`);
 }
 
+const avatarImage = fs.readFileSync(path.join(import.meta.dir, '..', 'fixtures', 'channel-avatar.png'));
+
+// TOY_BOX_DEMO_AVATAR=image|mark gives the channel a project icon, served as the server stores one
+// under a name that hashes its content, or a mark on its color. Without it, the channel shows its #.
+function demoAvatar(channelID: string): FixtureSnapshot['channel']['avatar'] {
+  const value = process.env.TOY_BOX_DEMO_AVATAR;
+  if (value === undefined) return undefined;
+  if (value === 'mark') return { mark: 'M4 17 9 12l4 4 7-8', color: '#2f855a' };
+  if (value === 'image') {
+    const hash = createHash('sha256').update(avatarImage).digest('hex').slice(0, 16);
+    return { image: `/api/serve/machine/demo/.toy-box/channels/${channelID}/avatar-${hash}.png` };
+  }
+  throw new Error(`TOY_BOX_DEMO_AVATAR must be image or mark, not "${value}"`);
+}
+
 // The fixture stays byte-identical to the reference export, so the demo adds the replies its
-// library request would carry, and bookmarks the lead's handoff to two agents, which only a
-// bookmark keeps in the Yours view, and the request.
+// library request would carry, any avatar, and bookmarks the lead's handoff to two agents, which
+// only a bookmark keeps in the Yours view, and the request.
 export function loadDemoFixture(): FixtureSnapshot {
   const snapshot: FixtureSnapshot = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
   const replies = demoReplies();
@@ -51,6 +67,8 @@ export function loadDemoFixture(): FixtureSnapshot {
     else delete message.replies;
   }
   snapshot.bookmarks = demoBookmarks([9, 15]);
+  const avatar = demoAvatar(snapshot.channel.id);
+  if (avatar) snapshot.channel.avatar = avatar;
   return snapshot;
 }
 
@@ -98,6 +116,8 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
       });
     }
   }
+  const avatarURL = snapshot.channel.avatar?.image;
+  if (typeof avatarURL === 'string') resources.set(avatarURL, { type: 'image/png', content: avatarImage });
   const json = (response: ServerResponse, status: number, value: unknown) => {
     response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     response.end(JSON.stringify(value));

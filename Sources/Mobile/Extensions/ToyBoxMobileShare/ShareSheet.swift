@@ -68,7 +68,7 @@ struct ShareSheet: View {
             Button { choosing = true } label: {
                 WidthLimit(maximum: sheetWidth.map { max(0, $0 - 2 * Self.barItemReserve) }) {
                     HStack(spacing: 6) {
-                        ChannelMark(size: 22)
+                        ChannelMark(target.avatar, api: session.catalogs.first(at: target.serverURL)?.api, size: 22)
                         Text(target.name).fontWeight(.semibold).lineLimit(1).foregroundStyle(Color.primary)
                         Image(systemName: "chevron.down").font(.caption.weight(.semibold)).foregroundStyle(Color.secondary)
                     }
@@ -243,7 +243,7 @@ private struct ShareChannelPicker: View {
     private func row(_ choice: MobileShareSession.Choice) -> some View {
         Button { choose(choice) } label: {
             HStack(spacing: 12) {
-                ChannelMark(size: 28).accessibilityHidden(true)
+                ChannelMark(choice.channel.avatar, api: choice.catalog.api, size: 28).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(choice.channel.name).foregroundStyle(Color.primary)
                     if let purpose = choice.channel.purpose, !purpose.isEmpty {

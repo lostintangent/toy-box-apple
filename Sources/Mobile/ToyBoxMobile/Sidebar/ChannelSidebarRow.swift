@@ -27,7 +27,7 @@ struct ChannelSidebarRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ChannelMark(size: 28, emphasized: prominence == .increased)
+            ChannelMark(size: 28)
                 .needsYouMark(check, emphasized: prominence == .increased)
                 .talkMark(talk, emphasized: prominence == .increased)
             VStack(alignment: .leading, spacing: 8) {
