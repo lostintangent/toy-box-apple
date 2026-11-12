@@ -151,9 +151,6 @@ extension SidebarFooter {
     func help(_ serverURL: String, failure: String?) -> String {
         ["\(verb) \(serverURL)", failure, "Change the server in Settings."].compactMap { $0 }.joined(separator: "\n")
     }
-
-    /// An orange or red dot.
-    var isFailing: Bool { dot == .orange || dot == .red }
 }
 
 /// The dot, or a spinner in its slot, then the server or how many there are.

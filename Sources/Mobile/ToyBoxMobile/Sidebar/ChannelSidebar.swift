@@ -7,7 +7,6 @@ import UIKit
 struct ChannelSidebar: View {
     @Environment(AppModel.self) private var model
     @Environment(ManagementPresenter.self) private var management
-    @Environment(\.horizontalSizeClass) private var sizeClass
     var searchFocused: FocusState<Bool>.Binding
     /// The split view shows one column at a time, as on a folded Duo.
     let isCollapsed: Bool
@@ -118,14 +117,13 @@ struct ChannelSidebar: View {
                 if isGrouped {
                     ForEach(model.catalogs, id: \.api.baseURL) { catalog in
                         Section(isExpanded: expansion(of: catalog)) {
-                            ChannelSidebarServerNotice(catalog: catalog, canRetry: model.isActive) {
-                                Task { await model.refreshCatalog(catalog) }
-                            }
                             section(catalog, items: listed.filter { $0.catalog === catalog }, rows: rows)
                         } header: {
                             let expansion = expansion(of: catalog)
                             ChannelSidebarServerHeader(catalog: catalog, isExpanded: expansion,
-                                                       waits: !expansion.wrappedValue && waits(catalog))
+                                                       waits: !expansion.wrappedValue && waits(catalog)) {
+                                model.cover = .settings
+                            }
                         }
                         .listSectionSeparator(.hidden)
                     }
@@ -296,19 +294,6 @@ struct ChannelSidebar: View {
         .mask { Rectangle().ignoresSafeArea(edges: isCollapsed ? .vertical : .all) }
         .overlay {
             emptyState
-        }
-        .safeAreaBar(edge: .bottom) {
-            // Several servers show each one's failure under its own header.
-            if !isGrouped {
-                ChannelSidebarFailure(
-                    footer: model.sidebarFooter,
-                    error: model.configurationError ?? model.catalog?.phase.message,
-                    canRetry: model.catalog != nil && model.isActive,
-                    retry: { Task { await model.refreshCatalog() } },
-                    openSettings: { model.cover = .settings },
-                    showsSettingsButton: sizeClass != .compact
-                )
-            }
         }
         .navigationTitle("Toy Box")
         .navigationBarTitleDisplayMode(.large)
@@ -492,16 +477,19 @@ private struct ChannelSidebarPlaceholder: View {
 
 /// A server's section header when the list shows several: its connection dot and name, then its
 /// channel count once its catalog has loaded, which collapse and expand its channels. A collapsed
-/// one trails the waiting symbol while any of its channels waits.
+/// one trails the waiting symbol while any of its channels waits. A failing server's dot is its own
+/// button, over the header's, which opens the failure.
 private struct ChannelSidebarServerHeader: View {
     let catalog: ChannelCatalogStore
     @Binding var isExpanded: Bool
     /// Whether it's collapsed with a channel waiting for the person.
     let waits: Bool
+    let openSettings: () -> Void
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
+        let failure = footer.isFailing ? catalog.phase.message : nil
         let host = SidebarFooter.server(catalog.api.baseURL.absoluteString)
         let channels = catalog.state?.channels.count
         let value = [channels.map { "\($0) \($0 == 1 ? "channel" : "channels")" },
@@ -512,7 +500,10 @@ private struct ChannelSidebarServerHeader: View {
             withAnimation { isExpanded.toggle() }
         } label: {
             HStack(spacing: 8) {
-                Circle().fill(footer.dot).frame(width: 8, height: 8)
+                Circle()
+                    .fill(footer.dot)
+                    .frame(width: SidebarFailureDot.size, height: SidebarFailureDot.size)
+                    .opacity(failure == nil ? 1 : 0)
                 Text(catalog.name).lineLimit(1).truncationMode(.middle)
                 if let channels {
                     Text(channels, format: .number)
@@ -540,5 +531,10 @@ private struct ChannelSidebarServerHeader: View {
         .accessibilityValue(value.joined(separator: ", "))
         .accessibilityHint(isExpanded ? "Hides this server's channels" : "Shows this server's channels")
         .accessibilityAddTraits(.isHeader)
+        .overlay(alignment: .leading) {
+            if let failure {
+                SidebarFailureDot(footer: footer, server: host, failure: failure, openSettings: openSettings)
+            }
+        }
     }
 }
