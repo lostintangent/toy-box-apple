@@ -264,13 +264,14 @@ Drafts stay keyed to the address, so adding it back finds them.
 - **Linking servers.** A linked server's channel leads can find and privately message the leads
   on the user's other linked servers, with every app closed. The apps link through `GET`,
   `POST` with `{address}` and `DELETE ?address=` on `/api/v1/server/links`, which each answer
-  `{links: [{address}]}` in link order. Reading links contacts no other server. A server stores
-  an address as its http(s) origin, dropping any path, linking and unlinking are idempotent, and
-  linking checks once that the other server is reachable, so a 422 `{error}` means it refused and
-  stored nothing, with the reason. A server that answers 404 is too old to link. A link
-  only works both ways, so the apps always link and unlink a pair of saved servers in both
-  directions. They match a link to a saved server by its origin, or the address for
-  other servers below, and leave links to servers the app hasn't saved alone and unshown.
+  `{links: ["http://studio:3000", …]}`, plain addresses in link order. Reading links contacts
+  no other server. A server stores an address as its http(s) origin, dropping any path, linking
+  and unlinking are idempotent, and linking checks once that the other server is reachable, so a
+  422 `{error}` means it refused and stored nothing, with the reason. A server that answers 404
+  is too old to link. A link only works both ways, so the apps always link and unlink a pair of
+  saved servers in both directions. They match a link to a saved server by its origin, or the
+  address for other servers below, and leave links to servers the app hasn't saved alone and
+  unshown.
   - **The list.** A saved server is linked when it and another saved server each list the other.
     Its row shows `link` in secondary ink after its name, 11 pt on the Mac and 13 pt on the
     phone, and VoiceOver adds "linked". Nothing else in the row changes, and a server that's
