@@ -133,7 +133,8 @@ struct SettingsView: View {
 }
 
 /// A server's dot and name, then its host, or that it can't connect, then its release. A failed check
-/// or restart reads under the name. See Updating a server in docs/spec.md.
+/// or restart reads under the name, up to three lines, and VoiceOver reads all of it. See Updating a
+/// server in docs/spec.md.
 private struct ServerRow: View {
     let catalog: ChannelCatalogStore
 
@@ -162,6 +163,7 @@ private struct ServerRow: View {
                     Text("\(Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)) \(failure)")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .lineLimit(3)
                         .padding(.leading, Self.dotSize + Self.dotSpacing)
                         .accessibilityLabel(failure)
                 }
@@ -178,8 +180,8 @@ private struct ServerRow: View {
     private static let dotSpacing: CGFloat = 10
 }
 
-/// The end of a server's row: its version, a spinner while it checks or restarts, Up to date after a
-/// check that found nothing newer, or Restart once a newer release is installed.
+/// The end of a server's row: its version, a spinner while it checks or reconnects, Up to date after
+/// a check that found nothing newer, or Restart once a newer release is installed.
 private struct ServerUpdateStatus: View {
     let update: ServerUpdate
     /// A server that can't connect says so instead.
@@ -190,7 +192,7 @@ private struct ServerUpdateStatus: View {
         case .checking?:
             ProgressView().accessibilityRepresentation { Text("Checking for updates") }
         case .reconnecting?:
-            ProgressView().accessibilityRepresentation { Text("Restarting") }
+            ProgressView().accessibilityRepresentation { Text("Reconnecting") }
         case .restartPending?:
             Button("Restart") { Task { await update.restart() } }
                 .buttonStyle(.borderedProminent)
