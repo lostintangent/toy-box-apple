@@ -245,7 +245,9 @@ Drafts stay keyed to the address, so adding it back finds them.
   spinner in its version's place, and the button dims until every check ends. Then a row reads
   Up to date when nothing was newer, or the error in words after a yellow
   `exclamationmark.triangle.fill`, in the row on the Mac and under the address on the phone.
-  Results stay until the next check or until Settings closes. While a server isn't connected, its
+  A failed install's error is its package manager's own output and can run to many lines, so the
+  Mac shows its first line with the rest in its help tag, and the phone shows up to three lines.
+  VoiceOver reads all of it. Results stay until the next check or until Settings closes. While a server isn't connected, its
   row shows a spinner in its version's place as the app reconnects, for any reason, until it
   connects or has failed for the catalog's grace, when the row shows its failure as it does for any
   server that can't connect. A restart is pending exactly when `installedVersion` isn't null and
