@@ -75,8 +75,14 @@ struct TranscriptImage: View {
     var body: some View {
         let shown = image ?? ChannelThumbnails.remembered(for: attachment, api: api)
         let request = descriptionRequest(isLoaded: shown != nil)
+        // An image that couldn't load keeps its tile, and tapping it tries again.
+        let isBroken = failed && shown == nil
         Group {
-            if let open {
+            if isBroken {
+                Button { failed = false; attempt += 1 } label: { thumbnail(shown) }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Tries again")
+            } else if let open {
                 Button(action: open) { thumbnail(shown) }
                     .buttonStyle(.plain)
                     .accessibilityHint("Opens the image")
@@ -85,7 +91,7 @@ struct TranscriptImage: View {
             }
         }
         .accessibilityLabel(attachment.displayName)
-        .accessibilityValue(TranscriptImageDescriptionSession.value(
+        .accessibilityValue(isBroken ? "Couldn't load" : TranscriptImageDescriptionSession.value(
             TranscriptImageDescriptionSession.shared.text(for: request)))
         .task(id: attempt) { await load() }
         .task(id: request) {
@@ -105,17 +111,16 @@ struct TranscriptImage: View {
 
     private func thumbnail(_ shown: CGImage?) -> some View {
         let size = ChannelThumbnails.boxSize(fitting: ChannelImageDecoder.pixelSize(for: attachment, api: api)
-            ?? shown.map { CGSize(width: $0.width, height: $0.height) } ?? .zero)
+            ?? shown.map { CGSize(width: $0.width, height: $0.height) } ?? CGSize(width: 120, height: 90))
         return ZStack {
             if let shown {
                 Image(decorative: shown, scale: 1).resizable().aspectRatio(contentMode: .fit)
             } else {
                 Rectangle().fill(.quaternary)
                 if failed {
-                    Button("Retry", systemImage: "arrow.clockwise") { failed = false; attempt += 1 }
-                        .labelStyle(.iconOnly)
-                        .font(.footnote)
-                        .frame(minWidth: 44, minHeight: 44)
+                    Image(systemName: "photo.badge.exclamationmark")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
                 } else {
                     DelayedProgressView()
                 }

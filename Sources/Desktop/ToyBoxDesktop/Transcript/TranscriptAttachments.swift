@@ -114,7 +114,7 @@ private struct TranscriptAttachment: View {
     var body: some View {
         let thumbnail = thumbnail ?? ChannelThumbnails.remembered(for: attachment, api: api)
         VStack(alignment: .leading, spacing: 5) {
-            if isImage, thumbnail != nil || error == nil {
+            if isImage {
                 imageTile(thumbnail)
             } else if isVideo, let localURL {
                 Button { isPlaying = true } label: {
@@ -134,7 +134,7 @@ private struct TranscriptAttachment: View {
                 .sheet(isPresented: $isPlaying) { TranscriptVideo(url: localURL, name: name) }
             } else {
                 HStack(spacing: 8) {
-                    Image(systemName: isImage ? "photo" : isVideo ? "video" : "doc")
+                    Image(systemName: isVideo ? "video" : "doc")
                         .font(.title3).foregroundStyle(.secondary)
                     Text(name).lineLimit(2).frame(maxWidth: 170, alignment: .leading)
                     if isLoading {
@@ -148,7 +148,7 @@ private struct TranscriptAttachment: View {
                 .padding(10)
                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
             }
-            if let error {
+            if let error, !isImage {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("Couldn't load \(name): \(error)")
                         .foregroundStyle(.secondary)
@@ -181,7 +181,10 @@ private struct TranscriptAttachment: View {
             ?? thumbnail.map { CGSize(width: $0.width, height: $0.height) } ?? CGSize(width: 120, height: 90)
         let size = ChannelThumbnails.boxSize(fitting: pixels)
         let tile = RoundedRectangle(cornerRadius: 8)
-        return Button(action: view) {
+        // An image that couldn't load keeps its tile, and choosing it tries again.
+        let isBroken = thumbnail == nil && error != nil
+        let action: () -> Void = isBroken ? { retry += 1 } : { view() }
+        return Button(action: action) {
             ZStack {
                 tile.fill(.quaternary.opacity(0.3))
                 if let thumbnail {
@@ -189,6 +192,10 @@ private struct TranscriptAttachment: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: size.width, height: size.height)
+                } else if isBroken {
+                    Image(systemName: "photo.badge.exclamationmark")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
                 } else {
                     DelayedProgressView().controlSize(.small)
                 }
@@ -211,7 +218,7 @@ private struct TranscriptAttachment: View {
         .focused($isFocused)
         .accessibilityFocused($isAccessibilityFocused)
         .onKeyPress(.return) {
-            view()
+            action()
             return .handled
         }
         .onChange(of: viewer?.focusReturn) { _, focus in
@@ -221,9 +228,10 @@ private struct TranscriptAttachment: View {
             isAccessibilityFocused = true
         }
         .accessibilityLabel("View \(name)")
-        .accessibilityValue(thumbnail == nil ? "Loading" : TranscriptImageDescriptionSession.value(
-            TranscriptImageDescriptionSession.shared.text(for: descriptionRequest)))
-        .help("View \(name)")
+        .accessibilityValue(isBroken ? "Couldn't load" : thumbnail == nil ? "Loading"
+            : TranscriptImageDescriptionSession.value(TranscriptImageDescriptionSession.shared.text(for: descriptionRequest)))
+        .accessibilityHint(isBroken ? "Tries again" : "")
+        .help(isBroken ? "Couldn't load this image. Click to try again." : "View \(name)")
         .task(id: descriptionRequest) {
             guard let descriptionRequest else { return }
             await TranscriptImageDescriptionSession.shared.describe(descriptionRequest, using: intelligence)
