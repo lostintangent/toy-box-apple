@@ -14,8 +14,6 @@ public final class ServerLinks {
         public enum Reason: Equatable, Sendable {
             /// A server refused or couldn't be reached, with the words to show.
             case failed(String)
-            /// The server at this address predates links.
-            case needsUpdate(String)
             /// The server at this address is saved at a loopback address, so other servers can't
             /// reach it until it has its Tailscale address.
             case needsAddress(String)
@@ -32,13 +30,8 @@ public final class ServerLinks {
         public var id: String { server + " " + peer }
     }
 
-    /// The origins of the servers this one links, in the order it linked them. Nil until it answers,
-    /// and while it's too old to link.
+    /// The origins of the servers this one links, in the order it linked them. Nil until it answers.
     public private(set) var listed: [String]?
-    /// The server answered that it predates links, so it can't link until it's updated.
-    public private(set) var needsUpdate = false
-    /// Whether the server answered with its links, so it can link.
-    public var canLink: Bool { listed != nil }
     /// Where the switch is going while a change is under way, so it shows the change at once.
     public internal(set) var changing: Bool?
     /// The pairs the last change couldn't link or unlink. They stay until the next change, or until
@@ -95,10 +88,9 @@ public final class ServerLinks {
         if !failures.isEmpty { failures = [] }
     }
 
-    /// The links the server answered, or nil for one too old to link.
-    func apply(_ links: [String]?) {
+    /// The links the server answered.
+    func apply(_ links: [String]) {
         listed = links
-        needsUpdate = links == nil
     }
 }
 
@@ -155,7 +147,7 @@ extension [ChannelCatalogStore] {
     }
 
     /// The saved servers that turning on the server at `address` links it with, for Add Server too:
-    /// every linked server, or when none is linked yet, every one that can link, which then also
+    /// every linked server, or when none is linked yet, every other saved server, which then also
     /// link with each other.
     @MainActor public func linkPeers(forServerAt address: String) -> [ChannelCatalogStore] {
         guard let server = member(at: address) else { return [] }
@@ -176,26 +168,22 @@ extension [ChannelCatalogStore] {
         return needing
     }
 
-    /// Whether some saved server can link, so Settings shows linking.
-    @MainActor public var canLink: Bool { contains { $0.links.canLink } }
-
     /// Whether a Linked switch is changing, so the others wait for it.
     @MainActor public var isChangingLinks: Bool { contains { $0.links.changing != nil } }
 
     /// Turns the server's Linked switch on or off, once, with no retry. On, it links both ways with
-    /// every linked server, or when none is linked yet, links every saved server that can link with
-    /// every other. Off, it unlinks both ways from every server either one lists. Each pair takes one
-    /// request. Then it reads every server again, and each pair that failed is in the server's
+    /// every linked server, or when none is linked yet, links every saved server with every other.
+    /// Off, it unlinks both ways from every server either one lists. Each pair takes one request.
+    /// Then it reads every server again, and each pair that failed is in the server's
     /// `links.failures`.
     /// Add Server saves the new server first, then turns its switch on, so a server it hasn't read
-    /// is read first, and one too old to link stays unlinked without a failure.
+    /// is read first.
     @MainActor public func setLinked(_ catalog: ChannelCatalogStore, _ isOn: Bool) async {
-        guard !isChangingLinks, !catalog.links.needsUpdate else { return }
+        guard !isChangingLinks else { return }
         if catalog.links.listed == nil {
             catalog.links.changing = isOn
             await catalog.refreshServer()
             catalog.links.changing = nil
-            guard !catalog.links.needsUpdate else { return }
         }
         let server = LinkMember(catalog)
         await change(catalog, linking: isOn, pairs: isOn ? linkPairs(for: server) : compactMap { other in
@@ -222,9 +210,9 @@ extension [ChannelCatalogStore] {
     }
 
     /// Who turning `server` on links: it with every linked server, or when none is linked yet, every
-    /// server that can link with every other. The server comes first in each of its pairs.
+    /// saved server with every other. The server comes first in each of its pairs.
     @MainActor private func linkPairs(for server: LinkMember) -> [(LinkMember, LinkMember)] {
-        let others = filter { $0.links.key != server.key && !$0.links.needsUpdate }
+        let others = filter { $0.links.key != server.key }
         let linked = others.filter { !linkedServers(of: $0).isEmpty }
         if !linked.isEmpty { return linked.map { (server, LinkMember($0)) } }
         let group = [server] + others.map(LinkMember.init)
@@ -293,8 +281,6 @@ extension [ChannelCatalogStore] {
             // saved address is this one.
             if !isTailscale { catalog.apply(server) }
             return nil
-        } catch ChannelAPIError.http(status: 404, message: _) {
-            return .needsUpdate(target.key)
         } catch {
             return .failed(error.localizedDescription)
         }

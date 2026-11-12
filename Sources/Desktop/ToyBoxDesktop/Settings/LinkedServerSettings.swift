@@ -14,11 +14,8 @@ struct LinkedSection: View {
     var body: some View {
         let linked = LinkedSwitch(catalog, in: model.catalogs)
         Section {
-            Toggle(isOn: Binding(get: { linked.isOn }, set: { isOn in Task { await setLinked(isOn) } })) {
-                // A disabled switch leaves its label bright on the Mac, so the label dims with it.
-                Text("Linked").foregroundStyle(linked.isAvailable ? Color.primary : Color(nsColor: .disabledControlTextColor))
-            }
-            .disabled(linked.isDisabled)
+            Toggle("Linked", isOn: Binding(get: { linked.isOn }, set: { isOn in Task { await setLinked(isOn) } }))
+                .disabled(linked.isDisabled)
             ForEach(asked, id: \.self) { address in
                 if let value = linked.linkedAddress(for: address) {
                     LabeledContent(linked.addressLabel(for: address)) { Text(value).textSelection(.enabled) }
@@ -33,11 +30,9 @@ struct LinkedSection: View {
                 HStack {
                     FailureLabel(words: linked.words(failure), reason: linked.reason(failure))
                     Spacer()
-                    if LinkedSwitch.offersTryAgain(failure) {
-                        Button("Try Again") { Task { await model.catalogs.tryAgain(catalog, failure) } }
-                            .controlSize(.small)
-                            .disabled(model.catalogs.isChangingLinks)
-                    }
+                    Button("Try Again") { Task { await model.catalogs.tryAgain(catalog, failure) } }
+                        .controlSize(.small)
+                        .disabled(model.catalogs.isChangingLinks)
                 }
             }
         } footer: {

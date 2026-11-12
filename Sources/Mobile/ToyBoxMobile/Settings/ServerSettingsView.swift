@@ -40,7 +40,7 @@ struct ServerSettingsView: View {
                     footer: "Use your server's address, including its port and any path prefix. Toy Box adds it once the test connects.",
                     isSwitching: isAdding, failure: $failure)
                     .disabled(isAdding)
-                if model.catalogs.canLink {
+                if !model.catalogs.isEmpty {
                     AddServerLinkedSection(address: connection.address, isOn: $links, addresses: linkAddresses)
                         .disabled(isAdding)
                 }
@@ -66,7 +66,7 @@ struct ServerSettingsView: View {
     /// A successful test is the add, and the page then shows the server it added.
     private func add(_ server: URL) {
         guard !isAdding else { return }
-        let links = links && model.catalogs.canLink && model.catalogs.first(at: server.absoluteString) == nil
+        let links = links && !model.catalogs.isEmpty && model.catalogs.first(at: server.absoluteString) == nil
         let needed = links ? model.catalogs.serversNeedingAddress(toLink: server.absoluteString) : []
         guard linkAddresses.validate(needed, in: model.catalogs) else { return }
         isAdding = true

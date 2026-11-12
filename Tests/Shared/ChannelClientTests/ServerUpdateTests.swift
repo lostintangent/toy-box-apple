@@ -10,6 +10,12 @@ import Testing
 struct ServerUpdateTests {
     nonisolated private static let old = "0.3.9", new = "0.3.10"
 
+    /// What `/api/v1/server` answers while the server runs `running`, with `installed` on disk.
+    nonisolated private static func info(_ running: String, _ installed: String?) -> ServerInfo {
+        ServerInfo(id: "studio-id", name: "Studio", accentColor: "#facc15",
+                   release: .init(version: running, installedVersion: installed), links: [])
+    }
+
     /// What the server answers on each route. Tests change it as the server would.
     private final class Server: Sendable {
         struct Answers {
@@ -39,7 +45,7 @@ struct ServerUpdateTests {
                 return switch (request.httpMethod ?? "GET", request.url?.path ?? "") {
                 case ("GET", "/api/v1/channels"): try .catalogStream(ChannelCatalog(lead: testLeadProfile))
                 case ("GET", "/api/v1/server"):
-                    try answers.read ?? .json(ServerVersion(version: answers.running, installedVersion: answers.installed))
+                    try answers.read ?? .json(ServerUpdateTests.info(answers.running, answers.installed))
                 case ("POST", "/api/v1/server/update"): answers.update
                 case ("POST", "/api/v1/server/restart"):
                     if let restart = answers.restart { restart } else { throw URLError(.networkConnectionLost) }
@@ -85,17 +91,12 @@ struct ServerUpdateTests {
         #expect(try !decode(#"{"version":"0.3.9","installedVersion":null}"#).isRestartPending)
     }
 
-    @Test func aServerWithoutAnInstalledReleaseOrTheRouteOffersNeitherAction() async throws {
+    @Test func aServerWithoutAnInstalledReleaseOffersNeitherAction() async throws {
         let server = Server(installed: nil)
         let catalog = ChannelCatalogStore(api: try server.transport().api())
         let update = catalog.update
         await catalog.refreshServer()
         #expect(update.version == ServerVersion(version: Self.old, installedVersion: nil))
-        #expect(update.phase == nil)
-
-        server.set { $0.read = MockResponse(status: 404) }
-        await catalog.refreshServer()
-        #expect(update.version == nil, "A server that predates the route shows no release")
         #expect(update.phase == nil)
     }
 
@@ -223,7 +224,7 @@ struct ServerUpdateTests {
         #expect(update.phase == .restartPending, "The server answers before it drops its connections")
         #expect(update.outcome == nil)
 
-        let back = try JSONEncoder().encode(ServerVersion(version: Self.new, installedVersion: Self.new))
+        let back = try JSONEncoder().encode(Self.info(Self.new, Self.new))
         server.set {
             $0.running = Self.new
             $0.read = MockResponse(body: back, keepOpen: true)
@@ -291,7 +292,7 @@ struct ServerUpdateTests {
         try await eventually { catalog.phase.failure != nil }
         #expect(update.phase == .idle, "A server that failed for the grace shows its failure instead")
 
-        let current = try JSONEncoder().encode(ServerVersion(version: Self.old, installedVersion: Self.old))
+        let current = try JSONEncoder().encode(Self.info(Self.old, Self.old))
         server.set {
             $0.isDown = false
             $0.read = MockResponse(body: current, keepOpen: true)

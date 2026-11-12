@@ -11,11 +11,9 @@ struct ServerNameTests {
     /// server would.
     private final class Server: Sendable {
         struct Answers {
-            var id: String? = "studio-id"
-            var name: String? = "Studio"
+            var id = "studio-id"
+            var name = "Studio"
             var accentColor = "#123abc"
-            /// Nil predates the route and answers 404.
-            var isRouted = true
             /// Answers a read instead of the server, as a failing server would.
             var read: MockResponse?
             /// Answers a rename instead of taking it. A rename that answers nil takes it, then
@@ -38,9 +36,9 @@ struct ServerNameTests {
                 switch (request.httpMethod ?? "GET", request.url?.path ?? "") {
                 case ("GET", "/api/v1/channels"):
                     return try .catalogStream(ChannelCatalog(lead: testLeadProfile))
-                case ("GET", "/api/v1/server") where answers.isRouted:
+                case ("GET", "/api/v1/server"):
                     return try answers.read ?? info()
-                case ("PATCH", "/api/v1/server") where answers.isRouted:
+                case ("PATCH", "/api/v1/server"):
                     let input = try JSONDecoder().decode([String: String].self, from: requestBody(request))
                     let name = try #require(input["name"])
                     answers.renames.append(name)
@@ -71,7 +69,7 @@ struct ServerNameTests {
         catalog.onSavedChange = { saves += 1 }
 
         await catalog.refreshServer()
-        #expect(catalog.name == "Studio" && catalog.serverID == "studio-id" && !catalog.needsUpdateToRename)
+        #expect(catalog.name == "Studio" && catalog.serverID == "studio-id")
         #expect(catalog.accentColor == "#123abc", "The accent is kept, though nothing shows it yet.")
         #expect(catalog.saved.name == "Studio" && catalog.saved.id == "studio-id")
         #expect(saves == 1)
@@ -86,24 +84,6 @@ struct ServerNameTests {
         server.set { $0.read = nil; $0.name = "Studio 2" }
         await catalog.refreshServer()
         #expect(catalog.name == "Studio 2" && saves == 2)
-    }
-
-    @Test func aServerTooOldToHaveANameGoesByItsHost() async throws {
-        let server = Server()
-        server.set { $0.isRouted = false }
-        let (catalog, _) = try catalog(server, name: "Typed")
-        let host = ChannelCatalogStore.Saved.name(of: catalog.api.baseURL.absoluteString)
-
-        await catalog.refreshServer()
-        #expect(catalog.name == host && catalog.serverID == nil && catalog.needsUpdateToRename)
-
-        server.set { $0.isRouted = true; $0.id = nil; $0.name = nil }
-        await catalog.refreshServer()
-        #expect(catalog.name == host && catalog.needsUpdateToRename, "0.3.9 answers without a name.")
-
-        server.set { $0.id = "studio-id"; $0.name = "Studio" }
-        await catalog.refreshServer()
-        #expect(catalog.name == "Studio" && !catalog.needsUpdateToRename)
     }
 
     @Test func renamingChecksTheLengthTheWayTheServerDoes() async throws {

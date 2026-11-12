@@ -328,8 +328,7 @@ public struct ChannelAPI: Sendable {
         try await noContent("DELETE", channelPath(channelId) + ["artifacts", artifactId])
     }
 
-    /// The server: its identity, name, releases and links. A server too old to name itself answers
-    /// without a name, one too old to link without links, and one too old for either answers 404.
+    /// The server: its identity, name, accent, releases and links.
     public func server() async throws -> ServerInfo {
         try await get(Self.serverPath)
     }

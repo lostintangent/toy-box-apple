@@ -27,11 +27,8 @@ export function describe(error: unknown) {
 async function reach(origin: string) {
     const answer = await fetch(`${origin}/api/v1/server`, { redirect: "error", signal: AbortSignal.timeout(3_000) })
         .catch(error => { throw new Refusal(`This server can't reach ${origin} (${describe(error)}).`); });
-    if (answer.status === 404) throw new Refusal(`${origin} needs an update to link.`);
     if (!answer.ok) throw new Refusal(`This server can't reach ${origin} (HTTP ${answer.status}).`);
-    const server = await answer.json().catch(() => undefined) as { id?: unknown, links?: unknown } | undefined;
-    if (!Array.isArray(server?.links)) throw new Refusal(`${origin} needs an update to link.`);
-    return { id: server.id, links: server.links as string[] };
+    return await answer.json() as { id: string, links: string[] };
 }
 
 /** Asks the other server to change its end of the link, naming this one by `self`. */

@@ -5,16 +5,6 @@ import { body, createDemoLinks, describe, Refusal } from "./link-routes.ts";
 const updateDelay = 2000, restartDelay = 3000;
 const nameLimit = 64;
 
-// TOY_BOX_DEMO_VERSION=0.3.9 serves a server that predates names and links, whose `/api/v1/server`
-// answers only its releases, and `0.3.8` one that predates `/api/v1/server` and answers 404.
-const versions = ["0.3.9", "0.3.8"] as const;
-function demoVersion() {
-    const version = process.env.TOY_BOX_DEMO_VERSION;
-    if (version === undefined || versions.includes(version as typeof versions[number]))
-        return version as typeof versions[number] | undefined;
-    throw new Error(`TOY_BOX_DEMO_VERSION must be ${versions.join(" or ")}, not "${version}"`);
-}
-
 // TOY_BOX_DEMO_SERVER=pending starts with a newer release installed, so Restart shows at once, and
 // `gone` does too, but its restart never comes back. `unmanaged` has no installed release, so it
 // offers neither action and rejects both. `failing` rejects updates.
@@ -36,8 +26,7 @@ function reply(response: ServerResponse, status: number, body?: unknown) {
  *  starts with and returns to when a rename clears it. */
 export function createDemoServerRoutes(server: Server, { id, computer, mode = demoServerMode() }:
     { id: string, computer: string, mode?: Mode }) {
-    const old = demoVersion();
-    const [running, newer] = old ? [old, old === "0.3.9" ? "0.3.10" : "0.3.9"] : ["0.4.0", "0.4.1"];
+    const running = "0.4.0", newer = "0.4.1";
     let version = running;
     let installedVersion: string | null =
         mode === "unmanaged" ? null : mode === "pending" || mode === "gone" ? newer : running;
@@ -46,7 +35,7 @@ export function createDemoServerRoutes(server: Server, { id, computer, mode = de
     const links = createDemoLinks(id);
     let updating: Promise<void> | undefined;
     let returning: ReturnType<typeof setTimeout> | undefined;
-    const current = () => old ? { version, installedVersion } : { id, name, accentColor, version, installedVersion, links: links.list };
+    const current = () => ({ id, name, accentColor, version, installedVersion, links: links.list });
     const unmanaged = "No package manager installed this server, so it can't update itself.";
 
     // Like the real server, the update answers once its package manager finishes, and concurrent
@@ -107,7 +96,7 @@ export function createDemoServerRoutes(server: Server, { id, computer, mode = de
         close() { clearTimeout(returning); },
         handle(request: IncomingMessage, response: ServerResponse, url: URL) {
             if (url.pathname !== "/api/v1/server" && !url.pathname.startsWith("/api/v1/server/")) return false;
-            switch (old === "0.3.8" ? "" : `${request.method} ${url.pathname}`) {
+            switch (`${request.method} ${url.pathname}`) {
             case "GET /api/v1/server":
                 reply(response, 200, current());
                 return true;
@@ -123,9 +112,7 @@ export function createDemoServerRoutes(server: Server, { id, computer, mode = de
                 restart(response);
                 return true;
             }
-            if (old) {
-                reply(response, 404, { error: "Not found" });
-            } else if (url.pathname === "/api/v1/server" && request.method === "PATCH") {
+            if (url.pathname === "/api/v1/server" && request.method === "PATCH") {
                 rename(request).then(renamed => renamed
                     ? reply(response, 200, current())
                     : reply(response, 400, { error: "Invalid request." }));

@@ -34,12 +34,10 @@ struct LinkedSection: View {
                 HStack {
                     FailureLabel(words: linked.words(failure), reason: linked.reason(failure))
                     Spacer(minLength: 8)
-                    if LinkedSwitch.offersTryAgain(failure) {
-                        // Borderless, so only the button answers a tap and not the whole row.
-                        Button("Try Again") { Task { await model.catalogs.tryAgain(catalog, failure) } }
-                            .buttonStyle(.borderless)
-                            .disabled(model.catalogs.isChangingLinks)
-                    }
+                    // Borderless, so only the button answers a tap and not the whole row.
+                    Button("Try Again") { Task { await model.catalogs.tryAgain(catalog, failure) } }
+                        .buttonStyle(.borderless)
+                        .disabled(model.catalogs.isChangingLinks)
                 }
             }
         } footer: {

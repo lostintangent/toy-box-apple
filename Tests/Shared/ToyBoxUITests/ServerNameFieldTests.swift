@@ -104,7 +104,7 @@ private final class NameRoute: URLProtocol, @unchecked Sendable {
                     if let refusal = server.refusal { return (422, #"{"error":"\#(refusal)"}"#) }
                     server.name = rename.isEmpty ? nil : rename
                 }
-                return (200, #"{"id":"\#(host)","name":"\#(server.name ?? server.computerName)","version":"0.4.0","installedVersion":"0.4.0","links":[]}"#)
+                return (200, ##"{"id":"\##(host)","name":"\##(server.name ?? server.computerName)","accentColor":"#facc15","version":"0.4.0","installedVersion":"0.4.0","links":[]}"##)
             default:
                 return (404, #"{"error":"Not found."}"#)
             }

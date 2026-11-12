@@ -25,7 +25,7 @@ extension ChannelCatalogStore {
             self.tailscaleAddress = tailscaleAddress
         }
 
-        /// The name of a server too old to have one: its host, and a port that isn't the default.
+        /// The name of a server that hasn't answered yet: its host, and a port that isn't the default.
         public static func name(of url: String) -> String {
             guard let components = URLComponents(string: url), let host = components.host, !host.isEmpty else {
                 return url
@@ -77,9 +77,8 @@ extension ChannelCatalogStore {
     /// The longest name a server takes, in UTF-16 units after trimming, so an emoji counts as 2.
     public static let nameLimit = 64
 
-    /// Reads the server's identity, name, releases and links together. A server too old for the
-    /// route goes by its host and can't link. Any other failure keeps the last answer, since the
-    /// server's connection status already says it's unreachable.
+    /// Reads the server's identity, name, releases and links together. A failure keeps the last
+    /// answer, since the server's connection status already says it's unreachable.
     public func refreshServer() async {
         try? await readServer()
     }
@@ -104,20 +103,17 @@ extension ChannelCatalogStore {
     }
 
     private func readServer() async throws {
-        do { apply(try await api.server()) }
-        catch ChannelAPIError.http(status: 404, message: _) { apply(nil) }
+        apply(try await api.server())
     }
 
-    /// The server's answer, or nil for one that predates the route.
-    func apply(_ server: ServerInfo?) {
-        update.apply(server?.release)
-        links.apply(server?.links)
-        let name = server?.name ?? Saved.name(of: api.baseURL.absoluteString)
-        accentColor = server?.accentColor
-        needsUpdateToRename = server?.name == nil
-        guard name != self.name || server?.id != serverID else { return }
-        self.name = name
-        serverID = server?.id
+    /// The server's answer.
+    func apply(_ server: ServerInfo) {
+        update.apply(server.release)
+        links.apply(server.links)
+        accentColor = server.accentColor
+        guard server.name != name || server.id != serverID else { return }
+        name = server.name
+        serverID = server.id
         onSavedChange?()
     }
 
