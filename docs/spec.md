@@ -280,12 +280,15 @@ Drafts stay keyed to the address, so adding it back finds them.
   server. Linking and unlinking are idempotent, and linking checks once that the other server is
   reachable, so a 422 `{error}` means it refused and stored nothing, with the reason. A server
   whose answer has no `links` is too old to link, and a server refuses to link with itself,
-  however it's addressed. A link works both ways: a server links and unlinks both ends itself,
-  giving the other end its own address as the request reached it, so a request to a loopback
-  address only changes that end. The apps change each pair with one request, sent to the end
-  saved at a non-loopback address, or to the first one's Tailscale address when both are saved
-  at loopback addresses, with the other end's origin in the body: its saved address, or for a
-  server saved at a loopback address, its Tailscale address.
+  however it's addressed. A link works both ways: a request that reached a server at a
+  non-loopback address links or unlinks both ends, and one that reached it at a loopback address
+  changes only that server. A request for a pair already in that state answers at once without
+  reaching the other end, so the apps send each pair one request, to the end it changes. When only
+  one end of a pair lists the other, that's the end missing the link when linking, or the end
+  that has it when unlinking. Otherwise it's the end saved at a non-loopback address, or the first
+  one's Tailscale address when both are saved at loopback addresses. The body carries the other
+  end's origin: its saved address, or for a server saved at a loopback address, its Tailscale
+  address.
   They match a link to a saved server by comparing origins, lowercased and
   without a default port, using its saved address, or for a server saved at a loopback address
   only its Tailscale address below, since a loopback address names a different server on every
