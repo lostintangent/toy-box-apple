@@ -262,16 +262,18 @@ Drafts stay keyed to the address, so adding it back finds them.
   each time a server reconnects. These are management writes: an update that times out or drops
   may still have installed, so the row reads the server again before offering another try.
 - **Linking servers.** A linked server's channel leads can find and privately message the leads
-  on the user's other linked servers, with every app closed. The apps link through `GET`,
-  `POST` with `{address}` and `DELETE ?address=` on `/api/v1/server/links`, which each answer
-  `{links: ["http://studio:3000", …]}`, plain addresses in link order. Reading links contacts
-  no other server. A server stores an address as its http(s) origin, dropping any path, linking
-  and unlinking are idempotent, and linking checks once that the other server is reachable, so a
-  422 `{error}` means it refused and stored nothing, with the reason. A server that answers 404
-  is too old to link. A link only works both ways, so the apps always link and unlink a pair of
-  saved servers in both directions. They match a link to a saved server by its origin, or the
-  address for other servers below, and leave links to servers the app hasn't saved alone and
-  unshown.
+  on the user's other linked servers, with every app closed. Linked servers always reach each
+  other at `https://<host>` through `tailscale serve`, so a link is a host: lowercase, with its
+  port only when it isn't 443. The apps link through `GET`, `POST` with `{address}` and
+  `DELETE ?address=` on `/api/v1/server/links`, which each answer
+  `{links: ["mac-mini.tail1234.ts.net", "studio.tail1234.ts.net:8443"]}` in link order, and send
+  each address as a host. Reading links contacts no other server. Linking and unlinking are
+  idempotent, and linking checks once that the other server is reachable, so a 422 `{error}`
+  means it refused and stored nothing, with the reason, as it does for an `http://` address. A
+  server that answers 404 is too old to link. A link only works both ways, so the apps always
+  link and unlink a pair of saved servers in both directions. They match a link to a saved
+  server by the host of its `https://` address, or its Tailscale address below, and leave links
+  to servers the app hasn't saved alone and unshown.
   - **The list.** A saved server is linked when it and another saved server each list the other.
     Its row shows `link` in secondary ink after its name, 11 pt on the Mac and 13 pt on the
     phone, and VoiceOver adds "linked". Nothing else in the row changes, and a server that's
@@ -299,12 +301,13 @@ Drafts stay keyed to the address, so adding it back finds them.
     server, with the server's own error in parentheses, and Try Again, which repeats only that pair.
     Results stay until Settings closes. These are management writes, so after a timeout or a lost
     connection the row reads both servers' links again before offering Try Again.
-  - **A server on this Mac.** The apps never send a loopback address (`localhost`, `127.0.0.0/8`
-    or `::1`) to a server that isn't on the same host. When linking would need one, the switch's
-    card adds an "Address for other servers" field, which Add Server labels "Address for
-    Studio", prefilled with this Mac's network name and explaining that the other server can't
-    reach `127.0.0.1`. The app saves it with that server, and uses it to link and to recognize
-    that server's links. Two servers on this Mac link by their own addresses.
+  - **A server without an HTTPS address.** A server saved at an `http://` address, like one on
+    this Mac at `127.0.0.1:3100`, links by its Tailscale address. When linking would need one, the
+    switch's card adds a "Tailscale address" field, which Add Server labels "Tailscale address for
+    Studio", with a placeholder like `studio.tail1234.ts.net` and a footer saying other servers
+    reach it through `tailscale serve`. It takes a host or an `https://` URL and refuses `http://`
+    with the reason. The app saves it with that server, and uses it to link and to recognize that
+    server's links. A server saved at an `https://` address, as the phone saves them, never asks.
   - **Removing a server doesn't unlink it,** because other devices and the web rely on the link.
     The apps store nothing else about links and read every saved server's links while Settings
     shows the list, and after each change.
