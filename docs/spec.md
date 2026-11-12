@@ -1628,6 +1628,7 @@ with the object replacement character (U+FFFC) or the two spaces that follow the
 | Tasks completed | `checkmark.circle.fill` | Green icon, "All tasks completed" |
 | Member joined / left | `person.badge.plus` / `person.badge.minus` | Names or "Name and N others", full names on help |
 | Renamed / purpose changed | `pencil` | Short changed value, full value on help. Cleared purpose is explicit |
+| Avatar changed | `pencil` | "Avatar updated", then the new avatar in `ChannelMark`'s frame, as tall as the line and scaling with the text, like the pane. VoiceOver reads "Avatar updated". An older message keeps showing the avatar it set, since the server keeps every avatar image |
 | Directory changed | `folder` | Path truncates in the middle, preserving final components |
 | Preview changed | `play.rectangle` | Link to the typed preview, or "Preview cleared" |
 | Artifact shared | `doc.badge.arrow.up` | Sharer's identity and individually actionable artifact titles |
