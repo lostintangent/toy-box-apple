@@ -3,11 +3,13 @@ import { createHistoryFixture, historyChannelID, historyMessageCount, historyPag
     from "./channels/history-channel.ts";
 import { catalogEntry, createCatalogRoute, workingAgents } from "./channels/catalog-stream.ts";
 import { createDemoServer, loadDemoFixture } from "./channels/demo-server.ts";
+import { createDemoLinkRoutes } from "./channels/link-routes.ts";
 import { type Snapshot } from "./channels/types.ts";
 
 if (process.argv.length > 2) throw new Error("Usage: bun run demo:history");
 const source: Snapshot = loadDemoFixture();
-const port = 3211;
+const port = Number(process.env.TOY_BOX_DEMO_PORT ?? 3211);
+if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid TOY_BOX_DEMO_PORT.");
 const now = Date.now();
 const { snapshot, history } = createHistoryFixture(source, { now, origin: `http://127.0.0.1:${port}` });
 const channelID = historyChannelID;
@@ -21,6 +23,7 @@ const catalog = createCatalogRoute(() => {
     };
 });
 demo.onChange(catalog.publish);
+const links = createDemoLinkRoutes();
 const handlers = demo.server.listeners("request");
 if (handlers.length !== 1) throw new Error("Expected the demo server's single HTTP handler.");
 const originalHandler = handlers[0];
@@ -31,6 +34,7 @@ demo.server.on("request", (request, response) => {
         catalog.serve(request, response);
         return;
     }
+    if (links.handle(request, response, url)) return;
     if (url.pathname === `/api/v1/channels/${channelID}/messages`) {
         if (request.method !== "GET") {
             response.writeHead(405, { "Content-Type": "application/json", Allow: "GET" });

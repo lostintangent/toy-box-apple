@@ -135,11 +135,19 @@ public struct ChannelAPI: Sendable {
         host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host.hasPrefix("127.")
     }
 
+    /// Whether this server is on this Mac or phone itself, so another machine can't reach it at
+    /// this address.
+    public var isLoopback: Bool {
+        Self.isLoopback(host: (baseURL.host ?? "").lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[].")))
+    }
+
+    private static let unreserved = CharacterSet(
+        charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+
     public func endpoint(_ components: [String], query: [URLQueryItem] = [], scheme: String? = nil) -> URL {
         var parts = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
         parts.scheme = scheme ?? parts.scheme
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
-        let suffix = components.map { $0.addingPercentEncoding(withAllowedCharacters: allowed)! }
+        let suffix = components.map { $0.addingPercentEncoding(withAllowedCharacters: Self.unreserved)! }
             .joined(separator: "/")
         parts.percentEncodedPath = parts.percentEncodedPath.replacingOccurrences(of: "/+$", with: "",
                                                                                  options: .regularExpression)
@@ -342,6 +350,30 @@ public struct ChannelAPI: Sendable {
 
     static let updateTimeout: TimeInterval = 300
 
+    /// The origins of the servers this one links, in the order it linked them. A server that
+    /// predates links answers 404.
+    public func serverLinks() async throws -> [String] {
+        try await (get(Self.linksPath) as ServerLinkList).links
+    }
+
+    /// Links another server by its origin, once this one reaches it, and answers every link.
+    /// Linking a linked server changes nothing. A 422 is a refusal, with nothing stored.
+    public func link(_ address: String) async throws -> [String] {
+        try await (command("POST", Self.linksPath, body: LinkInput(address: address)) as ServerLinkList).links
+    }
+
+    /// Unlinks another server by its origin, and answers every link. Unlinking a server that isn't
+    /// linked changes nothing. The address is in the query, so no intermediary drops a DELETE's body.
+    public func unlink(_ address: String) async throws -> [String] {
+        var parts = URLComponents(url: endpoint(Self.linksPath), resolvingAgainstBaseURL: false)!
+        parts.percentEncodedQuery = "address=" + address.addingPercentEncoding(withAllowedCharacters: Self.unreserved)!
+        var request = URLRequest(url: parts.url!)
+        request.httpMethod = "DELETE"
+        return try await JSONDecoder().decode(ServerLinkList.self, from: data(for: request)).links
+    }
+
+    private static let linksPath = ["api", "v1", "server", "links"]
+
     public func streamRequest(channelId: String, after: Int?, timeout: TimeInterval = 35) -> URLRequest {
         let query = after.map { [URLQueryItem(name: "after", value: String($0))] } ?? []
         var request = URLRequest(url: endpoint(channelPath(channelId), query: query),
@@ -397,6 +429,8 @@ public struct ChannelAPI: Sendable {
     }
 }
 
+private struct ServerLinkList: Codable { var links: [String] }
+private struct LinkInput: Encodable { var address: String }
 private struct PostInput: Encodable { var id: String; var content: String; var attachments: [ChannelAttachment]? }
 private struct ReadInput: Encodable { var sequence: Int }
 private struct ErrorResponse: Decodable { var error: String }

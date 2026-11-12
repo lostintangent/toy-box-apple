@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { catalogEntry, createCatalogRoute, workingAgents } from "./channels/catalog-stream.ts";
 import { createDemoServer, type DemoServer } from "./channels/demo-server.ts";
 import { type Snapshot } from "./channels/types.ts";
+import { createDemoLinkRoutes } from "./channels/link-routes.ts";
 import { createDemoPushRoutes } from "./channels/push-routes.ts";
 import { writeHistoryPage } from "./channels/history-channel.ts";
 import { createDemoScreens } from "./channels/screens.ts";
@@ -12,6 +13,7 @@ export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snap
     const push = createDemoPushRoutes();
     const screens = createDemoScreens();
     const release = createDemoServerRoutes(demo.server);
+    const links = createDemoLinkRoutes();
     demo.server.on("upgrade", screens.upgrade);
     const catalog = createCatalogRoute(() => {
         const { lead: { name, role, avatar }, channel, request, members, presence } = demo.snapshot();
@@ -38,6 +40,7 @@ export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snap
         }
         if (screens.handle(request, response, url)) return;
         if (release.handle(request, response, url)) return;
+        if (links.handle(request, response, url)) return;
         const snapshot = demo.snapshot();
         if (request.method === "GET"
             && url.pathname === `/api/v1/channels/${encodeURIComponent(snapshot.channel.id)}/messages`) {

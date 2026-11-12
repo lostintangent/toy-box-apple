@@ -579,6 +579,8 @@ public final class ChannelCatalogStore {
     public var members: [ChannelAgent] { state?.members ?? [] }
     /// The server's release, and checking for a newer one and restarting onto it.
     public let update: ServerUpdate
+    /// The user's other servers this one links, and its Linked switch.
+    public let links: ServerLinks
     /// The IDs of the agents running now on this server, the one source of who's working in every
     /// channel. It's empty while the catalog is unavailable, so activity clears instead of going stale.
     public private(set) var working: Set<String> = []
@@ -647,11 +649,13 @@ public final class ChannelCatalogStore {
 
     /// `now` measures the grace and the keepalive interval. Tests pass a clock they move instead of
     /// waiting, and a network path they change.
-    public init(api: ChannelAPI, name: String? = nil, reconnectPolicy: ReconnectPolicy = .init(),
+    public init(api: ChannelAPI, name: String? = nil, tailscaleAddress: String? = nil,
+                reconnectPolicy: ReconnectPolicy = .init(),
                 now: @escaping () -> Date = { .now }, networkPath: NetworkPathSource = .system) {
         self.api = api
         self.name = name ?? Saved.name(of: api.baseURL.absoluteString)
         self.update = ServerUpdate(api: api)
+        self.links = ServerLinks(api: api, tailscaleAddress: tailscaleAddress)
         self.reconnectPolicy = reconnectPolicy
         self.now = now
         self.networkPath = networkPath

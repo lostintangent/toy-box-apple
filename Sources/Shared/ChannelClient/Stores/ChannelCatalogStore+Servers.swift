@@ -11,10 +11,14 @@ extension ChannelCatalogStore {
 
         public var url: String
         public var name: String
+        /// Where other servers reach a server saved at a loopback address, usually through
+        /// `tailscale serve`, so it can link.
+        public var tailscaleAddress: String?
 
-        public init(url: String, name: String? = nil) {
+        public init(url: String, name: String? = nil, tailscaleAddress: String? = nil) {
             self.url = url
             self.name = name ?? Self.name(of: url)
+            self.tailscaleAddress = tailscaleAddress
         }
 
         /// The name a server starts with: its host, and a port that isn't the default.
@@ -49,22 +53,27 @@ extension ChannelCatalogStore {
             defaults.set(try? JSONEncoder().encode(servers), forKey: key)
         }
 
-        /// This server at a new address. A name that was still its host follows the new host.
+        /// This server at a new address. A name that was still its host follows the new host, and
+        /// its Tailscale address stays only while the address does.
         public func moved(to url: String) -> Saved {
-            Saved(url: url, name: name == Self.name(of: self.url) ? nil : name)
+            let isSame = ChannelWaitingRequest.normalizedServer(url) == ChannelWaitingRequest.normalizedServer(self.url)
+            return Saved(url: url, name: name == Self.name(of: self.url) ? nil : name,
+                         tailscaleAddress: isSame ? tailscaleAddress : nil)
         }
 
         /// A name the user typed. Clearing it gives the server back its host.
         public func renamed(_ name: String) -> Saved {
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            return Saved(url: url, name: name.isEmpty ? nil : name)
+            return Saved(url: url, name: name.isEmpty ? nil : name, tailscaleAddress: tailscaleAddress)
         }
 
         private var isValid: Bool { ChannelWaitingRequest.normalizedServer(url) != nil }
     }
 
     /// How Settings saves this server.
-    public var saved: Saved { .init(url: api.baseURL.absoluteString, name: name) }
+    public var saved: Saved {
+        .init(url: api.baseURL.absoluteString, name: name, tailscaleAddress: links.tailscaleAddress)
+    }
 
     /// One of this server's channels.
     public func target(_ channelID: String) -> ChannelTarget? {
