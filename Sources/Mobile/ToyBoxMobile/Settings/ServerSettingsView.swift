@@ -87,8 +87,7 @@ struct ServerSettingsView: View {
     }
 }
 
-/// A server's Name, which renames the server itself, with why the last rename failed under it and
-/// what the name is for after the card. A server too old to have a name shows its host instead. See
+/// A server's Name, which renames the server itself, with why the last rename failed under it. See
 /// Naming a server in docs/spec.md.
 private struct ServerNameSection: View {
     @Environment(AppModel.self) private var model
@@ -101,29 +100,19 @@ private struct ServerNameSection: View {
 
     var body: some View {
         @Bindable var field = field
-        Section {
-            if field.updateCaption != nil {
-                // Secondary, so a value that can't change reads apart from a filled field.
-                Text(field.catalog.name).foregroundStyle(.secondary).textSelection(.enabled)
-                    .accessibilityLabel("Name, \(field.catalog.name)")
-            } else {
-                TextField("Name", text: $field.text)
-                    .accessibilityIdentifier("server-name")
-                    .textInputAutocapitalization(.words)
-                    .submitLabel(.done)
-                    .focused($isFocused)
-                    .disabled(!field.isEditable)
-                    .onSubmit(commit)
-                    .onChange(of: isFocused) { _, focused in if !focused { commit() } }
-                    .onDisappear(perform: commit)
-                if let failure = field.failure {
-                    FailureLabel(words: failure.words, reason: failure.reason)
-                }
+        Section("Name") {
+            TextField("Name", text: $field.text)
+                .accessibilityIdentifier("server-name")
+                .textInputAutocapitalization(.words)
+                .submitLabel(.done)
+                .focused($isFocused)
+                .disabled(!field.isEditable)
+                .onSubmit(commit)
+                .onChange(of: isFocused) { _, focused in if !focused { commit() } }
+                .onDisappear(perform: commit)
+            if let failure = field.failure {
+                FailureLabel(words: failure.words, reason: failure.reason)
             }
-        } header: {
-            Text("Name")
-        } footer: {
-            Text(field.updateCaption ?? ServerNameField.caption)
         }
     }
 

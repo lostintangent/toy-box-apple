@@ -269,9 +269,8 @@ private struct ServerDetails: View {
     }
 }
 
-/// A server's Name, which renames the server itself, with why the last rename failed and what the
-/// name is for under it. A server too old to have a name shows its host instead. See Naming a server
-/// in docs/spec.md.
+/// A server's Name, which renames the server itself, with why the last rename failed under it. See
+/// Naming a server in docs/spec.md.
 private struct ServerNameRows: View {
     @Environment(AppModel.self) private var model
     @ViewState private var field: ServerNameField
@@ -283,21 +282,15 @@ private struct ServerNameRows: View {
 
     var body: some View {
         @Bindable var field = field
-        if let caption = field.updateCaption {
-            LabeledContent("Name") { Text(field.catalog.name).foregroundStyle(.secondary).textSelection(.enabled) }
-            Text(caption).font(.caption).foregroundStyle(.secondary)
-        } else {
-            TextField("Name", text: $field.text)
-                .focused($isFocused)
-                .disabled(!field.isEditable)
-                .onSubmit(commit)
-                .onChange(of: isFocused) { _, focused in if !focused { commit() } }
-                .onDisappear(perform: commit)
-                .task { await prepareSnapshot() }
-            if let failure = field.failure {
-                FailureLabel(words: failure.words, reason: failure.reason)
-            }
-            Text(ServerNameField.caption).font(.caption).foregroundStyle(.secondary)
+        TextField("Name", text: $field.text)
+            .focused($isFocused)
+            .disabled(!field.isEditable)
+            .onSubmit(commit)
+            .onChange(of: isFocused) { _, focused in if !focused { commit() } }
+            .onDisappear(perform: commit)
+            .task { await prepareSnapshot() }
+        if let failure = field.failure {
+            FailureLabel(words: failure.words, reason: failure.reason)
         }
     }
 

@@ -12,8 +12,6 @@ public final class ServerNameField {
         public let reason: String
     }
 
-    public static let caption = "Every device and lead sees this name. Clear it to use the computer's name."
-
     public let catalog: ChannelCatalogStore
     /// Why the last rename failed, until the next one or until the field holds the server's name.
     public private(set) var failure: Failure?
@@ -33,15 +31,10 @@ public final class ServerNameField {
 
     public var isEditable: Bool { catalog.phase == .connected }
 
-    /// The caption a server too old to have a name shows instead of the field, under its host.
-    public var updateCaption: String? {
-        catalog.needsUpdateToRename ? "Update \(catalog.name) to rename it." : nil
-    }
-
     /// Renames the server to what's typed, if that changed its name, on Return or when the field loses
     /// focus. A rename that fails keeps what's typed and says why.
     public func commit() async {
-        guard isEditable, !catalog.needsUpdateToRename, let typed, typed != renaming else { return }
+        guard isEditable, let typed, typed != renaming else { return }
         guard typed.trimmingCharacters(in: .whitespacesAndNewlines) != catalog.name else {
             self.typed = nil
             failure = nil

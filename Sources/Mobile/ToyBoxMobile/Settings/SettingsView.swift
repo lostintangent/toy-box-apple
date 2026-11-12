@@ -176,6 +176,9 @@ private struct ServerRow: View {
                         .accessibilityLabel(failure)
                 }
             }
+            // The name keeps its width first and the host truncates, except under a failure, which
+            // would take that width too.
+            .layoutPriority(failure == nil ? 1 : 0)
             Spacer(minLength: 0)
             if let detail {
                 Text(detail).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
