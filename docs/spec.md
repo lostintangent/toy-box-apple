@@ -301,8 +301,8 @@ Drafts stay keyed to the address, so adding it back finds them.
   They match a link to a saved server by comparing origins, lowercased and
   without a default port, using its saved address, or for a server saved at a loopback address
   only its Tailscale address below, since a loopback address names a different server on every
-  machine. They leave links to servers the app hasn't saved alone, and offer those servers under
-  Other Linked Servers.
+  machine. They leave links to servers the app hasn't saved alone, except when adding a server
+  adds the servers it's linked with.
   - **The list.** A saved server is linked when it and another saved server each list the other.
     Its row shows `link` in secondary ink after its name, 11 pt on the Mac and 13 pt on the
     phone, and VoiceOver adds "linked". Nothing else in the row changes, and a server that's
@@ -348,21 +348,19 @@ Drafts stay keyed to the address, so adding it back finds them.
     changing it would strand the others' links, and turning Linked off makes it editable again.
     A server saved at any other address, as the phone saves them, links by that address and never
     asks.
-  - **Removing a server doesn't unlink it,** because other devices and the web rely on the link,
-    so a removed server that's still linked shows under Other Linked Servers.
+  - **Adding a server adds the servers it's linked with,** so a device joins a group of linked
+    servers by adding any one of them, and their names and links stay in sync from the servers.
+    The first time a server the user just added answers `GET /api/v1/server`, the app reads
+    `GET /api/v1/server` at each of its links that matches no saved server, and saves each one
+    that answers from this device with an `id` that isn't saved, at that link's address, after the
+    added server in link order, without changing any links. A server that doesn't answer is
+    skipped, and the added servers' own links aren't followed. This happens only when the user
+    adds a server, on Welcome or through Add Server, and never on a later read, so a server the
+    user removes stays removed until they add it again. Settings keeps the server the user added
+    selected, and the new rows are the only sign.
+  - **Removing a server doesn't unlink it,** because other devices and the web rely on the link.
     The apps store nothing else about links and read every saved server's links while Settings
     shows the list, and after each change.
-  - **Other Linked Servers.** Settings offers the servers that saved servers are linked with but
-    this device hasn't saved, so a link made on another device reaches this one. While Settings
-    shows the list, the app reads `GET /api/v1/server` at each link that matches no saved server,
-    and offers each one that answers from this device with an `id` that isn't saved, once, in
-    Settings order and then link order. A server that doesn't answer isn't shown. The section,
-    titled "Other Linked Servers", shows only when it has a server, after the server list on the
-    phone and at the end of the Servers tab on the Mac, so the details stay under the list. Each
-    row shows the server's name, its address under it in secondary ink, and Add, a standard
-    bordered button on the Mac and accent-colored text on the phone. The footer reads "Your servers are linked with
-    these. Add one to see its channels on this Mac.", or "on this iPhone." Add saves the server
-    at that address, at the end of the list, without changing any links, and the Mac selects it.
 
 ### Sending
 
