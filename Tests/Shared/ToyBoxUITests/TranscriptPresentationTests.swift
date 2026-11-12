@@ -593,6 +593,16 @@ struct TranscriptLandingTests {
         #expect(step(top: 500, jumps: 2) == .settled)
         #expect(step(top: 500, jumps: 2, hasPendingJump: true) == .waitForJump)
     }
+
+    @Test func aHiddenOpeningShowsOnItsFirstPlacementWhileTheLandingIsStillWaiting() {
+        let row = rows()[0]
+        let viewport = TranscriptViewport(bottomGap: 100, width: 500, height: 400)
+        let placed = [row.messages[0].id: frame(20)]
+        #expect(step(top: 20, hasPendingJump: true) == .waitForJump)
+        #expect(TranscriptLanding.isPlaced(row, frames: placed, viewport: viewport))
+        #expect(!TranscriptLanding.isPlaced(row, frames: [row.messages[0].id: frame(500)], viewport: viewport))
+        #expect(!TranscriptLanding.isPlaced(row, frames: [:], viewport: viewport))
+    }
 }
 
 @Suite("Transcript paging coordinates")

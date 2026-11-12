@@ -19,6 +19,7 @@ struct ConversationTranscript: View {
     /// The newest message a reader can see, published only when it changes rather than on every frame.
     @ViewState private var visibleSequence: Int?
     @ViewState var hasLanded = false
+    @ViewState private var isOpeningPlaced = false
     @ViewState var isAtBottom = true
     @ViewState var pagingAnchor: PagingAnchor?
     @ViewState private var highlightedSequence: Int?
@@ -255,6 +256,7 @@ struct ConversationTranscript: View {
                                         && catchUp?.holdsLanding != true && !find.isPresented,
                                     isJumping: pendingJump != nil)
             geometry.viewport = new
+            showPlacedOpening()
             followReaderWhilePaging()
             publishVisibleSequence()
             pointer.contentDidMove(byReader: isUserScrolling || !isAtBottom || !update.isAtBottom)
@@ -281,6 +283,7 @@ struct ConversationTranscript: View {
             layoutTurns.moved = true
             holdReadingPlace(in: new)
             geometry.frames = new
+            showPlacedOpening()
             publishVisibleSequence()
             followReaderWhilePaging()
             restorePagingAnchor(using: new)
@@ -545,10 +548,17 @@ struct ConversationTranscript: View {
         return top >= -0.5 && top < min(120, viewport.height / 2)
     }
 
-    /// Hides the rows of a transcript opening on its first unread message until that message is in
-    /// place, so the first frame drawn never shows the bottom or a landing on its way there.
+    /// Hides the rows of a transcript opening on its first unread message until the first layout
+    /// pass puts that message in place, so the first frame drawn never shows the bottom. Later
+    /// corrections move rows in view, so streaming or a busy run loop can't keep them hidden.
     private var hidesOpening: Bool {
-        opening.hidesRows && !hasLanded && !isRevealing && store.phase.isConnected
+        opening.hidesRows && !isOpeningPlaced && !hasLanded && !isRevealing && store.phase.isConnected
+    }
+
+    private func showPlacedOpening() {
+        guard hidesOpening, let rowID = opening.rowID, let row = rows.first(where: { $0.id == rowID }),
+              TranscriptLanding.isPlaced(row, frames: frames, viewport: viewport) else { return }
+        isOpeningPlaced = true
     }
 
     /// Resolved by the first body with the connected conversation, so a transcript opens directly on its
@@ -848,7 +858,7 @@ private final class TranscriptOpening {
     var isResolved = false
     var plan: TranscriptLanding.Opening?
 
-    /// Until it lands, when nothing's drawn yet. Rows already on screen move in the update that resolves it.
+    /// Until its row is first in place, when nothing's drawn yet. Rows already on screen move in the update that resolves it.
     var hidesRows = false
 
     var rowID: String? { plan?.rowID }
