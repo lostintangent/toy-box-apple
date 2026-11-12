@@ -3,111 +3,134 @@ import ChannelKit
 import SwiftUI
 import ToyBoxUI
 
-/// One server in Settings: its name, then Welcome's Server URL card, then its Linked switch. A
-/// successful test of another address switches this server to it at once. Without a server, the
-/// test adds one, and links it when Add Server's switch is on.
+/// One server in Settings: its name, then its address and status, then its Linked switch. The
+/// address is only how this iPhone reaches the server, so it can be copied but not edited. Without a
+/// server, this is Add Server: Welcome's Server URL card, whose test adds the server, linked when
+/// Add Server's switch is on, and then shows it.
 struct ServerSettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
-    /// The server this page shows, which a switch replaces.
+    /// The server this page shows, once Add Server's test adds one.
     @ViewState private var catalog: ChannelCatalogStore?
-    @ViewState private var name: String
     @ViewState private var connection: ServerConnectionProbe
     @ViewState private var failure: String?
-    @ViewState private var isSwitching = false
+    @ViewState private var isAdding = false
     @ViewState private var links = true
     @ViewState private var linkAddresses = LinkAddresses()
-    @FocusState private var editsName: Bool
 
     init(catalog: ChannelCatalogStore?, connection: ServerConnectionProbe = ServerConnectionProbe()) {
         _catalog = ViewState(initialValue: catalog)
-        _name = ViewState(initialValue: catalog?.name ?? "")
         _connection = ViewState(initialValue: connection)
     }
 
-    private var address: String? { catalog?.api.baseURL.absoluteString }
-
     var body: some View {
         Form {
-            if let address {
-                Section("Name") {
-                    TextField("Name", text: $name, prompt: Text(SidebarFooter.server(address)))
-                        .textInputAutocapitalization(.words)
-                        .submitLabel(.done)
-                        .focused($editsName)
-                        .onSubmit(commitName)
-                        .onChange(of: editsName) { _, editing in if !editing { commitName() } }
-                }
-            }
-            ServerConnectionSection(
-                connection: connection, placeholder: catalog == nil ? "http://my-server:3100" : "Required",
-                footer: "Use your server's address, including its port and any path prefix. Toy Box \(catalog == nil ? "adds" : "switches to") it once the test connects.",
-                currentServer: address, isSwitching: isSwitching, failure: $failure)
-                .disabled(isSwitching)
             if let catalog {
-                if LinkedSwitch.isShown(in: model.catalogs) {
-                    LinkedSection(catalog: catalog).id(ObjectIdentifier(catalog))
+                Group {
+                    ServerNameSection(catalog: catalog)
+                    ServerAddressSection(catalog: catalog)
+                    if LinkedSwitch.isShown(in: model.catalogs) {
+                        LinkedSection(catalog: catalog)
+                    }
                 }
-            } else if model.catalogs.canLink {
-                AddServerLinkedSection(address: connection.address, isOn: $links, addresses: linkAddresses)
-                    .disabled(isSwitching)
+                .id(ObjectIdentifier(catalog))
+            } else {
+                ServerConnectionSection(
+                    connection: connection, placeholder: "http://my-server:3100",
+                    footer: "Use your server's address, including its port and any path prefix. Toy Box adds it once the test connects.",
+                    isSwitching: isAdding, failure: $failure)
+                    .disabled(isAdding)
+                if model.catalogs.canLink {
+                    AddServerLinkedSection(address: connection.address, isOn: $links, addresses: linkAddresses)
+                        .disabled(isAdding)
+                }
             }
         }
         .navigationTitle(catalog?.name ?? "Add Server")
         .navigationBarTitleDisplayMode(.inline)
-        .interactiveDismissDisabled(isSwitching)
-        .onAppear { connection.address = address ?? "" }
-        .onDisappear {
-            commitName()
-            connection.cancel()
-        }
+        .interactiveDismissDisabled(isAdding)
+        .onDisappear { connection.cancel() }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { connection.cancel() }
         }
         .onChange(of: connectedServer) { _, server in
-            if let server { apply(server) }
+            if let server { add(server) }
         }
     }
 
     private var connectedServer: URL? {
-        guard case .connected(let url, _)? = connection.phase else { return nil }
+        guard catalog == nil, case .connected(let url, _)? = connection.phase else { return nil }
         return url
     }
 
-    /// A successful test is the switch. Testing the server already shown only confirms it.
-    private func apply(_ server: URL) {
-        guard !isSwitching, ChannelWaitingRequest.normalizedServer(server.absoluteString)
-                != address.flatMap(ChannelWaitingRequest.normalizedServer) else { return }
-        let links = catalog == nil && links && model.catalogs.canLink
-            && model.catalogs.first(at: server.absoluteString) == nil
+    /// A successful test is the add, and the page then shows the server it added.
+    private func add(_ server: URL) {
+        guard !isAdding else { return }
+        let links = links && model.catalogs.canLink && model.catalogs.first(at: server.absoluteString) == nil
         let needed = links ? model.catalogs.serversNeedingAddress(toLink: server.absoluteString) : []
         guard linkAddresses.validate(needed, in: model.catalogs) else { return }
-        isSwitching = true
+        isAdding = true
         failure = nil
-        commitName()
         Task {
-            defer { isSwitching = false }
+            defer { isAdding = false }
             do {
-                let applied = try catalog.map { try model.changeAddress(of: $0, to: server.absoluteString) }
-                    ?? model.addServer(server.absoluteString)
+                let added = try model.addServer(server.absoluteString)
                 if links {
                     linkAddresses.save(needed, in: model.catalogs, with: model.setTailscaleAddress)
                     let catalogs = model.catalogs
-                    Task { await catalogs.setLinked(applied, true) }
+                    Task { await catalogs.setLinked(added, true) }
                 }
-                catalog = applied
-                name = applied.name
-                await applied.refresh()
-                guard catalog === applied else { return }
-                failure = applied.phase.message
+                await added.refresh()
+                catalog = added
             } catch { failure = error.localizedDescription }
         }
     }
+}
 
-    private func commitName() {
-        guard let catalog, name != catalog.name else { return }
-        model.rename(catalog, to: name)
-        name = catalog.name
+/// A server's Name, which renames the server itself, with why the last rename failed under it and
+/// what the name is for after the card. A server too old to have a name shows its host instead. See
+/// Naming a server in docs/spec.md.
+private struct ServerNameSection: View {
+    @Environment(AppModel.self) private var model
+    @ViewState private var field: ServerNameField
+    @FocusState private var isFocused: Bool
+
+    init(catalog: ChannelCatalogStore) {
+        _field = ViewState(initialValue: ServerNameField(catalog))
+    }
+
+    var body: some View {
+        @Bindable var field = field
+        Section {
+            if field.updateCaption != nil {
+                // Secondary, so a value that can't change reads apart from a filled field.
+                Text(field.catalog.name).foregroundStyle(.secondary).textSelection(.enabled)
+                    .accessibilityLabel("Name, \(field.catalog.name)")
+            } else {
+                TextField("Name", text: $field.text)
+                    .accessibilityIdentifier("server-name")
+                    .textInputAutocapitalization(.words)
+                    .submitLabel(.done)
+                    .focused($isFocused)
+                    .disabled(!field.isEditable)
+                    .onSubmit(commit)
+                    .onChange(of: isFocused) { _, focused in if !focused { commit() } }
+                    .onDisappear(perform: commit)
+                if let failure = field.failure {
+                    FailureLabel(words: failure.words, reason: failure.reason)
+                }
+            }
+        } header: {
+            Text("Name")
+        } footer: {
+            Text(field.updateCaption ?? ServerNameField.caption)
+        }
+    }
+
+    /// A server that was removed keeps its name.
+    private func commit() {
+        guard model.catalogs.contains(where: { $0 === field.catalog }) else { return }
+        Task { await field.commit() }
     }
 }
 

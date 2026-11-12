@@ -3,14 +3,12 @@ import ChannelKit
 import SwiftUI
 import ToyBoxUI
 
-/// The Server URL card shared by Welcome and Settings: the address, Test Connection and its errors.
+/// The Server URL card shared by Welcome and Add Server: the address, Test Connection and its errors.
 struct ServerConnectionSection: View {
     let connection: ServerConnectionProbe
     let placeholder: String
     let footer: String
-    /// The server in use, which a failed test names because the field now shows another one.
-    var currentServer: String?
-    /// Settings applies a successful test, and the row reads Connecting… until the switch lands.
+    /// Add Server adds the server a test connects to, and the row reads Connecting… until it's added.
     var isSwitching = false
     @Binding var failure: String?
 
@@ -43,12 +41,12 @@ struct ServerConnectionSection: View {
             .accessibilityIdentifier("server-test")
             .disabled(!canTest)
             if let message = Self.validationMessage(address: connection.address, error: connection.validationError) {
-                errorLabel(message)
+                ServerErrorLabel(message: message)
             }
-            if case .failed(let address, let error)? = connection.phase {
-                errorLabel(Self.failureMessage(error), help: failureHelp(testing: address))
+            if case .failed(_, let error)? = connection.phase {
+                ServerErrorLabel(message: Self.failureMessage(error), help: Self.failureHelp)
             }
-            if let failure { errorLabel(failure) }
+            if let failure { ServerErrorLabel(message: failure) }
         } header: {
             Text("Server URL")
         } footer: {
@@ -72,12 +70,7 @@ struct ServerConnectionSection: View {
 
     private var isBusy: Bool { connection.isConnecting || isSwitching }
 
-    private func failureHelp(testing address: String) -> String {
-        let help = "Check the address, and that your Toy Box server is running and reachable from this iPhone."
-        guard let currentServer, let current = ChannelWaitingRequest.normalizedServer(currentServer),
-              current != ChannelWaitingRequest.normalizedServer(address) else { return help }
-        return "\(help) Still using \(SidebarFooter.server(currentServer))."
-    }
+    static let failureHelp = "Check the address, and that your Toy Box server is running and reachable from this iPhone."
 
     private var loopbackHost: String? {
         guard let url = try? ChannelAPI(serverURL: connection.address).baseURL, let host = url.host,
@@ -97,20 +90,6 @@ struct ServerConnectionSection: View {
         connection.start()
     }
 
-    private func errorLabel(_ message: String, help: String? = nil) -> some View {
-        Label {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(message)
-                if let help { Text(help).foregroundStyle(.secondary) }
-            }
-        } icon: {
-            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
-        }
-        .labelStyle(ErrorLabelStyle())
-        .font(.footnote)
-        .fixedSize(horizontal: false, vertical: true)
-        .textSelection(.enabled)
-    }
     static func validationMessage(address: String, error: String?) -> String? {
         guard let error, !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         guard let parts = URLComponents(string: address.trimmingCharacters(in: .whitespacesAndNewlines)) else {
@@ -150,6 +129,52 @@ struct ServerConnectionSection: View {
             }
         }
         return "Connection error: \(error.localizedDescription)"
+    }
+}
+
+/// A saved server's address, which can be copied but not edited, with a checkmark while it's
+/// connected or why it can't connect under it.
+struct ServerAddressSection: View {
+    let catalog: ChannelCatalogStore
+
+    var body: some View {
+        Section("Server URL") {
+            HStack {
+                // Secondary, so a value that can't change reads apart from a filled field.
+                Text(catalog.api.baseURL.absoluteString).foregroundStyle(.secondary).textSelection(.enabled)
+                if catalog.phase == .connected {
+                    Spacer()
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).accessibilityHidden(true)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityValue(catalog.phase == .connected ? "Connected" : "")
+            if let error = catalog.phase.failure {
+                ServerErrorLabel(message: ServerConnectionSection.failureMessage(error),
+                                 help: ServerConnectionSection.failureHelp)
+            }
+        }
+    }
+}
+
+/// An error in a Server URL card, after a red circle on its first line, with what to check under it.
+private struct ServerErrorLabel: View {
+    let message: String
+    var help: String?
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(message)
+                if let help { Text(help).foregroundStyle(.secondary) }
+            }
+        } icon: {
+            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
+        }
+        .labelStyle(ErrorLabelStyle())
+        .font(.footnote)
+        .fixedSize(horizontal: false, vertical: true)
+        .textSelection(.enabled)
     }
 }
 

@@ -32,15 +32,7 @@ struct LinkedSection: View {
             }
             ForEach(catalog.links.failures) { failure in
                 HStack {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(linked.words(failure))
-                            Text(linked.reason(failure)).font(.subheadline).foregroundStyle(.secondary)
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .accessibilityElement(children: .combine)
+                    FailureLabel(words: linked.words(failure), reason: linked.reason(failure))
                     Spacer(minLength: 8)
                     if LinkedSwitch.offersTryAgain(failure) {
                         // Borderless, so only the button answers a tap and not the whole row.
@@ -134,5 +126,24 @@ extension LinkAddressField {
                          before footer: String) -> AttributedString {
         guard let caption = LinkedSwitch.addressCaption(for: addresses, in: catalogs) else { return AttributedString(footer) }
         return caption + AttributedString(" " + footer)
+    }
+}
+
+/// What a change in Settings couldn't do, like link a pair or rename a server, after a yellow
+/// triangle on its first line, with the reason under it.
+struct FailureLabel: View {
+    let words: String
+    let reason: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(words)
+                Text(reason).font(.subheadline).foregroundStyle(.secondary)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
     }
 }

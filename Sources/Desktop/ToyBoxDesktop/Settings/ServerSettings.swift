@@ -61,7 +61,7 @@ struct ServerSettings: View {
             await model.catalogs.refreshServers()
         }
         if let selected {
-            ServerDetails(catalog: selected, changedAddress: select)
+            ServerDetails(catalog: selected)
                 .id(Self.address(selected))
         }
     }
@@ -128,6 +128,7 @@ struct ServerSettings: View {
     /// The `settings-servers`, `settings-server-renamed` and `settings-server-removed` capture
     /// states wait until no server is still connecting, then show the server that can't connect,
     /// the first server named Studio, or the list once the server that can't connect is removed.
+    /// `settings-server-rename-failed` shows the first server after a name too long to take.
     /// `settings-server-link-addresses` reads every server's links and shows the first server.
     /// `settings-server-links` does too, after giving each server on this Mac its own address as its
     /// Tailscale address, the way the demos link. `settings-server-link-failed` gives the last one an
@@ -135,9 +136,9 @@ struct ServerSettings: View {
     /// `settings-add-server` opens Add Server on another server on this Mac.
     private func prepareSnapshot() async {
         guard let state = model.snapshot?.requestedState,
-              ["settings-servers", "settings-server-renamed", "settings-server-removed",
-               "settings-server-link-addresses", "settings-server-links", "settings-server-link-failed",
-               "settings-add-server"].contains(state)
+              ["settings-servers", "settings-server-renamed", "settings-server-rename-failed",
+               "settings-server-removed", "settings-server-link-addresses", "settings-server-links",
+               "settings-server-link-failed", "settings-add-server"].contains(state)
         else { return }
         do {
             while model.catalogs.contains(where: { $0.phase == .connecting }) {
@@ -146,13 +147,11 @@ struct ServerSettings: View {
             let unreachable = model.catalogs.first { $0.phase.failure != nil }
             switch state {
             case "settings-server-renamed":
-                // The name field reads its server's name when it appears, so rename while another
-                // server is showing, the way a rename made in the field is saved on leaving it.
                 guard let first = model.catalogs.first else { return }
-                select(unreachable)
-                try await Task.sleep(for: .milliseconds(100))
-                model.rename(first, to: "Studio")
                 select(first)
+                try await first.rename(to: "Studio")
+            case "settings-server-rename-failed":
+                select(model.catalogs.first)
             case "settings-server-link-addresses", "settings-server-links", "settings-server-link-failed",
                  "settings-add-server":
                 if state != "settings-server-link-addresses" {
@@ -236,57 +235,25 @@ private struct ServerUpdateStatus: View {
 }
 
 /// One server's name, address and status. Each server gets its own, so a name being typed is saved
-/// to the server it was typed for.
+/// to the server it was typed for. The address is only how this Mac reaches the server, so it can be
+/// copied but not edited, and adding the server at another address moves it there.
 private struct ServerDetails: View {
     let catalog: ChannelCatalogStore
-    let changedAddress: (ChannelCatalogStore) -> Void
     @Environment(AppModel.self) private var model
-    @ViewState private var name: String
-    @ViewState private var connection: ServerConnectionProbe
-    @ViewState private var failure: String?
-    @ViewState private var confirmsAddressChange = false
-    @FocusState private var editsName: Bool
-
-    init(catalog: ChannelCatalogStore, changedAddress: @escaping (ChannelCatalogStore) -> Void) {
-        self.catalog = catalog
-        self.changedAddress = changedAddress
-        _name = ViewState(initialValue: catalog.name)
-        _connection = ViewState(initialValue: ServerConnectionProbe(address: ServerSettings.address(catalog)))
-    }
-
-    private var address: String { ServerSettings.address(catalog) }
 
     var body: some View {
-        @Bindable var connection = connection
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
         Section {
-            TextField("Name", text: $name, prompt: Text(SidebarFooter.server(address)))
-                .focused($editsName)
-                .onSubmit(commitName)
-                .onChange(of: editsName) { _, editing in if !editing { commitName() } }
-            ServerAddressFields(connection: connection, failure: failure) {
-                Button("Use Server", action: requestAddressChange)
-                    .disabled(connection.address == address || connection.validationError != nil
-                              || connection.isConnecting)
+            ServerNameRows(catalog: catalog)
+            LabeledContent("Server URL") {
+                Text(ServerSettings.address(catalog)).foregroundStyle(.secondary).textSelection(.enabled)
             }
-            .onSubmit(requestAddressChange)
             LabeledContent("Status") {
                 HStack(spacing: 6) {
                     Circle().fill(footer.dot).frame(width: 7, height: 7)
                     Text(Self.status(catalog.phase)).textSelection(.enabled)
                 }
             }
-        }
-        .onChange(of: connection.address) { _, _ in failure = nil }
-        .onDisappear {
-            commitName()
-            connection.cancel()
-        }
-        .confirmationDialog("Switch Toy Box servers?", isPresented: $confirmsAddressChange) {
-            Button("Switch Server", action: changeAddress)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Live connections to \(address) will close. Drafts stay saved separately for each server.")
         }
         if LinkedSwitch.isShown(in: model.catalogs) {
             LinkedSection(catalog: catalog)
@@ -300,21 +267,51 @@ private struct ServerDetails: View {
         case .failed(let error): "Can't connect. \(error.localizedDescription)"
         }
     }
+}
 
-    private func commitName() {
-        guard name != catalog.name else { return }
-        model.rename(catalog, to: name)
-        name = catalog.name
+/// A server's Name, which renames the server itself, with why the last rename failed and what the
+/// name is for under it. A server too old to have a name shows its host instead. See Naming a server
+/// in docs/spec.md.
+private struct ServerNameRows: View {
+    @Environment(AppModel.self) private var model
+    @ViewState private var field: ServerNameField
+    @FocusState private var isFocused: Bool
+
+    init(catalog: ChannelCatalogStore) {
+        _field = ViewState(initialValue: ServerNameField(catalog))
     }
 
-    private func requestAddressChange() {
-        guard connection.validationError == nil, connection.address != address else { return }
-        confirmsAddressChange = true
+    var body: some View {
+        @Bindable var field = field
+        if let caption = field.updateCaption {
+            LabeledContent("Name") { Text(field.catalog.name).foregroundStyle(.secondary).textSelection(.enabled) }
+            Text(caption).font(.caption).foregroundStyle(.secondary)
+        } else {
+            TextField("Name", text: $field.text)
+                .focused($isFocused)
+                .disabled(!field.isEditable)
+                .onSubmit(commit)
+                .onChange(of: isFocused) { _, focused in if !focused { commit() } }
+                .onDisappear(perform: commit)
+                .task { await prepareSnapshot() }
+            if let failure = field.failure {
+                FailureLabel(words: failure.words, reason: failure.reason)
+            }
+            Text(ServerNameField.caption).font(.caption).foregroundStyle(.secondary)
+        }
     }
 
-    private func changeAddress() {
-        do { changedAddress(try model.changeAddress(of: catalog, to: connection.address)) }
-        catch { failure = error.localizedDescription }
+    /// A server that was removed keeps its name.
+    private func commit() {
+        guard model.catalogs.contains(where: { $0 === field.catalog }) else { return }
+        Task { await field.commit() }
+    }
+
+    /// The `settings-server-rename-failed` capture state types a name too long to take.
+    private func prepareSnapshot() async {
+        guard model.snapshot?.requestedState == "settings-server-rename-failed" else { return }
+        field.text = "The Mac Studio in the upstairs office, on the desk by the window seat"
+        await field.commit()
     }
 }
 
@@ -341,7 +338,7 @@ struct AddServerSheet: View {
     var body: some View {
         Form {
             Section("Add a Toy Box Server") {
-                ServerAddressFields(connection: connection, failure: failure, prompt: "https://") { EmptyView() }
+                ServerAddressFields(connection: connection, failure: failure, prompt: "https://")
                     .onSubmit(add)
             }
             if model.catalogs.canLink {
@@ -382,12 +379,11 @@ struct AddServerSheet: View {
     }
 }
 
-/// A server URL with Test Connection and what the test found, as Settings has always shown it.
-private struct ServerAddressFields<Action: View>: View {
+/// Add Server's URL with Test Connection and what the test found.
+private struct ServerAddressFields: View {
     @Bindable var connection: ServerConnectionProbe
     let failure: String?
     var prompt: String?
-    @ViewBuilder let action: Action
 
     var body: some View {
         TextField("Server URL", text: $connection.address, prompt: prompt.map { Text($0) })
@@ -399,7 +395,6 @@ private struct ServerAddressFields<Action: View>: View {
                 .disabled(connection.isConnecting || connection.validationError != nil)
             if connection.isConnecting { ProgressView().controlSize(.small) }
             Spacer()
-            action
         }
         if let error = connection.validationError, !connection.address.isEmpty {
             errorLabel(error)

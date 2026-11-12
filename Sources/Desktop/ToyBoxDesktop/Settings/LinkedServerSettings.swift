@@ -31,7 +31,7 @@ struct LinkedSection: View {
             LinkAddressCaption(addresses: asked.filter { linked.linkedAddress(for: $0) == nil })
             ForEach(catalog.links.failures) { failure in
                 HStack {
-                    LinkFailureLabel(words: linked.words(failure), reason: linked.reason(failure))
+                    FailureLabel(words: linked.words(failure), reason: linked.reason(failure))
                     Spacer()
                     if LinkedSwitch.offersTryAgain(failure) {
                         Button("Try Again") { Task { await model.catalogs.tryAgain(catalog, failure) } }
@@ -121,9 +121,9 @@ private struct LinkAddressCaption: View {
     }
 }
 
-/// A pair the last change couldn't link, after a yellow triangle on its first line, with the reason
-/// under it.
-private struct LinkFailureLabel: View {
+/// What a change in Settings couldn't do, like link a pair or rename a server, after a yellow
+/// triangle on its first line, with the reason under it.
+struct FailureLabel: View {
     let words: String
     let reason: String
 
