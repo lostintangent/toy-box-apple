@@ -201,7 +201,9 @@ struct ChannelOutboxTests {
         #expect(outbox.isDelivering)
         mock.finishPendingResponses()
         try await eventually { !outbox.isDelivering }
-        #expect(served.reads.withLock { $0 } == [6, 7])
+        // Both reads are in flight at once, so they arrive in either order, and the server keeps the
+        // higher one.
+        #expect(served.reads.withLock { $0 }.sorted() == [6, 7])
     }
 
     /// The server's change for the user's message reaches the list before or after its answer to the
