@@ -1717,9 +1717,10 @@ struct ChannelTitleFitTests {
     let long = "Quarterly launch readiness review and retrospective planning"
 
     @Test func theIdealWidthMatchesTheTitleMenusLayout() {
-        // A 12-point inset on each side of 438 points of semibold text.
-        #expect(abs(ChannelTitleFit.idealWidth(of: long) - 462) <= 2)
-        #expect(ChannelTitleFit.idealWidth(of: "Studio demo") < 130)
+        // The 24-point avatar, 6 points in and 8 before 438 points of semibold text, which ends 12
+        // points before the capsule's end.
+        #expect(abs(ChannelTitleFit.idealWidth(of: long) - 488) <= 2)
+        #expect(ChannelTitleFit.idealWidth(of: "Studio demo") < 156)
     }
 
     @Test func theNarrowestWindowKeepsEveryControl() {
