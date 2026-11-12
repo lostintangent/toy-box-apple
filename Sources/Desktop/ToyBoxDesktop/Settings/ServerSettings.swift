@@ -160,8 +160,8 @@ struct ServerSettings: View {
     static func address(_ catalog: ChannelCatalogStore) -> String { catalog.api.baseURL.absoluteString }
 }
 
-/// The end of a server's row: its version, a spinner while it checks or restarts, how its last check
-/// or restart ended, or Restart once a newer release is installed. See Updating a server in
+/// The end of a server's row: its version, a spinner while it checks or reconnects, how its last
+/// check or restart ended, or Restart once a newer release is installed. See Updating a server in
 /// docs/spec.md.
 private struct ServerUpdateStatus: View {
     let update: ServerUpdate
@@ -172,7 +172,7 @@ private struct ServerUpdateStatus: View {
             case .checking?:
                 ProgressView().controlSize(.small).accessibilityLabel("Checking for updates")
             case .reconnecting?:
-                ProgressView().controlSize(.small).accessibilityLabel("Restarting")
+                ProgressView().controlSize(.small).accessibilityLabel("Reconnecting")
             case .restartPending?:
                 if case .failed(let words)? = update.outcome {
                     failure(words)
