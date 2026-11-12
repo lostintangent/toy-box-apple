@@ -114,6 +114,21 @@ struct CatchUpSelectionTests {
         #expect(!lines.contains { $0.hasPrefix("[10] Pixel shared") })
     }
 
+    @Test func avatarChangesReadLikeRenamesInCatchUp() throws {
+        func entry(_ type: String) throws -> CatchUpEntry {
+            var state = try T.fixture("studio-demo")
+            let index = try #require(state.messages.firstIndex { $0.sequence == 14 })
+            let preview = try #require(state.messages[index].system)
+            state.messages[index].content = .system(ChannelSystemContent(type: type, actor: preview.actor, name: "Studio"))
+            let request = try #require(CatchUpRequest(server: T.server, state: state, unreadAfter: 8,
+                                                      minimumUnread: 1, minimumCharacters: 0))
+            return try #require(request.entries.first { $0.sequence == 14 })
+        }
+        let avatar = try entry("channel_avatar_changed")
+        #expect(avatar.line == "[14] Lead changed the channel's avatar.")
+        #expect(try avatar.priority == entry("channel_renamed").priority)
+    }
+
     @Test func eventsAndAddressedMessagesOutrankCoordination() throws {
         let state = try T.fixture("studio-demo")
         let request = try #require(CatchUpRequest(server: T.server, state: state, unreadAfter: 8,
