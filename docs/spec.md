@@ -282,8 +282,10 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   its version. A rejected restart shows its error the same way, with the old server still running,
   and a server that doesn't come back reads like any other that can't connect. The apps read
   `GET /api/v1/server` while Settings shows the list, after each check, each time a server
-  connects and each time the app comes to the foreground, which is how a rename made elsewhere
-  reaches them. These are management writes: an update that times out or drops
+  connects, each time the app comes to the foreground and on each Refresh of the channel list,
+  which is how a rename made elsewhere reaches them. A failed read changes nothing and reports
+  nothing, and a read never adds a server, since only adding one follows its links. Updates and
+  restarts are management writes: an update that times out or drops
   may still have installed, so the row reads the server again before offering another try.
 - **Linking servers.** A linked server's channel leads can find and privately message the leads
   on the user's other linked servers, with every app closed. A link is the other server's origin,
