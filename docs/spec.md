@@ -848,12 +848,15 @@ The sidebar toolbar holds the sidebar toggle at its leading end and New Channel 
 trailing end. A collapsed sidebar leaves room for only the toggle after the traffic lights, so
 New Channel steps out while the sidebar is collapsed or sliding open, and the title menu still
 offers it.
-The detail toolbar shows only the channel name, without a decorative hash prefix or purpose
-subtitle. The name is a title menu, the pattern Pages, Keynote and Numbers use for a document
-title, so channels stay one click away with the sidebar collapsed. `toolbarTitleMenu` only draws
-for document-based windows, so the title is a native toolbar `Menu` in the navigation slot,
-a glass button with the name in 15 semibold, dimmed in inactive windows, and no chevron. The
-window shows no system title beside it. Keep `.navigationTitle` for Mission Control and the
+The detail toolbar shows only the channel's avatar and name, without a purpose subtitle. The name
+is a title menu, the pattern Pages, Keynote and Numbers use for a document title, so channels stay
+one click away with the sidebar collapsed. `toolbarTitleMenu` only draws for document-based
+windows, so the title is a native toolbar `Menu` in the navigation slot, a glass button with the
+name in 15 semibold, dimmed in inactive windows, and no chevron. The capsule leads with the
+channel's 24-point `ChannelMark`, inset 6 points from its top, bottom and leading edges and 8
+points before the name, with the 12-point trailing inset unchanged. Like a document's proxy icon,
+the avatar dims with the name in inactive windows, and it's decorative, so VoiceOver reads only
+the name. The window shows no system title beside it. Keep `.navigationTitle` for Mission Control and the
 Window menu. It lists every channel in sidebar order with the current one checked, then New
 Channel…, then Edit Channel… and Open in Toy Box, then Delete Channel…, each group after a
 divider. There's no separate Channel Actions button. Choosing a channel behaves like selecting it
@@ -863,8 +866,8 @@ text to channel names.
 Trailing controls are Message View (`line.3.horizontal.decrease`) and Overview
 (`sidebar.trailing`). Put Open in Toy Box in the title menu and the menu bar, not another
 permanent toolbar button. A long name truncates at the tail, so every control fits down to the
-760-point minimum window. NSToolbar never compresses a SwiftUI item, so the title takes its width
-from the detail column and stops short of an open Overview and the trailing controls. While it's
+760-point minimum window. NSToolbar never compresses a SwiftUI item, so the title takes its width,
+avatar included, from the detail column and stops short of an open Overview and the trailing controls. While it's
 truncated, its help shows the full name instead of Switch Channel, like an expansion tooltip, and
 the menu still names the channel in full. Should the toolbar run out of room anyway, Message View
 overflows first, and the title and Overview stay. Keep
@@ -912,14 +915,17 @@ With Differentiate Without Color, the dot becomes the Mac's `exclamationmark.cir
 rows alone do not prove a live connection.
 
 **Phone channel toolbar.** The bar holds only the channel's title, Overview and Message View. Like
-the Mac's, the title is a floating glass button: the channel name in a `.topBarLeading` toolbar
-`Menu` with its indicator hidden, so it sits where the system title did, wears the bar's shared
-glass and shows no chevron. The whole capsule opens Channel Actions, with no ••• of the app's own,
+the Mac's, the title is a floating glass button: the channel's avatar and name in a `.topBarLeading`
+toolbar `Menu` with its indicator hidden, so it sits where the system title did, wears the bar's
+shared glass and shows no chevron. The avatar is the list row's 28-point `ChannelMark`, so the
+channel you tapped stays with you. It sits 10 points in from the capsule's leading end, concentric
+with its round end, and 8 points before the name, and centers on both lines when the name has a
+second. It's decorative, so VoiceOver reads only the name. The whole capsule opens Channel Actions, with no ••• of the app's own,
 because Find, Follow, Edit and Delete aren't used often enough to need a bar button.
 `.navigationTitle` still names the screen for Back and VoiceOver, and `.toolbar(removing: .title)`
 keeps the system from drawing it twice. The bar gives a leading item its whole ideal width and moves
 it to its own ••• when that doesn't fit, so the name's width is capped by the screen's width less the
-bar's margins, the capsule's insets and room for the bar's buttons, which the bar keeps even when
+bar's margins, the capsule's insets, the avatar and its gap, and room for the bar's buttons, which the bar keeps even when
 they stand in a vertical bar, and a long name truncates inside the capsule. The conversation's top
 scroll edge is `.soft`, so rows blur under the title and bar buttons with no bar or hairline. A
 compact top bar shows Overview. Regular width shows
