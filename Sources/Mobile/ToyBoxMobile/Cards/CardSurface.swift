@@ -59,51 +59,53 @@ struct CardSurface: View {
     }
 }
 
-/// The mark a card's row wears: the channel's own mark, the mic while the talk card records, or the
-/// done check once a card's message sends. Each glyph keeps its own fill, so a change cross-fades,
-/// the symbol swaps through `.replace`, and the check arrives with the success tap.
-struct CardMark: View {
+extension View {
+    /// Wears `glyph` in place of this 28-point channel avatar. See `CardMark`.
+    func cardMark(_ glyph: CardMark.Glyph) -> some View {
+        modifier(CardMark(glyph: glyph))
+    }
+}
+
+/// The mark a card's row wears: the channel's own avatar, the mic while the talk card records, or
+/// the done check once a card's message sends. They share one 28-point tile, whose corners round
+/// from the avatar's square into the circle as the avatar fades and the symbol grows in, so the
+/// swap reads as one mark changing shape. Between the mic and the check, the symbol swaps through
+/// `.replace`, and the check arrives with the success tap.
+struct CardMark: ViewModifier {
     enum Glyph { case channel, mic, check }
 
     let glyph: Glyph
-    var emphasized = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.cardMarkTaps) private var taps
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
-        Image(systemName: symbol)
+    func body(content: Content) -> some View {
+        ZStack {
+            if glyph == .channel {
+                content.transition(.opacity)
+            } else {
+                // One symbol for the mic and the check, so it swaps through `.replace`, while
+                // the avatar's face comes and goes with its own.
+                symbol.transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.5)))
+            }
+        }
+        .frame(width: 28, height: 28)
+        // Under Reduce Motion, every swap is a crossfade, so each face keeps its own shape.
+        .clipShape(RoundedRectangle(cornerRadius: glyph == .channel || reduceMotion ? 28 * 0.26 : 14,
+                                    style: .continuous))
+        .sensoryFeedback(.success, trigger: glyph == .check) { _, sent in sent && taps }
+    }
+
+    private var symbol: some View {
+        Image(systemName: glyph == .check ? "checkmark.circle.fill" : "mic.fill")
             // At this size the check's circle fills the mark's 28 points, with its check knocked out.
             .font(.system(size: glyph == .check ? 27.4 : 28 * 14 / 30, weight: .semibold))
             .symbolRenderingMode(.monochrome)
-            .foregroundStyle(ink)
+            .foregroundStyle(glyph == .check ? ChannelTaskColors.changes(in: colorScheme).added : .accentColor)
             .contentTransition(.symbolEffect(.replace))
             .frame(width: 28, height: 28)
-            .background {
-                // The check brings its own circle.
-                ZStack {
-                    Circle()
-                        .fill(emphasized ? AnyShapeStyle(Color.white.opacity(0.22)) : AnyShapeStyle(ChannelMark.cyan.gradient))
-                        .opacity(glyph == .channel ? 1 : 0)
-                    Circle().fill(Color.accentColor.opacity(0.15)).opacity(glyph == .mic ? 1 : 0)
-                }
-            }
-            .sensoryFeedback(.success, trigger: glyph == .check) { _, sent in sent && taps }
-    }
-
-    private var symbol: String {
-        switch glyph {
-        case .mic: "mic.fill"
-        case .check: "checkmark.circle.fill"
-        case .channel: "number"
-        }
-    }
-
-    private var ink: Color {
-        switch glyph {
-        case .mic: .accentColor
-        case .check: ChannelTaskColors.changes(in: colorScheme).added
-        case .channel: .white
-        }
+            // The check brings its own circle.
+            .background { Circle().fill(Color.accentColor.opacity(0.15)).opacity(glyph == .mic ? 1 : 0) }
     }
 }
 

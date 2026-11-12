@@ -53,7 +53,7 @@ struct NeedsYouCard: View {
         let limit = max(lineHeight * 2, maxHeight - chrome)
         let shown = questionHeight.map { min($0, limit) }
         HStack(alignment: .cardMark, spacing: 12) {
-            ChannelMark(size: 28)
+            ChannelMark(channel.avatar, api: catalog?.api, size: 28)
                 .alignmentGuide(.cardMark) { $0[VerticalAlignment.center] }
             VStack(alignment: .leading, spacing: 0) {
                 Button(action: open) { heading }
@@ -187,10 +187,10 @@ struct NeedsYouReplyField: View {
 }
 
 extension View {
-    /// The row's mark, which wears the done check once the row's reply sends from its card, then
-    /// settles back to the channel's own mark.
-    func needsYouMark(_ check: CardChecks.Check?, emphasized: Bool) -> some View {
-        modifier(NeedsYouMarkSlot(check: check, emphasized: emphasized))
+    /// The row's avatar, which wears the done check once the row's reply sends from its card, then
+    /// settles back to the channel's own avatar.
+    func needsYouMark(_ check: CardChecks.Check?) -> some View {
+        modifier(NeedsYouMarkSlot(check: check))
     }
 
     /// Lifts the open card's typed reply, drawn by `lifted`, above the list from the card's row at
@@ -270,13 +270,12 @@ private struct NeedsYouList<Card: View, Row: View>: ViewModifier {
 
 private struct NeedsYouMarkSlot: ViewModifier {
     let check: CardChecks.Check?
-    let emphasized: Bool
 
     func body(content: Content) -> some View {
-        // The check's mark settles on the channel's own mark, so handing back to it is invisible.
+        // The check's mark settles on the channel's own avatar, so handing back to it is invisible.
         ZStack {
             if let check {
-                NeedsYouMark(check: check, emphasized: emphasized).transition(.identity)
+                NeedsYouMark(check: check, avatar: content).transition(.identity)
             } else {
                 content.transition(.identity)
             }
@@ -285,14 +284,14 @@ private struct NeedsYouMarkSlot: ViewModifier {
 }
 
 /// The talk card's mark on a row whose card has just shrunk into it. The row only now draws it, so
-/// it starts on the channel's mark and swaps to the check once it's on screen.
-private struct NeedsYouMark: View {
+/// it starts on the channel's avatar and swaps to the check once it's on screen.
+private struct NeedsYouMark<Avatar: View>: View {
     let check: CardChecks.Check
-    let emphasized: Bool
+    let avatar: Avatar
     @ViewState private var glyph = CardMark.Glyph.channel
 
     var body: some View {
-        CardMark(glyph: glyph, emphasized: emphasized)
+        avatar.cardMark(glyph)
             .task(id: check) {
                 withAnimation((check == .sent ? CardMotion.sent : .settle).animation) {
                     glyph = check == .sent ? .check : .channel
