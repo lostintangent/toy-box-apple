@@ -73,7 +73,7 @@ struct ChannelEditor: View {
                 ? "The lead starts right away and adds specialists as needed."
                 : nil
         ) {
-            ManagementChannelMark()
+            ManagementChannelMark(channelId: channel?.id, catalog: catalog)
         } fields: {
             if channel == nil, app.catalogs.count > 1 {
                 Section {
