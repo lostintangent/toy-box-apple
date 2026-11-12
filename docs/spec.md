@@ -281,7 +281,7 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   spins while they reconnect with the usual backoff and grace, then reads the new server and shows
   its version. A rejected restart shows its error the same way, with the old server still running,
   and a server that doesn't come back reads like any other that can't connect. The apps read
-  `GET /api/v1/server` while Settings shows the list, after each check, each time a server
+  `GET /api/v1/server` once each time Settings opens, after each check, each time a server
   connects, each time the app comes to the foreground and on each Refresh of the channel list,
   which is how a rename made elsewhere reaches them. A failed read changes nothing and reports
   nothing, and a read never adds a server, since only adding one follows its links. Updates and
@@ -368,8 +368,8 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
     user removes stays removed until they add it again. Settings keeps the server the user added
     selected, and the new rows are the only sign.
   - **Removing a server doesn't unlink it,** because other devices and the web rely on the link.
-    The apps store nothing else about links and read every saved server's links while Settings
-    shows the list, and after each change.
+    The apps store nothing else about links, and read them with the rest of `GET /api/v1/server`
+    and after each change.
 
 ### Sending
 
