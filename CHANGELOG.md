@@ -2,6 +2,10 @@
 
 ## Mac 0.1.34
 
+### Features
+
+- You can now keep your Toy Box servers up to date from Settings. Check for Updates installs the latest release on every server at once, and Restart moves a server onto it right from its row.
+
 ### Bugs/Polish
 
 - A server that stops answering no longer fills the sidebar with an error. Its status dot changes color, and hovering over it tells you what went wrong. With several servers, only a server with a problem shows a dot by its name, so a healthy sidebar stays quiet.
@@ -12,6 +16,10 @@
 - An image that can't load no longer fills the conversation with its file path and an error. It keeps its place, and clicking it tries again.
 
 ## iPhone 0.1.31
+
+### Features
+
+- You can now keep your Toy Box servers up to date from Settings. Check for Updates installs the latest release on every server at once, and Restart moves a server onto it right from its row.
 
 ### Bugs/Polish
 

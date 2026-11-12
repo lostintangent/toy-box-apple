@@ -54,6 +54,11 @@ struct SettingsView: View {
             if phase == .active { availability = intelligence.availability }
         }
         .task { await model.notifications.refreshAuthorization() }
+        .task(id: model.catalogs.map(\.api.baseURL)) {
+            await withTaskGroup { group in
+                for catalog in model.catalogs { group.addTask { await catalog.update.refresh() } }
+            }
+        }
     }
 
     /// Each server with its dot and name, in the order the list shows them. Removing one asks first,
@@ -67,6 +72,15 @@ struct SettingsView: View {
             .onDelete { removal = $0.first.map { model.catalogs[$0] } }
             .deleteDisabled(model.catalogs.count < 2)
             Button("Add Server", systemImage: "plus") { addsServer = true }
+            if model.catalogs.offersUpdateCheck {
+                let isChecking = model.catalogs.isCheckingForUpdates
+                Button("Check for Updates", systemImage: "arrow.triangle.2.circlepath") {
+                    Task { await model.catalogs.checkForUpdates() }
+                }
+                .disabled(isChecking)
+                // A disabled Form button keeps its tinted icon, so it dims the whole row itself.
+                .foregroundStyle(isChecking ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
+            }
         } header: {
             Text("Servers")
         } footer: {
@@ -118,22 +132,76 @@ struct SettingsView: View {
     }
 }
 
-/// A server's dot and name, then its host, or that it can't connect.
+/// A server's dot and name, then its host, or that it can't connect, then its release. A failed check
+/// or restart reads under the name. See Updating a server in docs/spec.md.
 private struct ServerRow: View {
     let catalog: ChannelCatalogStore
 
     var body: some View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
         let host = SidebarFooter.server(catalog.api.baseURL.absoluteString)
-        let detail = catalog.phase.failure != nil ? "Can't connect" : catalog.name == host ? nil : host
-        LabeledContent {
-            if let detail { Text(detail).lineLimit(1).truncationMode(.middle) }
-        } label: {
-            HStack(spacing: 10) {
-                Circle().fill(footer.dot).frame(width: 8, height: 8).accessibilityHidden(true)
-                Text(catalog.name).lineLimit(1)
+        let update = catalog.update
+        let isConnected = catalog.phase.failure == nil
+        let failure: String? = if case .failed(let words)? = update.outcome { words } else { nil }
+        // The dot already says it can't connect, so the row says so only when it shows nothing else.
+        let detail: String? = if !isConnected {
+            failure == nil && (update.phase == nil || update.phase == .idle) ? "Can't connect" : nil
+        } else {
+            catalog.name == host ? nil : host
+        }
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: Self.dotSpacing) {
+                    Circle().fill(footer.dot).frame(width: Self.dotSize, height: Self.dotSize)
+                        .accessibilityHidden(true)
+                    Text(catalog.name).lineLimit(1)
+                }
+                if let failure {
+                    Text("\(Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)) \(failure)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, Self.dotSize + Self.dotSpacing)
+                }
             }
+            Spacer(minLength: 0)
+            if let detail {
+                Text(detail).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            }
+            ServerUpdateStatus(update: update, showsVersion: isConnected).fixedSize()
         }
         .accessibilityValue(footer.accessibilityValue)
+    }
+
+    private static let dotSize: CGFloat = 8
+    private static let dotSpacing: CGFloat = 10
+}
+
+/// The end of a server's row: its version, a spinner while it checks, Up to date after a check that
+/// found nothing newer, or Restart once a newer release is installed.
+private struct ServerUpdateStatus: View {
+    let update: ServerUpdate
+    /// A server that can't connect says so instead.
+    let showsVersion: Bool
+
+    var body: some View {
+        switch update.phase {
+        case .checking?:
+            ProgressView()
+        case .restarting?:
+            HStack(spacing: 8) {
+                Text("Restarting…").foregroundStyle(.secondary)
+                ProgressView()
+            }
+        case .restartPending?:
+            Button("Restart") { Task { await update.restart() } }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+        case .idle?, nil:
+            if update.outcome == .upToDate {
+                Text("Up to date").foregroundStyle(.secondary)
+            } else if showsVersion, let version = update.version?.version {
+                Text(version).foregroundStyle(.secondary)
+            }
+        }
     }
 }
