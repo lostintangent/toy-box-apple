@@ -294,7 +294,8 @@ Drafts stay keyed to the address, so adding it back finds them.
   - **Failures.** Each change links once, with no retry and nothing in the background, so it can
     never fight an unlink made elsewhere. Each server that didn't link adds one row under the
     switch: a yellow `exclamationmark.triangle.fill`, "Couldn't link with Mac mini (timed out).",
-    with the server's own error in parentheses, and Try Again, which repeats only that pair.
+    or "Couldn't link Mac mini with Build Box (timed out)." for a pair that doesn't include this
+    server, with the server's own error in parentheses, and Try Again, which repeats only that pair.
     Results stay until Settings closes. These are management writes, so after a timeout or a lost
     connection the row reads both servers' links again before offering Try Again.
   - **A server on this Mac.** The apps never send a loopback address (`localhost`, `127.0.0.0/8`
