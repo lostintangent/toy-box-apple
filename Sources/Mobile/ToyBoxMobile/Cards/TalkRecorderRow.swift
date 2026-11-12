@@ -11,8 +11,8 @@ import UIKit
 
 extension View {
     /// The row's mark, which becomes the recorder's mic and then the done check.
-    func talkMark(_ recorder: TalkRecorder?, emphasized: Bool) -> some View {
-        modifier(TalkMarkSlot(recorder: recorder, emphasized: emphasized))
+    func talkMark(_ recorder: TalkRecorder?) -> some View {
+        modifier(TalkMarkSlot(recorder: recorder))
     }
 
     /// The row's last-activity time, which becomes the counter on the same baseline and trailing
@@ -219,14 +219,13 @@ private struct TalkFades: ViewModifier {
 
 private struct TalkMarkSlot: ViewModifier {
     let recorder: TalkRecorder?
-    let emphasized: Bool
 
     func body(content: Content) -> some View {
-        // The recorder's mark starts with the channel's own face, so the swap itself is invisible
-        // and the glyph can morph into the mic.
+        // The recorder's mark starts with the channel's own avatar, so the swap itself is invisible
+        // and the avatar can morph into the mic.
         ZStack {
             if let recorder {
-                TalkMark(recorder: recorder, emphasized: emphasized).transition(.identity)
+                TalkMark(recorder: recorder, avatar: content).transition(.identity)
             } else {
                 content.transition(.identity)
             }
@@ -234,11 +233,11 @@ private struct TalkMarkSlot: ViewModifier {
     }
 }
 
-/// The mic while recording, the done check once sent, then the channel's own mark as the row
+/// The mic while recording, the done check once sent, then the channel's own avatar as the row
 /// settles.
-private struct TalkMark: View {
+private struct TalkMark<Avatar: View>: View {
     let recorder: TalkRecorder
-    let emphasized: Bool
+    let avatar: Avatar
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.talkGrown) private var grown
 
@@ -252,7 +251,7 @@ private struct TalkMark: View {
 
     var body: some View {
         let level = recorder.isListening ? recorder.dictation.level : 0
-        Button(action: recorder.resume) { CardMark(glyph: glyph, emphasized: emphasized) }
+        Button(action: recorder.resume) { avatar.cardMark(glyph) }
             .buttonStyle(TalkMarkButtonStyle())
             // A disabled button grays its accent, so the mic only stops taking taps.
             .allowsHitTesting(recorder.canResume)
