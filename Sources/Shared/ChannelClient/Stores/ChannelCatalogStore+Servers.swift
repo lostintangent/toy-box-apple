@@ -57,15 +57,6 @@ extension ChannelCatalogStore {
             defaults.set(try? JSONEncoder().encode(servers), forKey: key)
         }
 
-        /// This server at a new address. A name that was still its host follows the new host, and
-        /// its identity and Tailscale address stay only while the address does, since a new address
-        /// may be another server, until it answers.
-        public func moved(to url: String) -> Saved {
-            let isSame = ChannelWaitingRequest.normalizedServer(url) == ChannelWaitingRequest.normalizedServer(self.url)
-            return Saved(url: url, name: name == Self.name(of: self.url) ? nil : name,
-                         id: isSame ? id : nil, tailscaleAddress: isSame ? tailscaleAddress : nil)
-        }
-
         private var isValid: Bool { ChannelWaitingRequest.normalizedServer(url) != nil }
     }
 
@@ -111,10 +102,10 @@ extension ChannelCatalogStore {
         update.apply(server.release)
         links.apply(server.links)
         accentColor = server.accentColor
-        guard server.name != name || server.id != serverID else { return }
+        let savedChanged = server.name != name || server.id != serverID
         name = server.name
         serverID = server.id
-        onSavedChange?()
+        servers?.answered(self, server, savedChanged: savedChanged)
     }
 
     /// One of this server's channels.
@@ -131,7 +122,7 @@ extension [ChannelCatalogStore] {
         }
     }
 
-    /// The saved server with this identity, so adding it again at another address selects it.
+    /// The saved server with this identity.
     @MainActor public func first(identifiedAs id: String?) -> ChannelCatalogStore? {
         guard let id else { return nil }
         return first { $0.serverID == id }

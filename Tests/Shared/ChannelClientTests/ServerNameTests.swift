@@ -58,15 +58,21 @@ struct ServerNameTests {
         return (ChannelCatalogStore(api: try mock.api(), name: name), mock)
     }
 
+    private let outboxFolder = FileManager.default.temporaryDirectory.appending(path: "tbm-server-name-\(UUID())")
+
     private func reads(_ mock: MockTransport) -> Int {
         mock.requests.filter { $0.httpMethod == "GET" && $0.url?.path == "/api/v1/server" }.count
     }
 
     @Test func aReadTakesTheServersNameAndIdentityAndSavesOnlyAChange() async throws {
         let server = Server()
-        let (catalog, _) = try catalog(server, name: "Typed")
+        let mock = MockTransport { request, _ in try server.response(to: request) }
+        let servers = ChannelServers([.init(url: mock.address(), name: "Typed")], savingTo: nil,
+                                     session: MockTransport.session(), outbox: ChannelOutbox(folder: outboxFolder),
+                                     connections: ChannelConnections(), isActive: false, streamsInBackground: false)
+        let catalog = servers.catalogs[0]
         var saves = 0
-        catalog.onSavedChange = { saves += 1 }
+        servers.onChange = { saves += 1 }
 
         await catalog.refreshServer()
         #expect(catalog.name == "Studio" && catalog.serverID == "studio-id")

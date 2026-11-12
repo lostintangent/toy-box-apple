@@ -515,10 +515,4 @@ struct CatalogTests {
         defer { empty.removePersistentDomain(forName: suite + "-empty") }
         #expect(ChannelCatalogStore.Saved.load(from: empty).isEmpty)
     }
-
-    @Test func aServerNamedForItsHostFollowsANewAddress() {
-        let local = ChannelCatalogStore.Saved(url: "http://[::1]:3210")
-        #expect(local.moved(to: "https://work.test").name == "work.test")
-        #expect(ChannelCatalogStore.Saved(url: "http://[::1]:3210", name: "Work").moved(to: "https://other.test").name == "Work")
-    }
 }

@@ -1321,8 +1321,8 @@ struct OverviewTests {
             #expect(replacement !== editor)
             #expect(!sessions.isCurrent(editor, app: app, presenter: presenter))
             #expect(sessions.isCurrent(replacement, app: app, presenter: presenter))
-            try app.changeAddress(of: #require(app.catalog), to: "https://other.example")
-            try app.changeAddress(of: #require(app.catalog), to: "https://fixture.example")
+            try app.replaceServer(with: "https://other.example")
+            try app.replaceServer(with: "https://fixture.example")
             #expect(!sessions.isCurrent(replacement, app: app, presenter: presenter))
         }
     }
@@ -1336,9 +1336,10 @@ struct OverviewTests {
             let editing = try ManagementFlow.editChannel(#require(second.target("channel")))
             presenter.present(editing)
             let editor = sessions.session(for: editing, catalog: second)
-            try app.changeAddress(of: first, to: "https://moved.example")
+            try app.addServer("https://moved.example")
+            app.servers.remove(first)
             #expect(sessions.isCurrent(editor, app: app, presenter: presenter))
-            app.removeServer(second)
+            app.servers.remove(second)
             #expect(!sessions.isCurrent(editor, app: app, presenter: presenter))
 
             // New Channel's Server menu moves its session, so the entries stay.
@@ -1413,7 +1414,7 @@ struct OverviewTests {
         #expect(!first.isPresented)
         let second = model.artifactSession(for: try #require(model.selectedStore))
         second.open(artifact)
-        try model.changeAddress(of: #require(model.catalog), to: "https://replacement.example")
+        try model.replaceServer(with: "https://replacement.example")
         #expect(!second.isPresented)
         #expect(model.selectedStore == nil)
         model.selectedChannelID = "second"

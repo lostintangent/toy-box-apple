@@ -149,11 +149,20 @@ final class MockTransport: Sendable {
     }
 
     func api(scheme: String = "http", port: Int? = nil) throws -> ChannelAPI {
+        try ChannelAPI(serverURL: address(scheme: scheme, port: port), session: Self.session())
+    }
+
+    /// This transport's address, for code that connects by address through `session()`.
+    func address(scheme: String = "http", port: Int? = nil) -> String {
         MockURLProtocol.registry.withLock { $0[host] = self }
+        return "\(scheme)://\(host)" + (port.map { ":\($0)" } ?? "")
+    }
+
+    /// A session that reaches every transport by its host, and fails for any other host.
+    static func session() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
-        return try ChannelAPI(serverURL: "\(scheme)://\(host)" + (port.map { ":\($0)" } ?? ""),
-                              session: URLSession(configuration: configuration))
+        return URLSession(configuration: configuration)
     }
 }
 

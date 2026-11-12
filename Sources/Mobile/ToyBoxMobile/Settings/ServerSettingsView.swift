@@ -76,7 +76,7 @@ struct ServerSettingsView: View {
             do {
                 let added = try model.addServer(server.absoluteString)
                 if links {
-                    linkAddresses.save(needed, in: model.catalogs, with: model.setTailscaleAddress)
+                    linkAddresses.save(needed, in: model.catalogs, with: model.servers.setTailscaleAddress)
                     let catalogs = model.catalogs
                     Task { await catalogs.setLinked(added, true) }
                 }

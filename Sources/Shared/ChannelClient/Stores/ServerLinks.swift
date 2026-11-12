@@ -39,7 +39,7 @@ public final class ServerLinks {
     public internal(set) var failures: [Failure] = []
     /// Where other servers reach a server saved at a loopback address, usually through
     /// `tailscale serve`, as an origin. Settings saves it with the server.
-    public private(set) var tailscaleAddress: String?
+    public internal(set) var tailscaleAddress: String?
     @ObservationIgnored let api: ChannelAPI
 
     init(api: ChannelAPI, tailscaleAddress: String?) {
