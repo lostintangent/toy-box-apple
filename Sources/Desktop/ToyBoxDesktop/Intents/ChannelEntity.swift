@@ -36,7 +36,7 @@ struct ChannelEntity: IndexedEntity, Identifiable {
     /// The first line of the channel's purpose, which Spotlight shows under its name.
     let purpose: String?
 
-    /// The sidebar's icon, which Spotlight shows beside the name.
+    /// The channel's avatar, which Spotlight shows beside the name.
     let thumbnail: Data?
 
     init(_ listed: ChannelIntents.Listed, content: String = "") {
@@ -64,7 +64,7 @@ struct ChannelEntity: IndexedEntity, Identifiable {
         DisplayRepresentation(
             title: "\(name)",
             subtitle: subtitle,
-            // Spotlight shows the sidebar's whole icon, and Siri and Shortcuts show its mark.
+            // Spotlight shows the channel's avatar, and Siri and Shortcuts show the #.
             image: thumbnail.map { .init(data: $0) } ?? .init(systemName: "number")
         )
     }

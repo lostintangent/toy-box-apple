@@ -7,7 +7,7 @@ import SwiftUI
 import ToyBoxUI
 
 /// Keeps Spotlight's channels in step with the servers saved in Settings. Each channel appears by
-/// name, with its purpose and the sidebar's icon, and picking one runs Open Channel. A deleted
+/// name, with its purpose and its avatar, and picking one runs Open Channel. A deleted
 /// channel leaves, and so does every channel of a server you remove.
 @MainActor
 final class ChannelSpotlight {
@@ -16,16 +16,19 @@ final class ChannelSpotlight {
         let target: ChannelTarget
         let name: String
         let purpose: String?
+        let avatar: ChannelAvatar?
         var id: String { target.identifier }
 
-        init(_ target: ChannelTarget, name: String, purpose: String? = nil) {
+        init(_ target: ChannelTarget, name: String, purpose: String? = nil, avatar: ChannelAvatar? = nil) {
             self.target = target
             self.name = name
             self.purpose = purpose
+            self.avatar = avatar
         }
 
         init(_ listed: ChannelIntents.Listed) {
-            self.init(listed.target, name: listed.channel.name, purpose: listed.channel.purposePreview)
+            self.init(listed.target, name: listed.channel.name, purpose: listed.channel.purposePreview,
+                      avatar: listed.channel.avatar)
         }
     }
 
@@ -63,14 +66,13 @@ final class ChannelSpotlight {
     }
 
     private let index: Index
-    private let icon: @MainActor () -> Data?
-    private lazy var thumbnail = icon()
+    private let icon: @MainActor (Entry) async -> Data?
     /// Nil until the app replaces whatever an earlier launch left, or after Spotlight fails.
     private(set) var indexed: Indexed?
     private var latest: Catalog?
     private var tail: Task<Void, Never>?
 
-    init(index: Index = .spotlight, icon: @escaping @MainActor () -> Data? = ChannelSpotlight.renderIcon) {
+    init(index: Index = .spotlight, icon: @escaping @MainActor (Entry) async -> Data? = ChannelSpotlight.renderIcon) {
         self.index = index
         self.icon = icon
     }
@@ -135,14 +137,16 @@ final class ChannelSpotlight {
     /// Applies changes one batch at a time, in order.
     private func apply(_ plan: Plan) {
         guard !plan.isEmpty else { return }
-        let thumbnail = plan.indexes.isEmpty ? nil : thumbnail
-        let entities = plan.indexes.map { entry in
-            ChannelEntity(entry.target, name: entry.name, purpose: entry.purpose, thumbnail: thumbnail)
-        }
         let previous = tail
         let index = index
+        let icon = icon
         tail = Task { [weak self] in
             await previous?.value
+            var entities: [ChannelEntity] = []
+            for entry in plan.indexes {
+                entities.append(ChannelEntity(entry.target, name: entry.name, purpose: entry.purpose,
+                                              thumbnail: await icon(entry)))
+            }
             do {
                 if plan.removesAll { try await index.removeAll() }
                 if !plan.removes.isEmpty { try await index.remove(plan.removes) }
@@ -154,9 +158,15 @@ final class ChannelSpotlight {
         }
     }
 
-    /// The sidebar's channel icon at Spotlight's size, as PNG data.
-    static func renderIcon() -> Data? {
-        let renderer = ImageRenderer(content: ChannelSpotlightIcon())
+    static func renderIcon(_ entry: Entry) async -> Data? {
+        await renderIcon(entry.avatar, api: try? ChannelAPI(serverURL: entry.target.serverURL))
+    }
+
+    /// A channel's avatar at Spotlight's size, as PNG data. An image loads first, since a renderer
+    /// draws only what's already there, and one that can't load draws the #.
+    static func renderIcon(_ avatar: ChannelAvatar?, api: ChannelAPI?) async -> Data? {
+        if case .image(let address)? = avatar, let api { await ChannelAvatarImages.shared.load(address, api: api) }
+        let renderer = ImageRenderer(content: ChannelMark(avatar, api: api, size: 64))
         renderer.scale = 2
         guard let image = renderer.cgImage else { return nil }
         return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
@@ -167,14 +177,5 @@ extension ChannelSpotlight.Catalog {
     @MainActor
     init(_ catalogs: [ChannelCatalogStore]) {
         self.init(channels: ChannelIntents.Listed.spotlight(in: catalogs)?.map(ChannelSpotlight.Entry.init))
-    }
-}
-
-/// The sidebar's channel icon, drawn larger.
-private struct ChannelSpotlightIcon: View {
-    private static let size: CGFloat = 64
-
-    var body: some View {
-        ChannelMark(size: Self.size)
     }
 }

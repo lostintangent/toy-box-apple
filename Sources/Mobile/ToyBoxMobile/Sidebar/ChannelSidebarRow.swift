@@ -9,6 +9,8 @@ struct ChannelSidebarRow: View {
     let working: [ChannelAgent]
     let attention: Channel.Attention?
     let now: Date
+    /// The channel's server, which an image avatar loads from.
+    var api: ChannelAPI? = nil
     /// Only a collapsed split view draws the chevron. The scene decides, because UIKit gives the
     /// expanded sidebar column a compact width of its own.
     var isCollapsed = false
@@ -27,7 +29,8 @@ struct ChannelSidebarRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ChannelMark(size: 28)
+            // The avatar keeps its own colors on the accent selection, as on the Mac.
+            ChannelMark(channel.avatar, api: api, size: 28)
                 .needsYouMark(check)
                 .talkMark(talk)
             VStack(alignment: .leading, spacing: 8) {
