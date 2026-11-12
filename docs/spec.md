@@ -308,15 +308,19 @@ Drafts stay keyed to the address, so adding it back finds them.
   - **A server on this Mac.** Other servers can't reach a server saved at a loopback address,
     like `127.0.0.1:3100` or `localhost`, so it links by its Tailscale address. The Linked card
     shows a field under the switch for each saved server that linking would need one for,
-    including other servers, so turning a switch on never fails for a missing one. It reads
-    "Tailscale address", or "Tailscale address for Studio" for another server and in Add Server,
-    with the placeholder `machine.tail1234.ts.net` and the caption "Other servers reach Studio at
-    this address, through `tailscale serve`." It takes a host, which gets `https://`, or a full
-    `https://` or `http://` address. Settings saves it as an origin on Return or when the field
-    loses focus, with that server, and the app uses it to link and to recognize that server's
-    links. While the server is linked, its address shows as a plain value, since changing it
-    would strand the others' links, and turning Linked off makes it editable again. A server
-    saved at any other address, as the phone saves them, links by that address and never asks.
+    including other servers, so turning a switch on never fails for a missing one. The field for
+    the server the card or Add Server is about reads "Tailscale address", and another server's
+    "Tailscale address for Studio", with the placeholder `machine.tail1234.ts.net`. One caption
+    after the last field names every server asked for: "Other servers reach Studio at this
+    address, through `tailscale serve`.", or "Other servers reach Studio and Build Box at these
+    addresses, …". On the Mac it's one caption row, and on the phone it opens the card's footer.
+    A field takes a host, which gets `https://`, or a full `https://` or `http://` address.
+    Settings saves it as an origin on Return or when the field loses focus, with that server, and
+    the app uses it to link and to recognize that server's links. While the server is linked, its
+    address shows as a plain value in secondary ink, so it never looks like a field, since
+    changing it would strand the others' links, and turning Linked off makes it editable again.
+    A server saved at any other address, as the phone saves them, links by that address and never
+    asks.
   - **Removing a server doesn't unlink it,** because other devices and the web rely on the link.
     The apps store nothing else about links and read every saved server's links while Settings
     shows the list, and after each change.
