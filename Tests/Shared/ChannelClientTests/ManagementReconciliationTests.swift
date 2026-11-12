@@ -229,8 +229,7 @@ struct ManagementReconciliationTests {
     ) async throws {
         let initial = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel], working: ["test"])
         let recovered = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel])
-        let message = failsDuringDetail
-            ? HTTPURLResponse.localizedString(forStatusCode: status) : "Reconciliation unavailable."
+        let message = failsDuringDetail ? nil : "Reconciliation unavailable."
         let expected = ChannelAPIError.http(status: status, message: message)
         let mock = MockTransport { request, count in
             if count == 1 { return try .json(initial) }

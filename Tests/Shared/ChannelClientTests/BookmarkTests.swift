@@ -47,7 +47,7 @@ struct BookmarkTests {
         #expect(store.bookmarks == [2])
         let failure = try #require(store.bookmarkFailure)
         #expect(failure.sequence == 2 && failure.isRemoval)
-        #expect(failure.error == "Bookmark a user or agent message in this Channel. (HTTP 422)")
+        #expect(failure.error == "Bookmark a user or agent message in this Channel.")
         #expect(mock.requests.count == 1)
         store.dismissBookmarkFailure()
         #expect(store.bookmarkFailure == nil)

@@ -78,7 +78,7 @@ public enum ArtifactDownload {
         let (temporary, response) = try await URLSession.shared.download(for: request)
         guard let http = response as? HTTPURLResponse else { throw ChannelAPIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
-            throw ChannelAPIError.http(status: http.statusCode, message: "The artifact could not be loaded.")
+            throw ChannelAPIError.http(status: http.statusCode, message: nil)
         }
         try Task.checkCancellation()
         let directory = FileManager.default.temporaryDirectory

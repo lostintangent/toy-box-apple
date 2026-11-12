@@ -52,8 +52,7 @@ struct ServerUpdateTests {
     }
 
     private func failure(_ status: Int, _ message: String? = nil) -> String {
-        ChannelAPIError.http(status: status, message: message ?? HTTPURLResponse.localizedString(forStatusCode: status))
-            .localizedDescription
+        ChannelAPIError.http(status: status, message: message).localizedDescription
     }
 
     @Test func aRestartIsPendingExactlyWhenTheInstalledReleaseDiffersFromTheOneRunning() throws {

@@ -182,10 +182,7 @@ private final class SSEReader<Event: Decodable & Sendable>: @unchecked Sendable 
         task = bytes.task
         guard let http = response as? HTTPURLResponse else { throw ChannelAPIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
-            throw ChannelAPIError.http(
-                status: http.statusCode,
-                message: HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
-            )
+            throw ChannelAPIError.http(status: http.statusCode, message: nil)
         }
         guard http.value(forHTTPHeaderField: "Content-Type")?
             .lowercased().hasPrefix("text/event-stream") == true else {

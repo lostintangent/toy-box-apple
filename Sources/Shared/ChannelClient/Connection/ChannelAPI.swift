@@ -4,7 +4,8 @@ import Foundation
 public enum ChannelAPIError: Error, Equatable, LocalizedError, Sendable {
     case invalidServerURL
     case invalidResponse
-    case http(status: Int, message: String)
+    /// A failed response, with the server's own words when it gave them.
+    case http(status: Int, message: String?)
     case invalidMessage(String)
     case disconnected
     case streamEnded
@@ -15,7 +16,8 @@ public enum ChannelAPIError: Error, Equatable, LocalizedError, Sendable {
         switch self {
         case .invalidServerURL: "Enter an HTTP or HTTPS server URL."
         case .invalidResponse: "The server returned an invalid response."
-        case .http(let status, let message): "\(message) (HTTP \(status))"
+        case .http(let status, let message):
+            message ?? "\(HTTPURLResponse.localizedString(forStatusCode: status)) (HTTP \(status))"
         case .invalidMessage(let message): message
         case .disconnected: "The channel isn't connected."
         case .streamEnded: "The channel connection ended. Reconnecting."
@@ -263,9 +265,8 @@ public struct ChannelAPI: Sendable {
 
     /// The error a failed response means, with the server's own message when it gives one.
     static func failure(status: Int, data: Data) -> ChannelAPIError {
-        let message = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?.error
-            ?? HTTPURLResponse.localizedString(forStatusCode: status)
-        return .http(status: status, message: message)
+        let words = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?.error
+        return .http(status: status, message: words?.contains { !$0.isWhitespace } == true ? words : nil)
     }
 
     public func markRead(channelId: String, sequence: Int) async throws -> Int {
