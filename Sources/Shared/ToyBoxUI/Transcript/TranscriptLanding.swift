@@ -45,13 +45,18 @@ public enum TranscriptLanding {
         if hasPendingJump { return .waitForJump }
         if isColdOpening && jumps == 0 { return .placeColdOpening }
         if jumps >= 2 { return .settled }
+        return isPlaced(row, frames: frames, viewport: viewport) ? .settled : .correctPosition
+    }
+
+    /// Whether the row is where a landing puts it: its start near the top, or anywhere on the last
+    /// screen of a short tail. A hidden opening shows its rows the first time this holds.
+    public static func isPlaced(_ row: TranscriptRow, frames: [String: TranscriptMessageFrame],
+                                viewport: TranscriptViewport) -> Bool {
         let ids = row.messages.map(\.id) + [row.id, "system-group-\(row.id)", "divider-\(row.id)"]
-        guard viewport.height > 0, let top = ids.compactMap({ frames[$0]?.rect.minY }).min() else {
-            return .correctPosition
-        }
+        guard viewport.height > 0, let top = ids.compactMap({ frames[$0]?.rect.minY }).min() else { return false }
         let nearTop = top < min(120, viewport.height / 2)
         let onLastScreen = viewport.bottomGap < 1 && top < viewport.height
-        return top >= -0.5 && (nearTop || onLastScreen) ? .settled : .correctPosition
+        return top >= -0.5 && (nearTop || onLastScreen)
     }
 
     private static func unreadIndex(after unreadAfter: Int?, in rows: [TranscriptRow]) -> Int? {

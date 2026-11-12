@@ -6,7 +6,7 @@
 
 - A server that stops answering no longer fills the sidebar with an error. Its status dot changes color, and hovering over it tells you what went wrong.
 - Typing @ and a name suggests just the agents with that name, instead of everyone whose role happens to mention it.
-- Opening a channel with a request waiting for you no longer sometimes leaves its conversation blank.
+- Opening a channel shows its conversation right away, instead of sometimes leaving it blank while agents are working or a request waits for you.
 - Typing a message keeps up with every key, even while agents are working or your Mac is busy.
 
 ## iPhone 0.1.31
