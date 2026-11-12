@@ -350,8 +350,9 @@ final class AppModel {
         for catalog in catalogs {
             let serverURL = catalog.api.baseURL.absoluteString
             catalog.onSendConfirmed = { [weak shareHistory, weak catalog] id in
-                guard let name = catalog?.channels.first(where: { $0.id == id })?.name else { return }
-                shareHistory?.recordSend(serverURL: serverURL, channelID: id, name: name)
+                guard let channel = catalog?.channels.first(where: { $0.id == id }) else { return }
+                shareHistory?.recordSend(serverURL: serverURL, channelID: id, name: channel.name,
+                                         avatar: channel.avatar)
             }
         }
     }

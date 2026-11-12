@@ -337,7 +337,7 @@ struct ChannelSidebar: View {
         return ChannelSidebarRow(
             channel: presentation.channel(channel), agents: agents,
             working: presentation.working(channel, agents: agents),
-            attention: presentation.attention(channel), now: now, isCollapsed: isCollapsed,
+            attention: presentation.attention(channel), now: now, api: item.catalog.api, isCollapsed: isCollapsed,
             talk: talk.target == item.target ? talk : nil, question: question, check: checks[item.target],
             cardInset: NeedsYouCard.margin - reach
         )

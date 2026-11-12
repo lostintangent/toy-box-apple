@@ -1,9 +1,11 @@
+import ChannelClient
 import ChannelKit
 import SwiftUI
 import ToyBoxUI
 
-/// A Mail-style source-list row: icon, name and last activity, then folder or purpose with the
-/// working agents and attention trailing. See the spec's Sidebar section for the metrics.
+/// A Mail-style source-list row: the channel's avatar, name and last activity, then folder or
+/// purpose with the working agents and attention trailing. See the spec's Sidebar section for the
+/// metrics.
 struct ChannelSidebarRow: View {
     let channel: Channel
     let agents: [ChannelAgent]
@@ -11,6 +13,8 @@ struct ChannelSidebarRow: View {
     let attention: Channel.Attention?
     /// Nil when the channel has no directory.
     let folder: ChannelFolderAvailability?
+    /// The channel's server, which an image avatar loads from.
+    var api: ChannelAPI? = nil
     var openFolder: () -> Void
     var onTap: () -> Void
 
@@ -104,8 +108,9 @@ private struct ChannelSidebarRowContent: View {
         }
     }
 
+    /// The avatar keeps its own colors on the accent selection, like an app icon in System Settings.
     private var icon: some View {
-        ChannelMark()
+        ChannelMark(channel.avatar, api: row.api)
     }
 
     private var showsFolder: Bool {

@@ -43,7 +43,7 @@ struct IntentsTests {
 
     // MARK: Spotlight
 
-    @Test func spotlightGetsTheNameAndPurposeButNeverTheAttention() throws {
+    @Test func spotlightGetsTheNameAndPurposeButNeverTheAttention() async throws {
         let entity = ChannelEntity(listed(channel("a", "Studio demo", purpose: "  Ship the demo  \nThen the docs",
                                                   latest: 15, seen: 9, request: 15)))
         #expect(entity.purpose == "Ship the demo" && subtitle(entity) == "Needs your reply")
@@ -51,7 +51,7 @@ struct IntentsTests {
         #expect(attributes.displayName == "Studio demo" && attributes.title == "Studio demo")
         #expect(attributes.contentDescription == "Ship the demo" && attributes.thumbnailData == nil)
 
-        let png = try #require(ChannelSpotlight.renderIcon())
+        let png = try #require(await ChannelSpotlight.renderIcon(nil, api: nil))
         let quiet = ChannelEntity(target("b"), name: "Docs", attention: .unread, thumbnail: png).attributeSet
         #expect(quiet.contentDescription == nil && quiet.thumbnailData == png)
 
@@ -118,7 +118,7 @@ struct IntentsTests {
         await catalog.refresh()
         try #require(catalog.phase.failure != nil && !catalog.isLoaded)
         let index = FakeSpotlightIndex()
-        let spotlight = ChannelSpotlight(index: index.index, icon: { nil })
+        let spotlight = ChannelSpotlight(index: index.index, icon: { _ in nil })
         spotlight.update(.init([catalog]))
         await spotlight.settle()
         #expect(index.operations.isEmpty)
@@ -138,6 +138,9 @@ struct IntentsTests {
         let next = Spotlight.plan(from: indexed, to: .init(channels: [purpose, renamed, d]))
         #expect(next.plan == .init(removes: [c.id], indexes: [purpose, renamed, d]))
         #expect(Spotlight.plan(from: next.indexed, to: .init(channels: [purpose, renamed, d])).plan.isEmpty)
+        let pictured = entry("a", "Studio demo", purpose: "Ship", avatar: .image("/api/serve/studio.png"))
+        #expect(Spotlight.plan(from: next.indexed, to: .init(channels: [pictured, renamed, d])).plan
+            == .init(indexes: [pictured]))
         // What's there stays while a server you add loads.
         let loading = Spotlight.plan(from: indexed, to: .init(channels: nil))
         #expect(loading.plan.isEmpty && loading.indexed == indexed)
@@ -156,7 +159,7 @@ struct IntentsTests {
 
     @Test func spotlightAppliesChangesInOrderAndStartsOverAfterAFailure() async {
         let index = FakeSpotlightIndex()
-        let spotlight = ChannelSpotlight(index: index.index, icon: { Data("icon".utf8) })
+        let spotlight = ChannelSpotlight(index: index.index, icon: { Data($0.target.channelID.utf8) })
         let a = entry("a", "Studio demo", purpose: "Ship")
         let b = entry("b", "Docs")
         spotlight.update(.init(channels: nil))
@@ -164,7 +167,8 @@ struct IntentsTests {
         spotlight.update(.init(channels: [a]))
         await spotlight.settle()
         #expect(index.operations == ["remove all", "add a b", "remove b"])
-        #expect(index.added.allSatisfy { $0.thumbnail == Data("icon".utf8) } && index.added.first?.purpose == "Ship")
+        #expect(index.added.allSatisfy { $0.thumbnail == Data($0.target.channelID.utf8) }, "Each gets its own avatar")
+        #expect(index.added.first?.purpose == "Ship")
 
         await spotlight.reindex([a.id, b.id])
         #expect(index.operations.suffix(2) == ["remove b", "add a"])
@@ -179,6 +183,23 @@ struct IntentsTests {
         spotlight.update(.init(channels: [a, b]))
         await spotlight.settle()
         #expect(index.operations.suffix(2) == ["remove all", "add a b"])
+    }
+
+    @Test func spotlightDrawsAnImageAvatarOnceItLoadsAndTheHashWhenItCant() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AvatarImageProtocol.self]
+        let api = try ChannelAPI(serverURL: testServer, session: URLSession(configuration: configuration))
+        func edge(_ avatar: ChannelAvatar) async throws -> NSColor {
+            let png = try #require(await ChannelSpotlight.renderIcon(avatar, api: api))
+            let icon = try #require(NSBitmapImageRep(data: png))
+            return try #require(icon.colorAt(x: 10, y: 64)?.usingColorSpace(.sRGB))
+        }
+        let image = try await edge(.image(AvatarImageProtocol.path))
+        #expect(image.redComponent > 0.9 && image.blueComponent < 0.1 && image.alphaComponent > 0.9)
+        let refused = try await edge(.image("/api/serve/gone.png"))
+        #expect(refused.blueComponent > refused.redComponent + 0.3, "The cyan #")
+        let mark = try await edge(.mark(.init(mark: "M4 12L12 4L20 12", color: "#C2410C")))
+        #expect(mark.redComponent > mark.blueComponent + 0.3)
     }
 
     // MARK: Catch Me Up answers
@@ -829,6 +850,32 @@ private final class RequestRecorder: URLProtocol, @unchecked Sendable {
     }
 }
 
+/// Serves one red avatar image and refuses every other address.
+private final class AvatarImageProtocol: URLProtocol, @unchecked Sendable {
+    static let path = "/api/serve/spotlight-red.png"
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let red = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in
+            NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1).setFill()
+            rect.fill()
+            return true
+        }
+        guard let url = request.url, let png = red.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:))?
+                  .representation(using: .png, properties: [:]),
+              let response = HTTPURLResponse(url: url, statusCode: url.path() == Self.path ? 200 : 404,
+                                             httpVersion: nil, headerFields: ["Content-Type": "image/png"]) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.cannotDecodeContentData))
+            return
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        if url.path() == Self.path { client?.urlProtocol(self, didLoad: png) }
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
 private struct UnavailableIntelligence: ChannelIntelligenceService {
     var availability: IntelligenceAvailability { .unavailable(.modelNotReady) }
     func catchUp(_ request: CatchUpRequest) async -> CatchUpResult { .unavailable(.modelNotReady) }
@@ -845,9 +892,9 @@ private func listed(_ channel: Channel, on server: String = testServer) -> Chann
     .init(target: target(channel.id, on: server), channel: channel)
 }
 
-private func entry(_ id: String, _ name: String, purpose: String? = nil,
+private func entry(_ id: String, _ name: String, purpose: String? = nil, avatar: ChannelAvatar? = nil,
                    on server: String = testServer) -> ChannelSpotlight.Entry {
-    .init(target(id, on: server), name: name, purpose: purpose)
+    .init(target(id, on: server), name: name, purpose: purpose, avatar: avatar)
 }
 
 private func channel(_ id: String, _ name: String, purpose: String? = nil, latest: Int = 0, seen: Int = 0,

@@ -3549,7 +3549,7 @@ Open Channel. The Channel entity is an `IndexedEntity`, keyed by its server and 
 app's default index. Once every server has answered and at least one has loaded, the loaded
 servers' channels replace whatever Spotlight held, and the last launch's channels stay until then. A server that
 can't load leaves Spotlight until it does. After that the app indexes only renames, purpose
-changes, additions and deletions. Removing a server, or changing its address, removes its channels
+changes, avatar changes, additions and deletions. Removing a server, or changing its address, removes its channels
 at once. A failed call makes the next catalog change replace
 everything. Launches with `--server`, `TOY_BOX_SERVER_URL`, a snapshot or a benchmark never touch
 the index. When Spotlight asks the app to reindex, it indexes the catalogs' channels and removes

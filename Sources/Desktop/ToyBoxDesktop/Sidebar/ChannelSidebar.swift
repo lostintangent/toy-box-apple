@@ -209,7 +209,7 @@ struct ChannelSidebar: View {
         return ChannelSidebarRow(
             channel: current, agents: agents, working: presentation.working(channel, agents: agents),
             attention: presentation.attention(channel),
-            folder: folderAvailability(current, api: api),
+            folder: folderAvailability(current, api: api), api: api,
             openFolder: { if let path = current.directory { model.folders.open(path) } },
             onTap: { if !NSEvent.modifierFlags.contains(.command) { selection = listed.target } }
         )
