@@ -97,8 +97,8 @@ public final class ServerLinks {
 
     /// The links the server answered, or nil for one too old to link.
     func apply(_ links: [String]?) {
-        if listed != links { listed = links }
-        if needsUpdate != (links == nil) { needsUpdate = links == nil }
+        listed = links
+        needsUpdate = links == nil
     }
 }
 
