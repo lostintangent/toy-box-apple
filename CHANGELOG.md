@@ -2,6 +2,8 @@
 
 ## Mac 0.1.36
 
+This version needs Toy Box 0.4.0 or later on each of your servers. If you added a server by a `.local` name or a short name like `mac-mini`, add it again by its full Tailscale name or IP address.
+
 ### Features
 
 - You can now name each of your servers in Settings, and the name stays with the server, so every Mac and iPhone you use calls it the same thing.
@@ -9,6 +11,8 @@
 - Adding a server you already have at a new address, like its Tailscale address, now moves it there instead of listing it twice, and keeps your drafts and unsent messages.
 
 ## iPhone 0.1.33
+
+This version needs Toy Box 0.4.0 or later on each of your servers. If you added a server by a `.local` name or a short name like `mac-mini`, add it again by its full Tailscale name or IP address.
 
 ### Features
 
