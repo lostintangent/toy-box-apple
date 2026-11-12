@@ -2,6 +2,7 @@ import ChannelKit
 import CoreGraphics
 import Foundation
 import ImageIO
+import Synchronization
 import Testing
 import UniformTypeIdentifiers
 @testable import ChannelClient
@@ -133,6 +134,56 @@ struct ChannelAttachmentTests {
 }
 
 /// An image of random pixels, so no two tests share a cache entry.
+struct ChannelAvatarImageTests {
+    @Test func anImageLoadsOnceByURLAndOnlyTheServersAnswerIsRemembered() async throws {
+        let png = try #require(Data(base64Encoded: try encodedImage(width: 512, height: 512, type: .png)))
+        let laterTries = Mutex(0)
+        let transport = MockTransport { request, _ in
+            switch request.url?.path {
+            case "/api/serve/gone.png":
+                return MockResponse(status: 404)
+            case "/api/serve/later.png" where laterTries.withLock { (tries: inout Int) -> Int in
+                tries += 1
+                return tries
+            } == 1:
+                throw URLError(.networkConnectionLost)
+            default:
+                return MockResponse(contentType: "image/png", body: png)
+            }
+        }
+        let api = try transport.api()
+        let images = ChannelAvatarImages()
+        func shown(_ image: ChannelAvatarImages.Image?) -> String {
+            switch image {
+            case .loaded(let image)?: "\(image.width)x\(image.height)"
+            case .failed?: "#"
+            case nil: "nothing yet"
+            }
+        }
+
+        #expect(shown(images.image("/api/serve/icon.png", api: api)) == "nothing yet")
+        let loads = await withTaskGroup(of: String.self) { group in
+            for _ in 0..<3 { group.addTask { shown(await images.load("/api/serve/icon.png", api: api)) } }
+            return await group.reduce(into: []) { $0.append($1) }
+        }
+        #expect(loads == ["180x180", "180x180", "180x180"], "Decoded once, small enough for the largest frame")
+        #expect(shown(await images.load("/api/serve/icon.png", api: api)) == "180x180")
+        #expect(shown(images.image("/api/serve/icon.png", api: api)) == "180x180")
+        #expect(transport.requests.count == 1)
+
+        #expect(shown(await images.load("/api/serve/gone.png", api: api)) == "#")
+        #expect(shown(await images.load("/api/serve/gone.png", api: api)) == "#")
+        #expect(transport.requests.count == 2, "A refusal holds until the avatar's URL changes")
+
+        #expect(shown(await images.load("/api/serve/later.png", api: api)) == "#")
+        #expect(shown(images.image("/api/serve/later.png", api: api)) == "nothing yet")
+        #expect(shown(await images.load("/api/serve/later.png", api: api)) == "180x180", "A lost connection is tried again")
+
+        #expect(shown(await images.load("file:///etc/hosts", api: api)) == "#")
+        #expect(transport.requests.count == 4)
+    }
+}
+
 func encodedImage(width: Int, height: Int, type: UTType, orientation: Int = 1) throws -> String {
     var generator = SystemRandomNumberGenerator()
     let count = width * height * 4

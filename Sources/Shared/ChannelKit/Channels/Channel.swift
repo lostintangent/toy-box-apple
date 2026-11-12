@@ -5,6 +5,8 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
     public var name: String
     public var purpose: String?
     public var directory: String?
+    /// Nil when the lead has never set one, since an avatar can be replaced but never removed.
+    public var avatar: ChannelAvatar?
     public var model: ModelConfiguration
     public var tasks: [ChannelTask]
     public var preview: ChannelPreview?
@@ -18,13 +20,14 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
     public var updatedAt: String
 
     public init(id: String, name: String, purpose: String? = nil, directory: String? = nil,
-                model: ModelConfiguration, tasks: [ChannelTask] = [], preview: ChannelPreview? = nil,
+                avatar: ChannelAvatar? = nil, model: ModelConfiguration, tasks: [ChannelTask] = [], preview: ChannelPreview? = nil,
                 latestSequence: Int = 0, seenThrough: Int = 0, completedSequence: Int? = nil,
                 requestSequence: Int? = nil, request: ChannelMessage? = nil, updatedAt: String) {
         self.id = id
         self.name = name
         self.purpose = purpose
         self.directory = directory
+        self.avatar = avatar
         self.model = model
         self.tasks = tasks
         self.preview = preview
@@ -37,7 +40,7 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, purpose, directory, model, tasks, preview, latestSequence, seenThrough,
+        case id, name, purpose, directory, avatar, model, tasks, preview, latestSequence, seenThrough,
              completedSequence, requestSequence, request, updatedAt
     }
 
@@ -50,6 +53,7 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
                   name: try values.decode(String.self, forKey: .name),
                   purpose: try values.decodeIfPresent(String.self, forKey: .purpose),
                   directory: try values.decodeIfPresent(String.self, forKey: .directory),
+                  avatar: try values.decodeIfPresent(ChannelAvatar.self, forKey: .avatar),
                   model: try values.decode(ModelConfiguration.self, forKey: .model),
                   tasks: try values.decodeIfPresent([ChannelTask].self, forKey: .tasks) ?? [],
                   preview: try values.decodeIfPresent(ChannelPreview.self, forKey: .preview),
@@ -67,6 +71,7 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
         try values.encode(name, forKey: .name)
         try values.encodeIfPresent(purpose, forKey: .purpose)
         try values.encodeIfPresent(directory, forKey: .directory)
+        try values.encodeIfPresent(avatar, forKey: .avatar)
         try values.encode(model, forKey: .model)
         try values.encode(tasks, forKey: .tasks)
         try values.encodeIfPresent(preview, forKey: .preview)
