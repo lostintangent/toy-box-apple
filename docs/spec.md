@@ -1331,7 +1331,7 @@ changes and the band never blinks off and on. It still ignores taps.
 | Part | Row | Recorder | Transition |
 | --- | --- | --- | --- |
 | Surface | None | An opaque card: `systemBackground`, then the phone's 7% neutral lift and accent at 9%, so the dimmed rows never show through. 20-point continuous corners, with the sides under Edges. A 0.5-point edge of accent at 30%, or the Increased Contrast edge when that's on, and a shadow of black at 30% in Dark or 12% in Light, 24-point radius, 8 points down | Starts on the row's frame. Folded, the `systemBackground` base is solid from the first frame, since it matches the list's background under the row, and the lift, accent, edge and shadow fade in over 0.2 seconds as the card grows with the spring. On the glass sidebar, the base and wash are both solid from the first frame and only the edge and shadow fade in |
-| Mark | The channel's 28-point avatar | 28-point circle of accent at 15% with an accent `mic.fill`. Never a solid fill, because Send is the only filled control | The avatar, mic and check share one 28-point tile. Its corners round from the avatar's square into the circle as the avatar fades and the symbol scales in from 50%, so the swap reads as one mark changing shape, and the way back runs in reverse. The mic and the check swap with `.contentTransition(.symbolEffect(.replace))`. With Reduce Motion, every swap is a crossfade |
+| Mark | The channel's 28-point avatar | The avatar's 28-point rounded square in accent at 15%, with an accent `mic.fill`. Never a solid fill, because Send is the only filled control | The avatar, mic and check share one 28-point tile with the avatar's continuous corners, so the mark keeps one shape and only its face changes. The avatar fades as the symbol scales in from 50%, and the way back runs in reverse. The mic and the check swap with `.contentTransition(.symbolEffect(.replace))`. With Reduce Motion, every swap is a crossfade |
 | Time and chevron | Last activity, then the folded `chevron.forward` | The elapsed time, "0:06", in caption, secondary and tabular, on the time's exact baseline and trailing edge. The chevron's space stays empty, so nothing on the top line shifts | The time leaves with a 2-point blur and fade over 0.15 seconds, then the counter fades in over 0.15 seconds, so the two never show together. Every later swap in this slot, to Offline or back to the time, works the same way, except at the settle. The chevron and attention mark fade out with the time. The counter's digits change in place, with no transition |
 | Line 2 | Folder or purpose, working stack, attention | The waveform, 24 high | Line 2 fades out with a 2-point blur over 0.15 seconds as the bars rise from 20% of their height |
 | Words | None | Body text 8 points below the waveform, up to five lines, then the oldest line scrolls under a 12-point top fade. "Listening…" in secondary until the first word. Tentative words are secondary and settle to primary as they finalize | Each new line grows the card with `.smooth(duration: 0.25)`. Up to five lines, the lines already shown hold still and the new one appears beneath them, while the controls and the card's bottom edge move down together in that one transaction. Once the card holds its bottom near the end of the list, the heading, the lines and the top edge move up together instead. Only from the sixth line does the text move, as the oldest line slides up under the fade |
@@ -1340,8 +1340,9 @@ changes and the band never blinks off and on. It still ignores taps.
 **Alive while you talk.** Your voice drives the recorder through the dictation level, smoothed
 and updated about 12 times a second. Each update applies with `.linear(duration: 0.08)`, and
 nothing updates SwiftUI every frame.
-- A halo of accent at 25% around the mic scales from 1.0 at silence to 1.4 at full voice. It's
-  the pulse, so it never loops on its own and rests when you pause.
+- A halo of accent at 25% around the mic, in the mark's rounded square, scales from 1.0 at
+  silence to 1.4 at full voice. It's the pulse, so it never loops on its own and rests when you
+  pause.
 - A soft radial glow of accent behind the mic, inside the surface, rises from 0 to 30% opacity
   with the same level.
 - The waveform is a `Canvas` of 3-point bars with 3-point gaps, 3 to 22 points tall. Each sample
@@ -1373,10 +1374,10 @@ disabled.
    - Line 2's folder or purpose crossfades back in over the second half. Its attention mark
      waits for the wash to fade.
    - The rest of the list returns to full opacity over 0.25 seconds.
-   - The mic becomes the done check through `.replace`: `checkmark.circle.fill`, monochrome and
-     semibold, in `ChannelTaskColors.changes(in:).added`, the mark a completed task wears. Its
-     circle fills the mark's 28 points, and its check is knocked out, so the surface beneath
-     shows through. Nothing rings or pulses around it. `.sensoryFeedback(.success)` plays as it
+   - The mic becomes the done check through `.replace`: a semibold `checkmark` knocked out of the
+     mark's rounded square, filled in `ChannelTaskColors.changes(in:).added`, the color a
+     completed task wears. The square fills the mark's 28 points with the avatar's corners, and
+     the surface beneath shows through the check. Nothing rings or pulses around it. `.sensoryFeedback(.success)` plays as it
      arrives.
    - The counter gives way to the time the note was sent, in the row's ordinary format, through
      the slot's swap. No word says Sent, because the check does.
@@ -1384,7 +1385,7 @@ disabled.
 4. As the card lands, its wash fades over 0.4 seconds with `.easeOut`, and the chevron and
    attention mark fade back. The row now looks ordinary except that it wears the check in
    place of its mark.
-5. Two seconds after the card lands, the check rounds back into the channel's avatar as it fades,
+5. Two seconds after the card lands, the check fades back into the channel's avatar,
    as the Mark row describes. That's the settle. The card hands back to the cell, which already looks the same,
    and the row is an ordinary row with no preview of the note. The note's time becomes the row's
    own time without a swap, since both read the same. Swiping the row again before the
@@ -1461,7 +1462,7 @@ its choices still and ignoring taps, then runs the talk card's beats while the r
 sending. In one `.smooth(duration: 0.35)` transaction the card shrinks straight back into its row
 as the next waiting request's card opens, and the row's avatar becomes the talk card's done check
 the way its Mark row describes, with `.sensoryFeedback(.success)`. Two seconds after the card
-lands, the check rounds back into the avatar. No word says Sent and the reply's
+lands, the check fades back into the avatar. No word says Sent and the reply's
 words don't show, because the check does. Answering the next card before then leaves the first
 check in place, and each row settles on its own. The waiting rule counts a request answered from
 the moment its reply is sending, so it never reopens while the reply sends or the catalog catches
