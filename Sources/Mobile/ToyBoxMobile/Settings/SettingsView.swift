@@ -155,12 +155,15 @@ private struct ServerRow: View {
                     Circle().fill(footer.dot).frame(width: Self.dotSize, height: Self.dotSize)
                         .accessibilityHidden(true)
                     Text(catalog.name).lineLimit(1)
+                        // The dot's meaning, read once for the row.
+                        .accessibilityValue(footer.accessibilityValue)
                 }
                 if let failure {
                     Text("\(Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)) \(failure)")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.leading, Self.dotSize + Self.dotSpacing)
+                        .accessibilityLabel(failure)
                 }
             }
             Spacer(minLength: 0)
@@ -169,15 +172,14 @@ private struct ServerRow: View {
             }
             ServerUpdateStatus(update: update, showsVersion: isConnected).fixedSize()
         }
-        .accessibilityValue(footer.accessibilityValue)
     }
 
     private static let dotSize: CGFloat = 8
     private static let dotSpacing: CGFloat = 10
 }
 
-/// The end of a server's row: its version, a spinner while it checks, Up to date after a check that
-/// found nothing newer, or Restart once a newer release is installed.
+/// The end of a server's row: its version, a spinner while it checks or restarts, Up to date after a
+/// check that found nothing newer, or Restart once a newer release is installed.
 private struct ServerUpdateStatus: View {
     let update: ServerUpdate
     /// A server that can't connect says so instead.
@@ -186,12 +188,9 @@ private struct ServerUpdateStatus: View {
     var body: some View {
         switch update.phase {
         case .checking?:
-            ProgressView()
+            ProgressView().accessibilityRepresentation { Text("Checking for updates") }
         case .restarting?:
-            HStack(spacing: 8) {
-                Text("Restarting…").foregroundStyle(.secondary)
-                ProgressView()
-            }
+            ProgressView().accessibilityRepresentation { Text("Restarting") }
         case .restartPending?:
             Button("Restart") { Task { await update.restart() } }
                 .buttonStyle(.borderedProminent)
