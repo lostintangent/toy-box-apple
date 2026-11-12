@@ -187,10 +187,13 @@ Drafts stay keyed to the address, so adding it back finds them.
 - **One server looks exactly as it does today.** The list has no section headers, and the Mac
   footer keeps its status line as Sidebar describes. Everything below applies with two or more.
 - **Grouped list.** The Mac sidebar and the phone list show one collapsible section per server, in
-  Settings' order. Its header is the server's connection dot and name, with the status line's help
-  and VoiceOver value. On the Mac, the name is secondary, the same color as the footer's status
-  line at rest. The header keeps the sidebar's own section header inset, which puts its dot 4 points inside
-  the search field's edge, and every header has the same room above it, whether it follows the
+  Settings' order. Its header is the server's name, with the status line's help and VoiceOver
+  value. A connected or connecting server shows no dot, since the list is shaped for success. Only
+  a failing server's orange or red dot leads its name, and on the Mac a load longer than 300 ms
+  shows the footer's mini spinner there until it resolves. Nothing holds that spot empty, so a
+  healthy server's name starts at the header's edge. On the Mac, the name is secondary, the same
+  color as the footer's status line at rest. The header keeps the sidebar's own section header
+  inset, which puts its leading edge 4 points inside the search field's edge, and every header has the same room above it, whether it follows the
   search field or another server's last row, matching the gap between two servers. On the phone, the name is followed by how many channels the server has, in
   the header's font and secondary color, once its catalog has loaded. A failing server shows only
   its header's orange or red dot, never a notice in the list, so the list always shows every
@@ -881,8 +884,8 @@ finger lifts, so a fast fetch never ends it mid-pull. Command-F focuses channel 
 list is active, without replacing in-conversation Find. The list never shows a connection error, a
 pill or a Retry, because pull to refresh already retries. A failing server shows only its orange or
 red dot, with the same colors as the Mac's (see Sidebar), and only in its header when there are
-several servers. With one server the list shows no dot at all, and its status lives in Settings'
-server list, as on the Mac. Tapping a header's dot, through a 44-point
+several servers. A connected or connecting server's header shows no dot. With one server the list
+shows no dot at all, and its status lives in Settings' server list, as on the Mac. Tapping a header's dot, through a 44-point
 hit area, opens a popover with the status line, like "Reconnecting to 127.0.0.1:3211", over the
 readable failure in secondary, then a Server Settings button, which opens Settings because a wrong
 address is the one failure a retry can't fix. The rest of a header still collapses and expands.
