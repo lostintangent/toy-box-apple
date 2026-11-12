@@ -9,6 +9,7 @@ public enum ChannelSystemEventStyle {
         case "member_joined": "person.badge.plus"
         case "member_left": "person.badge.minus"
         case "channel_renamed", "channel_purpose_changed": "pencil"
+        case "channel_avatar_changed": "photo"
         case "channel_directory_changed": "folder"
         case "preview_changed": "play.rectangle"
         case "artifact_shared": "doc.badge.arrow.up"

@@ -5,6 +5,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
     public var actor: ChannelMessageSender?
     public var member: ChannelAgent?
     public var name: String?
+    public var avatar: ChannelAvatar?
     public var purpose: String?
     public var directory: String?
     public var preview: ChannelPreview?
@@ -13,13 +14,14 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
     public private(set) var unknownFields: [String: JSONValue]?
 
     public init(type: String, actor: ChannelMessageSender? = nil, member: ChannelAgent? = nil,
-                name: String? = nil, purpose: String? = nil, directory: String? = nil,
-                preview: ChannelPreview? = nil, artifact: ChannelArtifact? = nil,
+                name: String? = nil, avatar: ChannelAvatar? = nil, purpose: String? = nil,
+                directory: String? = nil, preview: ChannelPreview? = nil, artifact: ChannelArtifact? = nil,
                 routine: ChannelRoutine? = nil) {
         self.type = type
         self.actor = actor
         self.member = member
         self.name = name
+        self.avatar = avatar
         self.purpose = purpose
         self.directory = directory
         self.preview = preview
@@ -28,7 +30,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, actor, member, name, purpose, directory, preview, artifact, routine
+        case type, actor, member, name, avatar, purpose, directory, preview, artifact, routine
     }
 
     public init(from decoder: any Decoder) throws {
@@ -41,6 +43,9 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
         case "channel_renamed":
             actor = try values.decode(ChannelMessageSender.self, forKey: .actor)
             name = try values.decode(String.self, forKey: .name)
+        case "channel_avatar_changed":
+            actor = try values.decode(ChannelMessageSender.self, forKey: .actor)
+            avatar = try values.decode(ChannelAvatar.self, forKey: .avatar)
         case "channel_purpose_changed":
             actor = try values.decode(ChannelMessageSender.self, forKey: .actor)
             purpose = try values.decode(String?.self, forKey: .purpose)
@@ -71,6 +76,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
         try values.encodeIfPresent(actor, forKey: .actor)
         try values.encodeIfPresent(member, forKey: .member)
         try values.encodeIfPresent(name, forKey: .name)
+        try values.encodeIfPresent(avatar, forKey: .avatar)
         // A change that clears its value carries null, as the server sends it.
         switch type {
         case "channel_purpose_changed": try values.encode(purpose, forKey: .purpose)
@@ -100,6 +106,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
         case "tasks_completed": "All tasks completed"
         case "member_joined", "member_left": "Channel membership changed"
         case "channel_renamed": "Channel renamed"
+        case "channel_avatar_changed": "Avatar updated"
         case "channel_purpose_changed": system?.purpose == nil ? "Purpose cleared" : "Purpose updated"
         case "channel_directory_changed": system?.directory == nil ? "Working directory cleared" : "Working directory changed"
         case "preview_changed":
@@ -127,7 +134,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
             detail.map { phrase + " " + Self.value($0) } ?? phrase
         }
         switch type {
-        case "tasks_completed": return phrase
+        case "tasks_completed", "channel_avatar_changed": return phrase
         case "member_joined", "member_left":
             guard let name = member?.name else { return phrase }
             return "\(name) \(Self.membershipAction(type))"

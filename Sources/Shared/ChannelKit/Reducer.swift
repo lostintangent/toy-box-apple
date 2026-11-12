@@ -81,6 +81,8 @@ extension ChannelState {
                     switch content.type {
                     case "channel_renamed":
                         if let name = content.name { next.channel.name = name }
+                    case "channel_avatar_changed":
+                        if let avatar = content.avatar { next.channel.avatar = avatar }
                     case "channel_purpose_changed":
                         next.channel.purpose = content.purpose
                     case "channel_directory_changed":
