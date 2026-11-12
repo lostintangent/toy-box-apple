@@ -281,12 +281,16 @@ Drafts stay keyed to the address, so adding it back finds them.
     purposes, and ask each other for work." Linked servers are one group in which every pair is
     linked, so every server showing the symbol can reach every other. Turning the switch on links
     the server with every linked server, or, when none is linked yet, links every saved server
-    with every other. Turning it off unlinks it from every other saved server. A server too old to
-    link shows the switch off and disabled, with the footer "Update Build Box to link it.", and
-    other footers and links leave it out.
-  - **Add Server.** The sheet, and the phone's Add Server page, show the same switch under the
-    address, on by default, with a footer naming the servers it would link with. It links once the
-    server is added, and Settings then selects the new server.
+    with every other. Turning it off unlinks it from every other saved server. The card shows only
+    when the app has two or more saved servers and at least one of them can link, so linking stays
+    out of sight until a server supports it. A server too old to link shows the switch off and
+    disabled, with a footer like "Update Mac mini to link it.", and other footers and links leave
+    it out. When a server is the only saved one that can link, its switch is off and disabled with
+    "Update your other servers to link it."
+  - **Add Server.** When a saved server can link, the sheet, and the phone's Add Server page, show
+    the same switch under the address, on by default, with a footer naming the servers it would
+    link with. It links once the server is added, and Settings then selects the new server. A new
+    server too old to link is added unlinked, and its details say so through the disabled switch.
   - **Failures.** Each change links once, with no retry and nothing in the background, so it can
     never fight an unlink made elsewhere. Each server that didn't link adds one row under the
     switch: a yellow `exclamationmark.triangle.fill`, "Couldn't link with Mac mini (timed out).",
