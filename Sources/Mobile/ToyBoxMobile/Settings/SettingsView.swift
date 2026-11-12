@@ -131,26 +131,21 @@ struct SettingsView: View {
     }
 }
 
-/// A server's dot and name, `link` when it's linked, then its host, or that it can't connect, then its
-/// release. A failed check or restart reads under the name, up to three lines, and VoiceOver reads all
-/// of it. See Updating a server and Linking servers in docs/spec.md.
+/// A server's dot and name, `link` when it's linked, then that it can't connect, or its release. A
+/// failed check or restart reads under the name, up to three lines, and VoiceOver reads all of it. See
+/// Updating a server and Linking servers in docs/spec.md.
 private struct ServerRow: View {
     let catalog: ChannelCatalogStore
     @Environment(AppModel.self) private var model
 
     var body: some View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
-        let host = SidebarFooter.server(catalog.api.baseURL.absoluteString)
         let update = catalog.update
         let isConnected = catalog.phase.failure == nil
         let isLinked = !model.catalogs.linkedServers(of: catalog).isEmpty
         let failure: String? = if case .failed(let words)? = update.outcome { words } else { nil }
         // The dot already says it can't connect, so the row says so only when it shows nothing else.
-        let detail: String? = if !isConnected {
-            failure == nil && (update.phase == nil || update.phase == .idle) ? "Can't connect" : nil
-        } else {
-            catalog.name == host ? nil : host
-        }
+        let cantConnect = !isConnected && failure == nil && (update.phase == nil || update.phase == .idle)
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: Self.dotSpacing) {
@@ -176,12 +171,9 @@ private struct ServerRow: View {
                         .accessibilityLabel(failure)
                 }
             }
-            // The name keeps its width first and the host truncates, except under a failure, which
-            // would take that width too.
-            .layoutPriority(failure == nil ? 1 : 0)
             Spacer(minLength: 0)
-            if let detail {
-                Text(detail).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            if cantConnect {
+                Text("Can't connect").foregroundStyle(.secondary).lineLimit(1)
             }
             ServerUpdateStatus(update: update, showsVersion: isConnected).fixedSize()
         }

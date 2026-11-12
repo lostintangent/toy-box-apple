@@ -88,10 +88,8 @@ struct ServerSettings: View {
 
     private func row(_ catalog: ChannelCatalogStore) -> some View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
-        let host = SidebarFooter.server(Self.address(catalog))
         let isLinked = !model.catalogs.linkedServers(of: catalog).isEmpty
         return HStack(spacing: 8) {
-            // The name keeps its width first, and the address and status share what's left.
             HStack(spacing: 8) {
                 Circle().fill(footer.dot).frame(width: 7, height: 7)
                 HStack(spacing: 4) {
@@ -102,14 +100,9 @@ struct ServerSettings: View {
                 }
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(catalog.name == host ? catalog.name : "\(catalog.name), \(host)")
+            .accessibilityLabel(catalog.name)
             .accessibilityValue(isLinked ? "\(footer.accessibilityValue), linked" : footer.accessibilityValue)
-            .layoutPriority(1)
             Spacer(minLength: 0)
-            if catalog.name != host {
-                Text(host).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                    .accessibilityHidden(true)
-            }
             ServerUpdateStatus(update: catalog.update)
         }
         .frame(height: 20)
