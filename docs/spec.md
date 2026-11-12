@@ -247,7 +247,9 @@ Drafts stay keyed to the address, so adding it back finds them.
   then the row shows a prominent Restart, after "0.3.10 installed" on the Mac. Restart has no
   confirmation, and its row reads Restarting… with a spinner until the server reconnects running
   the installed version. A failed restart shows its error the same way, with the old server still
-  running. The apps read `GET /api/v1/server` while Settings shows the list, after each check and
+  running. A server that hasn't come back a minute after its restart was accepted shows "Didn't
+  come back after restarting" the same way, and the row still returns to its version whenever it
+  reconnects. The apps read `GET /api/v1/server` while Settings shows the list, after each check and
   each time a server reconnects. These are management writes: an update that times out or drops
   may still have installed, so the row reads the server again before offering another try.
 
