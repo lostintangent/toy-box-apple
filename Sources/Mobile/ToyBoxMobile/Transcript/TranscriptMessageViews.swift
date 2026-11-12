@@ -76,7 +76,8 @@ struct TranscriptItemView: View, @MainActor Equatable {
                                    choices: choices, bookmark: bookmark, onChoose: onChoose,
                                    setExpanded: setExpanded)
         case .system(let messages):
-            TranscriptSystemMessages(messages: messages, agents: channel.agents, findHighlight: findHighlight)
+            TranscriptSystemMessages(messages: messages, agents: channel.agents, api: channel.api,
+                                     findHighlight: findHighlight)
         }
     }
 }
@@ -473,9 +474,12 @@ struct TranscriptTimestamp: View {
 struct TranscriptSystemMessages: View {
     let messages: [ChannelMessage]
     let agents: [ChannelAgent]
+    let api: ChannelAPI
     var findHighlight: TranscriptFindHighlight?
 
     @ViewState private var showsDetails = false
+    /// The line height of footnote text, so an avatar row's avatar matches the line it sits on.
+    @ScaledMetric(relativeTo: .footnote) private var lineHeight: CGFloat = 16
     @Environment(\.colorScheme) private var colorScheme
     @Environment(ChannelArtifactSession.self) private var artifactViewer: ChannelArtifactSession?
 
@@ -526,12 +530,17 @@ struct TranscriptSystemMessages: View {
                 }
             }
         }
-        return Text("\(symbol) \(Text(sentence))")
-            .font(.footnote)
-            .foregroundStyle(TranscriptInk.secondary)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .contentShape(.rect)
+        return HStack(spacing: 4) {
+            Text("\(symbol) \(Text(sentence))")
+                .font(.footnote)
+                .foregroundStyle(TranscriptInk.secondary)
+                .multilineTextAlignment(.center)
+            if let avatar = messages.first?.system?.avatar {
+                ChannelMark(avatar, api: api, size: lineHeight).accessibilityHidden(true)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .contentShape(.rect)
     }
 
     private var text: String {

@@ -54,6 +54,14 @@ struct TranscriptSystemMessages: View {
             } else { sentence(membershipLabel.text, spoken: membershipLabel.spoken) }
         case "channel_renamed":
             event(phrase, value: first?.name).lineLimit(3)
+        case "channel_avatar_changed":
+            HStack(spacing: 4 * textScale) {
+                sentence(phrase)
+                // As tall as a line of 11-point system text, which measures 13 points.
+                if let avatar = first?.avatar {
+                    ChannelMark(avatar, api: api, size: 13 * textScale).accessibilityHidden(true)
+                }
+            }
         case "channel_purpose_changed":
             event(phrase, value: first?.purpose).lineLimit(3)
         case "channel_directory_changed":

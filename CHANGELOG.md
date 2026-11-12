@@ -4,7 +4,7 @@
 
 ### Features
 
-- Each channel now shows its own picture or icon, so you can tell your channels apart at a glance.
+- Each channel now shows its own picture or icon, so you can tell your channels apart at a glance, and the conversation shows when it gets a new one.
 - You can now keep your Toy Box servers up to date from Settings. Check for Updates installs the latest release on every server at once, and Restart moves a server onto it right from its row.
 
 ### Bugs/Polish
@@ -21,7 +21,7 @@
 
 ### Features
 
-- Each channel now shows its own picture or icon, so you can tell your channels apart at a glance.
+- Each channel now shows its own picture or icon, so you can tell your channels apart at a glance, and the conversation shows when it gets a new one.
 - You can now keep your Toy Box servers up to date from Settings. Check for Updates installs the latest release on every server at once, and Restart moves a server onto it right from its row.
 
 ### Bugs/Polish
