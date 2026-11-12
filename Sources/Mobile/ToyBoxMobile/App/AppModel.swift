@@ -205,10 +205,6 @@ final class AppModel {
         updateServers { $0.move(fromOffsets: source, toOffset: destination) }
     }
 
-    func rename(_ catalog: ChannelCatalogStore, to name: String) {
-        Task { try? await catalog.rename(to: name) }
-    }
-
     /// Where other servers reach a server saved at a loopback address, from what the user typed, saved
     /// with the server. Empty clears it.
     func setTailscaleAddress(_ input: String, of catalog: ChannelCatalogStore) throws {

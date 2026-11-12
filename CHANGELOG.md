@@ -1,5 +1,17 @@
 # Changelog
 
+## Mac 0.1.36
+
+### Features
+
+- You can now name each of your servers in Settings, and the name stays with the server, so every Mac and iPhone you use calls it the same thing.
+
+## iPhone 0.1.33
+
+### Features
+
+- You can now name each of your servers in Settings, and the name stays with the server, so every Mac and iPhone you use calls it the same thing.
+
 ## Mac 0.1.35
 
 ### Features

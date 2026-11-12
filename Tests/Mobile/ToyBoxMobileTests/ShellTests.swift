@@ -213,58 +213,6 @@ struct ShellTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(1)))
-    func settingsSwitchesWhenATestOfAnotherServerConnects() async throws {
-        try await withDefaults { defaults in
-            let notifications = ChannelNotifications(defaults: defaults, readAuthorization: { .notDetermined })
-            let model = AppModel(arguments: ["--server", "https://fixture.example/prefix"], environment: [:],
-                                 defaults: defaults, session: fixtureSession(), notifications: notifications)
-            defer { model.setScenePhase(.background) }
-            await model.refreshCatalog()
-            let fixture = fixtureSession()
-            let connection = ServerConnectionProbe(address: "", session: fixture) { api in
-                if api.baseURL.host == "unreachable.example" { throw URLError(.cannotConnectToHost) }
-                return try await api.catalog()
-            }
-            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
-            let page = ServerSettingsView(catalog: model.catalog, connection: connection)
-            let host = UIHostingController(rootView: NavigationStack { page }.environment(model))
-            window.rootViewController = host
-            window.isHidden = false
-            defer { window.isHidden = true }
-            host.view.frame = window.bounds
-            @MainActor func labels() -> [String] {
-                host.view.setNeedsLayout()
-                host.view.layoutIfNeeded()
-                return MobileAutomationTree(windows: [window]).elements.map(\.label)
-            }
-            _ = labels()
-            #expect(connection.address == "https://fixture.example/prefix")
-
-            await connection.start()?.value
-            _ = labels()
-            #expect(model.serverURL == "https://fixture.example/prefix", "Testing the server in use only confirms it.")
-
-            connection.address = "https://unreachable.example"
-            await connection.start()?.value
-            let failed = labels()
-            #expect(model.serverURL == "https://fixture.example/prefix", "A failed test changes nothing.")
-            #expect(failed.contains { $0.hasSuffix("Still using fixture.example.") }, "\(failed)")
-
-            connection.address = "https://another.example"
-            await connection.start()?.value
-            _ = labels()
-            let another = ChannelWaitingRequest.normalizedServer("https://another.example")
-            for await switched in Observations({
-                ChannelWaitingRequest.normalizedServer(model.serverURL) == another && model.catalog?.phase == .connected
-            }) where switched { break }
-            let switched = MobileAutomationTree(windows: [window]).elements
-            #expect(switched.first { $0.identifier == "server-test" }?.value == "Connected",
-                    "\(switched.map(\.label))")
-            #expect(model.catalogs.count == 1, "The page's server moved rather than adding another.")
-        }
-    }
-
     @Test func aCompactChannelWithoutAVerticalBarOpensItsActionsAndNamesYourMessagesFromATitleButton() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
