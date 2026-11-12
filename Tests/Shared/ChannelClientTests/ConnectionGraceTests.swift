@@ -146,9 +146,9 @@ struct ConnectionGraceTests {
     }
 }
 
-/// Ends each grace when a test says so instead of after real time. An end with no grace waiting
-/// ends the next wait at once, so a test never races the store's grace task.
-private final class GraceTimer: Sendable {
+/// Ends each grace or deadline when a test says so instead of after real time. An end with no wait
+/// pending ends the next wait at once, so a test never races the task that waits.
+final class GraceTimer: Sendable {
     private struct State {
         var waits: [(id: UUID, resume: CheckedContinuation<Void, Never>)] = []
         var ended = 0

@@ -319,6 +319,28 @@ public struct ChannelAPI: Sendable {
         try await noContent("DELETE", channelPath(channelId) + ["artifacts", artifactId])
     }
 
+    /// The release the server runs and the one installed on disk.
+    public func server() async throws -> ServerVersion {
+        try await get(["api", "v1", "server"])
+    }
+
+    /// Installs whatever release is newer, then answers what `server()` would. The server says
+    /// nothing until its package manager finishes, so this waits up to `updateTimeout`.
+    public func updateServer() async throws -> ServerVersion {
+        var request = URLRequest(url: endpoint(["api", "v1", "server", "update"]),
+                                 timeoutInterval: Self.updateTimeout)
+        request.httpMethod = "POST"
+        return try await JSONDecoder().decode(ServerVersion.self, from: data(for: request))
+    }
+
+    /// Restarts the server onto its installed release. It answers before it shuts down, and every
+    /// stream drops until it's back.
+    public func restartServer() async throws {
+        try await noContent("POST", ["api", "v1", "server", "restart"])
+    }
+
+    static let updateTimeout: TimeInterval = 300
+
     public func streamRequest(channelId: String, after: Int?, timeout: TimeInterval = 35) -> URLRequest {
         let query = after.map { [URLQueryItem(name: "after", value: String($0))] } ?? []
         var request = URLRequest(url: endpoint(channelPath(channelId), query: query),
