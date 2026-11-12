@@ -189,7 +189,7 @@ private struct ServerUpdateStatus: View {
         switch update.phase {
         case .checking?:
             ProgressView().accessibilityRepresentation { Text("Checking for updates") }
-        case .restarting?:
+        case .reconnecting?:
             ProgressView().accessibilityRepresentation { Text("Restarting") }
         case .restartPending?:
             Button("Restart") { Task { await update.restart() } }
