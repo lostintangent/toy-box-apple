@@ -134,8 +134,6 @@ final class AppModel {
         }
     }
 
-    var sidebarFooter: SidebarFooter { SidebarFooter(phase: catalog?.phase, isLoaded: catalog?.isLoaded == true) }
-
     var canManageChannels: Bool { canManageChannels(on: catalog) }
 
     /// Management needs the active scene and the channel's own server connected.

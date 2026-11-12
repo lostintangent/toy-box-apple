@@ -1511,49 +1511,26 @@ struct ShellTests {
         #expect(accessible.height > regular.height)
     }
 
-    @Test(arguments: [ChannelCatalogPhase.connecting, .connected])
-    func nonFailureCatalogStatesReserveNoFooterSpace(phase: ChannelCatalogPhase) {
-        let host = UIHostingController(rootView: ChannelSidebarFailure(
-            footer: SidebarFooter(phase: phase, isLoaded: true), error: nil, canRetry: true,
-            retry: {}, openSettings: {}
-        ))
-        host.loadViewIfNeeded()
-        let size = host.sizeThatFits(in: CGSize(width: 320, height: CGFloat.greatestFiniteMagnitude))
-        #expect(size.height == 0)
-    }
-
     #if DEBUG
-    @Test(arguments: [true, false], [false, true])
-    func keptRowsShowTheReconnectingPillAndOtherFailuresKeepTheirErrorRetryAndUnfoldedSettings(
-        isLoaded: Bool, showsSettings: Bool
-    ) throws {
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
+    @Test(arguments: [true, false])
+    func aFailingDotIsAButtonNamedByItsStatusInOnlyItsOwnRoom(isLoaded: Bool) throws {
         let footer = SidebarFooter(phase: .failed(URLError(.timedOut)), isLoaded: isLoaded)
-        var retries = 0
-        let host = UIHostingController(rootView: ChannelSidebarFailure(
-            footer: footer, error: "The server is unavailable.", canRetry: true,
-            retry: { retries += 1 }, openSettings: {}, showsSettingsButton: showsSettings
-        ))
+        let dot = SidebarFailureDot(footer: footer, server: "127.0.0.1:3211",
+                                    failure: "The server is unavailable.", openSettings: {})
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
+        let host = UIHostingController(rootView: dot)
         window.rootViewController = host
         window.isHidden = false
         defer { window.isHidden = true }
         host.view.frame = window.bounds
         host.view.layoutIfNeeded()
+        #expect(host.sizeThatFits(in: window.bounds.size) == CGSize(width: 8, height: 8))
         let elements = MobileAutomationTree(windows: [window]).elements
-        let labels = elements.map(\.label)
-        #expect(!labels.contains("Server connection") && !labels.contains("Server Settings"), "\(labels)")
-        if isLoaded {
-            let pill = try #require(elements.first { $0.label.contains("Reconnecting to server") }, "\(labels)")
-            #expect(pill.label.contains("Channels may be out of date") && pill.traits.contains(.button))
-            #expect(pill.object.accessibilityHint == "The server is unavailable.")
-            #expect(!labels.contains("Retry") && !labels.contains("Settings"), "\(labels)")
-            #expect(pill.activate() && retries == 1)
-        } else {
-            #expect(labels.contains(try #require(footer.heading)), "\(labels)")
-            #expect(labels.contains("The server is unavailable."), "\(labels)")
-            #expect(labels.contains("Retry"), "\(labels)")
-            #expect(labels.contains("Settings") == showsSettings, "\(labels)")
-        }
+        let status = isLoaded ? "Reconnecting to 127.0.0.1:3211" : "Can't connect to 127.0.0.1:3211"
+        let button = try #require(elements.first { $0.label == status }, "\(elements.map(\.label))")
+        #expect(button.traits.contains(.button))
+        #expect(button.object.accessibilityHint == "The server is unavailable.")
+        #expect(button.object.accessibilityFrame.size == CGSize(width: 44, height: 44))
     }
     #endif
 

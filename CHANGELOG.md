@@ -13,6 +13,7 @@
 
 ### Bugs/Polish
 
+- A server that stops answering no longer fills the channel list with an error. With several servers, tap its dot to see what went wrong, with Server Settings one tap away.
 - Scrolling the channel list with a request open no longer freezes the app, even with several servers.
 - Opening a long channel no longer freezes the app while the conversation settles at your place.
 - Typing @ and a name suggests just the agents with that name, instead of everyone whose role happens to mention it.
