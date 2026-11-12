@@ -55,10 +55,12 @@ final class MockTransport: Sendable {
     }
     let state = Mutex(State())
     let handler: Handler
-    let host = UUID().uuidString.lowercased() + ".example"
+    let host: String
 
-    init(handler: @escaping Handler) {
+    /// A loopback transport serves a host under `localhost`, as a server on this device would.
+    init(loopback: Bool = false, handler: @escaping Handler) {
         self.handler = handler
+        host = UUID().uuidString.lowercased() + (loopback ? ".localhost" : ".example")
     }
 
     var requests: [URLRequest] { state.withLock { $0.requests } }
@@ -135,11 +137,12 @@ final class MockTransport: Sendable {
         return try handler(request, count)
     }
 
-    func api() throws -> ChannelAPI {
+    func api(scheme: String = "http", port: Int? = nil) throws -> ChannelAPI {
         MockURLProtocol.registry.withLock { $0[host] = self }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
-        return try ChannelAPI(serverURL: "http://\(host)", session: URLSession(configuration: configuration))
+        return try ChannelAPI(serverURL: "\(scheme)://\(host)" + (port.map { ":\($0)" } ?? ""),
+                              session: URLSession(configuration: configuration))
     }
 }
 
