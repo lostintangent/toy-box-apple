@@ -522,6 +522,43 @@ struct ChannelOutboxTests {
         withExtendedLifetime((workCatalog, homeCatalog)) {}
     }
 
+    @Test func aServerThatMovesTakesItsMessagesAndAnswersToItsNewAddress() async throws {
+        let folder = Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let clock = TestClock()
+        let old = Served(Self.catalog([Self.channel(request: 5), Self.channel("other")]))
+        let oldMock = Self.transport(old) { number, _ in
+            if number == 1 { return MockResponse(status: 201) }
+            throw URLError(.cannotConnectToHost)
+        }
+        let new = Served(Self.catalog([Self.channel(request: 5), Self.channel("other")]))
+        let newMock = Self.transport(new) { _, _ in MockResponse(status: 201) }
+        let outbox = outbox(folder, clock: clock)
+        let oldCatalog = try await catalog(oldMock, outbox: outbox)
+        let newServer = try newMock.api().baseURL
+
+        let answer = await outbox.send("Yes", to: "test", on: oldCatalog.api.baseURL)
+        try await eventually { outbox.message(answer) == nil }
+        let held = await outbox.send("Later", to: "other", on: oldCatalog.api.baseURL)
+        try await eventually { !clock.sleepers.isEmpty }
+
+        oldCatalog.outbox = nil
+        outbox.move(from: oldCatalog.api.baseURL, to: newServer)
+        #expect(outbox.messages(in: "other", on: oldCatalog.api.baseURL).isEmpty)
+        #expect(outbox.messages(in: "other", on: newServer).map(\.id) == [held])
+        #expect(outbox.answers(5, in: "test", on: newServer) && !outbox.answers(5, in: "test", on: oldCatalog.api.baseURL))
+        await outbox.settled()
+        let relaunched = ChannelOutbox(folder: folder)
+        await relaunched.settled()
+        #expect(relaunched.messages(in: "other", on: newServer).map(\.id) == [held], "A relaunch finds it at the new address.")
+
+        let newCatalog = try await catalog(newMock, outbox: outbox)
+        try await eventually { outbox.message(held) == nil }
+        #expect(new.postedIDs == [held.uuidString], "It keeps its ID, so the server never posts it twice.")
+        #expect(old.posted.count == 2)
+        withExtendedLifetime((oldCatalog, newCatalog)) {}
+    }
+
     @Test func aChannelTheCatalogNoLongerListsTakesItsMessagesWithIt() async throws {
         let folder = Self.folder()
         defer { try? FileManager.default.removeItem(at: folder) }

@@ -103,7 +103,7 @@ final class AppModel {
             }
         }
         servers.onChange = { [weak self] in self?.serversDidChange() }
-        servers.onRemove = { [weak self] in self?.disconnect($0) }
+        servers.onRemove = { [weak self] in self?.close($0) }
         serversDidChange()
         restoring = defaults.string(forKey: "lastServer").flatMap { catalogs.first(at: $0) } ?? catalog
     }
@@ -176,7 +176,7 @@ final class AppModel {
     }
 
     /// Closes a server's channels wherever they're open, as it leaves the list.
-    private func disconnect(_ catalog: ChannelCatalogStore) {
+    private func close(_ catalog: ChannelCatalogStore) {
         let server = ChannelWaitingRequest.normalizedServer(catalog.api.baseURL.absoluteString)
         func belongs(_ store: ChannelStore) -> Bool { catalog.existingChannel(id: store.id) === store }
         if selection?.serverURL == server { selection = nil }

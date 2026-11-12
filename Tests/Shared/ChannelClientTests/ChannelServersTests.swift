@@ -59,9 +59,9 @@ struct ChannelServersTests {
     private let folder = FileManager.default.temporaryDirectory.appending(path: "tbm-servers-\(UUID())")
 
     private func servers(_ saved: [ChannelCatalogStore.Saved], savingTo defaults: UserDefaults? = nil,
-                         isActive: Bool = true) -> ChannelServers {
+                         outbox: ChannelOutbox? = nil, isActive: Bool = true) -> ChannelServers {
         ChannelServers(saved, savingTo: defaults, session: MockTransport.session(),
-                       outbox: ChannelOutbox(folder: folder.appending(path: "Outbox")),
+                       outbox: outbox ?? ChannelOutbox(folder: folder.appending(path: "Outbox")),
                        connections: ChannelConnections(), isActive: isActive, streamsInBackground: false,
                        drafts: folder.appending(path: "Drafts"))
     }
@@ -99,14 +99,17 @@ struct ChannelServersTests {
         let moved = Server(id: "studio", loopback: true)
         let suite = "tbm-servers-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
+        let outbox = ChannelOutbox(folder: folder.appending(path: "Outbox"))
         let servers = servers([.init(url: studio.address, id: "studio", tailscaleAddress: "http://studio.tail.test:3100"),
-                               .init(url: mini.address)], savingTo: defaults)
+                               .init(url: mini.address)], savingTo: defaults, outbox: outbox)
         defer { clean(defaults, suite) }
         let old = servers.catalogs[0]
         var removed: [ChannelCatalogStore] = []
         servers.onRemove = { removed.append($0) }
         draft(at: old.api.baseURL).text = "Typed on the old address"
         ComposerDraft.finishSaving()
+        let channelID = testState().channel.id
+        let unsent = await outbox.send("Sent to the old address", to: channelID, on: old.api.baseURL)
 
         let added = try servers.add(moved.address)
         #expect(servers.catalogs.count == 3, "A new address may be another server, until it answers.")
@@ -119,6 +122,8 @@ struct ChannelServersTests {
         #expect(ChannelCatalogStore.Saved.load(from: defaults) == servers.catalogs.map(\.saved))
         #expect(draft(at: added.api.baseURL).text == "Typed on the old address")
         #expect(draft(at: old.api.baseURL).text.isEmpty)
+        #expect(outbox.messages(in: channelID, on: added.api.baseURL).map(\.id) == [unsent])
+        #expect(outbox.messages(in: channelID, on: old.api.baseURL).isEmpty)
     }
 
     @Test func addingAServerAddsTheServersItsLinkedWithInLinkOrder() async throws {

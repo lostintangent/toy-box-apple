@@ -94,13 +94,15 @@ public final class ChannelServers {
         if savedChanged { save() }
     }
 
-    /// Moves a saved server with the same identity here, then adds the servers it's linked with.
+    /// Moves a saved server with the same identity here, with its drafts and unsent messages, then
+    /// adds the servers it's linked with.
     private func join(_ catalog: ChannelCatalogStore, _ server: ServerInfo) {
         if let old = catalogs.first(where: { $0 !== catalog && $0.serverID == server.id }) {
             if catalog.links.tailscaleAddress == nil, catalog.links.isLoopback {
                 catalog.links.tailscaleAddress = old.links.tailscaleAddress
             }
             disconnect(old)
+            outbox.move(from: old.api.baseURL, to: catalog.api.baseURL)
             catalogs = catalogs.compactMap { $0 === catalog ? nil : $0 === old ? catalog : $0 }
             ComposerDraft.move(from: old.api.baseURL, to: catalog.api.baseURL,
                                identities: catalog.draftIdentities, folder: drafts)
