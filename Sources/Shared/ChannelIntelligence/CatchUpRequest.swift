@@ -242,6 +242,9 @@ struct CatchUpDescriber: Sendable {
         case "channel_renamed":
             description = "\(actor) renamed the channel to \u{201C}\(system.name ?? "")\u{201D}."
             priority = 2
+        case "channel_avatar_changed":
+            description = "\(actor) changed the channel's avatar."
+            priority = 2
         case "channel_purpose_changed":
             description = "\(actor) changed the channel purpose: \(system.purpose ?? "none")"
             priority = 2
