@@ -4,7 +4,8 @@
 
 ### Bugs/Polish
 
-- A server that stops answering no longer fills the sidebar with an error. Its status dot changes color, and hovering over it tells you what went wrong.
+- A server that stops answering no longer fills the sidebar with an error. Its status dot changes color, and hovering over it tells you what went wrong. With several servers, only a server with a problem shows a dot by its name, so a healthy sidebar stays quiet.
+- A server's name in the sidebar no longer keeps spinning after the server has connected.
 - Typing @ and a name suggests just the agents with that name, instead of everyone whose role happens to mention it.
 - Opening a channel shows its conversation right away, instead of sometimes leaving it blank while agents are working or a request waits for you.
 - Typing a message keeps up with every key, even while agents are working or your Mac is busy.
@@ -14,7 +15,7 @@
 
 ### Bugs/Polish
 
-- A server that stops answering no longer fills the channel list with an error. With several servers, tap its dot to see what went wrong, with Server Settings one tap away.
+- A server that stops answering no longer fills the channel list with an error. With several servers, only a server with a problem shows a dot by its name, and tapping it shows what went wrong, with Server Settings one tap away.
 - Scrolling the channel list with a request open no longer freezes the app, even with several servers.
 - Opening a long channel no longer freezes the app while the conversation settles at your place.
 - Typing @ and a name suggests just the agents with that name, instead of everyone whose role happens to mention it.
