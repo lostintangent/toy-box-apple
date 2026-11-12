@@ -54,12 +54,13 @@ struct ChannelScreen: View {
 
     /// The widest the title's text can be. The bar gives a leading item its whole ideal width and
     /// moves it to the overflow menu when that doesn't fit, so a long name truncates first. Besides
-    /// the margins and the capsule's insets, the bar keeps room for its buttons, even when they stand
-    /// in the vertical bar: Back and Overview, or the sidebar toggle, Message View and Overview.
+    /// the margins, the capsule's insets, and the avatar and its gap, the bar keeps room for its
+    /// buttons, even when they stand in the vertical bar: Back and Overview, or the sidebar toggle,
+    /// Message View and Overview.
     private var titleMaxWidth: CGFloat? {
         guard width > 0 else { return nil }
         let buttons: CGFloat = sizeClass == .compact ? 2 : 3
-        return max(width - 80 - buttons * (44 + 8), 60)
+        return max(width - 80 - TitleMetrics.avatarSize - TitleMetrics.avatarGap - buttons * (44 + 8), 60)
     }
 
     var body: some View {
@@ -162,7 +163,8 @@ struct ChannelScreen: View {
     @ToolbarContentBuilder
     private var conversationToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            ChannelTitleMenu(title: title,
+            ChannelTitleMenu(store: store,
+                             title: title,
                              subtitle: messageViewIsInActions && interaction.messageView == .yours ? "Your Messages" : nil,
                              maxWidth: titleMaxWidth) {
                 channelActions
@@ -247,36 +249,56 @@ struct ChannelScreen: View {
     }
 }
 
-/// The channel's name as a floating glass button in the title's place, like the Mac's, which opens
-/// Channel Actions. The system title menu would add a chevron and its own bar.
+/// The channel's avatar and name as a floating glass button in the title's place, like the Mac's,
+/// which opens Channel Actions. The system title menu would add a chevron and its own bar.
 private struct ChannelTitleMenu<Content: View>: View {
+    let store: ChannelStore
     let title: String
     let subtitle: String?
+    /// The widest the name can be.
     let maxWidth: CGFloat?
     @ViewBuilder var content: Content
+    @Environment(AppModel.self) private var model
+
+    /// The avatar comes from the catalog, as the list row's does. Reading it here keeps the
+    /// catalog's changes from redrawing the whole screen.
+    private var avatar: ChannelAvatar? {
+        model.catalogs.first(at: store.api.baseURL.absoluteString)?.channels.first { $0.id == store.id }?.avatar
+    }
 
     var body: some View {
         Menu {
             content
         } label: {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            HStack(spacing: TitleMetrics.avatarGap) {
+                ChannelMark(avatar, api: store.api, size: TitleMetrics.avatarSize)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                .lineLimit(1)
+                .frame(maxWidth: maxWidth, alignment: .leading)
             }
-            .lineLimit(1)
-            .frame(maxWidth: maxWidth, alignment: .leading)
         }
         .menuIndicator(.hidden)
         .accessibilityLabel(title)
         .accessibilityValue(subtitle ?? "")
         .accessibilityHint("Shows channel actions")
     }
+}
+
+/// The title menu's metrics, which the name's maximum width allows for.
+private enum TitleMetrics {
+    /// The list row's avatar, so the channel you tapped stays with you.
+    static let avatarSize: CGFloat = 28
+    static let avatarGap: CGFloat = 8
 }
 
 struct ChannelReaderVisibility {

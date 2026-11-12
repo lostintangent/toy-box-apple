@@ -289,7 +289,7 @@ struct ChannelDetailView: View {
 
     @ToolbarContentBuilder private var conversationToolbar: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
-            ChannelTitleMenu(title: title, fit: titleFit) {
+            ChannelTitleMenu(store: store, title: title, fit: titleFit) {
                 titleMenu
             }
         }
