@@ -9,7 +9,8 @@ struct ServerSettings: View {
     @Environment(AppModel.self) private var model
     /// The selected server's address.
     @ViewState private var selection: String?
-    @ViewState private var addsServer = false
+    /// The Add Server sheet while it shows, with the address it opens on.
+    @ViewState private var newServer: AddServerSheet.NewServer?
     @ViewState private var confirmsRemoval = false
 
     /// The form insets its rows by this much, and a list's rows inset their content by the same.
@@ -23,7 +24,7 @@ struct ServerSettings: View {
                 list.padding(.horizontal, -Self.formInset)
                 Divider()
                 HStack(spacing: 2) {
-                    Button("Add Server", systemImage: "plus") { addsServer = true }
+                    Button("Add Server", systemImage: "plus") { newServer = AddServerSheet.NewServer() }
                     Divider().frame(height: 14)
                     Button("Remove Server", systemImage: "minus") { confirmsRemoval = true }
                         .disabled(!canRemove)
@@ -47,7 +48,7 @@ struct ServerSettings: View {
             }
         }
         .onAppear { if selected == nil { select(model.catalogs.first) } }
-        .sheet(isPresented: $addsServer) { AddServerSheet(added: select) }
+        .sheet(item: $newServer) { AddServerSheet(address: $0.address, added: select) }
         .confirmationDialog("Remove \(selected?.name ?? "this server")?", isPresented: $confirmsRemoval) {
             Button("Remove Server", role: .destructive, action: remove)
             Button("Cancel", role: .cancel) {}
@@ -59,6 +60,10 @@ struct ServerSettings: View {
             await withTaskGroup { group in
                 for catalog in model.catalogs { group.addTask { await catalog.update.refresh() } }
             }
+        }
+        // Each server's links again as it connects, so one that was down when Settings opened shows.
+        .task(id: model.catalogs.filter { $0.phase == .connected }.map(\.api.baseURL)) {
+            await model.catalogs.refreshLinks()
         }
         if let selected {
             ServerDetails(catalog: selected, changedAddress: select)
@@ -89,15 +94,21 @@ struct ServerSettings: View {
     private func row(_ catalog: ChannelCatalogStore) -> some View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
         let host = SidebarFooter.server(Self.address(catalog))
+        let isLinked = !model.catalogs.linkedServers(of: catalog).isEmpty
         return HStack(spacing: 8) {
             // The name keeps its width first, and the address and status share what's left.
             HStack(spacing: 8) {
                 Circle().fill(footer.dot).frame(width: 7, height: 7)
-                Text(catalog.name).lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(catalog.name).lineLimit(1)
+                    if isLinked {
+                        Image(systemName: "link").font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(catalog.name == host ? catalog.name : "\(catalog.name), \(host)")
-            .accessibilityValue(footer.accessibilityValue)
+            .accessibilityValue(isLinked ? "\(footer.accessibilityValue), linked" : footer.accessibilityValue)
             .layoutPriority(1)
             Spacer(minLength: 0)
             if catalog.name != host {
@@ -122,9 +133,17 @@ struct ServerSettings: View {
     /// The `settings-servers`, `settings-server-renamed` and `settings-server-removed` capture
     /// states wait until no server is still connecting, then show the server that can't connect,
     /// the first server named Studio, or the list once the server that can't connect is removed.
+    /// `settings-server-link-addresses` reads every server's links and shows the first server.
+    /// `settings-server-links` does too, after giving each server on this Mac its own address as its
+    /// Tailscale address, the way the demos link. `settings-server-link-failed` gives the last one an
+    /// address no server can reach and turns the first one's Linked switch on, and
+    /// `settings-add-server` opens Add Server on another server on this Mac.
     private func prepareSnapshot() async {
         guard let state = model.snapshot?.requestedState,
-              ["settings-servers", "settings-server-renamed", "settings-server-removed"].contains(state) else { return }
+              ["settings-servers", "settings-server-renamed", "settings-server-removed",
+               "settings-server-link-addresses", "settings-server-links", "settings-server-link-failed",
+               "settings-add-server"].contains(state)
+        else { return }
         do {
             while model.catalogs.contains(where: { $0.phase == .connecting }) {
                 try await Task.sleep(for: .milliseconds(50))
@@ -139,6 +158,23 @@ struct ServerSettings: View {
                 try await Task.sleep(for: .milliseconds(100))
                 model.rename(first, to: "Studio")
                 select(first)
+            case "settings-server-link-addresses", "settings-server-links", "settings-server-link-failed",
+                 "settings-add-server":
+                if state != "settings-server-link-addresses" {
+                    for catalog in model.catalogs where catalog.links.isLoopback {
+                        let unreachable = state == "settings-server-link-failed" && catalog === model.catalogs.last
+                        try model.setTailscaleAddress(unreachable ? "box.tail1234.ts.net" : catalog.api.baseURL.absoluteString,
+                                                      of: catalog)
+                    }
+                }
+                await model.catalogs.refreshLinks()
+                select(model.catalogs.first)
+                if state == "settings-server-link-failed", let first = model.catalogs.first {
+                    await model.catalogs.setLinked(first, true)
+                }
+                if state == "settings-add-server" {
+                    newServer = AddServerSheet.NewServer(address: "http://localhost:3200")
+                }
             default:
                 select(unreachable)
             }
@@ -257,6 +293,9 @@ private struct ServerDetails: View {
         } message: {
             Text("Live connections to \(address) will close. Drafts stay saved separately for each server.")
         }
+        if LinkedSwitch.isShown(in: model.catalogs) {
+            LinkedSection(catalog: catalog)
+        }
     }
 
     static func status(_ phase: ChannelCatalogPhase) -> String {
@@ -284,20 +323,34 @@ private struct ServerDetails: View {
     }
 }
 
-/// Add Server: an address, tested if you like, then added and selected. An address already listed
-/// selects that server.
+/// Add Server: an address, tested if you like, then added, linked when its switch is on, and
+/// selected. An address already listed selects that server.
 struct AddServerSheet: View {
+    struct NewServer: Identifiable {
+        let id = UUID()
+        var address = ""
+    }
     let added: (ChannelCatalogStore) -> Void
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @ViewState private var connection = ServerConnectionProbe()
     @ViewState private var failure: String?
+    @ViewState private var links = true
+    @ViewState private var addresses = LinkAddresses()
+
+    init(address: String = "", added: @escaping (ChannelCatalogStore) -> Void) {
+        self.added = added
+        _connection = ViewState(initialValue: ServerConnectionProbe(address: address))
+    }
 
     var body: some View {
         Form {
             Section("Add a Toy Box Server") {
                 ServerAddressFields(connection: connection, failure: failure, prompt: "https://") { EmptyView() }
                     .onSubmit(add)
+            }
+            if model.catalogs.canLink {
+                AddServerLinkedSection(address: connection.address, isOn: $links, addresses: addresses)
             }
         }
         .formStyle(.grouped)
@@ -316,8 +369,17 @@ struct AddServerSheet: View {
 
     private func add() {
         guard connection.validationError == nil else { return }
+        let links = links && model.catalogs.canLink && model.catalogs.first(at: connection.address) == nil
+        let needed = links ? model.catalogs.serversNeedingAddress(toLink: connection.address) : []
+        guard addresses.validate(needed, in: model.catalogs) else { return }
         do {
-            added(try model.addServer(connection.address))
+            let catalog = try model.addServer(connection.address)
+            if links {
+                addresses.save(needed, in: model.catalogs, with: model.setTailscaleAddress)
+                let catalogs = model.catalogs
+                Task { await catalogs.setLinked(catalog, true) }
+            }
+            added(catalog)
             dismiss()
         } catch {
             failure = error.localizedDescription

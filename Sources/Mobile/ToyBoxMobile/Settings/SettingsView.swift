@@ -59,6 +59,10 @@ struct SettingsView: View {
                 for catalog in model.catalogs { group.addTask { await catalog.update.refresh() } }
             }
         }
+        // Each server's links again as it connects, so one that was down when Settings opened shows.
+        .task(id: model.catalogs.filter { $0.phase == .connected }.map(\.api.baseURL)) {
+            await model.catalogs.refreshLinks()
+        }
     }
 
     /// Each server with its dot and name, in the order the list shows them. Removing one asks first,
@@ -132,17 +136,19 @@ struct SettingsView: View {
     }
 }
 
-/// A server's dot and name, then its host, or that it can't connect, then its release. A failed check
-/// or restart reads under the name, up to three lines, and VoiceOver reads all of it. See Updating a
-/// server in docs/spec.md.
+/// A server's dot and name, `link` when it's linked, then its host, or that it can't connect, then its
+/// release. A failed check or restart reads under the name, up to three lines, and VoiceOver reads all
+/// of it. See Updating a server and Linking servers in docs/spec.md.
 private struct ServerRow: View {
     let catalog: ChannelCatalogStore
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
         let host = SidebarFooter.server(catalog.api.baseURL.absoluteString)
         let update = catalog.update
         let isConnected = catalog.phase.failure == nil
+        let isLinked = !model.catalogs.linkedServers(of: catalog).isEmpty
         let failure: String? = if case .failed(let words)? = update.outcome { words } else { nil }
         // The dot already says it can't connect, so the row says so only when it shows nothing else.
         let detail: String? = if !isConnected {
@@ -155,9 +161,16 @@ private struct ServerRow: View {
                 HStack(spacing: Self.dotSpacing) {
                     Circle().fill(footer.dot).frame(width: Self.dotSize, height: Self.dotSize)
                         .accessibilityHidden(true)
-                    Text(catalog.name).lineLimit(1)
-                        // The dot's meaning, read once for the row.
-                        .accessibilityValue(footer.accessibilityValue)
+                    HStack(spacing: 6) {
+                        Text(catalog.name).lineLimit(1)
+                        if isLinked {
+                            Image(systemName: "link").font(.system(size: 13)).foregroundStyle(.secondary)
+                        }
+                    }
+                    // The dot's meaning, read once for the row.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(catalog.name)
+                    .accessibilityValue(isLinked ? "\(footer.accessibilityValue), linked" : footer.accessibilityValue)
                 }
                 if let failure {
                     Text("\(Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)) \(failure)")

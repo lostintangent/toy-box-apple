@@ -3,8 +3,9 @@ import ChannelKit
 import SwiftUI
 import ToyBoxUI
 
-/// One server in Settings: its name, then Welcome's Server URL card. A successful test of another
-/// address switches this server to it at once. Without a server, the test adds one.
+/// One server in Settings: its name, then Welcome's Server URL card, then its Linked switch. A
+/// successful test of another address switches this server to it at once. Without a server, the
+/// test adds one, and links it when Add Server's switch is on.
 struct ServerSettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
@@ -14,6 +15,8 @@ struct ServerSettingsView: View {
     @ViewState private var connection: ServerConnectionProbe
     @ViewState private var failure: String?
     @ViewState private var isSwitching = false
+    @ViewState private var links = true
+    @ViewState private var linkAddresses = LinkAddresses()
     @FocusState private var editsName: Bool
 
     init(catalog: ChannelCatalogStore?, connection: ServerConnectionProbe = ServerConnectionProbe()) {
@@ -41,6 +44,14 @@ struct ServerSettingsView: View {
                 footer: "Use your server's address, including its port and any path prefix. Toy Box \(catalog == nil ? "adds" : "switches to") it once the test connects.",
                 currentServer: address, isSwitching: isSwitching, failure: $failure)
                 .disabled(isSwitching)
+            if let catalog {
+                if LinkedSwitch.isShown(in: model.catalogs) {
+                    LinkedSection(catalog: catalog).id(ObjectIdentifier(catalog))
+                }
+            } else if model.catalogs.canLink {
+                AddServerLinkedSection(address: connection.address, isOn: $links, addresses: linkAddresses)
+                    .disabled(isSwitching)
+            }
         }
         .navigationTitle(catalog?.name ?? "Add Server")
         .navigationBarTitleDisplayMode(.inline)
@@ -67,6 +78,10 @@ struct ServerSettingsView: View {
     private func apply(_ server: URL) {
         guard !isSwitching, ChannelWaitingRequest.normalizedServer(server.absoluteString)
                 != address.flatMap(ChannelWaitingRequest.normalizedServer) else { return }
+        let links = catalog == nil && links && model.catalogs.canLink
+            && model.catalogs.first(at: server.absoluteString) == nil
+        let needed = links ? model.catalogs.serversNeedingAddress(toLink: server.absoluteString) : []
+        guard linkAddresses.validate(needed, in: model.catalogs) else { return }
         isSwitching = true
         failure = nil
         commitName()
@@ -75,6 +90,11 @@ struct ServerSettingsView: View {
             do {
                 let applied = try catalog.map { try model.changeAddress(of: $0, to: server.absoluteString) }
                     ?? model.addServer(server.absoluteString)
+                if links {
+                    linkAddresses.save(needed, in: model.catalogs, with: model.setTailscaleAddress)
+                    let catalogs = model.catalogs
+                    Task { await catalogs.setLinked(applied, true) }
+                }
                 catalog = applied
                 name = applied.name
                 await applied.refresh()

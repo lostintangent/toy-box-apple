@@ -99,7 +99,10 @@ final class AppModel {
         serverURL = saved.first?.url ?? AppConfiguration.defaultServerURL
         var failure: (any Error)?
         catalogs = (saved.isEmpty ? [.init(url: serverURL)] : saved).compactMap { server in
-            do { return try connect(ChannelAPI(serverURL: server.url), name: server.name) }
+            do {
+                return try connect(ChannelAPI(serverURL: server.url), name: server.name,
+                                   tailscaleAddress: server.tailscaleAddress)
+            }
             catch { failure = error; return nil }
         }
         if catalogs.isEmpty { configurationError = failure?.localizedDescription }
@@ -211,7 +214,7 @@ final class AppModel {
         guard let index = catalogs.firstIndex(where: { $0 === catalog }) else { return catalog }
         let moved = catalog.saved.moved(to: api.baseURL.absoluteString)
         disconnect(catalog)
-        let replacement = connect(api, name: moved.name)
+        let replacement = connect(api, name: moved.name, tailscaleAddress: moved.tailscaleAddress)
         updateServers { $0[index] = replacement }
         return replacement
     }
@@ -232,8 +235,15 @@ final class AppModel {
         updateServers { _ in }
     }
 
-    private func connect(_ api: ChannelAPI, name: String?) -> ChannelCatalogStore {
-        let catalog = ChannelCatalogStore(api: api, name: name)
+    /// Where other servers reach a server saved at a loopback address, from what the user typed, saved
+    /// with the server. Empty clears it.
+    func setTailscaleAddress(_ input: String, of catalog: ChannelCatalogStore) throws {
+        try catalog.links.setTailscaleAddress(input)
+        updateServers { _ in }
+    }
+
+    private func connect(_ api: ChannelAPI, name: String?, tailscaleAddress: String? = nil) -> ChannelCatalogStore {
+        let catalog = ChannelCatalogStore(api: api, name: name, tailscaleAddress: tailscaleAddress)
         catalog.outbox = outbox
         catalog.setActive(NSApplication.shared.isActive)
         catalog.startPolling()

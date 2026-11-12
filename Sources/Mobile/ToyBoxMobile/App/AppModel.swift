@@ -101,7 +101,9 @@ final class AppModel {
             }
         } else {
             catalogs = ChannelCatalogStore.Saved.load(from: defaults).compactMap { server in
-                (try? ChannelAPI(serverURL: server.url, session: session)).map { connect($0, name: server.name) }
+                (try? ChannelAPI(serverURL: server.url, session: session)).map {
+                    connect($0, name: server.name, tailscaleAddress: server.tailscaleAddress)
+                }
             }
         }
         if catalog != nil { firstServerDidChange() }
@@ -186,7 +188,7 @@ final class AppModel {
         guard let index = catalogs.firstIndex(where: { $0 === catalog }) else { return catalog }
         let moved = catalog.saved.moved(to: api.baseURL.absoluteString)
         disconnect(catalog)
-        let replacement = connect(api, name: moved.name)
+        let replacement = connect(api, name: moved.name, tailscaleAddress: moved.tailscaleAddress)
         updateServers { $0[index] = replacement }
         if selection == nil { restoring = replacement }
         return replacement
@@ -208,8 +210,15 @@ final class AppModel {
         updateServers { _ in }
     }
 
-    private func connect(_ api: ChannelAPI, name: String?) -> ChannelCatalogStore {
-        let catalog = ChannelCatalogStore(api: api, name: name)
+    /// Where other servers reach a server saved at a loopback address, from what the user typed, saved
+    /// with the server. Empty clears it.
+    func setTailscaleAddress(_ input: String, of catalog: ChannelCatalogStore) throws {
+        try catalog.links.setTailscaleAddress(input)
+        updateServers { _ in }
+    }
+
+    private func connect(_ api: ChannelAPI, name: String?, tailscaleAddress: String? = nil) -> ChannelCatalogStore {
+        let catalog = ChannelCatalogStore(api: api, name: name, tailscaleAddress: tailscaleAddress)
         catalog.outbox = outbox
         if isForeground { catalog.startPolling() }
         return catalog

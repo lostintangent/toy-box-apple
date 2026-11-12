@@ -302,7 +302,8 @@ struct RootView: View {
             setOverviewVisible(true)
         case "quick-send-servers":
             model.quickSend.presentForSnapshot(appearance: snapshot.appearance)
-        case "settings-servers", "settings-server-renamed", "settings-server-removed":
+        case "settings-servers", "settings-server-renamed", "settings-server-removed", "settings-server-links",
+             "settings-server-link-addresses", "settings-server-link-failed", "settings-add-server":
             model.settingsTab = .servers
             openSettings()
         default: break
