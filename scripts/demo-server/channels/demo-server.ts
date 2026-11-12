@@ -123,8 +123,8 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
       });
     }
   }
-  const serveAvatar = (avatar: Snapshot | undefined) => {
-    if (typeof avatar?.image === 'string') resources.set(avatar.image, { type: 'image/png', content: avatarImage });
+  const serveAvatar = (avatar: Avatar | undefined) => {
+    if (avatar && 'image' in avatar) resources.set(avatar.image, { type: 'image/png', content: avatarImage });
   };
   serveAvatar(snapshot.channel.avatar);
   const json = (response: ServerResponse, status: number, value: unknown) => {
