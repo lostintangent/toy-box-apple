@@ -1376,9 +1376,10 @@ disabled.
    - The rest of the list returns to full opacity over 0.25 seconds.
    - The mic becomes the done check through `.replace`: a semibold `checkmark` knocked out of the
      mark's rounded square, filled in `ChannelTaskColors.changes(in:).added`, the color a
-     completed task wears. The square fills the mark's 28 points with the avatar's corners, and
-     the surface beneath shows through the check. Nothing rings or pulses around it. `.sensoryFeedback(.success)` plays as it
-     arrives.
+     completed task wears. The square is 26 points, centered in the mark with the avatar's 26%
+     corners, because a solid bright square reads larger than the avatar beside it. The surface
+     beneath shows through the check. Nothing rings or pulses around it.
+     `.sensoryFeedback(.success)` plays as it arrives.
    - The counter gives way to the time the note was sent, in the row's ordinary format, through
      the slot's swap. No word says Sent, because the check does.
    - The card's shadow and edge fade out as it lands, and its fill stays as a wash.
