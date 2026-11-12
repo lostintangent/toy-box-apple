@@ -286,7 +286,8 @@ private struct TalkMarkButtonStyle: ButtonStyle {
     }
 }
 
-/// The voice's halo: a ring outside the mic that widens with the level and vanishes at silence.
+/// The voice's halo: a ring around the mark's rounded square that widens with the level and
+/// vanishes at silence.
 private struct TalkHalo: Shape {
     var scale: Double
 
@@ -297,8 +298,9 @@ private struct TalkHalo: Shape {
 
     func path(in rect: CGRect) -> Path {
         let grow = rect.width * (scale - 1) / 2
-        var path = Path(ellipseIn: rect.insetBy(dx: -grow, dy: -grow))
-        path.addEllipse(in: rect)
+        let outer = rect.insetBy(dx: -grow, dy: -grow)
+        var path = Path(roundedRect: outer, cornerRadius: outer.width * CardMark.corners, style: .continuous)
+        path.addPath(Path(roundedRect: rect, cornerRadius: rect.width * CardMark.corners, style: .continuous))
         return path
     }
 }

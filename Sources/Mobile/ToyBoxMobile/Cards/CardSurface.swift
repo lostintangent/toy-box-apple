@@ -67,45 +67,79 @@ extension View {
 }
 
 /// The mark a card's row wears: the channel's own avatar, the mic while the talk card records, or
-/// the done check once a card's message sends. They share one 28-point tile, whose corners round
-/// from the avatar's square into the circle as the avatar fades and the symbol grows in, so the
-/// swap reads as one mark changing shape. Between the mic and the check, the symbol swaps through
-/// `.replace`, and the check arrives with the success tap.
+/// the done check once a card's message sends. They share the avatar's rounded square, so the mark
+/// keeps one shape as the avatar fades and the symbol grows in from half its size, and the way back
+/// runs in reverse. Between the mic and the check, the symbol swaps through `.replace` as the
+/// tile's tint turns green, and the check arrives with the success tap. The check's solid square
+/// is 2 points smaller, since a bright square reads larger than the avatar beside it.
 struct CardMark: ViewModifier {
     enum Glyph { case channel, mic, check }
 
+    /// The avatar's corners, as a fraction of its side.
+    static let corners = 0.26
+
     let glyph: Glyph
+    /// The symbol the mark last wore, which it fades out on its way back to the avatar.
+    @ViewState private var face: Glyph
+    /// Whether the mark wore the avatar until now, so a symbol arrives already the new one.
+    @ViewState private var fromAvatar: Bool
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.cardMarkTaps) private var taps
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    init(glyph: Glyph) {
+        self.glyph = glyph
+        _face = .init(initialValue: glyph == .channel ? .check : glyph)
+        _fromAvatar = .init(initialValue: glyph == .channel)
+    }
+
     func body(content: Content) -> some View {
+        let shown = glyph == .channel ? face : glyph
+        let side: CGFloat = shown == .check ? 26 : 28
         ZStack {
-            if glyph == .channel {
-                content.transition(.opacity)
-            } else {
-                // One symbol for the mic and the check, so it swaps through `.replace`, while
-                // the avatar's face comes and goes with its own.
-                symbol.transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.5)))
+            content
+                .clipShape(CardMarkShape())
+                .opacity(glyph == .channel ? 1 : 0)
+            ZStack {
+                CardMarkShape()
+                    .fill(shown == .check ? ChannelTaskColors.changes(in: colorScheme).added : .accentColor.opacity(0.15))
+                symbol(shown)
+                    .contentTransition(fromAvatar ? .identity : .symbolEffect(.replace))
+                    .scaleEffect(glyph == .channel && !reduceMotion ? 0.5 : 1)
+                    // The row's accessibility value already says what the note is doing.
+                    .accessibilityHidden(true)
             }
+            .frame(width: side, height: side)
+            // Lets the check knock out only its own square.
+            .compositingGroup()
+            .opacity(glyph == .channel ? 0 : 1)
         }
         .frame(width: 28, height: 28)
-        // Under Reduce Motion, every swap is a crossfade, so each face keeps its own shape.
-        .clipShape(RoundedRectangle(cornerRadius: glyph == .channel || reduceMotion ? 28 * 0.26 : 14,
-                                    style: .continuous))
+        .onChange(of: glyph) { _, glyph in
+            if glyph != .channel { face = glyph }
+            fromAvatar = glyph == .channel
+        }
         .sensoryFeedback(.success, trigger: glyph == .check) { _, sent in sent && taps }
     }
 
-    private var symbol: some View {
-        Image(systemName: glyph == .check ? "checkmark.circle.fill" : "mic.fill")
-            // At this size the check's circle fills the mark's 28 points, with its check knocked out.
-            .font(.system(size: glyph == .check ? 27.4 : 28 * 14 / 30, weight: .semibold))
-            .symbolRenderingMode(.monochrome)
-            .foregroundStyle(glyph == .check ? ChannelTaskColors.changes(in: colorScheme).added : .accentColor)
-            .contentTransition(.symbolEffect(.replace))
-            .frame(width: 28, height: 28)
-            // The check brings its own circle.
-            .background { Circle().fill(Color.accentColor.opacity(0.15)).opacity(glyph == .mic ? 1 : 0) }
+    private func symbol(_ glyph: Glyph) -> some View {
+        let name = glyph == .check ? "checkmark" : "mic.fill"
+        // Both layers swap together. The first cuts the symbol out of the tile, and the second
+        // fills it back in with the mic's accent, or leaves the check cut out.
+        return ZStack {
+            Image(systemName: name).blendMode(.destinationOut)
+            Image(systemName: name)
+                .foregroundStyle(Color.accentColor)
+                .opacity(glyph == .mic ? 1 : 0)
+        }
+        .font(.system(size: glyph == .check ? 15 * 26 / 28 : 28 * 14 / 30, weight: .semibold))
+    }
+}
+
+/// The avatar's continuous rounded square at any side, so a mark's corners scale with it.
+struct CardMarkShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        RoundedRectangle(cornerRadius: rect.width * CardMark.corners, style: .continuous).path(in: rect)
     }
 }
 

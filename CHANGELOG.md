@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.32
+
+### Bugs/Polish
+
+- When you talk to a channel or answer a request from the list, the mic and the check now keep the shape of the channel's picture, so the row reads as one piece.
+
 ## Mac 0.1.34
 
 ### Features
