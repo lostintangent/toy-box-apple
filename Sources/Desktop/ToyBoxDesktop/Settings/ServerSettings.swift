@@ -28,6 +28,12 @@ struct ServerSettings: View {
                     Button("Remove Server", systemImage: "minus") { confirmsRemoval = true }
                         .disabled(!canRemove)
                     Spacer()
+                    if model.catalogs.offersUpdateCheck {
+                        Button("Check for Updates") { Task { await model.catalogs.checkForUpdates() } }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(model.catalogs.isCheckingForUpdates)
+                    }
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
@@ -49,6 +55,11 @@ struct ServerSettings: View {
             Text("Toy Box disconnects from it and removes its channels from this Mac. Drafts stay saved, so adding it back finds them.")
         }
         .task(id: model.snapshot?.requestedState) { await prepareSnapshot() }
+        .task(id: model.catalogs.map(\.api.baseURL)) {
+            await withTaskGroup { group in
+                for catalog in model.catalogs { group.addTask { await catalog.update.refresh() } }
+            }
+        }
         if let selected {
             ServerDetails(catalog: selected, changedAddress: select)
                 .id(Self.address(selected))
@@ -79,16 +90,23 @@ struct ServerSettings: View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
         let host = SidebarFooter.server(Self.address(catalog))
         return HStack(spacing: 8) {
-            Circle().fill(footer.dot).frame(width: 7, height: 7)
-            Text(catalog.name).lineLimit(1)
-            Spacer()
+            // The name keeps its width first, and the address and status share what's left.
+            HStack(spacing: 8) {
+                Circle().fill(footer.dot).frame(width: 7, height: 7)
+                Text(catalog.name).lineLimit(1)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(catalog.name == host ? catalog.name : "\(catalog.name), \(host)")
+            .accessibilityValue(footer.accessibilityValue)
+            .layoutPriority(1)
+            Spacer(minLength: 0)
             if catalog.name != host {
                 Text(host).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    .accessibilityHidden(true)
             }
+            ServerUpdateStatus(update: catalog.update)
         }
         .frame(height: 20)
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(footer.accessibilityValue)
     }
 
     private func select(_ catalog: ChannelCatalogStore?) {
@@ -140,6 +158,50 @@ struct ServerSettings: View {
     }
 
     static func address(_ catalog: ChannelCatalogStore) -> String { catalog.api.baseURL.absoluteString }
+}
+
+/// The end of a server's row: its version, a spinner while it checks, how its last check or restart
+/// ended, or Restart once a newer release is installed. See Updating a server in docs/spec.md.
+private struct ServerUpdateStatus: View {
+    let update: ServerUpdate
+
+    var body: some View {
+        HStack(spacing: 6) {
+            switch update.phase {
+            case .checking?:
+                ProgressView().controlSize(.small)
+            case .restarting?:
+                Text("Restarting…").foregroundStyle(.secondary)
+                ProgressView().controlSize(.small)
+            case .restartPending?:
+                if case .failed(let words)? = update.outcome {
+                    failure(words)
+                } else if let installed = update.version?.installedVersion {
+                    Text("\(installed) installed").foregroundStyle(.secondary)
+                }
+                Button("Restart") { Task { await update.restart() } }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            case .idle?, nil:
+                switch update.outcome {
+                case .upToDate?: Text("Up to date").foregroundStyle(.secondary)
+                case .failed(let words)?: failure(words)
+                case nil: if let version = update.version?.version { Text(version).foregroundStyle(.secondary) }
+                }
+            }
+        }
+        .lineLimit(1)
+    }
+
+    private func failure(_ words: String) -> some View {
+        Label {
+            Text(words).foregroundStyle(.secondary)
+        } icon: {
+            Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)
+        }
+        .labelStyle(.titleAndIcon)
+        .help(words)
+    }
 }
 
 /// One server's name, address and status. Each server gets its own, so a name being typed is saved

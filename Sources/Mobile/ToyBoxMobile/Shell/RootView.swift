@@ -298,6 +298,8 @@ private struct AppCoverPresentation: ViewModifier {
         )) { cover in
             if cover == .settings {
                 NavigationStack { SettingsView() }
+                    // Each server's last check or restart is forgotten once Settings closes.
+                    .onDisappear { for catalog in model.catalogs { catalog.update.clearOutcome() } }
             } else {
                 ScreenSheet(server: model.selectedServer)
             }
