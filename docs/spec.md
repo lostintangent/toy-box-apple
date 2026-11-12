@@ -245,14 +245,18 @@ Drafts stay keyed to the address, so adding it back finds them.
   spinner in its version's place, and the button dims until every check ends. Then a row reads
   Up to date when nothing was newer, or the error in words after a yellow
   `exclamationmark.triangle.fill`, in the row on the Mac and under the address on the phone.
-  Results stay until the next check or until Settings closes. A restart is pending exactly when
-  `installedVersion` isn't null and differs from `version`, whichever device ran the update, and
-  then the row shows a prominent Restart, after "0.3.10 installed" on the Mac. Restart has no
-  confirmation, and its row shows only a spinner in the version's place until the server reconnects running
-  the installed version. A failed restart shows its error the same way, with the old server still
-  running. A server that hasn't come back a minute after its restart was accepted shows "Didn't
-  come back after restarting" the same way, and the row still returns to its version whenever it
-  reconnects. The apps read `GET /api/v1/server` while Settings shows the list, after each check and
+  Results stay until the next check or until Settings closes. While a server isn't connected, its
+  row shows a spinner in its version's place as the app reconnects, for any reason, until it
+  connects or has failed for the catalog's grace, when the row shows its failure as it does for any
+  server that can't connect. A restart is pending exactly when `installedVersion` isn't null and
+  differs from `version`, whichever device ran the update, and then a connected row shows a
+  prominent Restart, after "0.3.10 installed" on the Mac. Restart has no confirmation, and the
+  apps give it no handling of their own. A server that accepts answers 202 and drops every
+  connection at once, without accepting new ones, so the apps see an ordinary disconnect: the row
+  spins while they reconnect with the usual backoff and grace, then reads the new server and shows
+  its version. A rejected restart shows its error the same way, with the old server still running,
+  and a server that doesn't come back reads like any other that can't connect. The apps read
+  `GET /api/v1/server` while Settings shows the list, after each check and
   each time a server reconnects. These are management writes: an update that times out or drops
   may still have installed, so the row reads the server again before offering another try.
 
