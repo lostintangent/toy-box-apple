@@ -20,7 +20,8 @@ struct LinkedSection: View {
                 if let value = linked.linkedAddress(for: address) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(linked.addressLabel(for: address)).font(.subheadline).foregroundStyle(.secondary)
-                        Text(value).textSelection(.enabled)
+                        // Secondary, so a value that can't change reads apart from a filled field.
+                        Text(value).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                     .accessibilityElement(children: .combine)
                 } else {
@@ -78,7 +79,7 @@ struct AddServerLinkedSection: View {
             Toggle("Linked", isOn: $isOn)
             ForEach(needed, id: \.self) { server in
                 LinkAddressField(addresses: addresses, address: server,
-                                 label: LinkedSwitch.addressLabel(for: server, in: model.catalogs)) {
+                                 label: LinkedSwitch.addressLabel(for: server, on: address, in: model.catalogs)) {
                     addresses.validate([server], in: model.catalogs)
                 }
             }
@@ -128,11 +129,10 @@ private struct LinkAddressField: View {
 }
 
 extension LinkAddressField {
-    /// A footer that starts with what each field in the card is for.
+    /// A footer that starts with what the card's fields are for.
     static func captions(for addresses: [String], in catalogs: [ChannelCatalogStore],
                          before footer: String) -> AttributedString {
-        addresses.reduce(into: AttributedString()) { text, address in
-            text += LinkedSwitch.addressCaption(for: address, in: catalogs) + AttributedString(" ")
-        } + AttributedString(footer)
+        guard let caption = LinkedSwitch.addressCaption(for: addresses, in: catalogs) else { return AttributedString(footer) }
+        return caption + AttributedString(" " + footer)
     }
 }

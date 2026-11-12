@@ -28,6 +28,7 @@ struct LinkedSection: View {
                     }
                 }
             }
+            LinkAddressCaption(addresses: asked.filter { linked.linkedAddress(for: $0) == nil })
             ForEach(catalog.links.failures) { failure in
                 HStack {
                     LinkFailureLabel(words: linked.words(failure), reason: linked.reason(failure))
@@ -64,14 +65,14 @@ struct AddServerLinkedSection: View {
     var body: some View {
         Section {
             Toggle("Linked", isOn: $isOn)
-            if isOn {
-                ForEach(model.catalogs.serversNeedingAddress(toLink: address), id: \.self) { needed in
-                    LinkAddressField(addresses: addresses, address: needed,
-                                     label: LinkedSwitch.addressLabel(for: needed, in: model.catalogs)) {
-                        addresses.validate([needed], in: model.catalogs)
-                    }
+            let needed = isOn ? model.catalogs.serversNeedingAddress(toLink: address) : []
+            ForEach(needed, id: \.self) { server in
+                LinkAddressField(addresses: addresses, address: server,
+                                 label: LinkedSwitch.addressLabel(for: server, on: address, in: model.catalogs)) {
+                    addresses.validate([server], in: model.catalogs)
                 }
             }
+            LinkAddressCaption(addresses: needed)
         } footer: {
             Text(LinkedSwitch.footer(addingServerAt: address, isOn: isOn, in: model.catalogs))
                 .font(.footnote).foregroundStyle(.secondary)
@@ -79,8 +80,8 @@ struct AddServerLinkedSection: View {
     }
 }
 
-/// One server's Tailscale address, committed when it's submitted or loses focus, with what it's for
-/// under it, or why it isn't one.
+/// One server's Tailscale address, committed when it's submitted or loses focus, with why it isn't
+/// one under it.
 private struct LinkAddressField: View {
     let addresses: LinkAddresses
     let address: String
@@ -104,9 +105,18 @@ private struct LinkAddressField: View {
                 Image(systemName: "exclamationmark.circle").foregroundStyle(.red)
             }
             .font(.caption).textSelection(.enabled)
-        } else {
-            Text(LinkedSwitch.addressCaption(for: address, in: model.catalogs))
-                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// What the card's fields are for, in one row after the last one.
+private struct LinkAddressCaption: View {
+    let addresses: [String]
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let caption = LinkedSwitch.addressCaption(for: addresses, in: model.catalogs) {
+            Text(caption).font(.caption).foregroundStyle(.secondary)
         }
     }
 }

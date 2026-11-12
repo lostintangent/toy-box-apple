@@ -80,14 +80,18 @@ public struct LinkedSwitch {
         return asked
     }
 
-    /// The label of the field for the server at `address`. The card names its own server's field for
-    /// what it is, and every other field for its server too.
+    /// The label of the field for the server at `address` in this server's card.
     public func addressLabel(for address: String) -> String {
-        catalogs.first(at: address) === catalog ? "Tailscale address" : Self.addressLabel(for: address, in: catalogs)
+        Self.addressLabel(for: address, on: catalog.api.baseURL.absoluteString, in: catalogs)
     }
 
-    public static func addressLabel(for address: String, in catalogs: [ChannelCatalogStore]) -> String {
-        "Tailscale address for \(name(address, in: catalogs))"
+    /// The label of the field for the server at `address` on the page for the server at `subject`,
+    /// saved or being added. The page's own server's field is named for what it is, and every other
+    /// field for its server too.
+    public static func addressLabel(for address: String, on subject: String, in catalogs: [ChannelCatalogStore]) -> String {
+        let normalized = ChannelWaitingRequest.normalizedServer(address)
+        return normalized != nil && normalized == ChannelWaitingRequest.normalizedServer(subject)
+            ? "Tailscale address" : "Tailscale address for \(name(address, in: catalogs))"
     }
 
     /// The saved Tailscale address of the server at `address` while it's linked, which the card shows
@@ -99,12 +103,15 @@ public struct LinkedSwitch {
 
     public static let addressPlaceholder = "machine.tail1234.ts.net"
 
-    /// What the field for the server at `address` is for.
-    public static func addressCaption(for address: String, in catalogs: [ChannelCatalogStore]) -> AttributedString {
+    /// What the fields for the servers at `addresses` are for, in one caption after the last one, or
+    /// nil with no field.
+    public static func addressCaption(for addresses: [String], in catalogs: [ChannelCatalogStore]) -> AttributedString? {
+        guard !addresses.isEmpty else { return nil }
+        let names = addresses.map { name($0, in: catalogs) }.formatted(.list(type: .and))
         var command = AttributedString("tailscale serve")
         command.inlinePresentationIntent = .code
-        return AttributedString("Other servers reach \(name(address, in: catalogs)) at this address, through ")
-            + command + AttributedString(".")
+        let place = addresses.count == 1 ? "this address" : "these addresses"
+        return AttributedString("Other servers reach \(names) at \(place), through ") + command + AttributedString(".")
     }
 
     /// A saved server's name, or the address the footer would show for one Add Server hasn't saved.
