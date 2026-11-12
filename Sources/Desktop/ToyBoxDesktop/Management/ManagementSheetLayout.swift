@@ -1,3 +1,5 @@
+import ChannelClient
+import ChannelKit
 import SwiftUI
 import ToyBoxUI
 
@@ -91,9 +93,18 @@ struct ManagementLongTextField: View {
     }
 }
 
-/// The sidebar's cyan channel mark at sheet size.
+/// A channel sheet's 40-point avatar, as the channel's sidebar row shows it. New Channel, which
+/// has no channel yet, shows the cyan #.
 struct ManagementChannelMark: View {
+    var channelId: String?
+    var catalog: ChannelCatalogStore?
+
     var body: some View {
-        ChannelMark(size: 40, symbolSize: 19)
+        ChannelMark(avatar, api: catalog?.api, size: 40, symbolSize: 19)
+    }
+
+    private var avatar: ChannelAvatar? {
+        guard let channelId else { return nil }
+        return catalog?.state?.channels.first { $0.id == channelId }?.avatar
     }
 }
