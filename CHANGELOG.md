@@ -5,12 +5,16 @@
 ### Features
 
 - You can now name each of your servers in Settings, and the name stays with the server, so every Mac and iPhone you use calls it the same thing.
+- Adding a server now adds the servers it's linked with too, so one address brings in all of your servers.
+- Adding a server you already have at a new address, like its Tailscale address, now moves it there instead of listing it twice, and keeps your drafts and unsent messages.
 
 ## iPhone 0.1.33
 
 ### Features
 
 - You can now name each of your servers in Settings, and the name stays with the server, so every Mac and iPhone you use calls it the same thing.
+- Adding a server now adds the servers it's linked with too, so one address brings in all of your servers.
+- Adding a server you already have at a new address, like its Tailscale address, now moves it there instead of listing it twice, and keeps your drafts and unsent messages.
 
 ## Mac 0.1.35
 

@@ -15,7 +15,8 @@ final class AppModel {
     /// The first server's address, or a launch address the app can't use.
     private(set) var serverURL = ""
     /// Every server, in Settings order.
-    private(set) var catalogs: [ChannelCatalogStore] = []
+    let servers: ChannelServers
+    var catalogs: [ChannelCatalogStore] { servers.catalogs }
     /// Every message the user sends until its server confirms it, in the shared container so the
     /// share extension's sends join it. Each server's catalog delivers its own.
     let outbox: ChannelOutbox
@@ -49,9 +50,8 @@ final class AppModel {
     @ObservationIgnored private(set) var isForeground = false
     @ObservationIgnored private var holdsSelectedConnection = false
     @ObservationIgnored private let defaults: UserDefaults
-    /// A launch server stays in the session, so Settings never saves over the user's servers.
-    @ObservationIgnored private let savesServers: Bool
-    @ObservationIgnored private let session: URLSession
+    /// The first server, so a change to it clears what belonged to the last one.
+    @ObservationIgnored private weak var first: ChannelCatalogStore?
     /// The server whose last opened channel opens once its catalog loads, unless a navigation wins.
     @ObservationIgnored private weak var restoring: ChannelCatalogStore?
     @ObservationIgnored private var navigationGeneration = UUID()
@@ -75,11 +75,13 @@ final class AppModel {
         self.notifications = notifications ?? ChannelNotifications(defaults: defaults)
         self.following = following ?? ChannelFollowController()
         self.defaults = defaults
-        self.session = session
         let flag = arguments.firstIndex(of: "--server")
         let launchServer = flag.map { arguments.dropFirst($0 + 1).first ?? "" } ?? environment["TOY_BOX_SERVER_URL"]
-        savesServers = launchServer == nil
         outbox = .mobile()
+        // A launch server stays in the session, so Settings never saves over the user's servers.
+        servers = ChannelServers(launchServer.map { [.init(url: $0)] } ?? ChannelCatalogStore.Saved.load(from: defaults),
+                                 savingTo: launchServer == nil ? defaults : nil, session: session, outbox: outbox,
+                                 connections: connections, isActive: false, streamsInBackground: false)
         self.notifications.onRegistrationCreated = { [weak self] registration in
             guard let self else { return }
             self.following.configure(servers: self.followedServers)
@@ -92,21 +94,16 @@ final class AppModel {
         self.notifications.onReply = { [weak self] reply in
             await self?.outbox.send(reply.content, to: reply.channelID, on: reply.server, answering: reply.request)
         }
-        if let launchServer {
-            do { catalogs = [connect(try ChannelAPI(serverURL: launchServer, session: session), name: nil)] }
+        if let launchServer, catalogs.isEmpty {
+            serverURL = launchServer
+            do { _ = try ChannelAPI(serverURL: launchServer) }
             catch {
-                serverURL = launchServer
                 configurationError = flag != nil && launchServer.isEmpty
                     ? "Provide a server URL after --server." : error.localizedDescription
             }
-        } else {
-            catalogs = ChannelCatalogStore.Saved.load(from: defaults).compactMap { server in
-                (try? ChannelAPI(serverURL: server.url, session: session)).map {
-                    connect($0, name: server.name, id: server.id, tailscaleAddress: server.tailscaleAddress)
-                }
-            }
         }
-        if catalog != nil { firstServerDidChange() }
+        servers.onChange = { [weak self] in self?.serversDidChange() }
+        servers.onRemove = { [weak self] in self?.close($0) }
         serversDidChange()
         restoring = defaults.string(forKey: "lastServer").flatMap { catalogs.first(at: $0) } ?? catalog
     }
@@ -168,62 +165,18 @@ final class AppModel {
 
     // MARK: Servers
 
-    /// Adds a server, or finds the one already at that address.
+    /// Adds a server, or finds the one already at that address. The first one, from Welcome, opens
+    /// the channel last opened there once it loads.
     @discardableResult
     func addServer(_ address: String) throws -> ChannelCatalogStore {
-        let api = try ChannelAPI(serverURL: address, session: session)
-        if let listed = catalogs.first(at: api.baseURL.absoluteString) { return listed }
-        let catalog = connect(api, name: nil)
-        if catalogs.isEmpty { restoring = catalog }
-        updateServers { $0.append(catalog) }
+        let wasEmpty = catalogs.isEmpty
+        let catalog = try servers.add(address)
+        if wasEmpty { restoring = catalog }
         return catalog
     }
 
-    /// Replaces a server's live connections with another address, or finds the server already
-    /// there. Drafts stay with the old address.
-    @discardableResult
-    func changeAddress(of catalog: ChannelCatalogStore, to address: String) throws -> ChannelCatalogStore {
-        let api = try ChannelAPI(serverURL: address, session: session)
-        if let listed = catalogs.first(at: api.baseURL.absoluteString) { return listed }
-        guard let index = catalogs.firstIndex(where: { $0 === catalog }) else { return catalog }
-        let moved = catalog.saved.moved(to: api.baseURL.absoluteString)
-        disconnect(catalog)
-        let replacement = connect(api, name: moved.name, id: moved.id, tailscaleAddress: moved.tailscaleAddress)
-        updateServers { $0[index] = replacement }
-        if selection == nil { restoring = replacement }
-        return replacement
-    }
-
-    /// Disconnects a server and forgets it. The last one stays, so there's always a server.
-    func removeServer(_ catalog: ChannelCatalogStore) {
-        guard catalogs.count > 1, let index = catalogs.firstIndex(where: { $0 === catalog }) else { return }
-        disconnect(catalog)
-        updateServers { $0.remove(at: index) }
-    }
-
-    func moveServers(fromOffsets source: IndexSet, toOffset destination: Int) {
-        updateServers { $0.move(fromOffsets: source, toOffset: destination) }
-    }
-
-    /// Where other servers reach a server saved at a loopback address, from what the user typed, saved
-    /// with the server. Empty clears it.
-    func setTailscaleAddress(_ input: String, of catalog: ChannelCatalogStore) throws {
-        try catalog.links.setTailscaleAddress(input)
-        updateServers { _ in }
-    }
-
-    private func connect(_ api: ChannelAPI, name: String?, id: String? = nil,
-                         tailscaleAddress: String? = nil) -> ChannelCatalogStore {
-        let catalog = ChannelCatalogStore(api: api, name: name, id: id, tailscaleAddress: tailscaleAddress)
-        catalog.outbox = outbox
-        // A read that renames the server or finds its identity saves it, for the extensions too.
-        catalog.onSavedChange = { [weak self] in self?.updateServers { _ in } }
-        if isForeground { catalog.startPolling() }
-        return catalog
-    }
-
-    /// Closes a server's channels wherever they're open, and stops its connections.
-    private func disconnect(_ catalog: ChannelCatalogStore) {
+    /// Closes a server's channels wherever they're open, as it leaves the list.
+    private func close(_ catalog: ChannelCatalogStore) {
         let server = ChannelWaitingRequest.normalizedServer(catalog.api.baseURL.absoluteString)
         func belongs(_ store: ChannelStore) -> Bool { catalog.existingChannel(id: store.id) === store }
         if selection?.serverURL == server { selection = nil }
@@ -244,30 +197,18 @@ final class AppModel {
             galleries[id] = nil
         }
         composerSessions = composerSessions.filter { !belongs($0.value.store) }
-        catalog.stopPolling()
-        catalog.outbox = nil
-        connections.disconnectAll(in: catalog)
     }
 
-    private func updateServers(_ change: (inout [ChannelCatalogStore]) -> Void) {
-        let first = catalog
-        change(&catalogs)
-        if savesServers { ChannelCatalogStore.Saved.save(catalogs.map(\.saved), to: defaults) }
-        if catalog !== first { firstServerDidChange() }
-        serversDidChange()
-    }
-
-    /// The first server stands in for a launch address the app couldn't use, so a new one clears
-    /// that error and any navigation in flight.
-    private func firstServerDidChange() {
-        cancelNavigation()
-        serverURL = catalog?.api.baseURL.absoluteString ?? ""
-        configurationError = nil
-        navigationNotice = nil
-    }
-
-    /// Push and Share reach every server.
+    /// Push and Share reach every server. The first server stands in for a launch address the app
+    /// couldn't use, so a new one clears that error and any navigation in flight.
     private func serversDidChange() {
+        if let catalog, catalog !== first {
+            first = catalog
+            cancelNavigation()
+            serverURL = catalog.api.baseURL.absoluteString
+            configurationError = nil
+            navigationNotice = nil
+        }
         notifications.configure(apis: catalogs.map(\.api))
         configureShareHistory()
     }
@@ -279,16 +220,16 @@ final class AppModel {
         let foreground = phase != .background
         if isForeground != foreground {
             isForeground = foreground
-            for catalog in catalogs { catalog.setActive(foreground) }
             if foreground {
                 resumeRefreshes = Dictionary(catalogs.compactMap { catalog in
                     catalog.lastRefreshedAt.map { (catalog.api.baseURL.absoluteString, $0) }
                 }, uniquingKeysWith: { first, _ in first })
-                for catalog in catalogs { catalog.startPolling() }
+            }
+            servers.isActive = foreground
+            if foreground {
                 for store in connections.stores { store.connect() }
                 connectSelection()
             } else {
-                for catalog in catalogs { catalog.stopPolling() }
                 for store in connections.stores { store.disconnect() }
             }
         }

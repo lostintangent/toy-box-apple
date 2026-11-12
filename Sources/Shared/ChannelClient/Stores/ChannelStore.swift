@@ -566,13 +566,13 @@ public final class ChannelCatalogStore {
     /// its host before it answers. Settings saves it, so it shows while the server can't connect.
     public internal(set) var name: String
     /// The identity the server makes once and keeps, from its last answer, so adding the same server
-    /// at another address selects it instead. Settings saves it.
+    /// at another address moves it there. Settings saves it.
     public internal(set) var serverID: String?
     /// The server's accent from its last answer, `#` and six hex digits, or nil before it answers.
     /// Nothing shows it yet, and it isn't saved.
     public internal(set) var accentColor: String?
-    /// Called when a read changes the server's name or identity, so the app saves its servers.
-    @ObservationIgnored public var onSavedChange: (@MainActor () -> Void)?
+    /// The list this server is saved in, which each answer reaches, so a new name or identity saves.
+    @ObservationIgnored weak var servers: ChannelServers?
     public private(set) var state: ChannelCatalog?
     /// A channel the outbox is sending to reads as read through its latest, since the server marks it
     /// read through the user's message once that lands.

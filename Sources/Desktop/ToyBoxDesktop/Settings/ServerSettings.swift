@@ -77,7 +77,7 @@ struct ServerSettings: View {
             ForEach(model.catalogs, id: \.api.baseURL) { catalog in
                 row(catalog).tag(Self.address(catalog))
             }
-            .onMove { model.moveServers(fromOffsets: $0, toOffset: $1) }
+            .onMove { model.servers.move(fromOffsets: $0, toOffset: $1) }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -114,7 +114,7 @@ struct ServerSettings: View {
 
     private func remove() {
         guard let selected, let index = model.catalogs.firstIndex(where: { $0 === selected }) else { return }
-        model.removeServer(selected)
+        model.servers.remove(selected)
         select(model.catalogs[min(index, model.catalogs.count - 1)])
     }
 
@@ -150,8 +150,8 @@ struct ServerSettings: View {
                 if state != "settings-server-link-addresses" {
                     for catalog in model.catalogs where catalog.links.isLoopback {
                         let unreachable = state == "settings-server-link-failed" && catalog === model.catalogs.last
-                        try model.setTailscaleAddress(unreachable ? "box.tail1234.ts.net" : catalog.api.baseURL.absoluteString,
-                                                      of: catalog)
+                        let address = unreachable ? "box.tail1234.ts.net" : catalog.api.baseURL.absoluteString
+                        try model.servers.setTailscaleAddress(address, of: catalog)
                     }
                 }
                 await model.catalogs.refreshServers()
@@ -351,9 +351,9 @@ struct AddServerSheet: View {
         let needed = links ? model.catalogs.serversNeedingAddress(toLink: connection.address) : []
         guard addresses.validate(needed, in: model.catalogs) else { return }
         do {
-            let catalog = try model.addServer(connection.address)
+            let catalog = try model.servers.add(connection.address)
             if links {
-                addresses.save(needed, in: model.catalogs, with: model.setTailscaleAddress)
+                addresses.save(needed, in: model.catalogs, with: model.servers.setTailscaleAddress)
                 let catalogs = model.catalogs
                 Task { await catalogs.setLinked(catalog, true) }
             }

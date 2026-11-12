@@ -67,7 +67,7 @@ struct SettingsView: View {
             ForEach(model.catalogs, id: \.api.baseURL) { catalog in
                 NavigationLink(value: ServerRoute(catalog: catalog)) { ServerRow(catalog: catalog) }
             }
-            .onMove { model.moveServers(fromOffsets: $0, toOffset: $1) }
+            .onMove { model.servers.move(fromOffsets: $0, toOffset: $1) }
             .onDelete { removal = $0.first.map { model.catalogs[$0] } }
             .deleteDisabled(model.catalogs.count < 2)
             Button("Add Server", systemImage: "plus") { addsServer = true }
@@ -90,7 +90,7 @@ struct SettingsView: View {
         .confirmationDialog("Remove \(removal?.name ?? "this server")?", isPresented: Binding(
             get: { removal != nil }, set: { if !$0 { removal = nil } }
         ), titleVisibility: .visible, presenting: removal) { catalog in
-            Button("Remove Server", role: .destructive) { model.removeServer(catalog) }
+            Button("Remove Server", role: .destructive) { model.servers.remove(catalog) }
         } message: { _ in
             Text("Toy Box disconnects from it and removes its channels from this iPhone. Drafts stay saved, so adding it back finds them.")
         }

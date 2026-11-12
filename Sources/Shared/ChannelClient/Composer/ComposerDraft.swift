@@ -112,13 +112,15 @@ public final class ComposerDraft {
             .map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Where every draft is saved, as a file with a folder of its images beside it.
+    public nonisolated static var folder: URL { URL.savedWriting().appendingPathComponent("Drafts", isDirectory: true) }
+
     public static func shared(serverURL: URL, channelID: String, scope: Scope = .conversation,
                               imageIsReadable: @escaping @MainActor (Data) -> Bool,
                               rasterizeImage: (@Sendable (Data, Int) async -> CGImage?)? = nil) -> ComposerDraft {
         let key = storageKey(serverURL: serverURL, channelID: channelID, scope: scope)
         if let draft = drafts[key] { return draft }
-        let fileURL = URL.savedWriting().appendingPathComponent("Drafts", isDirectory: true)
-            .appendingPathComponent("\(key).json")
+        let fileURL = folder.appendingPathComponent("\(key).json")
         let draft = ComposerDraft(fileURL: fileURL, imageIsReadable: imageIsReadable, rasterizeImage: rasterizeImage)
         drafts[key] = draft
         return draft
@@ -129,21 +131,26 @@ public final class ComposerDraft {
         self.imageIsReadable = imageIsReadable
         self.rasterizeImage = rasterizeImage
         self.fileURL = fileURL
-        let imagesURL = fileURL?.deletingPathExtension()
         writer = fileURL.map(Writer.init(fileURL:))
         isSavedLocally = fileURL != nil
-        if let fileURL, let imagesURL, FileManager.default.fileExists(atPath: fileURL.path) {
+        load()
+    }
+
+    private func load() {
+        restoring = true
+        if let fileURL, FileManager.default.fileExists(atPath: fileURL.path) {
+            let imagesURL = fileURL.deletingPathExtension()
             isNew = false
             do {
                 let saved = try JSONDecoder().decode(Saved.self, from: Data(contentsOf: fileURL))
                 text = saved.text
-                for image in saved.images {
+                images = saved.images.map { image in
                     do {
                         let data = try Data(contentsOf: imagesURL.appendingPathComponent(image.id.uuidString))
-                        images.append(.init(id: image.id, name: image.name, mimeType: image.mimeType, data: data))
+                        return .init(id: image.id, name: image.name, mimeType: image.mimeType, data: data)
                     } catch {
-                        images.append(.init(id: image.id, name: image.name, mimeType: image.mimeType, data: Data()))
                         self.error = "\(image.name) could not be restored. Remove it and attach the image again: \(error.localizedDescription)"
+                        return .init(id: image.id, name: image.name, mimeType: image.mimeType, data: Data())
                     }
                 }
                 if images.contains(where: { !imageIsReadable($0.data) }), error == nil {
@@ -156,6 +163,52 @@ public final class ComposerDraft {
         }
         restoring = false
         normalizeUnsentImages()
+    }
+
+    /// A draft's channel and scope, on any server.
+    public struct Identity: Hashable {
+        public var channelID: String
+        public var scope: Scope
+
+        public init(_ channelID: String, _ scope: Scope) {
+            self.channelID = channelID
+            self.scope = scope
+        }
+    }
+
+    /// Moves a server's drafts to its new address, each where the new address has none with content.
+    /// A draft already open at the new address shows what moved, and one at the old address is
+    /// forgotten, so adding that address again reads its file.
+    static func move(from source: URL, to target: URL, identities: [Identity], folder: URL = folder) {
+        var moving: [(from: URL, to: URL)] = []
+        var opened: [ComposerDraft] = []
+        for identity in identities {
+            let from = storageKey(serverURL: source, channelID: identity.channelID, scope: identity.scope)
+            let to = storageKey(serverURL: target, channelID: identity.channelID, scope: identity.scope)
+            drafts[from] = nil
+            if let draft = drafts[to] {
+                guard !draft.hasContent else { continue }
+                opened.append(draft)
+            }
+            moving.append((folder.appendingPathComponent("\(from).json"), folder.appendingPathComponent("\(to).json")))
+        }
+        // After every write already waiting, so each file is the draft's latest.
+        Writer.queue.sync {
+            let files = FileManager.default
+            for (from, to) in moving where hasContent(at: from) && !hasContent(at: to) {
+                try? files.removeItem(at: to)
+                try? files.removeItem(at: to.deletingPathExtension())
+                try? files.moveItem(at: from, to: to)
+                try? files.moveItem(at: from.deletingPathExtension(), to: to.deletingPathExtension())
+            }
+        }
+        for draft in opened { draft.load() }
+    }
+
+    private nonisolated static func hasContent(at fileURL: URL) -> Bool {
+        guard let data = try? Data(contentsOf: fileURL), let saved = try? JSONDecoder().decode(Saved.self, from: data)
+        else { return false }
+        return !saved.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !saved.images.isEmpty
     }
 
     public var hasContent: Bool {

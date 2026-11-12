@@ -376,10 +376,6 @@ struct ServerLinksTests {
         #expect(studio.saved == saved)
         let reloaded = try JSONDecoder().decode(ChannelCatalogStore.Saved.self, from: JSONEncoder().encode(saved))
         #expect(reloaded == saved)
-        #expect(reloaded.moved(to: "HTTP://127.0.0.1:3100/") == .init(url: "HTTP://127.0.0.1:3100/", name: "Studio",
-                                                                     id: "studio-id", tailscaleAddress: saved.tailscaleAddress))
-        #expect(reloaded.moved(to: "http://127.0.0.1:3101") == .init(url: "http://127.0.0.1:3101", name: "Studio"),
-                "A new address may be another server, until it answers.")
 
         try studio.links.setTailscaleAddress("  ")
         #expect(studio.saved.tailscaleAddress == nil)

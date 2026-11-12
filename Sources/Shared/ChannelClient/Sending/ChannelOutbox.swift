@@ -12,7 +12,7 @@ public final class ChannelOutbox {
         /// Reused by every attempt, so the server never posts it twice.
         public let id: UUID
         /// The normalized server URL it goes to.
-        public let server: String
+        public internal(set) var server: String
         public let channelID: String
         public let text: String
         public let attachments: [ChannelAttachment]
@@ -193,6 +193,23 @@ public final class ChannelOutbox {
         let server = Self.key(catalog.api.baseURL)
         guard self.catalog(on: server) === catalog else { return }
         restart(waiting.filter { $0.server == server })
+        changed()
+    }
+
+    /// A server moved to a new address, so its messages, and the requests they answered, go with it.
+    /// Each keeps its ID, so the server never posts one twice, even one the old address already took.
+    func move(from old: URL, to new: URL) {
+        let from = Self.key(old), to = Self.key(new)
+        guard from != to else { return }
+        restart(lines.keys.filter { $0.server == from })
+        for (destination, requests) in answered where destination.server == from {
+            answered[destination] = nil
+            answered[Destination(server: to, channelID: destination.channelID), default: []].formUnion(requests)
+        }
+        for index in queue.indices where queue[index].server == from {
+            queue[index].server = to
+            save(queue[index])
+        }
         changed()
     }
 

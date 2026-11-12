@@ -21,7 +21,7 @@ struct LinkedSection: View {
                     LabeledContent(linked.addressLabel(for: address)) { Text(value).textSelection(.enabled) }
                 } else {
                     LinkAddressField(addresses: addresses, address: address, label: linked.addressLabel(for: address)) {
-                        addresses.save([address], in: model.catalogs, with: model.setTailscaleAddress)
+                        addresses.save([address], in: model.catalogs, with: model.servers.setTailscaleAddress)
                     }
                 }
             }
@@ -44,7 +44,7 @@ struct LinkedSection: View {
     }
 
     private func setLinked(_ isOn: Bool) async {
-        guard !isOn || addresses.save(asked, in: model.catalogs, with: model.setTailscaleAddress) else { return }
+        guard !isOn || addresses.save(asked, in: model.catalogs, with: model.servers.setTailscaleAddress) else { return }
         await model.catalogs.setLinked(catalog, isOn)
     }
 }
