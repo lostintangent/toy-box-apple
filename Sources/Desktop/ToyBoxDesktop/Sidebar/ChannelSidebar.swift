@@ -255,9 +255,10 @@ private struct Listed: Identifiable {
     var id: ChannelTarget { target }
 }
 
-/// A server's section header when the sidebar lists several: its status dot, or a spinner in the
-/// dot's slot, then its name, with the status line's help, VoiceOver value and failure as the hint.
-/// A collapsed one trails the waiting symbol while any of its channels waits.
+/// A server's section header when the sidebar lists several: its name, led by its dot only while
+/// it's failing, or by a spinner while a load runs long, with the status line's help, VoiceOver
+/// value and failure as the hint. A collapsed one trails the waiting symbol while any of its
+/// channels waits.
 private struct SidebarServerHeader: View {
     let catalog: ChannelCatalogStore
     let busy: Bool
@@ -276,7 +277,10 @@ private struct SidebarServerHeader: View {
         let host = SidebarFooter.server(address)
         let value = catalog.name == host ? footer.accessibilityValue : "\(host), \(footer.accessibilityValue)"
         HStack(spacing: 6) {
-            SidebarStatusDot(footer: footer, spinning: showsSpinner)
+            // A healthy server's name starts at the header's edge.
+            if footer.isFailing || showsSpinner {
+                SidebarStatusDot(footer: footer, spinning: showsSpinner)
+            }
             // The footer's status line at rest.
             Text(catalog.name).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
             if waits {

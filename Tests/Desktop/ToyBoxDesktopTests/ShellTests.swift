@@ -871,6 +871,70 @@ struct SidebarConnectionFooterTests {
         #expect(resting.width > 60 && resting.height > 0)
         #expect(size(spinning: true) == resting)
     }
+
+    /// A load that lands keeps the main actor busy just as the spinner's delay ends, so the delay's
+    /// resume waits in line while the load's end starts a new attempt that settles first.
+    @Test func theSpinnerSettlesWhenALoadEndsAsItsDelayDoes() async throws {
+        let probe = SpinnerProbe()
+        let view = NSHostingView(rootView: SpinnerProbeView(probe: probe))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 40, height: 40),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        defer { window.close() }
+        view.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        try await probe.until { probe.appeared }
+
+        probe.holdTheMainActor()
+        probe.busy = false
+        view.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        try await probe.until { probe.writes.contains(false) }
+        await Task.yield()
+        #expect(probe.spinning == false, "Writes: \(probe.writes)")
+    }
+}
+
+@MainActor @Observable private final class SpinnerProbe {
+    var busy = true
+    var spinning = false
+    var writes: [Bool] = []
+    var appeared = false
+
+    /// Keeps the main actor busy until well after the spinner's delay ends, so its resume waits in
+    /// line.
+    nonisolated func holdTheMainActor() {
+        Thread.sleep(forTimeInterval: 0.3)
+    }
+
+    /// Waits for the probe to change until the condition holds, or fails after its own deadline.
+    func until(_ condition: () -> Bool) async throws {
+        let (changes, change) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let deadline = Task {
+            try? await Task.sleep(for: .seconds(10))
+            change.finish()
+        }
+        defer {
+            deadline.cancel()
+            change.finish()
+        }
+        var iterator = changes.makeAsyncIterator()
+        while !withObservationTracking(condition, onChange: { change.yield() }) {
+            guard await iterator.next() != nil else { throw CancellationError() }
+        }
+    }
+}
+
+private struct SpinnerProbeView: View {
+    let probe: SpinnerProbe
+
+    var body: some View {
+        Color.clear
+            .modifier(SpinnerDelay(busy: probe.busy, delay: .milliseconds(20), spinning: Binding(
+                get: { probe.spinning }, set: { probe.spinning = $0; probe.writes.append($0) })))
+            .task { probe.appeared = true }
+    }
 }
 
 @MainActor

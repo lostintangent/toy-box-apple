@@ -475,10 +475,10 @@ private struct ChannelSidebarPlaceholder: View {
     }
 }
 
-/// A server's section header when the list shows several: its connection dot and name, then its
-/// channel count once its catalog has loaded, which collapse and expand its channels. A collapsed
-/// one trails the waiting symbol while any of its channels waits. A failing server's dot is its own
-/// button, over the header's, which opens the failure.
+/// A server's section header when the list shows several: its name, led by its dot only while it's
+/// failing, then its channel count once its catalog has loaded, which collapse and expand its
+/// channels. A collapsed one trails the waiting symbol while any of its channels waits. A failing
+/// server's dot is its own button, over the header's, which opens the failure.
 private struct ChannelSidebarServerHeader: View {
     let catalog: ChannelCatalogStore
     @Binding var isExpanded: Bool
@@ -500,10 +500,13 @@ private struct ChannelSidebarServerHeader: View {
             withAnimation { isExpanded.toggle() }
         } label: {
             HStack(spacing: 8) {
-                Circle()
-                    .fill(footer.dot)
-                    .frame(width: SidebarFailureDot.size, height: SidebarFailureDot.size)
-                    .opacity(failure == nil ? 1 : 0)
+                // A healthy server's name starts at the header's edge.
+                if footer.isFailing {
+                    Circle()
+                        .fill(footer.dot)
+                        .frame(width: SidebarFailureDot.size, height: SidebarFailureDot.size)
+                        .opacity(failure == nil ? 1 : 0)
+                }
                 Text(catalog.name).lineLimit(1).truncationMode(.middle)
                 if let channels {
                     Text(channels, format: .number)

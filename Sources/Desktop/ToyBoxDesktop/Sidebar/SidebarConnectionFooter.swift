@@ -98,7 +98,8 @@ struct SidebarConnectionFooter: View {
 }
 
 /// Shows the spinner only once an attempt has lasted the delay, and crossfades back to the dot when
-/// it resolves.
+/// it resolves. A delay that ends just as its attempt does resumes after the next attempt has
+/// written, so a canceled one never writes.
 struct SpinnerDelay: ViewModifier {
     let busy: Bool
     var delay: Duration = .milliseconds(300)
@@ -107,9 +108,8 @@ struct SpinnerDelay: ViewModifier {
 
     func body(content: Content) -> some View {
         content.task(id: busy) {
-            if busy {
-                do { try await Task.sleep(for: delay) } catch { return }
-            }
+            if busy { try? await Task.sleep(for: delay) }
+            guard !Task.isCancelled else { return }
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { spinning = busy }
         }
     }
