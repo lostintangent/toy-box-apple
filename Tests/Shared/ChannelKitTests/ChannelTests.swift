@@ -46,4 +46,28 @@ struct ChannelTests {
         #expect(try channel("").avatar == nil)
         #expect(try JSONDecoder().decode(Channel.self, from: JSONEncoder().encode(marked)) == marked)
     }
+
+    @Test func anAvatarChangeSetsTheChannelsAvatarAsARenameSetsItsName() throws {
+        let url = try #require(Bundle.module.url(forResource: "channel-snapshot", withExtension: "json",
+                                                subdirectory: "Fixtures"))
+        var state = try JSONDecoder().decode(ChannelState.self, from: Data(contentsOf: url))
+        state.channel.seenThrough = state.channel.latestSequence
+        let sequence = state.channel.latestSequence + 1
+        let message = try JSONDecoder().decode(ChannelMessage.self, from: Data("""
+            {"id":"avatar","sequence":\(sequence),"timestamp":"2026-11-12T05:30:00.000Z","sender":{"type":"system"},
+             "content":{"type":"channel_avatar_changed","actor":{"type":"agent","agentId":"lead"},
+                        "avatar":{"image":"/api/serve/machine/channels/c/avatar-0123.png"}}}
+            """.utf8))
+        let system = try #require(message.system)
+        #expect(system.actor == .agent("lead"))
+        #expect(system.avatar == .image("/api/serve/machine/channels/c/avatar-0123.png"))
+        #expect(try JSONDecoder().decode(ChannelMessage.self, from: JSONEncoder().encode(message)) == message)
+
+        let next = state.applying(.init(type: "message", revision: state.revision + 1, message: message))
+        #expect(next.channel.avatar == system.avatar)
+        #expect(next.channel.updatedAt == message.timestamp)
+        #expect(next.channel.unreadAfter == sequence - 1)
+        let missing = Data(#"{"type":"channel_avatar_changed","actor":{"type":"user"}}"#.utf8)
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(ChannelSystemContent.self, from: missing) }
+    }
 }

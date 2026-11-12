@@ -42,17 +42,24 @@ export function demoBookmarks(seeded: number[]): number[] {
 
 const avatarImage = fs.readFileSync(path.join(import.meta.dir, '..', 'fixtures', 'channel-avatar.png'));
 
-// TOY_BOX_DEMO_AVATAR=image|mark gives the channel a project icon, served as the server stores one
-// under a name that hashes its content, or a mark on its color. Without it, the channel shows its #.
-function demoAvatar(channelID: string): FixtureSnapshot['channel']['avatar'] {
+type Avatar = NonNullable<FixtureSnapshot['channel']['avatar']>;
+
+// A project icon, served as the server stores one under a name that hashes its content, or a mark
+// on its color.
+function avatarFor(kind: string, channelID: string): Avatar | undefined {
+  if (kind === 'mark') return { mark: 'M4 17 9 12l4 4 7-8', color: '#2f855a' };
+  if (kind !== 'image') return undefined;
+  const hash = createHash('sha256').update(avatarImage).digest('hex').slice(0, 16);
+  return { image: `/api/serve/machine/demo/.toy-box/channels/${channelID}/avatar-${hash}.png` };
+}
+
+// TOY_BOX_DEMO_AVATAR=image|mark gives the channel an avatar. Without it, the channel shows its #.
+function demoAvatar(channelID: string): Avatar | undefined {
   const value = process.env.TOY_BOX_DEMO_AVATAR;
   if (value === undefined) return undefined;
-  if (value === 'mark') return { mark: 'M4 17 9 12l4 4 7-8', color: '#2f855a' };
-  if (value === 'image') {
-    const hash = createHash('sha256').update(avatarImage).digest('hex').slice(0, 16);
-    return { image: `/api/serve/machine/demo/.toy-box/channels/${channelID}/avatar-${hash}.png` };
-  }
-  throw new Error(`TOY_BOX_DEMO_AVATAR must be image or mark, not "${value}"`);
+  const chosen = avatarFor(value, channelID);
+  if (!chosen) throw new Error(`TOY_BOX_DEMO_AVATAR must be image or mark, not "${value}"`);
+  return chosen;
 }
 
 // The fixture stays byte-identical to the reference export, so the demo adds the replies its
@@ -116,8 +123,10 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
       });
     }
   }
-  const avatarURL = snapshot.channel.avatar?.image;
-  if (typeof avatarURL === 'string') resources.set(avatarURL, { type: 'image/png', content: avatarImage });
+  const serveAvatar = (avatar: Snapshot | undefined) => {
+    if (typeof avatar?.image === 'string') resources.set(avatar.image, { type: 'image/png', content: avatarImage });
+  };
+  serveAvatar(snapshot.channel.avatar);
   const json = (response: ServerResponse, status: number, value: unknown) => {
     response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     response.end(JSON.stringify(value));
@@ -267,6 +276,27 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
       publish({ type: 'message', revision: snapshot.revision, message });
       response.writeHead(204);
       response.end();
+      return;
+    }
+    // Changes the avatar as the lead does, announced by a system message as a rename is.
+    // `?avatar=image|mark` picks one, and otherwise it switches between them.
+    if (request.method === 'POST' && pathname === '/demo/avatar') {
+      const kind = url.searchParams.get('avatar') ?? (snapshot.channel.avatar?.image ? 'mark' : 'image');
+      const next = avatarFor(kind, snapshot.channel.id);
+      if (!next) { json(response, 400, { error: 'Expected avatar=image or avatar=mark.' }); return; }
+      serveAvatar(next);
+      const timestamp = new Date().toISOString();
+      const sequence = snapshot.channel.latestSequence + 1;
+      const message = {
+        id: crypto.randomUUID(), sequence, timestamp, sender: { type: 'system' },
+        content: { type: 'channel_avatar_changed', actor: { type: 'agent', agentId: snapshot.lead.id }, avatar: next },
+      };
+      storedMessages.set(message.id, message);
+      snapshot.messages = [...snapshot.messages, message].slice(-100);
+      snapshot.revision++;
+      Object.assign(snapshot.channel, { avatar: next, latestSequence: sequence, updatedAt: timestamp });
+      publish({ type: 'message', revision: snapshot.revision, message });
+      json(response, 201, message);
       return;
     }
     const bookmarkPath = `${channelPath}/bookmarks/`;
