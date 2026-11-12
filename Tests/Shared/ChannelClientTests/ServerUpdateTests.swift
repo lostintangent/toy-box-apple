@@ -1,5 +1,6 @@
 import ChannelKit
 import Foundation
+import Observation
 import Synchronization
 import Testing
 @testable import ChannelClient
@@ -52,8 +53,9 @@ struct ServerUpdateTests {
         }
     }
 
-    /// Each phase the row shows, as SwiftUI sees it between turns of the main actor.
-    @MainActor private final class Phases {
+    /// Each phase the row shows, as SwiftUI sees it between turns of the main actor. It records a
+    /// phase a turn after the change, so a test waits on `seen` itself.
+    @MainActor @Observable fileprivate final class Phases {
         private(set) var seen: [ServerUpdate.Phase?] = []
 
         init(_ update: ServerUpdate) { track(update) }
@@ -226,9 +228,10 @@ struct ServerUpdateTests {
         try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/server") == 1 }
         #expect(catalog.phase == .connected)
         #expect(update.phase == .reconnecting, "The release it read before the restart is stale")
+        try await eventually { phases.seen.last == .reconnecting }
 
         #expect(mock.finishPendingResponses(path: "/api/v1/server") == 1)
-        try await eventually { update.phase == .idle }
+        try await eventually { phases.seen.last == .idle }
         #expect(update.version == ServerVersion(version: Self.new, installedVersion: Self.new))
         #expect(phases.seen == [.restartPending, .reconnecting, .idle])
         #expect(reads(mock) == 2, "The first connection didn't read a server nothing had read")
