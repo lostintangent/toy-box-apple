@@ -6,10 +6,12 @@ import { type Snapshot } from "./channels/types.ts";
 import { createDemoPushRoutes } from "./channels/push-routes.ts";
 import { writeHistoryPage } from "./channels/history-channel.ts";
 import { createDemoScreens } from "./channels/screens.ts";
+import { createDemoServerRoutes } from "./channels/server-routes.ts";
 
 export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snapshot" | "onChange">) {
     const push = createDemoPushRoutes();
     const screens = createDemoScreens();
+    const release = createDemoServerRoutes(demo.server);
     demo.server.on("upgrade", screens.upgrade);
     const catalog = createCatalogRoute(() => {
         const { lead: { name, role, avatar }, channel, request, members, presence } = demo.snapshot();
@@ -35,6 +37,7 @@ export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snap
             return;
         }
         if (screens.handle(request, response, url)) return;
+        if (release.handle(request, response, url)) return;
         const snapshot = demo.snapshot();
         if (request.method === "GET"
             && url.pathname === `/api/v1/channels/${encodeURIComponent(snapshot.channel.id)}/messages`) {
@@ -56,7 +59,7 @@ export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snap
         }
         originalHandler(request, response);
     });
-    return { push, catalog, screens };
+    return { push, catalog, screens, release };
 }
 
 if (import.meta.main) {
@@ -86,7 +89,7 @@ if (import.meta.main) {
             new URL("./fixtures/interaction-notes-long.md", import.meta.url)
         ).text());
     }
-    const { catalog, screens } = installDemoCatalogRoutes(demo);
+    const { catalog, screens, release } = installDemoCatalogRoutes(demo);
     demo.server.on("error", error => { console.error(error); process.exitCode = 1; });
     demo.server.listen(port, "127.0.0.1", () => {
         console.log(`Toy Box fixture: http://127.0.0.1:${port} · channel ${demo.snapshot().channel.id}`);
@@ -96,7 +99,14 @@ if (import.meta.main) {
         process.once(signal, () => {
             catalog.close();
             screens.close();
-            void demo.close().catch(error => { console.error(error); process.exitCode = 1; });
+            release.close();
+            const wasUp = release.isUp;
+            void demo.close().catch(error => {
+                // A server down for a restart has stopped listening already.
+                if (!wasUp) return;
+                console.error(error);
+                process.exitCode = 1;
+            });
         });
     }
 }
