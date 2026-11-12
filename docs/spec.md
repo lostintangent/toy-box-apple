@@ -178,8 +178,10 @@ couldn't be opened is Handoff's `missing`.
 ### Several servers
 
 Both apps can stay connected to several Toy Box servers at once. A server is its address, the
-normalized URL that drafts and push registrations already key on, and a name that starts as its
-host. Each server has its own `ChannelAPI`, catalog stream and channel stores, and every rule in
+normalized URL that drafts and push registrations already key on, and its name, which the server
+keeps for every device and lead, as Updating a server describes. The apps keep the last name they
+read, so a server that can't connect keeps its name, and a server too old to have one goes by its
+host, plus its port when it isn't the default. Each server has its own `ChannelAPI`, catalog stream and channel stores, and every rule in
 this spec holds within each server unchanged. Nothing else is new. Where this spec says a server
 change, it means changing or removing one server, which touches only that server's channels.
 Drafts stay keyed to the address, so adding it back finds them.
@@ -229,14 +231,19 @@ Drafts stay keyed to the address, so adding it back finds them.
   Connection and status sit below it. The list adds no inset of its own: its dots line up with
   the labels below, and it's as tall as its rows. Its card keeps the grouped Form's own padding
   around a list, a little roomier than the details card below it. On the phone, each row opens Welcome's Server URL card with
-  a Name field, Add Server follows the rows, and Edit reorders and deletes. Adding an address
-  that's already listed selects that server instead. Removing one asks first, then disconnects it
+  a Name field, Add Server follows the rows, and Edit reorders and deletes. Name renames the
+  server itself, for every device and every lead, through `PATCH /api/v1/server {name}`, which
+  answers the server. Clearing it gives the server back its computer's name, like "Mac mini", and
+  a name over 64 characters is refused with a 422 `{error}` and the server's reason. It's a
+  management write. A server too old to have a name can't be renamed. Adding an address that's
+  already listed, or a server whose `id` is already saved, selects that server instead. Removing one asks first, then disconnects it
   and removes its channels from Spotlight, notifications, widgets and Live Activities. The last
   server can't be removed, only given a new address, so Welcome appears only on first launch.
 - **Updating a server.** Settings' server list updates each server and restarts it onto the new
   release, the same way on both apps, through `GET /api/v1/server`, `POST /api/v1/server/update`
-  and `POST /api/v1/server/restart`. The server answers `version`, the release it runs, and
-  `installedVersion`, the release on disk, which is null when no package manager owns the install.
+  and `POST /api/v1/server/restart`. The server answers `id`, an identity it makes once and keeps,
+  `name`, `version`, the release it runs, `installedVersion`, the release on disk, which is null
+  when no package manager owns the install, and `links`, which Linking servers describes.
   Each row shows its server's version in secondary ink after the name. One Check for Updates
   serves the whole list: on the Mac at the trailing end of the list's bar, beside Add and Remove,
   and on the phone as a row after Add Server with `arrow.triangle.2.circlepath`. It's there
@@ -258,21 +265,28 @@ Drafts stay keyed to the address, so adding it back finds them.
   spins while they reconnect with the usual backoff and grace, then reads the new server and shows
   its version. A rejected restart shows its error the same way, with the old server still running,
   and a server that doesn't come back reads like any other that can't connect. The apps read
-  `GET /api/v1/server` while Settings shows the list, after each check and
-  each time a server reconnects. These are management writes: an update that times out or drops
+  `GET /api/v1/server` while Settings shows the list, after each check, each time a server
+  connects and each time the app comes to the foreground, which is how a rename made elsewhere
+  reaches them. These are management writes: an update that times out or drops
   may still have installed, so the row reads the server again before offering another try.
 - **Linking servers.** A linked server's channel leads can find and privately message the leads
   on the user's other linked servers, with every app closed. A link is the other server's origin,
   like `https://mac-mini.tail1234.ts.net` or `http://studio:3000`. Servers listen on `127.0.0.1`
   unless started with `--host`, so linked servers usually reach each other through
-  `tailscale serve`. The apps link through `GET`, `POST` with `{address}` and `DELETE ?address=`
-  on `/api/v1/server/links`, which each answer
-  `{links: ["https://mac-mini.tail1234.ts.net", "http://studio:3000"]}` in link order, and send
-  each address as its origin. Reading links contacts no other server. Linking and unlinking are
-  idempotent, and linking checks once that the other server is reachable, so a 422 `{error}`
-  means it refused and stored nothing, with the reason. A server that answers 404 is too old to
-  link. A link only works both ways, so the apps always link and unlink a pair of saved servers
-  in both directions. They match a link to a saved server by comparing origins, lowercased and
+  `tailscale serve`. The apps read a server's links from `GET /api/v1/server`, as
+  `links: ["https://mac-mini.tail1234.ts.net", "http://studio:3000"]` in link order, and change
+  them through `POST /api/v1/server/links` with `{address}` and `DELETE ?address=`, which each
+  answer the whole server, sending each address as its origin. Reading links contacts no other
+  server. Linking and unlinking are idempotent, and linking checks once that the other server is
+  reachable, so a 422 `{error}` means it refused and stored nothing, with the reason. A server
+  whose answer has no `links` is too old to link, and a server refuses to link with itself,
+  however it's addressed. A link works both ways: a server links and unlinks both ends itself,
+  giving the other end its own address as the request reached it, so a request to a loopback
+  address only changes that end. The apps change each pair with one request, sent to the end
+  saved at a non-loopback address, or to the first one's Tailscale address when both are saved
+  at loopback addresses, with the other end's origin in the body: its saved address, or for a
+  server saved at a loopback address, its Tailscale address.
+  They match a link to a saved server by comparing origins, lowercased and
   without a default port, using its saved address, or for a server saved at a loopback address
   only its Tailscale address below, since a loopback address names a different server on every
   machine. They leave links to servers the app hasn't saved alone and unshown.
