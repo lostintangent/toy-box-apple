@@ -277,9 +277,9 @@ struct ChannelOutboxTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let clock = TestClock()
         let served = Served(Self.catalog())
-        // A 409, for an ID another channel has, refuses like any other 4xx.
+        // A 422, as for an ID another channel has, refuses like any other 4xx.
         let mock = Self.transport(served) { number, _ in
-            number <= 2 ? Self.failure(number == 1 ? 409 : 422) : MockResponse(status: 201)
+            number <= 2 ? Self.failure(number == 1 ? 422 : 400) : MockResponse(status: 201)
         }
         let outbox = outbox(folder, clock: clock)
         let catalog = try await catalog(mock, outbox: outbox)
