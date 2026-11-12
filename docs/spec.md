@@ -380,6 +380,8 @@ management failure is 500 with a generic `{error}`, and details stay in server l
 follow a committed change, including a deletion, so the client never retries a write on 500,
 automatically or through an unchanged resubmission. It treats the outcome as uncertain and
 reconciles from the authoritative catalog or channel detail before offering another write.
+The apps show a server's own `{error}` words as they are, without a status code. Only a failure
+without them reads the generic status text with its code, like "bad gateway (HTTP 502)".
 A timeout or lost connection is also uncertain, since the request may already have reached the
 server. The same reconciliation is required. Can't-connect, offline and bad-host failures remain
 ordinary retryable errors rather than blocking management editing.
