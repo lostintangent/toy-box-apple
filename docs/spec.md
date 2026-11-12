@@ -299,15 +299,23 @@ Drafts stay keyed to the address, so adding it back finds them.
     switch: a yellow `exclamationmark.triangle.fill`, "Couldn't link with Mac mini (timed out).",
     or "Couldn't link Mac mini with Build Box (timed out)." for a pair that doesn't include this
     server, with the server's own error in parentheses, and Try Again, which repeats only that pair.
+    A server too old to link reads "(needs an update)" with no Try Again, and one missing its
+    Tailscale address reads "(needs its Tailscale address)".
     Results stay until Settings closes. These are management writes, so after a timeout or a lost
     connection the row reads both servers' links again before offering Try Again.
   - **A server without an HTTPS address.** A server saved at an `http://` address, like one on
-    this Mac at `127.0.0.1:3100`, links by its Tailscale address. When linking would need one, the
-    switch's card adds a "Tailscale address" field, which Add Server labels "Tailscale address for
-    Studio", with a placeholder like `studio.tail1234.ts.net` and a footer saying other servers
-    reach it through `tailscale serve`. It takes a host or an `https://` URL and refuses `http://`
-    with the reason. The app saves it with that server, and uses it to link and to recognize that
-    server's links. A server saved at an `https://` address, as the phone saves them, never asks.
+    this Mac at `127.0.0.1:3100`, links by its Tailscale address. The Linked card shows a field
+    under the switch for each saved server that linking would need one for, including other
+    servers, so turning a switch on never fails for a missing one. It reads "Tailscale address",
+    or "Tailscale address for Studio" for another server and in Add Server, with the placeholder
+    `machine.tail1234.ts.net` and the caption "Other servers reach Studio at this address, through
+    `tailscale serve`." It takes a host or an `https://` URL, and an `http://` one replaces the
+    caption with "Other servers reach Studio only over HTTPS, so use its host or an https://
+    address." and disables Add. Settings saves it on Return or when the field loses focus, with
+    that server, and the app uses it to link and to recognize that server's links. While the
+    server is linked, its address shows as a plain value, since changing it would strand the
+    others' links, and turning Linked off makes it editable again. A server saved at an
+    `https://` address, as the phone saves them, never asks.
   - **Removing a server doesn't unlink it,** because other devices and the web rely on the link.
     The apps store nothing else about links and read every saved server's links while Settings
     shows the list, and after each change.
