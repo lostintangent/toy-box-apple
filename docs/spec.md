@@ -180,8 +180,9 @@ couldn't be opened is Handoff's `missing`.
 Both apps can stay connected to several Toy Box servers at once. A server is its address, the
 normalized URL that drafts and push registrations already key on, and its name, which the server
 keeps for every device and lead, as Updating a server describes. The apps keep the last name they
-read, so a server that can't connect keeps its name, and a server too old to have one goes by its
-host, plus its port when it isn't the default. Each server has its own `ChannelAPI`, catalog stream and channel stores, and every rule in
+read, so a server that can't connect keeps its name, and a server that hasn't answered yet goes by
+its host, plus its port when it isn't the default. Every server runs Toy Box 0.4.0 or later, so
+nothing in the apps makes room for an older one. Each server has its own `ChannelAPI`, catalog stream and channel stores, and every rule in
 this spec holds within each server unchanged. Nothing else is new. Where this spec says a server
 change, it means moving or removing one server, which touches only that server's channels.
 Drafts stay keyed to the address, so adding it back finds them, and move with a server that moves.
@@ -225,7 +226,7 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   server's last update, and Retry refreshes every server. The morning digest stays one
   notification, and each line opens on its own server.
 - **Settings** lists the servers with their dots and names, even when there's one, so Add is
-  always there. On the Mac, they have their own Servers tab between General and Notifications,
+  always there. A row never shows its address, which only the server's details show. On the Mac, they have their own Servers tab between General and Notifications,
   and the list has Add and
   Remove buttons and drags to reorder, and the selected server's Name, Server URL and status sit
   below it. The list adds no inset of its own: its dots line up with
@@ -243,18 +244,16 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   and removes its channels from Spotlight, notifications, widgets and Live Activities. The last
   server can't be removed, so Welcome appears only on first launch.
 - **Naming a server.** Name renames the server itself, for every device and every lead, through
-  `PATCH /api/v1/server {name}`, which answers the server. Its caption reads "Every device and
-  lead sees this name. Clear it to use the computer's name." It saves on Return or when the field
-  loses focus, if the name changed, and clearing it gives the server back its computer's name,
-  like "Mac mini". The server answers a name longer than 64 UTF-16 units after trimming, where an
+  `PATCH /api/v1/server {name}`, which answers the server. The field has no caption. It saves on
+  Return or when the field loses focus, if the name changed, and clearing it gives the server back
+  its computer's name, like "Mac mini". The server answers a name longer than 64 UTF-16 units after trimming, where an
   emoji counts as 2, with 400 "Invalid request.", so the app checks the length itself and sends
   nothing. A name that's too long or a rename that fails keeps what the user typed and adds a row
   under the field, like a failed link: a yellow `exclamationmark.triangle.fill` and "Couldn't
   rename Mac mini.", with "Name must be 64 characters or fewer." or the error on a second line in
   secondary ink. It's a management write, so after a timeout or a lost connection the app reads
   the server again before showing a failure. While a server isn't connected, Name shows its last
-  name and can't be edited. A server too old to have a name shows its host as a plain value in
-  secondary ink, with the caption "Update nas.local:3000 to rename it."
+  name and can't be edited.
 - **Updating a server.** Settings' server list updates each server and restarts it onto the new
   release, the same way on both apps, through `GET /api/v1/server`, `POST /api/v1/server/update`
   and `POST /api/v1/server/restart`. The server answers `id`, an identity it makes once and keeps,
@@ -300,8 +299,7 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   answer the whole server, sending each address as its origin. Reading links contacts no other
   server. Linking and unlinking are idempotent, and linking checks once that the other server is
   reachable, so a 422 `{error}` means it refused and stored nothing, with the reason. A server
-  whose answer has no `links` is too old to link, and a server refuses to link with itself,
-  however it's addressed. A link works both ways: a request that reached a server at a
+  refuses to link with itself, however it's addressed. A link works both ways: a request that reached a server at a
   non-loopback address links or unlinks both ends, and one that reached it at a loopback address
   changes only that server. A request for a pair already in that state answers at once without
   reaching the other end, so the apps send each pair one request, to the end it changes. When only
@@ -326,22 +324,17 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
     linked, so every server showing the symbol can reach every other. Turning the switch on links
     the server with every linked server, or, when none is linked yet, links every saved server
     with every other. Turning it off unlinks it from every other saved server. The card shows only
-    when the app has two or more saved servers and at least one of them can link, so linking stays
-    out of sight until a server supports it. A server too old to link shows the switch off and
-    disabled, with a footer like "Update Mac mini to link it.", and other footers and links leave
-    it out. When a server is the only saved one that can link, its switch is off and disabled with
-    "Update your other servers to link it."
-  - **Add Server.** When a saved server can link, the sheet, and the phone's Add Server page, show
-    the same switch under the address, on by default, with a footer naming the servers it would
-    link with. It links once the server is added, and Settings then selects the new server. A new
-    server too old to link is added unlinked, and its details say so through the disabled switch.
+    when the app has two or more saved servers.
+  - **Add Server.** When a server is already saved, the sheet, and the phone's Add Server page,
+    show the same switch under the address, on by default, with a footer naming the servers it
+    would link with. It links once the server is added, and Settings then selects the new server.
   - **Failures.** Each change links once, with no retry and nothing in the background, so it can
     never fight an unlink made elsewhere. Each server that didn't link adds one row under the
     switch: a yellow `exclamationmark.triangle.fill`, "Couldn't link with Mac mini.", "Couldn't
     link Mac mini with Build Box." for a pair that doesn't include this server, or "Couldn't
     unlink from Mac mini.", with the reason on a second line in secondary ink, and Try Again,
-    which repeats only that pair. The reason is the server's own words, or "Mac mini needs an
-    update.", which gets no Try Again, or "Studio needs its Tailscale address."
+    which repeats only that pair. The reason is the server's own words, or "Studio needs its
+    Tailscale address."
     Results stay until Settings closes. These are management writes, so after a timeout or a lost
     connection the row reads both servers' links again before offering Try Again.
   - **A server on this Mac.** Other servers can't reach a server saved at a loopback address,
