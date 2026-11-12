@@ -231,15 +231,23 @@ Drafts stay keyed to the address, so adding it back finds them.
   Connection and status sit below it. The list adds no inset of its own: its dots line up with
   the labels below, and it's as tall as its rows. Its card keeps the grouped Form's own padding
   around a list, a little roomier than the details card below it. On the phone, each row opens Welcome's Server URL card with
-  a Name field, Add Server follows the rows, and Edit reorders and deletes. Name renames the
-  server itself, for every device and every lead, through `PATCH /api/v1/server {name}`, which
-  answers the server. Clearing it gives the server back its computer's name, like "Mac mini". The
-  server answers a name longer than 64 UTF-16 units after trimming, where an emoji counts as 2,
-  with 400 "Invalid request.", so the app checks the length itself and says so without sending it. It's a
-  management write. A server too old to have a name can't be renamed. Adding an address that's
+  a Name field, Add Server follows the rows, and Edit reorders and deletes. Adding an address that's
   already listed, or a server whose `id` is already saved, selects that server instead. Removing one asks first, then disconnects it
   and removes its channels from Spotlight, notifications, widgets and Live Activities. The last
   server can't be removed, only given a new address, so Welcome appears only on first launch.
+- **Naming a server.** Name renames the server itself, for every device and every lead, through
+  `PATCH /api/v1/server {name}`, which answers the server. Its caption reads "Every device and
+  lead sees this name. Clear it to use the computer's name." It saves on Return or when the field
+  loses focus, if the name changed, and clearing it gives the server back its computer's name,
+  like "Mac mini". The server answers a name longer than 64 UTF-16 units after trimming, where an
+  emoji counts as 2, with 400 "Invalid request.", so the app checks the length itself and sends
+  nothing. A name that's too long or a rename that fails keeps what the user typed and adds a row
+  under the field, like a failed link: a yellow `exclamationmark.triangle.fill` and "Couldn't
+  rename Mac mini.", with "Name must be 64 characters or fewer." or the error on a second line in
+  secondary ink. It's a management write, so after a timeout or a lost connection the app reads
+  the server again before showing a failure. While a server isn't connected, Name shows its last
+  name and can't be edited. A server too old to have a name shows its host as a plain value in
+  secondary ink, with the caption "Update nas.local:3000 to rename it."
 - **Updating a server.** Settings' server list updates each server and restarts it onto the new
   release, the same way on both apps, through `GET /api/v1/server`, `POST /api/v1/server/update`
   and `POST /api/v1/server/restart`. The server answers `id`, an identity it makes once and keeps,
@@ -293,7 +301,8 @@ Drafts stay keyed to the address, so adding it back finds them.
   They match a link to a saved server by comparing origins, lowercased and
   without a default port, using its saved address, or for a server saved at a loopback address
   only its Tailscale address below, since a loopback address names a different server on every
-  machine. They leave links to servers the app hasn't saved alone and unshown.
+  machine. They leave links to servers the app hasn't saved alone, and offer those servers under
+  Other Linked Servers.
   - **The list.** A saved server is linked when it and another saved server each list the other.
     Its row shows `link` in secondary ink after its name, 11 pt on the Mac and 13 pt on the
     phone, and VoiceOver adds "linked". Nothing else in the row changes, and a server that's
@@ -339,9 +348,21 @@ Drafts stay keyed to the address, so adding it back finds them.
     changing it would strand the others' links, and turning Linked off makes it editable again.
     A server saved at any other address, as the phone saves them, links by that address and never
     asks.
-  - **Removing a server doesn't unlink it,** because other devices and the web rely on the link.
+  - **Removing a server doesn't unlink it,** because other devices and the web rely on the link,
+    so a removed server that's still linked shows under Other Linked Servers.
     The apps store nothing else about links and read every saved server's links while Settings
     shows the list, and after each change.
+  - **Other Linked Servers.** Settings offers the servers that saved servers are linked with but
+    this device hasn't saved, so a link made on another device reaches this one. While Settings
+    shows the list, the app reads `GET /api/v1/server` at each link that matches no saved server,
+    and offers each one that answers from this device with an `id` that isn't saved, once, in
+    Settings order and then link order. A server that doesn't answer isn't shown. The section,
+    titled "Other Linked Servers", shows only when it has a server, after the server list on the
+    phone and at the end of the Servers tab on the Mac, so the details stay under the list. Each
+    row shows the server's name, its address under it in secondary ink, and Add, a plain button
+    on the Mac and a tinted one on the phone. The footer reads "Your servers are linked with
+    these. Add one to see its channels on this Mac.", or "on this iPhone." Add saves the server
+    at that address, at the end of the list, without changing any links, and the Mac selects it.
 
 ### Sending
 
