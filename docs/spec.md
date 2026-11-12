@@ -234,8 +234,8 @@ Drafts stay keyed to the address, so adding it back finds them.
   a Name field, Add Server follows the rows, and Edit reorders and deletes. Name renames the
   server itself, for every device and every lead, through `PATCH /api/v1/server {name}`, which
   answers the server. Clearing it gives the server back its computer's name, like "Mac mini". The
-  server answers a name over 64 characters after trimming with 400 "Invalid request.", so the app
-  checks the length itself and says so without sending it. It's a
+  server answers a name longer than 64 UTF-16 units after trimming, where an emoji counts as 2,
+  with 400 "Invalid request.", so the app checks the length itself and says so without sending it. It's a
   management write. A server too old to have a name can't be renamed. Adding an address that's
   already listed, or a server whose `id` is already saved, selects that server instead. Removing one asks first, then disconnects it
   and removes its channels from Spotlight, notifications, widgets and Live Activities. The last
