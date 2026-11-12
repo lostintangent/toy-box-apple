@@ -259,7 +259,10 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   release, the same way on both apps, through `GET /api/v1/server`, `POST /api/v1/server/update`
   and `POST /api/v1/server/restart`. The server answers `id`, an identity it makes once and keeps,
   `name`, `version`, the release it runs, `installedVersion`, the release on disk, which is null
-  when no package manager owns the install, and `links`, which Linking servers describes.
+  when no package manager owns the install, `links`, which Linking servers describes, and
+  `accentColor`, the server's accent as `#` and six hex digits, `#facc15` until someone changes
+  it from the web, an agent or a `PATCH`. The apps keep it on each server, but nothing shows it
+  or changes it yet, so both apps keep the system accent.
   Each row shows its server's version in secondary ink after the name. One Check for Updates
   serves the whole list: on the Mac at the trailing end of the list's bar, beside Add and Remove,
   and on the phone as a row after Add Server with `arrow.triangle.2.circlepath`. It's there
