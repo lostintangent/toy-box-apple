@@ -296,11 +296,11 @@ Drafts stay keyed to the address, so adding it back finds them.
     server too old to link is added unlinked, and its details say so through the disabled switch.
   - **Failures.** Each change links once, with no retry and nothing in the background, so it can
     never fight an unlink made elsewhere. Each server that didn't link adds one row under the
-    switch: a yellow `exclamationmark.triangle.fill`, "Couldn't link with Mac mini (timed out).",
-    or "Couldn't link Mac mini with Build Box (timed out)." for a pair that doesn't include this
-    server, with the server's own error in parentheses, and Try Again, which repeats only that pair.
-    A server too old to link reads "(needs an update)" with no Try Again, and one missing its
-    Tailscale address reads "(needs its Tailscale address)".
+    switch: a yellow `exclamationmark.triangle.fill`, "Couldn't link with Mac mini.", "Couldn't
+    link Mac mini with Build Box." for a pair that doesn't include this server, or "Couldn't
+    unlink from Mac mini.", with the reason on a second line in secondary ink, and Try Again,
+    which repeats only that pair. The reason is the server's own words, or "Mac mini needs an
+    update.", which gets no Try Again, or "Studio needs its Tailscale address."
     Results stay until Settings closes. These are management writes, so after a timeout or a lost
     connection the row reads both servers' links again before offering Try Again.
   - **A server without an HTTPS address.** A server saved at an `http://` address, like one on
