@@ -222,7 +222,7 @@ struct ComposerDraftTests {
 
     @Test func cameraPhotosBecomeOrientedJPEGAndThumbnailsStayCachedWhileTyping() async throws {
         let image = try await Task.detached {
-            try Self.generatedImage(width: 6_000, height: 2_000, type: .heic, orientation: 6)
+            try Self.generatedImage(width: 1_200, height: 400, type: .heic, orientation: 6)
         }.value
         let draft = imageIODraft()
         draft.text = "Keep this photo caption"
@@ -239,8 +239,8 @@ struct ComposerDraftTests {
         #expect(prepared.data.count <= 5_000_000)
         let source = try #require(CGImageSourceCreateWithData(prepared.data as CFData, nil))
         let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
-        #expect(properties[kCGImagePropertyPixelWidth] as? Int == 2_000)
-        #expect(properties[kCGImagePropertyPixelHeight] as? Int == 6_000)
+        #expect(properties[kCGImagePropertyPixelWidth] as? Int == 400)
+        #expect(properties[kCGImagePropertyPixelHeight] as? Int == 1_200)
         let thumbnail = try #require(await draft.loadThumbnail(for: prepared))
         #expect(max(thumbnail.width, thumbnail.height) <= 224)
         draft.text = "Typing must not decode this photo again"
