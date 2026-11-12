@@ -25,7 +25,8 @@ public struct ServerVersion: Codable, Equatable, Sendable {
 /// A server's release in Settings' server list: checking for a newer one and restarting onto it.
 /// Each catalog has one, so every window agrees. Settings reads it with `refresh()` while it shows
 /// the list, and once something has, each catalog stream that connects reads it again. The list's
-/// one Check for Updates checks every server together with `checkForUpdates()`.
+/// one Check for Updates checks every server together with `checkForUpdates()`. A restart is an
+/// ordinary disconnect, so the row shows `.reconnecting` for it as it would for any other.
 @MainActor @Observable
 public final class ServerUpdate {
     /// What the server's row offers.
@@ -36,8 +37,10 @@ public final class ServerUpdate {
         case checking
         /// Restart, because the installed release isn't the one running.
         case restartPending
-        /// A spinner until the server reconnects running the installed release.
-        case restarting
+        /// A spinner in the version's place while the app reconnects to the server, for any reason,
+        /// until it connects and reads the server again, so a stale release can't offer Restart. A
+        /// server that fails for the catalog's grace shows that failure instead.
+        case reconnecting
     }
 
     /// How the last check or restart ended. It stays until the next check, until Settings closes and
@@ -49,40 +52,31 @@ public final class ServerUpdate {
         case failed(String)
     }
 
-    private enum Activity { case checking, restarting }
-
     /// The server's last answer. Nil until it answers, and for a server that predates the route.
     public private(set) var version: ServerVersion?
     public private(set) var outcome: Outcome?
-    private var activity: Activity?
+    private var isChecking = false
+    /// The catalog's stream isn't live and hasn't failed for the grace, or it has just reconnected
+    /// and the read that follows hasn't answered. Its catalog keeps it current.
+    private(set) var isReconnecting = false
+    /// Each change in the catalog's connection, so a read after a reconnect that the stream has since
+    /// dropped again doesn't end the reconnect.
+    @ObservationIgnored private var connection = UUID()
     /// Something has read the server, so each connection reads it again.
     @ObservationIgnored private var isRead = false
     @ObservationIgnored private let api: ChannelAPI
-    @ObservationIgnored private let sleep: @Sendable (TimeInterval) async throws -> Void
-    @ObservationIgnored private var restartDeadline: Task<Void, Never>?
 
-    /// How long a restarted server has to come back before its row says it didn't.
-    static let restartWait: TimeInterval = 60
-    /// The failure a row shows when its server hasn't come back within `restartWait`.
-    public static let unreturnedRestart = "Didn't come back after restarting"
-
-    /// `sleep` times the restart's deadline. Tests pass one they end instead of waiting.
-    public init(api: ChannelAPI,
-                sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
+    public init(api: ChannelAPI) {
         self.api = api
-        self.sleep = sleep
     }
 
-    /// Nil when the row offers neither action, because the server hasn't answered, predates the
-    /// route or has no installed release.
+    /// Nil when the row offers neither action and isn't reconnecting, because the server hasn't
+    /// answered, predates the route or has no installed release.
     public var phase: Phase? {
-        switch activity {
-        case .checking: return .checking
-        case .restarting: return .restarting
-        case nil:
-            guard let version, version.installedVersion != nil else { return nil }
-            return version.isRestartPending ? .restartPending : .idle
-        }
+        if isChecking { return .checking }
+        if isReconnecting { return .reconnecting }
+        guard let version, version.installedVersion != nil else { return nil }
+        return version.isRestartPending ? .restartPending : .idle
     }
 
     /// Reads the server. A failure keeps the last answer, since the server's connection status
@@ -97,10 +91,10 @@ public final class ServerUpdate {
     /// words. Any other failure may still have installed, so the row reads the server, and shows the
     /// failure only if nothing new was installed.
     public func check() async {
-        guard activity == nil, let installed = version?.installedVersion else { return }
-        activity = .checking
+        guard !isChecking, let installed = version?.installedVersion else { return }
+        isChecking = true
         outcome = nil
-        defer { activity = nil }
+        defer { isChecking = false }
         do {
             let current = try await api.updateServer()
             apply(current)
@@ -116,38 +110,45 @@ public final class ServerUpdate {
         if outcome != nil { outcome = nil }
     }
 
-    /// Asks the server to restart onto its installed release. It answers before it shuts down, so
-    /// the row stays `.restarting` until the catalog's stream reconnects and a read finds the
-    /// installed release running. A rejection, or a server it can't reach, offers Restart again.
-    /// Any other failure may still have restarted, so the row reads the server. One that answers
-    /// decides, and one that doesn't is likely restarting, so the row waits for it. A server that
-    /// hasn't come back within `restartWait` fails with `unreturnedRestart`, and the row still
-    /// returns to its version once a read reaches it.
+    /// Asks the server to restart onto its installed release. One that accepts answers, then drops
+    /// every connection at once, so the row reconnects as it would for any disconnect and then shows
+    /// the release the server came back running. A rejection keeps Restart, with the server's words.
+    /// A restart whose answer never arrives needs nothing, since the catalog's connection reports a
+    /// server that doesn't come back.
     public func restart() async {
         guard phase == .restartPending else { return }
-        activity = .restarting
         outcome = nil
         do {
             try await api.restartServer()
         } catch {
-            if ChannelManagementWriteRecovery.Phase.isRequired(after: error) {
-                do { try await read() } catch {
-                    awaitReturn()
-                    return
-                }
-            }
-            guard activity == .restarting else { return }
-            activity = nil
+            guard case .http? = error as? ChannelAPIError else { return }
             outcome = .failed(error.localizedDescription)
-            return
         }
-        awaitReturn()
     }
 
-    /// The catalog's stream delivered its first catalog, so the server may have restarted.
+    /// The catalog's stream is open but not live, and hasn't failed for the grace.
+    func catalogReconnecting() {
+        connection = UUID()
+        isReconnecting = true
+    }
+
+    /// The catalog's stream failed for the grace or stopped, so the row shows that instead.
+    func catalogDisconnected() {
+        connection = UUID()
+        isReconnecting = false
+    }
+
+    /// The catalog's stream delivered its first catalog, so the server may have restarted. Once
+    /// something has read the server, the row stays reconnecting until it reads the server again.
     func catalogConnected() {
+        let read = UUID()
+        connection = read
+        isReconnecting = isRead
         guard isRead else { return }
-        Task { await refresh() }
+        Task {
+            await refresh()
+            if connection == read { isReconnecting = false }
+        }
     }
 
     private func read() async throws {
@@ -157,23 +158,8 @@ public final class ServerUpdate {
     }
 
     private func apply(_ current: ServerVersion?) {
-        if current != version || outcome == .failed(Self.unreturnedRestart) { outcome = nil }
+        if current != version { outcome = nil }
         version = current
-        if activity == .restarting, current?.isRestartPending != true {
-            activity = nil
-            restartDeadline?.cancel()
-        }
-    }
-
-    private func awaitReturn() {
-        guard activity == .restarting else { return }
-        restartDeadline?.cancel()
-        restartDeadline = Task { [weak self, sleep] in
-            try? await sleep(Self.restartWait)
-            guard !Task.isCancelled, let self, activity == .restarting else { return }
-            activity = nil
-            outcome = .failed(Self.unreturnedRestart)
-        }
     }
 }
 
@@ -189,12 +175,14 @@ extension [ChannelCatalogStore] {
     }
 
     /// Asks every connected server with an installed release to install whatever is newer, all at
-    /// once, and returns when every check ends. Servers that are offline or have no installed release
-    /// are skipped, and every row's last outcome clears.
+    /// once, and returns when every check ends. Servers that are offline or reconnecting, or have no
+    /// installed release, are skipped, and every row's last outcome clears.
     @MainActor public func checkForUpdates() async {
         guard !isCheckingForUpdates else { return }
         for catalog in self { catalog.update.clearOutcome() }
-        let checking = filter { $0.phase == .connected && $0.update.version?.installedVersion != nil }
+        let checking = filter {
+            $0.phase == .connected && !$0.update.isReconnecting && $0.update.version?.installedVersion != nil
+        }
         await withTaskGroup(of: Void.self) { group in
             for catalog in checking { group.addTask { await catalog.update.check() } }
         }

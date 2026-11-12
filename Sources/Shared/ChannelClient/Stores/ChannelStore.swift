@@ -584,7 +584,10 @@ public final class ChannelCatalogStore {
     public private(set) var working: Set<String> = []
     public private(set) var isActive = true
     public private(set) var phase: ChannelCatalogPhase = .connecting {
-        didSet { syncWorking() }
+        didSet {
+            syncWorking()
+            syncReconnecting()
+        }
     }
     /// Whether a catalog has arrived. It stays true through failures, so the rows stay.
     public var isLoaded: Bool { state != nil }
@@ -762,6 +765,13 @@ public final class ChannelCatalogStore {
         for store in detailStores.values { store.retryPromptly() }
     }
 
+    /// Tells the server's row whether the app is reconnecting: the stream is open but not live, and
+    /// hasn't failed for the grace. Once it's live, `ServerUpdate.catalogConnected()` takes over.
+    private func syncReconnecting() {
+        if stream == nil || phase.failure != nil { update.catalogDisconnected() }
+        else if !isLive { update.catalogReconnecting() }
+    }
+
     /// Shares who's working with every channel's store, so their presence agrees with the sidebar.
     private func syncWorking() {
         working = phase.failure == nil ? Set(state?.working ?? []) : []
@@ -813,6 +823,7 @@ public final class ChannelCatalogStore {
                 }
             }
         }
+        syncReconnecting()
     }
 
     /// Applies what the stream read. Returns whether reading continues. A change applies only on top
@@ -851,6 +862,7 @@ public final class ChannelCatalogStore {
         if isRequested || phase.failure != nil || now().timeIntervalSince(since) >= reconnectPolicy.grace {
             phase = .failed(error)
         }
+        syncReconnecting()
         settleRequest()
         isBackingOff = true
         return reconnectPolicy.delay(attempt: attempt)
@@ -895,6 +907,7 @@ public final class ChannelCatalogStore {
         isBackingOff = false
         pathWatch?.cancel()
         pathWatch = nil
+        syncReconnecting()
         settleRequest()
     }
 

@@ -15,9 +15,12 @@ struct ServerUpdateTests {
             var running = ServerUpdateTests.old
             var installed: String? = ServerUpdateTests.old
             var update = MockResponse(status: 404)
-            var restart = MockResponse(status: 202)
+            /// Nil loses the connection before the server answers.
+            var restart: MockResponse? = MockResponse(status: 202)
             /// Answers a read instead of the releases, as a failing server would.
             var read: MockResponse?
+            /// Refuses every connection, as a server that's down would.
+            var isDown = false
         }
         let answers = Mutex(Answers())
 
@@ -30,13 +33,15 @@ struct ServerUpdateTests {
         }
 
         func response(to request: URLRequest) throws -> MockResponse {
-            try answers.withLock { answers in
-                switch (request.httpMethod ?? "GET", request.url?.path ?? "") {
+            try answers.withLock { answers throws -> MockResponse in
+                if answers.isDown { throw URLError(.cannotConnectToHost) }
+                return switch (request.httpMethod ?? "GET", request.url?.path ?? "") {
                 case ("GET", "/api/v1/channels"): try .catalogStream(ChannelCatalog(lead: testLeadProfile))
                 case ("GET", "/api/v1/server"):
                     try answers.read ?? .json(ServerVersion(version: answers.running, installedVersion: answers.installed))
                 case ("POST", "/api/v1/server/update"): answers.update
-                case ("POST", "/api/v1/server/restart"): answers.restart
+                case ("POST", "/api/v1/server/restart"):
+                    if let restart = answers.restart { restart } else { throw URLError(.networkConnectionLost) }
                 default: MockResponse(status: 404)
                 }
             }
@@ -44,6 +49,20 @@ struct ServerUpdateTests {
 
         func transport() -> MockTransport {
             MockTransport { [self] request, _ in try response(to: request) }
+        }
+    }
+
+    /// Each phase the row shows, as SwiftUI sees it between turns of the main actor.
+    @MainActor private final class Phases {
+        private(set) var seen: [ServerUpdate.Phase?] = []
+
+        init(_ update: ServerUpdate) { track(update) }
+
+        private func track(_ update: ServerUpdate) {
+            let phase = withObservationTracking { update.phase } onChange: { [weak self] in
+                Task { @MainActor in self?.track(update) }
+            }
+            if seen.last != phase { seen.append(phase) }
         }
     }
 
@@ -183,64 +202,39 @@ struct ServerUpdateTests {
         }
     }
 
-    @Test func aRestartHoldsUntilTheServerReconnectsRunningTheInstalledRelease() async throws {
+    @Test func aRestartIsAnOrdinaryReconnectWithNoRestartBeforeTheNewRelease() async throws {
         let server = Server(installed: Self.new)
         let mock = server.transport()
         let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 0.01, grace: 60))
         catalog.startPolling()
         defer { catalog.stopPolling() }
-        try await eventually { catalog.isLoaded }
+        try await eventually { catalog.phase == .connected }
         let update = catalog.update
         await update.refresh()
-        #expect(update.phase == .restartPending)
+        let phases = Phases(update)
 
         await update.restart()
-        #expect(update.phase == .restarting)
-        await update.refresh()
-        #expect(update.phase == .restarting, "A read before the server goes down keeps waiting")
+        #expect(update.phase == .restartPending, "The server answers before it drops its connections")
+        #expect(update.outcome == nil)
 
-        server.set { $0.running = Self.new }
+        let back = try JSONEncoder().encode(ServerVersion(version: Self.new, installedVersion: Self.new))
+        server.set {
+            $0.running = Self.new
+            $0.read = MockResponse(body: back, keepOpen: true)
+        }
         #expect(mock.finishPendingResponses(path: "/api/v1/channels") == 1)
+        try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/server") == 1 }
+        #expect(catalog.phase == .connected)
+        #expect(update.phase == .reconnecting, "The release it read before the restart is stale")
+
+        #expect(mock.finishPendingResponses(path: "/api/v1/server") == 1)
         try await eventually { update.phase == .idle }
         #expect(update.version == ServerVersion(version: Self.new, installedVersion: Self.new))
-        #expect(reads(mock) == 3, "The first connection didn't read a server nothing had read")
+        #expect(phases.seen == [.restartPending, .reconnecting, .idle])
+        #expect(reads(mock) == 2, "The first connection didn't read a server nothing had read")
     }
 
-    @Test func aRestartThatDoesntComeBackWithinAMinuteSaysSoUntilTheServerAnswers() async throws {
-        let server = Server(installed: Self.new)
-        let timer = GraceTimer()
-        let waits = Mutex<[TimeInterval]>([])
-        let update = ServerUpdate(api: try server.transport().api(), sleep: { wait in
-            waits.withLock { $0.append(wait) }
-            await timer.wait()
-        })
-        await update.refresh()
-
-        await update.restart()
-        server.set { $0.read = MockResponse(status: 503) }
-        timer.end()
-        try await eventually { update.outcome != nil }
-        #expect(waits.withLock { $0 } == [ServerUpdate.restartWait])
-        #expect(update.phase == .restartPending)
-        #expect(update.outcome == .failed(ServerUpdate.unreturnedRestart))
-        await update.refresh()
-        #expect(update.outcome == .failed(ServerUpdate.unreturnedRestart), "A server still down keeps saying so")
-
-        server.set { $0.read = nil }
-        await update.refresh()
-        #expect(update.phase == .restartPending)
-        #expect(update.outcome == nil, "A server back on its old release returns the row to its version")
-
-        await update.restart()
-        timer.end()
-        try await eventually { update.outcome != nil }
-        server.set { $0.running = Self.new }
-        await update.refresh()
-        #expect(update.phase == .idle)
-        #expect(update.outcome == nil)
-    }
-
-    @Test func aRestartThatFailsOffersRestartAgainUnlessTheServerMayBeRestarting() async throws {
+    @Test func aRejectedRestartKeepsRestartWithTheServersWordsAndALostAnswerShowsNothing() async throws {
         let server = Server(installed: Self.new)
         let mock = server.transport()
         let update = ServerUpdate(api: try mock.api())
@@ -250,24 +244,56 @@ struct ServerUpdateTests {
         await update.restart()
         #expect(update.phase == .restartPending)
         #expect(update.outcome == .failed(failure(422, "The installed release doesn't run.")))
-        #expect(reads(mock) == 1)
 
         server.set { $0.restart = MockResponse(status: 502) }
         await update.restart()
-        #expect(reads(mock) == 2)
-        #expect(update.phase == .restartPending, "The server answered still running the old release")
+        #expect(update.phase == .restartPending)
         #expect(update.outcome == .failed(failure(502)))
 
-        server.set { $0.read = MockResponse(status: 503) }
+        server.set { $0.restart = nil }
         await update.restart()
-        #expect(update.phase == .restarting, "A server that can't answer is likely restarting")
-        #expect(update.outcome == nil)
+        #expect(update.phase == .restartPending)
+        #expect(update.outcome == nil, "The catalog's connection reports a server that doesn't come back")
+        #expect(reads(mock) == 1, "A restart reads nothing of its own")
+    }
 
-        server.set {
-            $0.read = nil
-            $0.running = Self.new
-        }
+    @Test func aRowSpinsWhileItsServerReconnectsForAnyReasonUntilItFailsForTheGrace() async throws {
+        let server = Server()
+        let mock = server.transport()
+        let clock = Mutex(Date.now)
+        let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 0.01, maximumDelay: 0.05, grace: 10),
+                                          now: { clock.withLock { $0 } })
+        let update = catalog.update
+        catalog.startPolling()
+        defer { catalog.stopPolling() }
+        #expect(update.phase == .reconnecting, "Connecting at first is reconnecting too")
+        try await eventually { catalog.phase == .connected }
+        #expect(update.phase == nil, "Nothing had read the server, so the row doesn't wait for a read")
         await update.refresh()
         #expect(update.phase == .idle)
+
+        server.set { $0.isDown = true }
+        #expect(mock.finishPendingResponses(path: "/api/v1/channels") == 1)
+        try await eventually { update.phase == .reconnecting }
+        #expect(catalog.phase == .connected, "A drop stays quiet within the grace")
+        await [catalog].checkForUpdates()
+        #expect(!mock.requests.contains { $0.url?.path == "/api/v1/server/update" },
+                "A server that's reconnecting isn't checked")
+
+        clock.withLock { $0 += 10 }
+        try await eventually { catalog.phase.failure != nil }
+        #expect(update.phase == .idle, "A server that failed for the grace shows its failure instead")
+
+        let current = try JSONEncoder().encode(ServerVersion(version: Self.old, installedVersion: Self.old))
+        server.set {
+            $0.isDown = false
+            $0.read = MockResponse(body: current, keepOpen: true)
+        }
+        await catalog.refresh()
+        #expect(catalog.phase == .connected)
+        try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/server") == 1 }
+        #expect(update.phase == .reconnecting, "It reads the server before showing a release again")
+        #expect(mock.finishPendingResponses(path: "/api/v1/server") == 1)
+        try await eventually { update.phase == .idle }
     }
 }

@@ -171,7 +171,7 @@ private struct ServerUpdateStatus: View {
             switch update.phase {
             case .checking?:
                 ProgressView().controlSize(.small).accessibilityLabel("Checking for updates")
-            case .restarting?:
+            case .reconnecting?:
                 ProgressView().controlSize(.small).accessibilityLabel("Restarting")
             case .restartPending?:
                 if case .failed(let words)? = update.outcome {
