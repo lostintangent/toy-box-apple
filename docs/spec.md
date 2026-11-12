@@ -248,7 +248,7 @@ Drafts stay keyed to the address, so adding it back finds them.
   Results stay until the next check or until Settings closes. A restart is pending exactly when
   `installedVersion` isn't null and differs from `version`, whichever device ran the update, and
   then the row shows a prominent Restart, after "0.3.10 installed" on the Mac. Restart has no
-  confirmation, and its row reads Restarting… with a spinner until the server reconnects running
+  confirmation, and its row shows only a spinner in the version's place until the server reconnects running
   the installed version. A failed restart shows its error the same way, with the old server still
   running. A server that hasn't come back a minute after its restart was accepted shows "Didn't
   come back after restarting" the same way, and the row still returns to its version whenever it
