@@ -348,7 +348,7 @@ keep `reconcileManagementWrite`.
   Channels deliver independently.
 - **The server's answer confirms it.** A 2xx or the message arriving in a snapshot or replay
   takes it out of the outbox. An ID the channel already has answers with the message it stored, so
-  a retry after a lost answer confirms like the first. An ID from another channel is a 409, refused
+  a retry after a lost answer confirms like the first. An ID from another channel is a 422, refused
   like any other 4xx. An open channel merges the message the POST returns, and the outbox then
   marks the channel read through the message, since the user's own message never leaves a
   channel unread. Every list treats it as read from the moment the server has it, without waiting
@@ -396,7 +396,7 @@ The apps decode only the current shapes, with no fallback for an older server.
 | `GET /api/v1/channels` | Catalog `{channels, members, lead, working}` for the sidebar. `lead` is the profile every channel's lead shares, under the channel's ID, and is always present. `working` lists running agent IDs. Its channels carry no `tasks`, which only a channel's snapshot carries, and each carries `request`, its waiting message without reactions, or `null`, whose sequence is always `requestSequence`. With `Accept: text/event-stream` it streams: `snapshot` with the catalog, then `working`, `channel.upserted`, `channel.deleted`, `channel.member.upserted` and `channel.member.deleted`, with a keepalive every 5 seconds. There's no cursor, so every reconnect starts with a fresh `snapshot` |
 | `GET /api/v1/channels/:id` (SSE) | `snapshot`, then live events. With `after`: replay, then `resumed`. The store holds the replay and publishes it with `resumed` as one change, so a reopened channel never redraws what it missed event by event. A drop mid-replay publishes nothing, and the retry asks again after the published revision. Presence isn't read from this stream, which is dropping it: the client ignores `presence` events and any `resumed` payload, and decodes a snapshot without `presence`. `deleted` is terminal |
 | `GET /api/v1/channels/:id/messages?before=N` | Older page of up to 100 messages `{revision, messages}` |
-| `POST /api/v1/channels/:id/messages` | `{id, content, attachments?}` with a client UUID. 201 returns the message, and the stored one for an ID the channel already has. An ID from another channel is 409 |
+| `POST /api/v1/channels/:id/messages` | `{id, content, attachments?}` with a client UUID. 201 returns the message, and the stored one for an ID the channel already has. An ID from another channel is 422 |
 | `POST /api/v1/channels/:id/read` | `{sequence}` monotonic read, which acknowledges completion but never a request. Returns `{seenThrough}` |
 | `PUT /api/v1/channels/:id/bookmarks/:sequence` | Bookmark a user or agent message (204). A message that's already bookmarked is also 204, and a system or missing message is 422 |
 | `DELETE /api/v1/channels/:id/bookmarks/:sequence` | Remove a bookmark (204), including one that isn't there |
@@ -453,7 +453,8 @@ Management routes (documented in Toy Box's Channels `AGENTS.md`):
 | `POST /api/v1/channels/:id/routines/:routineId/run` | Run a routine now (204) |
 | `DELETE /api/v1/channels/:id/routines/:routineId` | Delete a routine (204) |
 
-Errors return `{error}`. A malformed body is 400, a missing channel, member or routine is 404,
+Errors return `{error}`, and every JSON answer is `Cache-Control: no-store`. A malformed request
+is 400 "Invalid request.", a missing channel, member or routine is 404,
 and a domain rejection such as a taken mention is 422 with a user-facing message. An unexpected
 management failure is 500 with a generic `{error}`, and details stay in server logs. A 500 can
 follow a committed change, including a deletion, so the client never retries a write on 500,
