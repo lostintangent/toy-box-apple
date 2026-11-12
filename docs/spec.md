@@ -273,8 +273,9 @@ Drafts stay keyed to the address, so adding it back finds them.
   means it refused and stored nothing, with the reason. A server that answers 404 is too old to
   link. A link only works both ways, so the apps always link and unlink a pair of saved servers
   in both directions. They match a link to a saved server by comparing origins, lowercased and
-  without a default port, using its saved address or its Tailscale address below, and leave links
-  to servers the app hasn't saved alone and unshown.
+  without a default port, using its saved address, or for a server saved at a loopback address
+  only its Tailscale address below, since a loopback address names a different server on every
+  machine. They leave links to servers the app hasn't saved alone and unshown.
   - **The list.** A saved server is linked when it and another saved server each list the other.
     Its row shows `link` in secondary ink after its name, 11 pt on the Mac and 13 pt on the
     phone, and VoiceOver adds "linked". Nothing else in the row changes, and a server that's
