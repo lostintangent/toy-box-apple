@@ -111,7 +111,7 @@ struct CatalogTests {
     private static let served = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel])
 
     @Test @MainActor func theStreamOpensWithTheCatalogAndAppliesEachChange() async throws {
-        let mock = MockTransport { _, _ in try .catalogStream(Self.served) }
+        let mock = MockTransport(catalogOnly: true) { _, _ in try .catalogStream(Self.served) }
         let catalog = ChannelCatalogStore(api: try mock.api())
         catalog.startPolling()
         defer { catalog.stopPolling() }
@@ -141,7 +141,7 @@ struct CatalogTests {
     }
 
     @Test @MainActor func keepalivesMoveTheRefreshTimeOnlyOnceTheCatalogHasArrivedAndAtMostEachInterval() async throws {
-        let mock = MockTransport { _, count in
+        let mock = MockTransport(catalogOnly: true) { _, count in
             switch count {
             case 1: .catalogStream()
             case 2: .catalogStream(body: Data("retry: 1000\n\n".utf8) + catalogKeepalive, keepOpen: false)
@@ -180,7 +180,7 @@ struct CatalogTests {
     }
 
     @Test @MainActor func aStreamThatDropsReconnectsWithoutReportingIt() async throws {
-        let mock = MockTransport { _, _ in try .catalogStream(Self.served) }
+        let mock = MockTransport(catalogOnly: true) { _, _ in try .catalogStream(Self.served) }
         let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 0.01, grace: 60))
         catalog.startPolling()
         defer { catalog.stopPolling() }
@@ -199,7 +199,7 @@ struct CatalogTests {
     /// The tests move time themselves, so however long a held response takes to release never counts.
     @Test(arguments: [false, true])
     @MainActor func aStreamThatStaysDownReportsOnceTheGraceHasPassed(everDelivered: Bool) async throws {
-        let mock = MockTransport { _, count in
+        let mock = MockTransport(catalogOnly: true) { _, count in
             count == 1 && everDelivered ? try .catalogStream(Self.served) : .catalogStream()
         }
         var clock = Date(timeIntervalSince1970: 1_000_000)
@@ -222,7 +222,7 @@ struct CatalogTests {
     }
 
     @Test @MainActor func aCatalogBetweenFailuresStartsTheGraceOver() async throws {
-        let mock = MockTransport { _, count in count <= 2 ? try .catalogStream(Self.served) : .catalogStream() }
+        let mock = MockTransport(catalogOnly: true) { _, count in count <= 2 ? try .catalogStream(Self.served) : .catalogStream() }
         var clock = Date(timeIntervalSince1970: 1_000_000)
         let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 0.01, grace: 3),
                                           now: { clock })
@@ -271,7 +271,7 @@ struct CatalogTests {
 
     @Test(arguments: [false, true])
     @MainActor func aRequestedRefreshReportsItsFailureAtOnce(streaming: Bool) async throws {
-        let mock = MockTransport { _, count in
+        let mock = MockTransport(catalogOnly: true) { _, count in
             streaming && count == 1 ? try .catalogStream(Self.served) : Self.unavailable()
         }
         let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 60, grace: 60))
@@ -292,7 +292,7 @@ struct CatalogTests {
     @Test @MainActor func aRefreshReopensTheStreamAndReturnsWithItsCatalog() async throws {
         var renamed = Self.served
         renamed.channels[0].name = "Renamed"
-        let mock = MockTransport { _, count in count == 1 ? try .catalogStream(Self.served) : .catalogStream() }
+        let mock = MockTransport(catalogOnly: true) { _, count in count == 1 ? try .catalogStream(Self.served) : .catalogStream() }
         let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 60, grace: 60))
         catalog.startPolling()
         defer { catalog.stopPolling() }
@@ -320,7 +320,7 @@ struct CatalogTests {
     }
 
     @Test @MainActor func comingBackToTheAppEndsTheStreamsBackoffButLeavesALiveStream() async throws {
-        let mock = MockTransport { _, count in
+        let mock = MockTransport(catalogOnly: true) { _, count in
             switch count {
             case 1: Self.unavailable()
             case 2: try .catalogStream(Self.served)
@@ -516,11 +516,9 @@ struct CatalogTests {
         #expect(ChannelCatalogStore.Saved.load(from: empty).isEmpty)
     }
 
-    @Test func aServerNamedForItsHostFollowsANewAddressAndAClearedNameReturnsToIt() {
+    @Test func aServerNamedForItsHostFollowsANewAddress() {
         let local = ChannelCatalogStore.Saved(url: "http://[::1]:3210")
         #expect(local.moved(to: "https://work.test").name == "work.test")
-        #expect(local.renamed("Work").moved(to: "https://other.test").name == "Work")
-        #expect(local.renamed("  Work \n").name == "Work")
-        #expect(local.renamed("Work").renamed(" ").name == "[::1]:3210")
+        #expect(ChannelCatalogStore.Saved(url: "http://[::1]:3210", name: "Work").moved(to: "https://other.test").name == "Work")
     }
 }

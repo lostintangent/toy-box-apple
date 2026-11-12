@@ -87,13 +87,14 @@ struct ServerUpdateTests {
 
     @Test func aServerWithoutAnInstalledReleaseOrTheRouteOffersNeitherAction() async throws {
         let server = Server(installed: nil)
-        let update = ServerUpdate(api: try server.transport().api())
-        await update.refresh()
+        let catalog = ChannelCatalogStore(api: try server.transport().api())
+        let update = catalog.update
+        await catalog.refreshServer()
         #expect(update.version == ServerVersion(version: Self.old, installedVersion: nil))
         #expect(update.phase == nil)
 
         server.set { $0.read = MockResponse(status: 404) }
-        await update.refresh()
+        await catalog.refreshServer()
         #expect(update.version == nil, "A server that predates the route shows no release")
         #expect(update.phase == nil)
     }
@@ -101,8 +102,9 @@ struct ServerUpdateTests {
     @Test func aCheckSaysUpToDateOrOffersRestartOnceItInstallsANewerRelease() async throws {
         let server = Server()
         let mock = server.transport()
-        let update = ServerUpdate(api: try mock.api())
-        await update.refresh()
+        let catalog = ChannelCatalogStore(api: try mock.api())
+        let update = catalog.update
+        await catalog.refreshServer()
         #expect(update.phase == .idle)
 
         try server.set { $0.update = try .json(ServerVersion(version: Self.old, installedVersion: Self.old)) }
@@ -129,8 +131,9 @@ struct ServerUpdateTests {
     @Test func aRejectedCheckKeepsTheRowWithTheServersWords() async throws {
         let server = Server()
         let mock = server.transport()
-        let update = ServerUpdate(api: try mock.api())
-        await update.refresh()
+        let catalog = ChannelCatalogStore(api: try mock.api())
+        let update = catalog.update
+        await catalog.refreshServer()
 
         try server.set { $0.update = try .json(["error": "npm couldn't reach the registry."], status: 422) }
         await update.check()
@@ -142,8 +145,9 @@ struct ServerUpdateTests {
     @Test func aCheckWhoseAnswerIsLostReadsTheServerBeforeOfferingAnotherTry() async throws {
         let server = Server()
         let mock = server.transport()
-        let update = ServerUpdate(api: try mock.api())
-        await update.refresh()
+        let catalog = ChannelCatalogStore(api: try mock.api())
+        let update = catalog.update
+        await catalog.refreshServer()
 
         server.set { $0.update = MockResponse(status: 504) }
         await update.check()
@@ -173,7 +177,8 @@ struct ServerUpdateTests {
         for catalog in catalogs.dropLast() { catalog.startPolling() }
         defer { for catalog in catalogs { catalog.stopPolling() } }
         try await eventually { catalogs.dropLast().allSatisfy { $0.phase == .connected } }
-        for catalog in catalogs { await catalog.update.refresh() }
+        await catalogs.refreshServers()
+        try await eventually { !catalogs.contains { $0.update.isReconnecting } }
         #expect(catalogs.offersUpdateCheck)
         #expect(![catalogs[2]].offersUpdateCheck, "Only a server with an installed release can update")
 
@@ -210,9 +215,8 @@ struct ServerUpdateTests {
         let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 0.01, grace: 60))
         catalog.startPolling()
         defer { catalog.stopPolling() }
-        try await eventually { catalog.phase == .connected }
         let update = catalog.update
-        await update.refresh()
+        try await eventually { catalog.phase == .connected && update.phase == .restartPending }
         let phases = Phases(update)
 
         await update.restart()
@@ -234,14 +238,15 @@ struct ServerUpdateTests {
         try await eventually { phases.seen.last == .idle }
         #expect(update.version == ServerVersion(version: Self.new, installedVersion: Self.new))
         #expect(phases.seen == [.restartPending, .reconnecting, .idle])
-        #expect(reads(mock) == 2, "The first connection didn't read a server nothing had read")
+        #expect(reads(mock) == 2, "Each connection reads the server once")
     }
 
     @Test func aRejectedRestartKeepsRestartWithTheServersWordsAndALostAnswerShowsNothing() async throws {
         let server = Server(installed: Self.new)
         let mock = server.transport()
-        let update = ServerUpdate(api: try mock.api())
-        await update.refresh()
+        let catalog = ChannelCatalogStore(api: try mock.api())
+        let update = catalog.update
+        await catalog.refreshServer()
 
         try server.set { $0.restart = try .json(["error": "The installed release doesn't run."], status: 422) }
         await update.restart()
@@ -271,9 +276,8 @@ struct ServerUpdateTests {
         defer { catalog.stopPolling() }
         #expect(update.phase == .reconnecting, "Connecting at first is reconnecting too")
         try await eventually { catalog.phase == .connected }
-        #expect(update.phase == nil, "Nothing had read the server, so the row doesn't wait for a read")
-        await update.refresh()
-        #expect(update.phase == .idle)
+        try await eventually { update.phase == .idle }
+        #expect(reads(mock) == 1, "Connecting reads the server")
 
         server.set { $0.isDown = true }
         #expect(mock.finishPendingResponses(path: "/api/v1/channels") == 1)

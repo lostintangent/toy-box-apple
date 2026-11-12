@@ -414,7 +414,8 @@ struct ShellTests {
             await settle { true }
         }
         #expect(card.frames.count == 1, "Reported \(card.frames.map(\.size)) while only moving.")
-        #expect(abs((card.frames.first?.height ?? 0) - (288 + 1 / 3)) < 0.01)
+        let height: CGFloat = card.frames.first?.height ?? 0
+        #expect(abs(height - (288 + 1.0 / 3)) < 0.01)
 
         card.height = 300
         await settle { card.frames.count == 2 }
@@ -1448,7 +1449,6 @@ struct ShellTests {
             let second = try model.addServer("https://second.example")
             #expect(try model.addServer("https://second.example") === second)
             #expect(try model.changeAddress(of: first, to: "https://second.example") === second)
-            model.rename(second, to: "  Work ")
             model.moveServers(fromOffsets: [1], toOffset: 0)
             #expect(model.catalog === second)
             #expect(model.serverURL == "https://second.example")
@@ -1456,7 +1456,7 @@ struct ShellTests {
             model.removeServer(second)
             #expect(model.catalogs.count == 1 && model.catalog === second)
             let relaunched = AppModel(arguments: [], environment: [:], defaults: defaults)
-            #expect(relaunched.catalogs.map(\.saved) == [.init(url: "https://second.example", name: "Work")])
+            #expect(relaunched.catalogs.map(\.saved) == [.init(url: "https://second.example")])
         }
     }
 

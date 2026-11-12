@@ -4,8 +4,9 @@ import Observation
 
 /// A server's links with the user's other saved servers, so their channel leads can message each
 /// other. Each catalog has one, like its `update`. A link works only when both servers list each
-/// other, so the rules that link servers live on `[ChannelCatalogStore]`, and Settings reads every
-/// server's links with `refreshLinks()` while it shows them.
+/// other, so the rules that link servers live on `[ChannelCatalogStore]`. The catalog reads them with
+/// the rest of the server, as Settings does for every server with `refreshServers()` while it shows
+/// them.
 @MainActor @Observable
 public final class ServerLinks {
     /// Two saved servers that didn't link or unlink as a switch asked.
@@ -94,32 +95,10 @@ public final class ServerLinks {
         if !failures.isEmpty { failures = [] }
     }
 
-    /// Reads the server's links. A failure keeps the last answer, since the server's connection
-    /// status already says it's unreachable.
-    func refresh() async {
-        do {
-            listed = try await api.serverLinks()
-            needsUpdate = false
-        } catch ChannelAPIError.http(status: 404, message: _) {
-            listed = nil
-            needsUpdate = true
-        } catch {}
-    }
-
-    /// Links or unlinks one address. Nil when the server accepted it. A failure other than a
-    /// refusal may still have changed the links, so every change reads them all again afterward.
-    func write(linking: Bool, _ address: String) async -> Failure.Reason? {
-        do {
-            listed = try await linking ? api.link(address) : api.unlink(address)
-            needsUpdate = false
-            return nil
-        } catch ChannelAPIError.http(status: 404, message: _) {
-            listed = nil
-            needsUpdate = true
-            return .needsUpdate(key)
-        } catch {
-            return .failed(error.localizedDescription)
-        }
+    /// The links the server answered, or nil for one too old to link.
+    func apply(_ links: [String]?) {
+        listed = links
+        needsUpdate = links == nil
     }
 }
 
@@ -130,19 +109,23 @@ private struct LinkMember {
     /// address, or for a server saved at a loopback address, its Tailscale address once it has one,
     /// since a loopback address names a different server on every machine.
     let address: String?
+    /// Whether it's saved at a loopback address, so a request that reaches it there changes only it.
+    let isLoopback: Bool
     let catalog: ChannelCatalogStore?
 
     @MainActor init(_ catalog: ChannelCatalogStore) {
         let links = catalog.links
         key = links.key
-        address = links.isLoopback ? links.tailscaleAddress : ServerLinks.origin(links.key)
+        isLoopback = links.isLoopback
+        address = isLoopback ? links.tailscaleAddress : ServerLinks.origin(links.key)
         self.catalog = catalog
     }
 
     init?(address: String) {
         guard let api = try? ChannelAPI(serverURL: address) else { return nil }
         key = ChannelOutbox.key(api.baseURL)
-        self.address = api.isLoopback ? nil : ServerLinks.origin(key)
+        isLoopback = api.isLoopback
+        self.address = isLoopback ? nil : ServerLinks.origin(key)
         catalog = nil
     }
 
@@ -159,13 +142,6 @@ private struct LinkMember {
 }
 
 extension [ChannelCatalogStore] {
-    /// Reads every server's links at once, for Settings to show.
-    @MainActor public func refreshLinks() async {
-        await withTaskGroup(of: Void.self) { group in
-            for catalog in self { group.addTask { await catalog.links.refresh() } }
-        }
-    }
-
     /// Whether the server and another saved server each list the other, or where its switch is going
     /// while it changes.
     @MainActor public func isLinked(_ catalog: ChannelCatalogStore) -> Bool {
@@ -208,15 +184,16 @@ extension [ChannelCatalogStore] {
 
     /// Turns the server's Linked switch on or off, once, with no retry. On, it links both ways with
     /// every linked server, or when none is linked yet, links every saved server that can link with
-    /// every other. Off, it unlinks both ways from every server either one lists. Then it reads
-    /// every server's links again, and each pair that failed is in the server's `links.failures`.
+    /// every other. Off, it unlinks both ways from every server either one lists. Each pair takes one
+    /// request. Then it reads every server again, and each pair that failed is in the server's
+    /// `links.failures`.
     /// Add Server saves the new server first, then turns its switch on, so a server it hasn't read
     /// is read first, and one too old to link stays unlinked without a failure.
     @MainActor public func setLinked(_ catalog: ChannelCatalogStore, _ isOn: Bool) async {
         guard !isChangingLinks, !catalog.links.needsUpdate else { return }
         if catalog.links.listed == nil {
             catalog.links.changing = isOn
-            await catalog.links.refresh()
+            await catalog.refreshServer()
             catalog.links.changing = nil
             guard !catalog.links.needsUpdate else { return }
         }
@@ -268,7 +245,7 @@ extension [ChannelCatalogStore] {
         // A server that took several writes at once may have answered them out of order, and one
         // that timed out or lost its connection may have changed anyway, so a pair that did change
         // isn't a failure.
-        await refreshLinks()
+        await refreshServers()
         let failures = pairs.indices.compactMap { index -> ServerLinks.Failure? in
             let (first, second) = pairs[index]
             guard let reason = reasons[index], first.isLinked(with: second) != linking else { return nil }
@@ -282,24 +259,44 @@ extension [ChannelCatalogStore] {
         catalog.links.changing = nil
     }
 
-    /// Links or unlinks one pair, both ways, starting with the first server, so a server elsewhere
-    /// that the first can't reach is refused before anything is sent to it. Nil when both accepted.
+    /// Links or unlinks one pair with one request, to the end it changes. When only one end lists
+    /// the other, that's the end missing the link, or when unlinking, the end that has it, which a
+    /// request reaching it at a loopback address is enough for. Otherwise it's the end saved at a
+    /// non-loopback address, which changes both ends, or when both are saved at loopback addresses,
+    /// the first at its Tailscale address. The body is the other end's origin. Nil when the server
+    /// accepted it, or the pair is already as asked.
     @MainActor private static func change(_ pair: (LinkMember, LinkMember),
                                           linking: Bool) async -> ServerLinks.Failure.Reason? {
         let (first, second) = pair
-        guard let firstLinks = first.catalog?.links, let secondLinks = second.catalog?.links else { return nil }
-        if linking {
-            guard let secondAddress = second.address else { return .needsAddress(second.key) }
-            guard let firstAddress = first.address else { return .needsAddress(first.key) }
-            if let reason = await firstLinks.write(linking: true, secondAddress) { return reason }
-            return await secondLinks.write(linking: true, firstAddress)
+        let firstLists = !second.links(in: first).isEmpty, secondLists = !first.links(in: second).isEmpty
+        guard firstLists != linking || secondLists != linking else { return nil }
+        let isHalfLinked = firstLists != secondLists
+        let (target, other) = if isHalfLinked {
+            firstLists != linking ? (first, second) : (second, first)
+        } else {
+            first.isLoopback && !second.isLoopback ? (second, first) : (first, second)
         }
-        for link in second.links(in: first) {
-            if let reason = await firstLinks.write(linking: false, link) { return reason }
+        guard let catalog = target.catalog, other.catalog != nil else { return nil }
+        guard let address = other.address else { return .needsAddress(other.key) }
+        var api = catalog.api
+        let isTailscale = !isHalfLinked && target.isLoopback
+        if isTailscale {
+            guard let tailscaleAddress = target.address,
+                  let reached = try? ChannelAPI(serverURL: tailscaleAddress, session: api.session) else {
+                return .needsAddress(target.key)
+            }
+            api = reached
         }
-        for link in first.links(in: second) {
-            if let reason = await secondLinks.write(linking: false, link) { return reason }
+        do {
+            let server = try await linking ? api.link(address) : api.unlink(address)
+            // A Tailscale address the user typed may reach another server, so only an answer from the
+            // saved address is this one.
+            if !isTailscale { catalog.apply(server) }
+            return nil
+        } catch ChannelAPIError.http(status: 404, message: _) {
+            return .needsUpdate(target.key)
+        } catch {
+            return .failed(error.localizedDescription)
         }
-        return nil
     }
 }

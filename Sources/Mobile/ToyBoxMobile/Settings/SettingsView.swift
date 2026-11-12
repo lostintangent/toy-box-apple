@@ -54,14 +54,9 @@ struct SettingsView: View {
             if phase == .active { availability = intelligence.availability }
         }
         .task { await model.notifications.refreshAuthorization() }
-        .task(id: model.catalogs.map(\.api.baseURL)) {
-            await withTaskGroup { group in
-                for catalog in model.catalogs { group.addTask { await catalog.update.refresh() } }
-            }
-        }
-        // Each server's links again as it connects, so one that was down when Settings opened shows.
+        // Every server again as one connects, so one that was down when Settings opened shows.
         .task(id: model.catalogs.filter { $0.phase == .connected }.map(\.api.baseURL)) {
-            await model.catalogs.refreshLinks()
+            await model.catalogs.refreshServers()
         }
     }
 

@@ -328,16 +328,22 @@ public struct ChannelAPI: Sendable {
         try await noContent("DELETE", channelPath(channelId) + ["artifacts", artifactId])
     }
 
-    /// The release the server runs and the one installed on disk.
-    public func server() async throws -> ServerVersion {
-        try await get(["api", "v1", "server"])
+    /// The server: its identity, name, releases and links. A server too old to name itself answers
+    /// without a name, one too old to link without links, and one too old for either answers 404.
+    public func server() async throws -> ServerInfo {
+        try await get(Self.serverPath)
     }
 
-    /// Installs whatever release is newer, then answers what `server()` would. The server says
+    /// Renames the server for every device and lead, and answers the server. An empty name gives it
+    /// back its computer's name. A 422 is a refusal, with the server's words.
+    public func renameServer(_ name: String) async throws -> ServerInfo {
+        try await command("PATCH", Self.serverPath, body: RenameInput(name: name))
+    }
+
+    /// Installs whatever release is newer, then answers the server's releases. The server says
     /// nothing until its package manager finishes, so this waits up to `updateTimeout`.
     public func updateServer() async throws -> ServerVersion {
-        var request = URLRequest(url: endpoint(["api", "v1", "server", "update"]),
-                                 timeoutInterval: Self.updateTimeout)
+        var request = URLRequest(url: endpoint(Self.serverPath + ["update"]), timeoutInterval: Self.updateTimeout)
         request.httpMethod = "POST"
         return try await JSONDecoder().decode(ServerVersion.self, from: data(for: request))
     }
@@ -345,34 +351,31 @@ public struct ChannelAPI: Sendable {
     /// Restarts the server onto its installed release. It answers before it shuts down, and every
     /// stream drops until it's back.
     public func restartServer() async throws {
-        try await noContent("POST", ["api", "v1", "server", "restart"])
+        try await noContent("POST", Self.serverPath + ["restart"])
     }
 
     static let updateTimeout: TimeInterval = 300
 
-    /// The origins of the servers this one links, in the order it linked them. A server that
-    /// predates links answers 404.
-    public func serverLinks() async throws -> [String] {
-        try await (get(Self.linksPath) as ServerLinkList).links
+    /// Links another server by its origin, and answers the server. A request that reaches this
+    /// server at a non-loopback address links both ends, and one at a loopback address only this
+    /// one. Linking a linked server changes nothing. A 422 is a refusal, with nothing stored.
+    public func link(_ address: String) async throws -> ServerInfo {
+        try await command("POST", Self.linksPath, body: LinkInput(address: address))
     }
 
-    /// Links another server by its origin, once this one reaches it, and answers every link.
-    /// Linking a linked server changes nothing. A 422 is a refusal, with nothing stored.
-    public func link(_ address: String) async throws -> [String] {
-        try await (command("POST", Self.linksPath, body: LinkInput(address: address)) as ServerLinkList).links
-    }
-
-    /// Unlinks another server by its origin, and answers every link. Unlinking a server that isn't
-    /// linked changes nothing. The address is in the query, so no intermediary drops a DELETE's body.
-    public func unlink(_ address: String) async throws -> [String] {
+    /// Unlinks another server by its origin, and answers the server, from both ends or only this one
+    /// as `link(_:)` does. Unlinking a server that isn't linked changes nothing. The address is in the
+    /// query, so no intermediary drops a DELETE's body.
+    public func unlink(_ address: String) async throws -> ServerInfo {
         var parts = URLComponents(url: endpoint(Self.linksPath), resolvingAgainstBaseURL: false)!
         parts.percentEncodedQuery = "address=" + address.addingPercentEncoding(withAllowedCharacters: Self.unreserved)!
         var request = URLRequest(url: parts.url!)
         request.httpMethod = "DELETE"
-        return try await JSONDecoder().decode(ServerLinkList.self, from: data(for: request)).links
+        return try await JSONDecoder().decode(ServerInfo.self, from: data(for: request))
     }
 
-    private static let linksPath = ["api", "v1", "server", "links"]
+    private static let serverPath = ["api", "v1", "server"]
+    private static let linksPath = serverPath + ["links"]
 
     public func streamRequest(channelId: String, after: Int?, timeout: TimeInterval = 35) -> URLRequest {
         let query = after.map { [URLQueryItem(name: "after", value: String($0))] } ?? []
@@ -429,7 +432,7 @@ public struct ChannelAPI: Sendable {
     }
 }
 
-private struct ServerLinkList: Codable { var links: [String] }
+private struct RenameInput: Encodable { var name: String }
 private struct LinkInput: Encodable { var address: String }
 private struct PostInput: Encodable { var id: String; var content: String; var attachments: [ChannelAttachment]? }
 private struct ReadInput: Encodable { var sequence: Int }
