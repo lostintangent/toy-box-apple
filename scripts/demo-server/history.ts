@@ -3,7 +3,7 @@ import { createHistoryFixture, historyChannelID, historyMessageCount, historyPag
     from "./channels/history-channel.ts";
 import { catalogEntry, createCatalogRoute, workingAgents } from "./channels/catalog-stream.ts";
 import { createDemoServer, loadDemoFixture } from "./channels/demo-server.ts";
-import { createDemoLinkRoutes } from "./channels/link-routes.ts";
+import { createDemoServerRoutes } from "./channels/server-routes.ts";
 import { type Snapshot } from "./channels/types.ts";
 
 if (process.argv.length > 2) throw new Error("Usage: bun run demo:history");
@@ -23,7 +23,8 @@ const catalog = createCatalogRoute(() => {
     };
 });
 demo.onChange(catalog.publish);
-const links = createDemoLinkRoutes();
+// It has no installed release, so it offers no update.
+const release = createDemoServerRoutes(demo.server, { id: `history-demo-${port}`, computer: "History Demo", mode: "unmanaged" });
 const handlers = demo.server.listeners("request");
 if (handlers.length !== 1) throw new Error("Expected the demo server's single HTTP handler.");
 const originalHandler = handlers[0];
@@ -34,7 +35,7 @@ demo.server.on("request", (request, response) => {
         catalog.serve(request, response);
         return;
     }
-    if (links.handle(request, response, url)) return;
+    if (release.handle(request, response, url)) return;
     if (url.pathname === `/api/v1/channels/${channelID}/messages`) {
         if (request.method !== "GET") {
             response.writeHead(405, { "Content-Type": "application/json", Allow: "GET" });

@@ -56,10 +56,15 @@ final class MockTransport: Sendable {
     let state = Mutex(State())
     let handler: Handler
     let host: String
+    let catalogOnly: Bool
 
-    /// A loopback transport serves a host under `localhost`, as a server on this device would.
-    init(loopback: Bool = false, handler: @escaping Handler) {
+    /// A loopback transport serves a host under `localhost`, as a server on this device would. A
+    /// catalog reads `/api/v1/server` each time it connects, so a transport for a test of the catalog
+    /// alone answers that read itself, as a server too old for the route, and leaves it out of
+    /// `requests`, `stops`, the handler's count and held responses.
+    init(loopback: Bool = false, catalogOnly: Bool = false, handler: @escaping Handler) {
         self.handler = handler
+        self.catalogOnly = catalogOnly
         host = UUID().uuidString.lowercased() + (loopback ? ".localhost" : ".example")
     }
 
@@ -93,6 +98,7 @@ final class MockTransport: Sendable {
     }
 
     func stop(_ response: MockURLProtocol) {
+        if answersItself(response.request) { return }
         state.withLock {
             $0.stops += 1
             $0.pending.removeValue(forKey: ObjectIdentifier(response))
@@ -126,7 +132,12 @@ final class MockTransport: Sendable {
         return pending.count
     }
 
+    private func answersItself(_ request: URLRequest) -> Bool {
+        catalogOnly && request.httpMethod == "GET" && request.url?.path == "/api/v1/server"
+    }
+
     func response(for request: URLRequest) throws -> MockResponse {
+        if answersItself(request) { return MockResponse(status: 404) }
         let count = state.withLock { state in
             state.requests.append(request)
             return state.requests.count

@@ -22,9 +22,52 @@ public struct ServerVersion: Codable, Equatable, Sendable {
     }
 }
 
+/// What `GET /api/v1/server` answers: the server's identity, name, accent, releases and links.
+public struct ServerInfo: Codable, Equatable, Sendable {
+    /// An identity the server makes once and keeps, whatever address reaches it. Nil for a server
+    /// too old to have one.
+    public var id: String?
+    /// The name every device and lead sees. Nil for a server too old to have one.
+    public var name: String?
+    /// The server's accent, `#` and six hex digits. Nil for a server too old to have one.
+    public var accentColor: String?
+    public var release: ServerVersion
+    /// The origins of the servers this one links, in link order. Nil for a server too old to link.
+    public var links: [String]?
+
+    public init(id: String?, name: String?, accentColor: String? = nil, release: ServerVersion, links: [String]?) {
+        self.id = id
+        self.name = name
+        self.accentColor = accentColor
+        self.release = release
+        self.links = links
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, accentColor, links }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+            .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        accentColor = try container.decodeIfPresent(String.self, forKey: .accentColor)
+        release = try ServerVersion(from: decoder)
+        links = try container.decodeIfPresent([String].self, forKey: .links)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        try release.encode(to: encoder)
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(id, forKey: .id)
+        try container.encodeIfPresent(name, forKey: .name)
+        try container.encodeIfPresent(accentColor, forKey: .accentColor)
+        try container.encodeIfPresent(links, forKey: .links)
+    }
+}
+
 /// A server's release in Settings' server list: checking for a newer one and restarting onto it.
-/// Each catalog has one, so every window agrees. Settings reads it with `refresh()` while it shows
-/// the list, and once something has, each catalog stream that connects reads it again. The list's
+/// Each catalog has one, so every window agrees, and the catalog's `refreshServer()` reads it with
+/// the server's name and links, as each catalog stream that connects does too. The list's
 /// one Check for Updates checks every server together with `checkForUpdates()`. A restart is an
 /// ordinary disconnect, so the row shows `.reconnecting` for it as it would for any other.
 @MainActor @Observable
@@ -62,9 +105,9 @@ public final class ServerUpdate {
     /// Each change in the catalog's connection, so a read after a reconnect that the stream has since
     /// dropped again doesn't end the reconnect.
     @ObservationIgnored private var connection = UUID()
-    /// Something has read the server, so each connection reads it again.
-    @ObservationIgnored private var isRead = false
     @ObservationIgnored private let api: ChannelAPI
+    /// The catalog that reads the server, with its name and links.
+    @ObservationIgnored weak var catalog: ChannelCatalogStore?
 
     public init(api: ChannelAPI) {
         self.api = api
@@ -77,12 +120,6 @@ public final class ServerUpdate {
         if isReconnecting { return .reconnecting }
         guard let version, version.installedVersion != nil else { return nil }
         return version.isRestartPending ? .restartPending : .idle
-    }
-
-    /// Reads the server. A failure keeps the last answer, since the server's connection status
-    /// already says it's unreachable.
-    public func refresh() async {
-        try? await read()
     }
 
     /// Asks the server to install whatever is newer, which can take minutes, and offers Restart if
@@ -100,7 +137,7 @@ public final class ServerUpdate {
             apply(current)
             if !current.isRestartPending { outcome = .upToDate }
         } catch {
-            if ChannelManagementWriteRecovery.Phase.isRequired(after: error) { await refresh() }
+            if ChannelManagementWriteRecovery.Phase.isRequired(after: error) { await catalog?.refreshServer() }
             if version?.installedVersion == installed { outcome = .failed(error.localizedDescription) }
         }
     }
@@ -138,26 +175,20 @@ public final class ServerUpdate {
         isReconnecting = false
     }
 
-    /// The catalog's stream delivered its first catalog, so the server may have restarted. Once
-    /// something has read the server, the row stays reconnecting until it reads the server again.
+    /// The catalog's stream delivered its first catalog, so the server may have restarted or been
+    /// renamed. The row stays reconnecting until the catalog reads the server again.
     func catalogConnected() {
         let read = UUID()
         connection = read
-        isReconnecting = isRead
-        guard isRead else { return }
+        isReconnecting = true
         Task {
-            await refresh()
+            await catalog?.refreshServer()
             if connection == read { isReconnecting = false }
         }
     }
 
-    private func read() async throws {
-        isRead = true
-        do { apply(try await api.server()) }
-        catch ChannelAPIError.http(status: 404, message: _) { apply(nil) }
-    }
-
-    private func apply(_ current: ServerVersion?) {
+    /// The server's answer, or nil for one that predates the route.
+    func apply(_ current: ServerVersion?) {
         if current != version { outcome = nil }
         version = current
     }

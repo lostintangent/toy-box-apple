@@ -102,7 +102,7 @@ final class AppModel {
         } else {
             catalogs = ChannelCatalogStore.Saved.load(from: defaults).compactMap { server in
                 (try? ChannelAPI(serverURL: server.url, session: session)).map {
-                    connect($0, name: server.name, tailscaleAddress: server.tailscaleAddress)
+                    connect($0, name: server.name, id: server.id, tailscaleAddress: server.tailscaleAddress)
                 }
             }
         }
@@ -188,7 +188,7 @@ final class AppModel {
         guard let index = catalogs.firstIndex(where: { $0 === catalog }) else { return catalog }
         let moved = catalog.saved.moved(to: api.baseURL.absoluteString)
         disconnect(catalog)
-        let replacement = connect(api, name: moved.name, tailscaleAddress: moved.tailscaleAddress)
+        let replacement = connect(api, name: moved.name, id: moved.id, tailscaleAddress: moved.tailscaleAddress)
         updateServers { $0[index] = replacement }
         if selection == nil { restoring = replacement }
         return replacement
@@ -206,8 +206,7 @@ final class AppModel {
     }
 
     func rename(_ catalog: ChannelCatalogStore, to name: String) {
-        catalog.name = catalog.saved.renamed(name).name
-        updateServers { _ in }
+        Task { try? await catalog.rename(to: name) }
     }
 
     /// Where other servers reach a server saved at a loopback address, from what the user typed, saved
@@ -217,9 +216,12 @@ final class AppModel {
         updateServers { _ in }
     }
 
-    private func connect(_ api: ChannelAPI, name: String?, tailscaleAddress: String? = nil) -> ChannelCatalogStore {
-        let catalog = ChannelCatalogStore(api: api, name: name, tailscaleAddress: tailscaleAddress)
+    private func connect(_ api: ChannelAPI, name: String?, id: String? = nil,
+                         tailscaleAddress: String? = nil) -> ChannelCatalogStore {
+        let catalog = ChannelCatalogStore(api: api, name: name, id: id, tailscaleAddress: tailscaleAddress)
         catalog.outbox = outbox
+        // A read that renames the server or finds its identity saves it, for the extensions too.
+        catalog.onSavedChange = { [weak self] in self?.updateServers { _ in } }
         if isForeground { catalog.startPolling() }
         return catalog
     }

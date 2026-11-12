@@ -562,8 +562,20 @@ public final class ChannelStore {
 @MainActor @Observable
 public final class ChannelCatalogStore {
     public let api: ChannelAPI
-    /// The server's name in Settings and its section header, which starts as its host.
-    public var name: String
+    /// The server's name in Settings and its section header: the last name the server answered, or
+    /// its host for a server too old to have one. Settings saves it, so it shows while the server
+    /// can't connect.
+    public internal(set) var name: String
+    /// The identity the server makes once and keeps, from its last answer, so adding the same server
+    /// at another address selects it instead. Settings saves it.
+    public internal(set) var serverID: String?
+    /// The server's accent from its last answer, `#` and six hex digits, or nil before it answers or
+    /// for a server too old to have one. Nothing shows it yet, and it isn't saved.
+    public internal(set) var accentColor: String?
+    /// The server answered without a name, so it can't be renamed until it's updated.
+    public internal(set) var needsUpdateToRename = false
+    /// Called when a read changes the server's name or identity, so the app saves its servers.
+    @ObservationIgnored public var onSavedChange: (@MainActor () -> Void)?
     public private(set) var state: ChannelCatalog?
     /// A channel the outbox is sending to reads as read through its latest, since the server marks it
     /// read through the user's message once that lands.
@@ -649,16 +661,18 @@ public final class ChannelCatalogStore {
 
     /// `now` measures the grace and the keepalive interval. Tests pass a clock they move instead of
     /// waiting, and a network path they change.
-    public init(api: ChannelAPI, name: String? = nil, tailscaleAddress: String? = nil,
+    public init(api: ChannelAPI, name: String? = nil, id: String? = nil, tailscaleAddress: String? = nil,
                 reconnectPolicy: ReconnectPolicy = .init(),
                 now: @escaping () -> Date = { .now }, networkPath: NetworkPathSource = .system) {
         self.api = api
         self.name = name ?? Saved.name(of: api.baseURL.absoluteString)
+        self.serverID = id
         self.update = ServerUpdate(api: api)
         self.links = ServerLinks(api: api, tailscaleAddress: tailscaleAddress)
         self.reconnectPolicy = reconnectPolicy
         self.now = now
         self.networkPath = networkPath
+        update.catalog = self
     }
     deinit {
         stream?.cancel()
@@ -685,8 +699,9 @@ public final class ChannelCatalogStore {
 
     /// A refresh someone asked for, which joins one already in flight instead of returning early.
     /// While the stream is open it reopens the stream and returns with the fresh catalog that opens
-    /// it, or reports the failure at once, since the caller waits on the outcome. Without a stream,
-    /// as in the widget and share extensions, it fetches the catalog once.
+    /// it, or reports the failure at once, since the caller waits on the outcome. Like every
+    /// connection, the reopened stream reads the server too, so a rename made elsewhere shows.
+    /// Without a stream, as in the widget and share extensions, it fetches the catalog once.
     public func refresh() async {
         if isFetching { return await withCheckedContinuation { joiners.append($0) } }
         if stream != nil {
@@ -892,11 +907,13 @@ public final class ChannelCatalogStore {
         openStream()
     }
 
-    /// Coming back to the app ends the stream's backoff and every held channel's.
+    /// Coming back to the app ends the stream's backoff and every held channel's. A live stream reads
+    /// the server, since it may have been renamed meanwhile, and one that isn't reads it on connect.
     public func setActive(_ active: Bool) {
         guard active != isActive else { return }
         isActive = active
         guard active else { return }
+        if isLive { Task { await refreshServer() } }
         retryPromptly()
         for store in detailStores.values { store.retryPromptly() }
         outbox?.reload(self)

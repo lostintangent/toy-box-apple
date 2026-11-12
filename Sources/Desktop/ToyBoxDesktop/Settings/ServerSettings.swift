@@ -56,14 +56,9 @@ struct ServerSettings: View {
             Text("Toy Box disconnects from it and removes its channels from this Mac. Drafts stay saved, so adding it back finds them.")
         }
         .task(id: model.snapshot?.requestedState) { await prepareSnapshot() }
-        .task(id: model.catalogs.map(\.api.baseURL)) {
-            await withTaskGroup { group in
-                for catalog in model.catalogs { group.addTask { await catalog.update.refresh() } }
-            }
-        }
-        // Each server's links again as it connects, so one that was down when Settings opened shows.
+        // Every server again as one connects, so one that was down when Settings opened shows.
         .task(id: model.catalogs.filter { $0.phase == .connected }.map(\.api.baseURL)) {
-            await model.catalogs.refreshLinks()
+            await model.catalogs.refreshServers()
         }
         if let selected {
             ServerDetails(catalog: selected, changedAddress: select)
@@ -167,7 +162,7 @@ struct ServerSettings: View {
                                                       of: catalog)
                     }
                 }
-                await model.catalogs.refreshLinks()
+                await model.catalogs.refreshServers()
                 select(model.catalogs.first)
                 if state == "settings-server-link-failed", let first = model.catalogs.first {
                     await model.catalogs.setLinked(first, true)

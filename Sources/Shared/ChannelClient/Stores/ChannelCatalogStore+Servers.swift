@@ -10,18 +10,22 @@ extension ChannelCatalogStore {
         static let singleServerKey = "serverURL"
 
         public var url: String
+        /// The last name the server answered.
         public var name: String
+        /// The identity the server answered, so the same server at another address is found.
+        public var id: String?
         /// Where other servers reach a server saved at a loopback address, usually through
         /// `tailscale serve`, so it can link.
         public var tailscaleAddress: String?
 
-        public init(url: String, name: String? = nil, tailscaleAddress: String? = nil) {
+        public init(url: String, name: String? = nil, id: String? = nil, tailscaleAddress: String? = nil) {
             self.url = url
             self.name = name ?? Self.name(of: url)
+            self.id = id
             self.tailscaleAddress = tailscaleAddress
         }
 
-        /// The name a server starts with: its host, and a port that isn't the default.
+        /// The name of a server too old to have one: its host, and a port that isn't the default.
         public static func name(of url: String) -> String {
             guard let components = URLComponents(string: url), let host = components.host, !host.isEmpty else {
                 return url
@@ -54,17 +58,12 @@ extension ChannelCatalogStore {
         }
 
         /// This server at a new address. A name that was still its host follows the new host, and
-        /// its Tailscale address stays only while the address does.
+        /// its identity and Tailscale address stay only while the address does, since a new address
+        /// may be another server, until it answers.
         public func moved(to url: String) -> Saved {
             let isSame = ChannelWaitingRequest.normalizedServer(url) == ChannelWaitingRequest.normalizedServer(self.url)
             return Saved(url: url, name: name == Self.name(of: self.url) ? nil : name,
-                         tailscaleAddress: isSame ? tailscaleAddress : nil)
-        }
-
-        /// A name the user typed. Clearing it gives the server back its host.
-        public func renamed(_ name: String) -> Saved {
-            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            return Saved(url: url, name: name.isEmpty ? nil : name, tailscaleAddress: tailscaleAddress)
+                         id: isSame ? id : nil, tailscaleAddress: isSame ? tailscaleAddress : nil)
         }
 
         private var isValid: Bool { ChannelWaitingRequest.normalizedServer(url) != nil }
@@ -72,7 +71,54 @@ extension ChannelCatalogStore {
 
     /// How Settings saves this server.
     public var saved: Saved {
-        .init(url: api.baseURL.absoluteString, name: name, tailscaleAddress: links.tailscaleAddress)
+        .init(url: api.baseURL.absoluteString, name: name, id: serverID, tailscaleAddress: links.tailscaleAddress)
+    }
+
+    /// The longest name a server takes, in UTF-16 units after trimming, so an emoji counts as 2.
+    public static let nameLimit = 64
+
+    /// Reads the server's identity, name, releases and links together. A server too old for the
+    /// route goes by its host and can't link. Any other failure keeps the last answer, since the
+    /// server's connection status already says it's unreachable.
+    public func refreshServer() async {
+        try? await readServer()
+    }
+
+    /// Renames the server for every device and lead. An empty name gives it back its computer's
+    /// name. A name over `nameLimit` is refused without sending, and a refusal throws the server's
+    /// words. A failure that may have renamed it anyway reads the server, and throws only if the
+    /// name didn't take.
+    public func rename(to input: String) async throws {
+        let requested = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard requested.utf16.count <= Self.nameLimit else {
+            throw ChannelAPIError.invalidMessage("Name must be \(Self.nameLimit) characters or fewer.")
+        }
+        let previous = name
+        do {
+            apply(try await api.renameServer(requested))
+        } catch {
+            guard ChannelManagementWriteRecovery.Phase.isRequired(after: error),
+                  (try? await readServer()) != nil,
+                  requested.isEmpty ? name != previous : name == requested else { throw error }
+        }
+    }
+
+    private func readServer() async throws {
+        do { apply(try await api.server()) }
+        catch ChannelAPIError.http(status: 404, message: _) { apply(nil) }
+    }
+
+    /// The server's answer, or nil for one that predates the route.
+    func apply(_ server: ServerInfo?) {
+        update.apply(server?.release)
+        links.apply(server?.links)
+        let name = server?.name ?? Saved.name(of: api.baseURL.absoluteString)
+        accentColor = server?.accentColor
+        needsUpdateToRename = server?.name == nil
+        guard name != self.name || server?.id != serverID else { return }
+        self.name = name
+        serverID = server?.id
+        onSavedChange?()
     }
 
     /// One of this server's channels.
@@ -82,6 +128,19 @@ extension ChannelCatalogStore {
 }
 
 extension [ChannelCatalogStore] {
+    /// Reads every server at once, for Settings to show.
+    @MainActor public func refreshServers() async {
+        await withTaskGroup(of: Void.self) { group in
+            for catalog in self { group.addTask { await catalog.refreshServer() } }
+        }
+    }
+
+    /// The saved server with this identity, so adding it again at another address selects it.
+    @MainActor public func first(identifiedAs id: String?) -> ChannelCatalogStore? {
+        guard let id else { return nil }
+        return first { $0.serverID == id }
+    }
+
     /// The catalog for a server, by its normalized address.
     @MainActor public func first(at serverURL: String) -> ChannelCatalogStore? {
         guard let server = ChannelWaitingRequest.normalizedServer(serverURL) else { return nil }
