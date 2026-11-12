@@ -359,8 +359,8 @@ Drafts stay keyed to the address, so adding it back finds them.
     Settings order and then link order. A server that doesn't answer isn't shown. The section,
     titled "Other Linked Servers", shows only when it has a server, after the server list on the
     phone and at the end of the Servers tab on the Mac, so the details stay under the list. Each
-    row shows the server's name, its address under it in secondary ink, and Add, a plain button
-    on the Mac and a tinted one on the phone. The footer reads "Your servers are linked with
+    row shows the server's name, its address under it in secondary ink, and Add, a standard
+    bordered button on the Mac and accent-colored text on the phone. The footer reads "Your servers are linked with
     these. Add one to see its channels on this Mac.", or "on this iPhone." Add saves the server
     at that address, at the end of the list, without changing any links, and the Mac selects it.
 
