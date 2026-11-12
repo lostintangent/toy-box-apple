@@ -261,6 +261,47 @@ Drafts stay keyed to the address, so adding it back finds them.
   `GET /api/v1/server` while Settings shows the list, after each check and
   each time a server reconnects. These are management writes: an update that times out or drops
   may still have installed, so the row reads the server again before offering another try.
+- **Linking servers.** A linked server's channel leads can find and privately message the leads
+  on the user's other linked servers, with every app closed. The apps link through `GET`,
+  `POST` with `{address}` and `DELETE ?address=` on `/api/v1/server/links`, which each answer
+  `{links: [{address, error?}]}` in link order, where `error` means that server can't reach the
+  address now. A server normalizes an address to its http(s) origin and path without a trailing
+  slash, linking and unlinking are idempotent, and a 422 `{error}` means it refused and stored
+  nothing, like an address it can't reach. A server that answers 404 is too old to link. A link
+  only works both ways, so the apps always link and unlink a pair of saved servers in both
+  directions. They match a link to a saved server by its normalized address, or the address for
+  other servers below, and leave links to servers the app hasn't saved alone and unshown.
+  - **The list.** A saved server is linked when it and another saved server each list the other.
+    Its row shows `link` in secondary ink after its name, 11 pt on the Mac and 13 pt on the
+    phone, and VoiceOver adds "linked". Nothing else in the row changes, and a server that's
+    linked with only some of the others still shows it.
+  - **The Linked switch.** Each server's details end with a Linked switch in its own card, under
+    the details on the Mac and under Server URL on the phone. Its footer names the saved servers
+    it's linked with, then reads "Linked servers' leads can see each other's channel names and
+    purposes, and ask each other for work." Linked servers are one group in which every pair is
+    linked, so every server showing the symbol can reach every other. Turning the switch on links
+    the server with every linked server, or, when none is linked yet, links every saved server
+    with every other. Turning it off unlinks it from every other saved server. A server too old to
+    link shows the switch off and disabled, with the footer "Update Build Box to link it.", and
+    other footers and links leave it out.
+  - **Add Server.** The sheet, and the phone's Add Server page, show the same switch under the
+    address, on by default, with a footer naming the servers it would link with. It links once the
+    server is added, and Settings then selects the new server.
+  - **Failures.** Each change links once, with no retry and nothing in the background, so it can
+    never fight an unlink made elsewhere. Each server that didn't link adds one row under the
+    switch: a yellow `exclamationmark.triangle.fill`, "Couldn't link with Mac mini (timed out).",
+    with the server's own error in parentheses, and Try Again, which repeats only that pair.
+    Results stay until Settings closes. These are management writes, so after a timeout or a lost
+    connection the row reads both servers' links again before offering Try Again.
+  - **A server on this Mac.** The apps never send a loopback address (`localhost`, `127.0.0.0/8`
+    or `::1`) to a server that isn't on the same host. When linking would need one, the switch's
+    card adds an "Address for other servers" field, which Add Server labels "Address for
+    Studio", prefilled with this Mac's network name and explaining that the other server can't
+    reach `127.0.0.1`. The app saves it with that server, and uses it to link and to recognize
+    that server's links. Two servers on this Mac link by their own addresses.
+  - **Removing a server doesn't unlink it,** because other devices and the web rely on the link.
+    The apps store nothing else about links and read every saved server's links while Settings
+    shows the list, and after each change.
 
 ### Sending
 
