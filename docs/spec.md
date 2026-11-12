@@ -338,11 +338,12 @@ The apps decode only the current shapes, with no fallback for an older server.
 | `PUT /api/v1/channels/:id/bookmarks/:sequence` | Bookmark a user or agent message (204). A message that's already bookmarked is also 204, and a system or missing message is 422 |
 | `DELETE /api/v1/channels/:id/bookmarks/:sequence` | Remove a bookmark (204), including one that isn't there |
 
-A channel's `avatar` comes on its catalog entry and its snapshot, and the `avatar` event
-`{"type":"avatar","revision":N,"avatar":{...}}` replaces it. It's either a mark, `{mark, color}`
-shaped like a member's, or `{image}`, a server-relative URL resolved like an attachment. Only the
-channel's lead sets it, and native never does. Missing means it was never set, and it can't be
-cleared. Setting it is quiet: no message, unread, `updatedAt` change or reorder. The server names a
+A channel's `avatar` comes on its catalog entry and its snapshot. It's either a mark,
+`{mark, color}` shaped like a member's, or `{image}`, a server-relative URL resolved like an
+attachment. Only the channel's lead sets it, and native never does. Missing means it was never set,
+and it can't be cleared. A change arrives as the `channel_avatar_changed` system message
+`{type, actor, avatar}`, which the reducer applies as it applies a rename, so it shows in the
+transcript, moves `updatedAt` and counts as unread like any identity change. The server names a
 stored image by its content, so a URL always shows the same picture, and the apps fetch and decode
 each one once per launch. A failed connection tries again on the next frame that asks, and a
 refusal or an image the platform can't decode shows the `#` until the URL changes.
