@@ -9,34 +9,25 @@ import ToyBoxUI
 struct LinkedSwitchTests {
     private let explanation = LinkedSwitch.explanation
 
-    @Test func theFooterNamesTheLinkedServersOrWhatToUpdate() async throws {
+    @Test func theFooterNamesTheLinkedServers() async throws {
         let studio = try add("Studio"), mini = try add("Mac mini"), build = try add("Build Box")
-        let old = try add("Old Mac", tooOld: true)
-        let catalogs = [studio, mini, build, old]
+        let catalogs = [studio, mini, build]
         serve(studio, listing: [mini]); serve(mini, listing: [studio]); serve(build, links: [])
+        #expect(LinkedSwitch.isShown(in: catalogs), "It shows before the servers answer.")
         await catalogs.refreshServers()
 
-        #expect(LinkedSwitch.isShown(in: catalogs))
         let linked = LinkedSwitch(studio, in: catalogs), unlinked = LinkedSwitch(build, in: catalogs)
         #expect(linked.isOn && !linked.isDisabled)
         #expect(linked.footer == "Linked with Mac mini. \(explanation)")
         #expect(!unlinked.isOn && !unlinked.isDisabled)
         #expect(unlinked.footer == explanation)
-        let tooOld = LinkedSwitch(old, in: catalogs)
-        #expect(!tooOld.isOn && tooOld.isDisabled)
-        #expect(tooOld.footer == "Update \(old.name) to link it.", "A server too old to link goes by its host.")
         #expect(LinkedSwitch.footer(addingServerAt: "http://new.example", isOn: true, in: catalogs)
                 == "Links it with Studio and Mac mini. \(explanation)", "Add Server joins the linked servers.")
         #expect(LinkedSwitch.footer(addingServerAt: "http://new.example", isOn: false, in: catalogs) == explanation)
 
         mini.links.changing = false
         #expect(linked.isDisabled && unlinked.isDisabled, "Every switch waits while one changes.")
-
-        #expect(LinkedSwitch(studio, in: [studio, old]).footer == "Update your other servers to link it.")
-        #expect(LinkedSwitch(studio, in: [studio, old]).isDisabled)
         #expect(!LinkedSwitch.isShown(in: [studio]), "Linking needs two saved servers.")
-        #expect(!LinkedSwitch.isShown(in: [old, try add("Older Mac", tooOld: true)]),
-                "It stays out of sight until a server can link.")
     }
 
     @Test func aFailureRowNamesThePairThenWhy() throws {
@@ -54,21 +45,17 @@ struct LinkedSwitchTests {
         #expect(card.words(failure(studio, "http://127.0.0.1:3482")) == "Couldn't link with 127.0.0.1:3482.")
 
         let refused = failure(studio, mini.links.key, .failed("This server can't reach http://mini (fetch failed)."))
-        let needsUpdate = failure(studio, mini.links.key, .needsUpdate(mini.links.key))
         let needsAddress = failure(studio, mini.links.key, .needsAddress(studio.links.key))
-        #expect([refused, needsUpdate, needsAddress].map(card.reason) == [
-            "This server can't reach http://mini (fetch failed).", "Mac mini needs an update.",
-            "Studio needs its Tailscale address.",
+        #expect([refused, needsAddress].map(card.reason) == [
+            "This server can't reach http://mini (fetch failed).", "Studio needs its Tailscale address.",
         ])
-        #expect([refused, needsUpdate, needsAddress].map(LinkedSwitch.offersTryAgain) == [true, false, true],
-                "Try Again can't help until the server is updated.")
     }
 
     @Test func theCardAsksForEachLoopbackServersAddressUnderOneCaption() async throws {
         let studio = try add("Studio", loopback: true), local = try add("Local", loopback: true)
-        let mini = try add("Mac mini"), old = try add("Old Mac", loopback: true, tooOld: true)
-        let catalogs = [studio, local, mini, old]
-        for catalog in [studio, local, mini] { serve(catalog, links: []) }
+        let mini = try add("Mac mini")
+        let catalogs = [studio, local, mini]
+        for catalog in catalogs { serve(catalog, links: []) }
         await catalogs.refreshServers()
         let card = LinkedSwitch(studio, in: catalogs), miniCard = LinkedSwitch(mini, in: catalogs)
 
@@ -82,7 +69,6 @@ struct LinkedSwitchTests {
                 == "Other servers reach Studio and Local at these addresses, through tailscale serve.")
         #expect(caption.runs.compactMap { run in run.inlinePresentationIntent == .code ? String(caption[run.range].characters) : nil }
                 == ["tailscale serve"])
-        #expect(LinkedSwitch(old, in: catalogs).addressesAsked.isEmpty, "A switch that can't work asks for nothing.")
 
         try studio.links.setTailscaleAddress("studio.tail1234.ts.net")
         try local.links.setTailscaleAddress("local.tail1234.ts.net")
@@ -129,10 +115,10 @@ struct LinkedSwitchTests {
         #expect(local.links.tailscaleAddress == "https://local.tail1234.ts.net")
     }
 
-    /// A saved server named `name`, which answers without a name or links when it's too old to link.
-    private func add(_ name: String, loopback: Bool = false, tooOld: Bool = false) throws -> ChannelCatalogStore {
+    /// A saved server named `name`.
+    private func add(_ name: String, loopback: Bool = false) throws -> ChannelCatalogStore {
         let host = UUID().uuidString.lowercased() + (loopback ? ".localhost" : ".example")
-        if !tooOld { LinksRoute.answers.withLock { $0[host] = .init(name: name, links: []) } }
+        LinksRoute.answers.withLock { $0[host] = .init(name: name, links: []) }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LinksRoute.self]
         let api = try ChannelAPI(serverURL: "http://\(host)", session: URLSession(configuration: configuration))
@@ -149,8 +135,7 @@ struct LinkedSwitchTests {
     }
 }
 
-/// Answers `GET /api/v1/server` for each test server by its host, and as Toy Box 0.3.9 for one too
-/// old to link.
+/// Answers `GET /api/v1/server` for each test server by its host.
 private final class LinksRoute: URLProtocol, @unchecked Sendable {
     struct Answer { var name: String, links: [String] }
     static let answers = Mutex<[String: Answer]>([:])
@@ -160,12 +145,13 @@ private final class LinksRoute: URLProtocol, @unchecked Sendable {
 
     override func startLoading() {
         let url = request.url!
-        let isServer = url.path == "/api/v1/server"
-        let answer = Self.answers.withLock { $0[url.host ?? ""] }
-        let release = ServerVersion(version: answer == nil ? "0.3.9" : "0.4.0", installedVersion: nil)
-        let body = isServer ? try? JSONEncoder().encode(ServerInfo(id: answer.map { _ in url.host ?? "" }, name: answer?.name, release: release, links: answer?.links))
-                            : Data(#"{"error":"Not found"}"#.utf8)
-        let response = HTTPURLResponse(url: url, statusCode: isServer ? 200 : 404, httpVersion: "HTTP/1.1",
+        let answer = url.path == "/api/v1/server" ? Self.answers.withLock { $0[url.host ?? ""] } : nil
+        let body = try? answer.map { answer in
+            try JSONEncoder().encode(ServerInfo(id: url.host ?? "", name: answer.name, accentColor: "#facc15",
+                                                release: .init(version: "0.4.0", installedVersion: nil),
+                                                links: answer.links))
+        } ?? Data(#"{"error":"Not found"}"#.utf8)
+        let response = HTTPURLResponse(url: url, statusCode: answer != nil ? 200 : 404, httpVersion: "HTTP/1.1",
                                        headerFields: ["Content-Type": "application/json"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: body ?? Data())

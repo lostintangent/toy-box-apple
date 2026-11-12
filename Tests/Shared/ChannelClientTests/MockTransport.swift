@@ -60,8 +60,8 @@ final class MockTransport: Sendable {
 
     /// A loopback transport serves a host under `localhost`, as a server on this device would. A
     /// catalog reads `/api/v1/server` each time it connects, so a transport for a test of the catalog
-    /// alone answers that read itself, as a server too old for the route, and leaves it out of
-    /// `requests`, `stops`, the handler's count and held responses.
+    /// alone answers that read itself with a 404, which leaves the catalog as it was, and leaves it
+    /// out of `requests`, `stops`, the handler's count and held responses.
     init(loopback: Bool = false, catalogOnly: Bool = false, handler: @escaping Handler) {
         self.handler = handler
         self.catalogOnly = catalogOnly

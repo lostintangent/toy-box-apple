@@ -327,7 +327,7 @@ struct AddServerSheet: View {
                 ServerAddressFields(connection: connection, failure: failure, prompt: "https://")
                     .onSubmit(add)
             }
-            if model.catalogs.canLink {
+            if !model.catalogs.isEmpty {
                 AddServerLinkedSection(address: connection.address, isOn: $links, addresses: addresses)
             }
         }
@@ -347,7 +347,7 @@ struct AddServerSheet: View {
 
     private func add() {
         guard connection.validationError == nil else { return }
-        let links = links && model.catalogs.canLink && model.catalogs.first(at: connection.address) == nil
+        let links = links && !model.catalogs.isEmpty && model.catalogs.first(at: connection.address) == nil
         let needed = links ? model.catalogs.serversNeedingAddress(toLink: connection.address) : []
         guard addresses.validate(needed, in: model.catalogs) else { return }
         do {

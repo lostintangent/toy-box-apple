@@ -563,17 +563,14 @@ public final class ChannelStore {
 public final class ChannelCatalogStore {
     public let api: ChannelAPI
     /// The server's name in Settings and its section header: the last name the server answered, or
-    /// its host for a server too old to have one. Settings saves it, so it shows while the server
-    /// can't connect.
+    /// its host before it answers. Settings saves it, so it shows while the server can't connect.
     public internal(set) var name: String
     /// The identity the server makes once and keeps, from its last answer, so adding the same server
     /// at another address selects it instead. Settings saves it.
     public internal(set) var serverID: String?
-    /// The server's accent from its last answer, `#` and six hex digits, or nil before it answers or
-    /// for a server too old to have one. Nothing shows it yet, and it isn't saved.
+    /// The server's accent from its last answer, `#` and six hex digits, or nil before it answers.
+    /// Nothing shows it yet, and it isn't saved.
     public internal(set) var accentColor: String?
-    /// The server answered without a name, so it can't be renamed until it's updated.
-    public internal(set) var needsUpdateToRename = false
     /// Called when a read changes the server's name or identity, so the app saves its servers.
     @ObservationIgnored public var onSavedChange: (@MainActor () -> Void)?
     public private(set) var state: ChannelCatalog?

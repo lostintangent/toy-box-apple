@@ -24,18 +24,17 @@ public struct ServerVersion: Codable, Equatable, Sendable {
 
 /// What `GET /api/v1/server` answers: the server's identity, name, accent, releases and links.
 public struct ServerInfo: Codable, Equatable, Sendable {
-    /// An identity the server makes once and keeps, whatever address reaches it. Nil for a server
-    /// too old to have one.
-    public var id: String?
-    /// The name every device and lead sees. Nil for a server too old to have one.
-    public var name: String?
-    /// The server's accent, `#` and six hex digits. Nil for a server too old to have one.
-    public var accentColor: String?
+    /// An identity the server makes once and keeps, whatever address reaches it.
+    public var id: String
+    /// The name every device and lead sees.
+    public var name: String
+    /// The server's accent, `#` and six hex digits.
+    public var accentColor: String
     public var release: ServerVersion
-    /// The origins of the servers this one links, in link order. Nil for a server too old to link.
-    public var links: [String]?
+    /// The origins of the servers this one links, in link order.
+    public var links: [String]
 
-    public init(id: String?, name: String?, accentColor: String? = nil, release: ServerVersion, links: [String]?) {
+    public init(id: String, name: String, accentColor: String, release: ServerVersion, links: [String]) {
         self.id = id
         self.name = name
         self.accentColor = accentColor
@@ -47,21 +46,20 @@ public struct ServerInfo: Codable, Equatable, Sendable {
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decodeIfPresent(String.self, forKey: .id)
-        name = try container.decodeIfPresent(String.self, forKey: .name)
-            .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
-        accentColor = try container.decodeIfPresent(String.self, forKey: .accentColor)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        accentColor = try container.decode(String.self, forKey: .accentColor)
         release = try ServerVersion(from: decoder)
-        links = try container.decodeIfPresent([String].self, forKey: .links)
+        links = try container.decode([String].self, forKey: .links)
     }
 
     public func encode(to encoder: any Encoder) throws {
         try release.encode(to: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encodeIfPresent(id, forKey: .id)
-        try container.encodeIfPresent(name, forKey: .name)
-        try container.encodeIfPresent(accentColor, forKey: .accentColor)
-        try container.encodeIfPresent(links, forKey: .links)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(accentColor, forKey: .accentColor)
+        try container.encode(links, forKey: .links)
     }
 }
 
@@ -95,7 +93,7 @@ public final class ServerUpdate {
         case failed(String)
     }
 
-    /// The server's last answer. Nil until it answers, and for a server that predates the route.
+    /// The server's last answer. Nil until it answers.
     public private(set) var version: ServerVersion?
     public private(set) var outcome: Outcome?
     private var isChecking = false
@@ -114,7 +112,7 @@ public final class ServerUpdate {
     }
 
     /// Nil when the row offers neither action and isn't reconnecting, because the server hasn't
-    /// answered, predates the route or has no installed release.
+    /// answered or has no installed release.
     public var phase: Phase? {
         if isChecking { return .checking }
         if isReconnecting { return .reconnecting }
@@ -187,8 +185,8 @@ public final class ServerUpdate {
         }
     }
 
-    /// The server's answer, or nil for one that predates the route.
-    func apply(_ current: ServerVersion?) {
+    /// The server's releases, as it answered them.
+    func apply(_ current: ServerVersion) {
         if current != version { outcome = nil }
         version = current
     }

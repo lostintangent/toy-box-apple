@@ -15,19 +15,15 @@ public struct LinkedSwitch {
         self.catalogs = catalogs
     }
 
-    /// Whether Settings shows linking: two or more saved servers, and one of them can link.
+    /// Whether Settings shows linking: two or more saved servers.
     public static func isShown(in catalogs: [ChannelCatalogStore]) -> Bool {
-        catalogs.count > 1 && catalogs.canLink
+        catalogs.count > 1
     }
 
-    /// The server can link and so can another, so the switch works.
-    public var isAvailable: Bool { catalog.links.canLink && othersCanLink }
-    public var isOn: Bool { isAvailable && catalogs.isLinked(catalog) }
-    public var isDisabled: Bool { !isAvailable || catalogs.isChangingLinks }
+    public var isOn: Bool { catalogs.isLinked(catalog) }
+    public var isDisabled: Bool { catalogs.isChangingLinks }
 
     public var footer: String {
-        if catalog.links.needsUpdate { return "Update \(catalog.name) to link it." }
-        if catalog.links.canLink && !othersCanLink { return "Update your other servers to link it." }
         let linked = catalogs.linkedServers(of: catalog).map(\.name)
         return linked.isEmpty ? Self.explanation : "Linked with \(linked.formatted(.list(type: .and))). \(Self.explanation)"
     }
@@ -55,22 +51,13 @@ public struct LinkedSwitch {
     public func reason(_ failure: ServerLinks.Failure) -> String {
         switch failure.reason {
         case .failed(let words): words
-        case .needsUpdate(let address): "\(Self.name(address, in: catalogs)) needs an update."
         case .needsAddress(let address): "\(Self.name(address, in: catalogs)) needs its Tailscale address."
         }
     }
 
-    /// Whether Try Again could help, which it can't until a server too old to link is updated.
-    public static func offersTryAgain(_ failure: ServerLinks.Failure) -> Bool {
-        if case .needsUpdate = failure.reason { return false }
-        return true
-    }
-
-    /// The servers, by address, whose Tailscale address the card asks for while the switch works: each
-    /// one turning it on would need, and this server's own once it has one, while it's saved at a
-    /// loopback address.
+    /// The servers, by address, whose Tailscale address the card asks for: each one turning it on
+    /// would need, and this server's own once it has one, while it's saved at a loopback address.
     public var addressesAsked: [String] {
-        guard isAvailable else { return [] }
         let address = catalog.api.baseURL.absoluteString
         var asked = catalogs.serversNeedingAddress(toLink: address)
         if catalog.links.isLoopback, catalog.links.tailscaleAddress != nil,
@@ -118,8 +105,6 @@ public struct LinkedSwitch {
     public static func name(_ address: String, in catalogs: [ChannelCatalogStore]) -> String {
         catalogs.first(at: address)?.name ?? SidebarFooter.server(address)
     }
-
-    private var othersCanLink: Bool { catalogs.contains { $0 !== catalog && $0.links.canLink } }
 }
 
 /// What's typed in each Tailscale address field, by the server's address, until it's saved.

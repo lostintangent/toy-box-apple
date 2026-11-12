@@ -17,7 +17,6 @@ struct ServerLinksTests {
             /// The origin other servers reach this one at, unless it's on this device.
             var origin: String?
             var links: [String] = []
-            var supportsLinks = true
             var isDown = false
             /// Every link this server refuses, with these words, as one it's asked to store.
             var refusal: String?
@@ -85,14 +84,13 @@ struct ServerLinksTests {
                 }
                 if server.isDown { throw URLError(.cannotConnectToHost) }
                 func answer() throws -> MockResponse {
-                    try .json(ServerInfo(id: key, name: String(key.prefix(8)),
-                                         release: .init(version: "0.4.0", installedVersion: nil),
-                                         links: server.supportsLinks ? server.links : nil))
+                    try .json(ServerInfo(id: key, name: String(key.prefix(8)), accentColor: "#facc15",
+                                         release: .init(version: "0.4.0", installedVersion: nil), links: server.links))
                 }
                 switch (request.httpMethod ?? "GET", url.path) {
                 case ("GET", "/api/v1/server"):
                     return try answer()
-                case (_, "/api/v1/server/links") where server.supportsLinks:
+                case (_, "/api/v1/server/links"):
                     break
                 default:
                     return MockResponse(status: 404)
@@ -129,9 +127,6 @@ struct ServerLinksTests {
                 }
                 if changesBoth {
                     if let refusal = target.refusal { return try .json(["error": refusal], status: 422) }
-                    guard target.supportsLinks else {
-                        return try .json(["error": "\(origin) needs an update to link."], status: 422)
-                    }
                     if !target.links.contains(where: { ServerLinks.origin($0) == reached }) {
                         servers[other]?.links.append(reached)
                     }
@@ -152,42 +147,35 @@ struct ServerLinksTests {
     @Test func aServerIsLinkedOnlyWhenItAndAnotherSavedServerListEachOther() async throws {
         let network = Network()
         let studio = try network.add(), mini = try network.add(), build = try network.add()
-        let old = try network.add { $0.supportsLinks = false }
-        let catalogs = [studio, mini, build, old]
+        let catalogs = [studio, mini, build]
         network.link((studio, build))
         network.set(studio) { $0.links.append("http://unsaved.example") }
         network.set(mini) { $0.links.append(origin(studio)) }
-        #expect(!catalogs.canLink, "Nothing shows linking until a server answers.")
+        #expect(!catalogs.contains(where: catalogs.isLinked), "Nothing is linked until the servers answer.")
 
         await catalogs.refreshServers()
 
-        #expect(catalogs.canLink)
-        #expect(catalogs.map(catalogs.isLinked) == [true, false, true, false])
+        #expect(catalogs.map(catalogs.isLinked) == [true, false, true])
         #expect(names(catalogs.linkedServers(of: studio)) == names([build]), "A link one way, or to an unsaved server, isn't shown.")
-        #expect(old.links.needsUpdate && !old.links.canLink && old.links.listed == nil)
         #expect(studio.links.listed?.count == 2)
     }
 
-    @Test func theFirstSwitchLinksEverySavedServerWithEveryOtherButOnesTooOld() async throws {
+    @Test func theFirstSwitchLinksEverySavedServerWithEveryOther() async throws {
         let network = Network()
         let studio = try network.add(), mini = try network.add(), build = try network.add()
-        let old = try network.add { $0.supportsLinks = false }
-        let catalogs = [studio, mini, build, old]
+        let catalogs = [studio, mini, build]
         await catalogs.refreshServers()
         #expect(names(catalogs.linkPeers(forServerAt: mini.links.key)) == names([studio, build]))
 
         await catalogs.setLinked(mini, true)
 
-        #expect(catalogs.map(catalogs.isLinked) == [true, true, true, false])
+        #expect(catalogs.map(catalogs.isLinked) == [true, true, true])
         #expect(Set(network.server(studio).links) == [origin(mini), origin(build)])
         #expect(Set(network.server(mini).links) == [origin(studio), origin(build)])
         #expect(Set(network.server(build).links) == [origin(studio), origin(mini)])
-        #expect(network.server(old).asked.isEmpty)
         #expect(network.writes == 3, "Each pair takes one request, which links both ends.")
         #expect(mini.links.failures.isEmpty && mini.links.changing == nil && !catalogs.isChangingLinks)
 
-        await catalogs.setLinked(old, true)
-        #expect(network.server(old).asked.isEmpty, "A server too old to link keeps its switch off.")
         await catalogs.setLinked(build, true)
         #expect(network.writes == 3, "A pair already linked sends nothing.")
     }
@@ -210,12 +198,6 @@ struct ServerLinksTests {
         #expect(!catalogs.isLinked(build) && network.server(build).asked.isEmpty)
         #expect(Set(network.server(added).asked) == [origin(studio), origin(mini)] && network.server(studio).asked.isEmpty,
                 "Each pair's request goes to its first server, which links both ends.")
-
-        let old = try network.add { $0.supportsLinks = false }
-        catalogs.append(old)
-        await catalogs.setLinked(old, true)
-        #expect(old.links.needsUpdate && old.links.failures.isEmpty, "A server too old to link is added unlinked.")
-        #expect(network.server(studio).asked.isEmpty && network.server(old).writes == 0)
     }
 
     @Test func turningOffUnlinksBothWaysAndLeavesUnsavedServersAlone() async throws {
@@ -279,19 +261,6 @@ struct ServerLinksTests {
 
         #expect(names(catalogs.linkedServers(of: studio)) == names([mini]))
         #expect(studio.links.failures.isEmpty, "Reading both servers again shows the link landed.")
-    }
-
-    @Test func aServerThatAnswers404WhileLinkingIsTooOld() async throws {
-        let network = Network()
-        let studio = try network.add(), mini = try network.add()
-        let catalogs = [studio, mini]
-        await catalogs.refreshServers()
-        network.set(studio) { $0.supportsLinks = false }
-
-        await catalogs.setLinked(studio, true)
-
-        #expect(studio.links.failures.map(\.reason) == [.needsUpdate(studio.links.key)])
-        #expect(studio.links.needsUpdate && !catalogs.isLinked(studio))
     }
 
     @Test func aHalfLinkedPairChangesOnlyTheEndItNeeds() async throws {
