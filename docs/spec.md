@@ -338,6 +338,15 @@ The apps decode only the current shapes, with no fallback for an older server.
 | `PUT /api/v1/channels/:id/bookmarks/:sequence` | Bookmark a user or agent message (204). A message that's already bookmarked is also 204, and a system or missing message is 422 |
 | `DELETE /api/v1/channels/:id/bookmarks/:sequence` | Remove a bookmark (204), including one that isn't there |
 
+A channel's `avatar` comes on its catalog entry and its snapshot, and the `avatar` event
+`{"type":"avatar","revision":N,"avatar":{...}}` replaces it. It's either a mark, `{mark, color}`
+shaped like a member's, or `{image}`, a server-relative URL resolved like an attachment. Only the
+channel's lead sets it, and native never does. Missing means it was never set, and it can't be
+cleared. Setting it is quiet: no message, unread, `updatedAt` change or reorder. The server names a
+stored image by its content, so a URL always shows the same picture, and the apps fetch and decode
+each one once per launch. A failed connection tries again on the next frame that asks, and a
+refusal or an image the platform can't decode shows the `#` until the URL changes.
+
 Bookmarks belong to the user, and every client of the server shares them. A snapshot carries
 `bookmarks`, the bookmarked sequences in ascending order, and the `bookmarks` event replaces the
 whole list. A resume keeps the last list. `ChannelStore.setBookmarked` shows the change at once
@@ -559,7 +568,7 @@ drop shadows. Use an 8-point spacing rhythm, with 4-point adjustments inside com
 | Text | `labelColor`, `secondaryLabelColor`, `tertiaryLabelColor` by hierarchy |
 | Selection and focus | System accent, source-list selection and focus ring. Respect user accent |
 | Hover (Mac) | One hover fill for every custom control and row that responds to the pointer: primary at 12% in Dark and 8% in Light, 5% more while pressed, in the control's own shape, fading over 120 ms. On an accent selection it's white at 20%. A borderless button's secondary ink turns primary while lit, and a colored symbol keeps its color. The fade holds under Reduce Motion, since it moves nothing. Disabled controls stay unlit. It's defined once and every hover uses it. Native toolbar, menu and list controls keep the system's own |
-| Toy Box identity | The lead's avatar exactly as the server supplies it, a navy `#1E3A8A` circle with a gold `#FACC15` outline star, drawn as that color's `.gradient` like every avatar. Channel icons keep Toy Box's channel cyan `#0891b2`, which the lead doesn't use. Recolor neither to the accent |
+| Toy Box identity | The lead's avatar exactly as the server supplies it, a navy `#1E3A8A` circle with a gold `#FACC15` outline star, drawn as that color's `.gradient` like every avatar. A channel without an avatar of its own falls back to Toy Box's channel cyan `#0891b2`, which the lead doesn't use. Recolor neither to the accent |
 | Unread | Semantic system blue, 1-point New rule. Blue does not mean working |
 | Requests | Orange wash on the pending bubble, orange `questionmark.bubble.fill`, primary label text and a Reply button. Never an outline |
 | Completion and additions | The shared completion green (`#196C2E` light, `#70D58A` dark) plus a knocked-out checkmark or explicit `+` sign. Never a white glyph on system green |
@@ -1045,10 +1054,18 @@ Do not reorder it for presence or attention. Refresh preserves scroll and select
 Rows follow the Mail and Messages list pattern: who or what on the left, when on the right, and
 detail beneath. Each row is at least 52 high (scaled with text size), with 8 horizontal and 8
 vertical content padding and native source-list selection. A 30-point channel icon sits 10 points
-before the text and is centered on it: a circle filled with `Color(#0891b2).gradient` (Toy Box's
-channel cyan through SwiftUI's standard gradient, a constant of its own and never read from the
-lead's avatar) and a 14-point semibold white `number`. A round icon
-matches the avatars and status glyphs, rather than a tinted rounded tile, a web convention.
+before the text and is centered on it, showing the channel's avatar in a rounded square with
+continuous corners at 26% of its side, like the pane and the system's app icons. The square tells a
+channel from the round agents beside it. `ChannelMark` draws it everywhere a channel appears:
+
+- **Mark.** Its color's `.gradient` (flat with Increase Contrast), with the 24-unit path at 64%
+  and a 2.25-unit stroke in contrast ink, exactly as member avatars draw theirs.
+- **Image.** Edge to edge with no fill behind, under a 1-point inner hairline of the primary color
+  at 10%, so a light picture keeps its edge on a light background. The square stays empty while it
+  loads.
+- **Fallback.** With no avatar, or an image that won't load, a 14-point semibold white `number` on
+  `Color(#0891b2).gradient`, Toy Box's channel cyan as a constant of its own, never read from the
+  lead's avatar. Other sizes scale the glyph with the square.
 
 The first line is the name (13 semibold, primary, one line, tail truncation), then at least 6
 points, then the last-activity time (11 regular, secondary, tabular, never truncated), aligned on
@@ -1126,11 +1143,12 @@ With no directory, line 2 leads with the purpose's first line (11 regular, secon
 truncation). With neither, line 2 holds only its trailing indicators, and the row keeps its height.
 
 **Selection.** Selected rows use the native source-list highlight. In the key window it is the
-accent fill (`backgroundProminence == .increased`), and every custom color must yield to it. The
-icon becomes a 22% white disc with a white `number`. The request bubble, completion check and
-unread dot become white. The hover capsule becomes 20% white. Text uses `.primary` and
-`.secondary` so it whitens on its own. Working avatars keep their own colors. Never draw cyan,
-orange or green on the accent fill. In an inactive window, or when the list isn't focused, the
+accent fill (`backgroundProminence == .increased`), and every custom color must yield to it,
+except the avatars. The channel's avatar keeps its own colors, the cyan `#` fallback included,
+like the app icons in System Settings' sidebar, because an avatar is identity rather than a status
+color. The request bubble, completion check and unread dot become white. The hover capsule becomes
+20% white. Text uses `.primary` and `.secondary` so it whitens on its own. Working avatars keep
+their own colors. Apart from avatars, never draw cyan, orange or green on the accent fill. In an inactive window, or when the list isn't focused, the
 highlight is gray and every row color returns. Search, filtering and keyboard selection never
 change these metrics.
 
@@ -1153,8 +1171,8 @@ hide the system navigation indicator and draw a small tertiary `chevron.forward`
 after the time, aligned on the first baseline. The chevron becomes white when selected.
 Unfolded rows show no chevron, and the sidebar marks the open channel with the list's native
 selection, like iPad Mail, never a custom or cleared row background. Under an accent fill
-(`backgroundProminence == .increased`) the opaque secondary grays become `.secondary`, and the
-mark, chevron and attention turn white as on the Mac.
+(`backgroundProminence == .increased`) the opaque secondary grays become `.secondary`, the chevron
+and attention turn white, and the channel's avatar keeps its own colors, as on the Mac.
 
 The working-avatar stack exists independently of attention, so a working team and pending question
 can coexist. Keep the full-team names in row help/accessibility even though idle members aren't
@@ -1306,7 +1324,7 @@ changes and the band never blinks off and on. It still ignores taps.
 | Part | Row | Recorder | Transition |
 | --- | --- | --- | --- |
 | Surface | None | An opaque card: `systemBackground`, then the phone's 7% neutral lift and accent at 9%, so the dimmed rows never show through. 20-point continuous corners, with the sides under Edges. A 0.5-point edge of accent at 30%, or the Increased Contrast edge when that's on, and a shadow of black at 30% in Dark or 12% in Light, 24-point radius, 8 points down | Starts on the row's frame. Folded, the `systemBackground` base is solid from the first frame, since it matches the list's background under the row, and the lift, accent, edge and shadow fade in over 0.2 seconds as the card grows with the spring. On the glass sidebar, the base and wash are both solid from the first frame and only the edge and shadow fade in |
-| Mark | 28-point channel circle with `number` | 28-point circle of accent at 15% with an accent `mic.fill`. Never a solid fill, because Send is the only filled control | The fill animates and the symbol swaps with `.contentTransition(.symbolEffect(.replace))` |
+| Mark | The channel's 28-point avatar | 28-point circle of accent at 15% with an accent `mic.fill`. Never a solid fill, because Send is the only filled control | The fill animates and the symbol swaps with `.contentTransition(.symbolEffect(.replace))` |
 | Time and chevron | Last activity, then the folded `chevron.forward` | The elapsed time, "0:06", in caption, secondary and tabular, on the time's exact baseline and trailing edge. The chevron's space stays empty, so nothing on the top line shifts | The time leaves with a 2-point blur and fade over 0.15 seconds, then the counter fades in over 0.15 seconds, so the two never show together. Every later swap in this slot, to Offline or back to the time, works the same way, except at the settle. The chevron and attention mark fade out with the time. The counter's digits change in place, with no transition |
 | Line 2 | Folder or purpose, working stack, attention | The waveform, 24 high | Line 2 fades out with a 2-point blur over 0.15 seconds as the bars rise from 20% of their height |
 | Words | None | Body text 8 points below the waveform, up to five lines, then the oldest line scrolls under a 12-point top fade. "Listening…" in secondary until the first word. Tentative words are secondary and settle to primary as they finalize | Each new line grows the card with `.smooth(duration: 0.25)`. Up to five lines, the lines already shown hold still and the new one appears beneath them, while the controls and the card's bottom edge move down together in that one transaction. Once the card holds its bottom near the end of the list, the heading, the lines and the top edge move up together instead. Only from the sixth line does the text move, as the oldest line slides up under the fade |
@@ -1497,7 +1515,7 @@ stay flat. Historical text stays intact.
 **The lead's avatar** is navy `#1E3A8A` with the same outline star drawn in gold `#FACC15`, Toy
 Box's own yellow, through `ink`. That is 6.8:1 on the base color and about 3.9:1 on the gradient's
 lighter top, and it reads as the one in charge at 14 points. It also stops the lead from matching
-the channel icon's cyan. Increase Contrast flattens the navy and keeps the gold. The server is the
+the channel fallback's cyan. Increase Contrast flattens the navy and keeps the gold. The server is the
 single source of this art. Every channel snapshot already carries the lead's `avatar`, so Toy Box
 adds the optional `ink` to the avatar shape and sets it only on its lead profile. `update_member`
 never accepts it, so members keep black or white ink. A client without `ink` support draws the
@@ -2823,7 +2841,8 @@ New Channel, Edit Channel, Add Agent and Edit Agent share one sheet language:
   over one 12-point secondary line when the sheet has a subtitle. Edit Channel has only its
   title, vertically centered beside the mark with no empty subtitle line. No divider follows
   the header. Channel sheets use the
-  sidebar's cyan `#` mark at 40 points (19-point semibold glyph). Edit Agent uses the agent's
+  channel's avatar at 40 points, and Create Channel the cyan `#` fallback (19-point semibold
+  glyph). Edit Agent uses the agent's
   own avatar at 40 points. Add Agent uses a 40-point dashed circle with a plus, matching Team's Add
   Agent row.
 - **Body.** One `.formStyle(.grouped)` form. Section 1 is identity: Name as a native text field
@@ -3370,7 +3389,7 @@ The app name is "Toy Box". The shortcut tile is navy, like the icon. Tile symbol
 
 The Channel entity is identified by its server and channel ID, so the same channel on two servers
 stays two channels, and displays the name, with `number` as its image
-(the whole icon in Spotlight) and the sidebar's attention as its subtitle: "Needs your reply", "All
+(the channel's avatar in Spotlight) and the sidebar's attention as its subtitle: "Needs your reply", "All
 tasks completed" or "Unread messages". It has Name, Unread Count (`latestSequence - seenThrough`,
 which counts channel events too), Needs Your Reply, Tasks Completed and Content properties, with
 Content as **On-screen content** describes. Its query reads
@@ -3515,7 +3534,8 @@ the signed phone and Mac on real devices.
 Spotlight is Mac only.
 
 Every channel on the servers saved in Settings is in Spotlight by name, with the
-first line of its purpose under it and the sidebar's cyan channel icon (a 128 px PNG) beside it.
+first line of its purpose under it and the channel's avatar beside it, rendered by `ChannelMark`
+as a 128 px PNG once its image loads, or with the `#` fallback if it can't.
 Attention is left out, since Spotlight would keep it after it goes stale. Picking a channel runs
 Open Channel. The Channel entity is an `IndexedEntity`, keyed by its server and channel ID in the
 app's default index. Once every server has answered and at least one has loaded, the loaded
