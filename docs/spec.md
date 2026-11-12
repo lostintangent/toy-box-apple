@@ -78,7 +78,7 @@ Signing, notarization, in-place updates and TestFlight are in the [release skill
   go, the store stays connected for 5 seconds, so switching back lands on a live store. Its first
   frame then has a working composer, and the transcript lands without waiting on a reconnect. On
   the switch benchmark that's about 100 ms less main-thread time per warm switch. Only the two most
-  recently released stores linger, and changing or removing a server disconnects its stores at once. A lingering store
+  recently released stores linger, and moving or removing a server disconnects its stores at once. A lingering store
   has no transcript, so it never marks read, and notifications come from the catalog, so it posts
   none.
   Views read the store's observed slices (`details`, `roster`, `agentStatuses`, `presence`,
@@ -172,7 +172,7 @@ couldn't be opened is Handoff's `missing`.
 - **Test Connection:** `ServerConnectionProbe.phase` is nil until a test runs, then `connecting`,
   `connected` with the channel count, or `failed`. `isConnecting` drives the button.
 - **Holders:** `ChannelConnections` counts who holds each store through `hold` and `release`. The
-  last release lingers as State describes, and `disconnectAll(in:)` serves changing or removing a
+  last release lingers as State describes, and `disconnectAll(in:)` serves moving or removing a
   server.
 
 ### Several servers
@@ -183,8 +183,8 @@ keeps for every device and lead, as Updating a server describes. The apps keep t
 read, so a server that can't connect keeps its name, and a server too old to have one goes by its
 host, plus its port when it isn't the default. Each server has its own `ChannelAPI`, catalog stream and channel stores, and every rule in
 this spec holds within each server unchanged. Nothing else is new. Where this spec says a server
-change, it means changing or removing one server, which touches only that server's channels.
-Drafts stay keyed to the address, so adding it back finds them.
+change, it means moving or removing one server, which touches only that server's channels.
+Drafts stay keyed to the address, so adding it back finds them, and move with a server that moves.
 
 - **One server looks exactly as it does today.** The list has no section headers, and the Mac
   footer keeps its status line as Sidebar describes. Everything below applies with two or more.
@@ -227,14 +227,21 @@ Drafts stay keyed to the address, so adding it back finds them.
 - **Settings** lists the servers with their dots and names, even when there's one, so Add is
   always there. On the Mac, they have their own Servers tab between General and Notifications,
   and the list has Add and
-  Remove buttons and drags to reorder, and the selected server's Name, Server URL with Test
-  Connection and status sit below it. The list adds no inset of its own: its dots line up with
+  Remove buttons and drags to reorder, and the selected server's Name, Server URL and status sit
+  below it. The list adds no inset of its own: its dots line up with
   the labels below, and it's as tall as its rows. Its card keeps the grouped Form's own padding
-  around a list, a little roomier than the details card below it. On the phone, each row opens Welcome's Server URL card with
-  a Name field, Add Server follows the rows, and Edit reorders and deletes. Adding an address that's
-  already listed, or a server whose `id` is already saved, selects that server instead. Removing one asks first, then disconnects it
+  around a list, a little roomier than the details card below it. On the phone, each row opens
+  its server's page, with Name and then Server URL and its status, Add Server follows the rows,
+  and Edit reorders and deletes. A saved server's address can't be edited, because a server is
+  its `id` and its name, and the address is only how this device reaches it. Server URL shows it
+  as a plain value in secondary ink that can be selected and copied, and Test Connection is only
+  in Add Server and Welcome. To use another server, the user adds it and removes the old one.
+  Adding an address that's already listed selects that server. Adding a server whose `id` is
+  already saved at another address moves that server there instead, as if removed from the old
+  address and added at the new one but keeping its place, name, links and drafts, and selects
+  it, so a server that moved is simply added again. Removing one asks first, then disconnects it
   and removes its channels from Spotlight, notifications, widgets and Live Activities. The last
-  server can't be removed, only given a new address, so Welcome appears only on first launch.
+  server can't be removed, so Welcome appears only on first launch.
 - **Naming a server.** Name renames the server itself, for every device and every lead, through
   `PATCH /api/v1/server {name}`, which answers the server. Its caption reads "Every device and
   lead sees this name. Clear it to use the computer's name." It saves on Return or when the field
@@ -3011,16 +3018,14 @@ the target is gone, says it's still there and offers the deletion again, or says
 failed and offers Check Again. Nothing is sent again before that check.
 
 Settings uses a native scene with General and Notifications sections. The Mac adds a Servers tab
-between them for the servers (see [Several servers](#several-servers)), each with its Server URL,
-Test Connection and status. General includes the selected appearance (System by default). Validate HTTP(S), preserve path prefixes
-and display actionable failures. Changing a server's address prompts before replacing its live
-connections, namespaces drafts, then refreshes its catalog. On iPhone, each server shares
-Welcome's Server URL card, with no separate Use Server action or confirmation. Return or Test
-Connection runs the test, and success on a different address switches to it at once: while it
-applies, the field and Close are disabled and the row reads Connecting…, then a green checkmark
-marks the connected address. Testing the server in use only confirms it. A failed test changes
-nothing and names the server still in use, and closing Settings drops an untested edit. A switch
-that fails to load the catalog shows its error in the card. Notifications explains requests
+between them for the servers (see [Several servers](#several-servers)), each with its Name,
+Server URL and status. General includes the selected appearance (System by default). Adding a
+server validates HTTP(S), preserves path prefixes and displays actionable failures. On iPhone,
+Welcome and Add Server share the Server URL card, with no separate Use Server action or
+confirmation. Return or Test Connection runs the test: while it runs, the field is disabled and
+the row reads Connecting…, then a green checkmark marks a server that answered, and a failed test
+shows its error in the card. A saved server's page shows its address as a plain value, with the
+same checkmark while it's connected, or its failure. Notifications explains requests
 and completions before asking system permission in response to an explicit enable action.
 Permission denial shows Open System Settings, never repeated permission prompts. General also
 holds Open at Login, Show in menu bar, the Quick Send shortcut recorder, and the two on-device
