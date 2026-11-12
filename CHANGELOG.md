@@ -1,6 +1,16 @@
 # Changelog
 
+## Mac 0.1.35
+
+### Features
+
+- You can now link your Toy Box servers from Settings, so a channel's lead on one server can see the channels on your others and ask them for work.
+
 ## iPhone 0.1.32
+
+### Features
+
+- You can now link your Toy Box servers from Settings, so a channel's lead on one server can see the channels on your others and ask them for work.
 
 ### Bugs/Polish
 
