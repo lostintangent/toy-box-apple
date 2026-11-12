@@ -106,6 +106,8 @@ struct CardMark: ViewModifier {
                 symbol(shown)
                     .contentTransition(fromAvatar ? .identity : .symbolEffect(.replace))
                     .scaleEffect(glyph == .channel && !reduceMotion ? 0.5 : 1)
+                    // The row's accessibility value already says what the note is doing.
+                    .accessibilityHidden(true)
             }
             .frame(width: side, height: side)
             // Lets the check knock out only its own square.
