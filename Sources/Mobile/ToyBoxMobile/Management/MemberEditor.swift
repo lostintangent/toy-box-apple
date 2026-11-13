@@ -16,52 +16,25 @@ struct MemberEditor: View {
     @ViewState private var removal: ManagementFlow?
 
     private var api: ChannelAPI { session.api }
-    private var member: ChannelAgent? { session.member }
-    private var name: String { session.name }
-    private var role: String { session.role }
-    private var model: ModelConfiguration? { session.model }
+    private var form: MemberForm { session.memberForm }
+    private var member: ChannelAgent? { form.member }
     private var saving: Bool { session.pending }
-    private var recovery: ChannelManagementWriteRecovery { session.recovery }
     private var isCurrent: Bool { sessions.isCurrent(session, app: app, presenter: presenter) }
     private var isCurrentHost: Bool { host == nil || host == presentation.placement }
 
-    private var nextName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var nextRole: String { role.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var violation: String? {
-        (nextName.isEmpty ? nil : ChannelAgent.nameError(nextName, agents: store.roster, excludingID: member?.id))
-            ?? ChannelAgent.roleError(nextRole, existingRole: member?.role)
-    }
-    private var changed: Bool {
-        guard let member else { return true }
-        return nextName != member.name || nextRole != (member.role ?? "") || model != member.model
-    }
-    private var canSave: Bool {
-        !nextName.isEmpty && violation == nil && changed && !saving && !recovery.blocksWrites && store.phase.isConnected
-    }
+    private var violation: String? { form.nameViolation(in: store.roster) ?? form.roleViolation }
+    private var canSave: Bool { form.isSubmittable(in: store.roster) && !saving && store.phase.isConnected }
     private var catalog: ChannelCatalogStore? {
         app.catalogs.contains { $0 === session.catalog } ? session.catalog : nil
-    }
-    private var refreshedMember: ChannelAgent? {
-        guard let member else { return nil }
-        return recovery.result?.state?.members.first { $0.id == member.id }
     }
 
     var body: some View {
         Form {
             if store.phase.isUnavailable { Section { ManagementConnectionNotice(store: store) } }
-            if recovery.error != nil || recovery.state != nil {
-                Section {
-                    if let error = recovery.error { ManagementError(message: error) }
-                    if let state = recovery.state {
-                        ManagementRecoveryNotice(
-                            state: state, reviewTitle: refreshedMember == nil ? nil : "Use Current Server Values",
-                            onCheck: { Task { await check(catalog: catalog) } }, onReview: useCurrentValues)
-                    }
-                }
-            }
+            if let error = session.error { Section { ManagementError(message: error) } }
             Section {
                 LabeledContent {
-                    TextField("Name", text: $session.name,
+                    TextField("Name", text: $session.memberForm.name,
                               prompt: Text("Required").foregroundStyle(ChannelInk.secondary))
                         .labelsHidden()
                         .multilineTextAlignment(.trailing)
@@ -72,7 +45,7 @@ struct MemberEditor: View {
                 } label: {
                     Text("Name").accessibilityIdentifier("member-name-label")
                 }
-                TextField("Role", text: $session.role,
+                TextField("Role", text: $session.memberForm.role,
                           prompt: Text("What is this agent's role in the channel?")
                             .foregroundStyle(ChannelInk.secondary),
                           axis: .vertical)
@@ -81,11 +54,9 @@ struct MemberEditor: View {
                     .accessibilityIdentifier("member-role")
             } footer: {
                 if let violation { ManagementError(message: violation, systemImage: "exclamationmark.circle.fill") }
-                Text(nextName.isEmpty ? "Names are unique in this channel."
-                     : "Mentioned as @\(ChannelAgent.handle(forName: nextName)). Names are unique in this channel.")
-                    .foregroundStyle(ChannelInk.secondary)
+                Text(form.identityHelp).foregroundStyle(ChannelInk.secondary)
             }
-            ModelSelectionFields(model: $session.model, openingModel: session.openingModel,
+            ModelSelectionFields(model: $session.memberForm.model, openingModel: member?.model,
                                  api: api, provider: member?.model?.provider,
                                  allowsInheritance: true, memberScope: member.map { (channel.id, $0.id) },
                                  help: member.map { ["Model changes apply the next time \($0.name) works. Its history is kept."] } ?? [])
@@ -94,7 +65,7 @@ struct MemberEditor: View {
                     Button("Remove from Channel", systemImage: "person.badge.minus", role: .destructive) {
                         if let target = store.target { removal = .removeMember(target, agentId: member.id) }
                     }
-                    .disabled(recovery.blocksWrites || !store.phase.isConnected)
+                    .disabled(!store.phase.isConnected)
                 }
             }
         }
@@ -109,9 +80,9 @@ struct MemberEditor: View {
                     .disabled(saving)
             }
             ToolbarItem(placement: .confirmationAction) {
-                ManagementConfirmButton(label: Self.submitTitle(adding: member == nil, saving: saving),
-                                        pendingSince: session.pendingSince, identifier: "member-submit",
-                                        action: submit)
+                ManagementConfirmButton(
+                    label: member == nil ? (saving ? "Adding…" : "Add Agent") : saving ? "Saving…" : "Save",
+                    pendingSince: session.pendingSince, identifier: "member-submit", action: submit)
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!canSave)
             }
@@ -129,36 +100,26 @@ struct MemberEditor: View {
         .managementConfirmation($removal, presenter: presenter)
     }
 
-    static func submitTitle(adding: Bool, saving: Bool) -> String {
-        adding ? (saving ? "Adding…" : "Add Agent") : (saving ? "Saving…" : "Save")
-    }
-
     private func submit() {
         guard canSave else { return }
         let submittedFocus = focus
         let submittedFlow = presenter.flow
+        let form = form
         session.pending = true
-        recovery.clearError()
+        session.error = nil
         let catalog = catalog
         Task {
             var failed = false
             do {
-                if let member {
-                    _ = try await api.editMember(
-                        channelId: channel.id, agentId: member.id,
-                        changes: .init(name: nextName == member.name ? nil : nextName,
-                                       role: nextRole == (member.role ?? "") ? nil : nextRole,
-                                       model: model == member.model ? nil : model.map { .set($0) } ?? .clear))
-                    if isCurrent { presenter.flow = nil }
-                } else {
-                    _ = try await api.createMember(
-                        channelId: channel.id, input: .init(name: nextName, role: nextRole.isEmpty ? nil : nextRole, model: model))
-                    if isCurrent, let target = store.target { presenter.finishAddingMember(target) }
+                _ = try await form.submit(to: api, channelId: channel.id)
+                if isCurrent {
+                    if form.member != nil { presenter.flow = nil }
+                    else if let target = store.target { presenter.finishAddingMember(target) }
                 }
                 await catalog?.refresh()
             } catch {
                 failed = true
-                if recovery.record(error) { await check(catalog: catalog) }
+                session.error = error.localizedDescription
             }
             session.pending = false
             if failed, presenter.flow == submittedFlow, isCurrent {
@@ -167,27 +128,5 @@ struct MemberEditor: View {
                 session.focus = submittedFocus
             }
         }
-    }
-
-    private func check(catalog: ChannelCatalogStore?) async {
-        await recovery.check(catalog: catalog, channelId: channel.id) { current in
-            if current.channelWasDeleted { return "The channel is no longer present on the server. No further member changes are available." }
-            if let member {
-                guard let refreshed = current.state?.members.first(where: { $0.id == member.id }) else {
-                    return "This member is no longer present on the server. No further save is available."
-                }
-                return "The server's current member is \(refreshed.name). Your entries are preserved. Use Current Server Values replaces them with the refreshed name, role and model override."
-            }
-            return "The channel's team has been refreshed. Close this sheet and review Team before adding another agent. Your entries are preserved until you close the sheet."
-        }
-    }
-
-    private func useCurrentValues() {
-        guard let current = refreshedMember else { return }
-        session.member = current
-        session.name = current.name
-        session.role = current.role ?? ""
-        session.model = current.model
-        recovery.finishReview()
     }
 }

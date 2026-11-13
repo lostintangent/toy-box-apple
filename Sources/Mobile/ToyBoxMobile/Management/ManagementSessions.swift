@@ -12,13 +12,8 @@ final class ManagementSession {
     let flow: ManagementFlow
     /// The channel's server, or the one New Channel creates on, which its Server menu changes.
     var catalog: ChannelCatalogStore
-    var channel: ChannelDetails?
-    var member: ChannelAgent?
-    var name = ""
-    var purpose = ""
-    var role = ""
-    var model: ModelConfiguration?
-    private(set) var openingModel: ModelConfiguration?
+    var channelForm = ChannelForm()
+    var memberForm = MemberForm()
     var pending = false {
         didSet {
             if pending != oldValue { pendingSince = pending ? .now : nil }
@@ -26,33 +21,24 @@ final class ManagementSession {
     }
     private(set) var pendingSince: ContinuousClock.Instant?
     var focus: ManagementField? = .name
-    let recovery = ChannelManagementWriteRecovery()
+    var error: String?
     private(set) var hasLoaded = false
     var api: ChannelAPI { catalog.api }
 
     init(flow: ManagementFlow, catalog: ChannelCatalogStore) {
         self.flow = flow
         self.catalog = catalog
-        if case .addMember(_, let name) = flow { self.name = name }
+        if case .addMember(_, let name) = flow { memberForm = MemberForm(name: name) }
         if flow.isNewChannel { hasLoaded = true }
     }
 
     func load(channel: ChannelDetails, member: ChannelAgent?) {
         guard !hasLoaded else { return }
-        self.channel = channel
-        self.member = member
         switch flow {
-        case .editChannel:
-            name = channel.name
-            purpose = channel.purpose ?? ""
-            model = channel.model
-        case .editMember:
-            name = member?.name ?? ""
-            role = member?.role ?? ""
-            model = member?.model
+        case .editChannel: channelForm = ChannelForm(channel)
+        case .editMember: memberForm = MemberForm(member)
         default: break
         }
-        openingModel = model
         hasLoaded = true
     }
 }

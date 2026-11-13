@@ -10,7 +10,6 @@ import UniformTypeIdentifiers
 struct OverviewArtifactRow: View {
     private enum Focus { case row, menu }
 
-    @Environment(AppModel.self) private var app
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
@@ -23,9 +22,7 @@ struct OverviewArtifactRow: View {
     let open: () -> Void
     @ViewState private var quickLook = OverviewItemState(QuickLook())
     /// The row stays until the stream reports the removal, so only the request is pending here.
-    @ViewState private var removing = OverviewItemState(false)
-    /// A removal gets its own recovery when it first fails.
-    @ViewState private var recoveries = OverviewItemState<ChannelManagementWriteRecovery?>(nil)
+    @ViewState private var removal = OverviewItemState(Removal())
     @ViewState private var isHovering = false
     @FocusState private var focus: Focus?
 
@@ -35,12 +32,16 @@ struct OverviewArtifactRow: View {
         var error: String?
     }
 
+    private struct Removal {
+        var isPending = false
+        var error: String?
+    }
+
     private var api: ChannelAPI { store.api }
     private var isFetching: Bool { quickLook[key].isFetching }
     private var error: String? { quickLook[key].error }
-    private var isRemoving: Bool { removing[key] }
-    private var recovery: ChannelManagementWriteRecovery? { recoveries[key] }
-    private var canRemove: Bool { !isRemoving && recovery?.blocksWrites != true && store.phase.isConnected }
+    private var isRemoving: Bool { removal[key].isPending }
+    private var canRemove: Bool { !isRemoving && store.phase.isConnected }
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
     private var previewFile: Binding<URL?> {
         Binding(get: { quickLook[key].file }, set: { quickLook[key].file = $0 })
@@ -118,14 +119,7 @@ struct OverviewArtifactRow: View {
             .onHover { isHovering = $0 }
             .contextMenu { actions }
             if let error { ManagementError(message: error).padding(.leading, 38) }
-            if let error = recovery?.error { ManagementError(message: error).padding(.leading, 38) }
-            if let recovery, let state = recovery.state {
-                ManagementRecoveryNotice(
-                    state: state, reviewTitle: "I've Reviewed the Conversation",
-                    onCheck: { Task { await checkCurrentState(recovery) } },
-                    onReview: recovery.finishReview)
-                .padding(.leading, 38)
-            }
+            if let error = removal[key].error { ManagementError(message: error).padding(.leading, 38) }
         }
         .quickLookPreview(previewFile)
     }
@@ -187,28 +181,17 @@ struct OverviewArtifactRow: View {
     /// Sends the removal once. The row leaves only when the stream reports it, never on this response.
     private func remove() {
         guard canRemove else { return }
-        let recovery = self.recovery ?? ChannelManagementWriteRecovery()
-        recoveries[key] = recovery
-        removing[key] = true
-        recovery.clearError()
+        removal[key] = Removal(isPending: true)
         Task { [key, artifact] in
+            var failure: String?
             do {
                 try await api.removeArtifact(channelId: store.id, artifactId: artifact.id)
             } catch ChannelAPIError.http(status: 404, message: _) {
                 // Already removed. The stream drops the row.
             } catch {
-                if recovery.record(error) { await checkCurrentState(recovery) }
+                failure = error.localizedDescription
             }
-            removing.update(key) { $0 = false }
-        }
-    }
-
-    private func checkCurrentState(_ recovery: ChannelManagementWriteRecovery) async {
-        await recovery.check(catalog: app.catalog, channelId: store.id) { current in
-            if current.channelWasDeleted {
-                return "The channel is no longer present on the server."
-            }
-            return "Channel details have been refreshed. This artifact may already be removed. Review the current conversation before removing it again."
+            removal.update(key) { $0 = Removal(error: failure) }
         }
     }
 }

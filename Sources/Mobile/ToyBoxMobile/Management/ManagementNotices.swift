@@ -18,30 +18,6 @@ struct ManagementError: View {
     }
 }
 
-struct ManagementRecoveryNotice: View {
-    let state: ChannelManagementWriteRecovery.Phase
-    let reviewTitle: String?
-    let onCheck: () -> Void
-    let onReview: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            switch state {
-            case .checking:
-                ProgressView("Checking current server state…")
-            case .checkFailed(let message):
-                Text("Current state could not be checked. \(message)").font(.footnote)
-                Button("Check Current State", action: onCheck).frame(minHeight: 44)
-            case .reconciled(let message):
-                Text(message).font(.footnote)
-                if let reviewTitle { Button(reviewTitle, action: onReview).frame(minHeight: 44) }
-            }
-
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
 struct ManagementConnectionNotice: View {
     let store: ChannelStore
 

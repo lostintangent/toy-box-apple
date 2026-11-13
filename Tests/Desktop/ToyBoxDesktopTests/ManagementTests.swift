@@ -11,40 +11,35 @@ import Testing
 @MainActor
 @Suite("Management validation and presentation", .serialized)
 struct ManagementTests {
-    private struct ManagementRecoveryFixture {
+    private struct ManagementFixture {
         let api: ChannelAPI
         private let session: URLSession
         private let host: String
 
-        init(catalogStatus: Int = 200, memberStatus: Int = 500) throws {
+        init(memberStatus: Int = 500) throws {
             let fixtureHost = "management-\(UUID().uuidString.lowercased()).invalid"
             host = fixtureHost
-            ManagementRecoveryProtocol.fixtures.withLock {
-                $0[fixtureHost] = .init(catalogStatus: catalogStatus, memberStatus: memberStatus)
+            ManagementProtocol.fixtures.withLock {
+                $0[fixtureHost] = .init(memberStatus: memberStatus)
             }
             let configuration = URLSessionConfiguration.ephemeral
-            configuration.protocolClasses = [ManagementRecoveryProtocol.self]
+            configuration.protocolClasses = [ManagementProtocol.self]
             session = URLSession(configuration: configuration)
             api = try ChannelAPI(serverURL: "https://\(fixtureHost)", session: session)
         }
 
         var requests: [String] {
-            ManagementRecoveryProtocol.fixtures.withLock { $0[host]?.requests ?? [] }
-        }
-
-        func allowCatalogRead() {
-            ManagementRecoveryProtocol.fixtures.withLock { $0[host]?.catalogStatus = 200 }
+            ManagementProtocol.fixtures.withLock { $0[host]?.requests ?? [] }
         }
 
         func close() {
             session.invalidateAndCancel()
-            ManagementRecoveryProtocol.fixtures.withLock { _ = $0.removeValue(forKey: host) }
+            ManagementProtocol.fixtures.withLock { _ = $0.removeValue(forKey: host) }
         }
     }
 
-    private final class ManagementRecoveryProtocol: URLProtocol, @unchecked Sendable {
+    private final class ManagementProtocol: URLProtocol, @unchecked Sendable {
         struct Fixture: Sendable {
-            var catalogStatus: Int
             let memberStatus: Int
             var requests: [String] = []
         }
@@ -62,8 +57,7 @@ struct ManagementTests {
                 guard var fixture = fixtures[host] else { return nil }
                 fixture.requests.append("\(request.httpMethod ?? "GET") \(url.path)")
                 fixtures[host] = fixture
-                if request.httpMethod == "GET" { return fixture.catalogStatus }
-                return request.httpMethod == "POST" ? fixture.memberStatus : 500
+                return fixture.memberStatus
             }
             guard let status, let response = HTTPURLResponse(
                 url: url, statusCode: status, httpVersion: "HTTP/1.1",
@@ -71,15 +65,7 @@ struct ManagementTests {
                 client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
                 return
             }
-            let body: String
-            switch status {
-            case 200:
-                body = ##"{"channels":[],"members":[],"working":[],"lead":{"name":"Lead","role":"Coordinates the channel.","avatar":{"mark":"M12 3L15 9L21 10L16.5 14.5L18 21L12 18L6 21L7.5 14.5L3 10L9 9Z","color":"#1E3A8A","ink":"#FACC15"}}}"##
-            case 201:
-                body = #"{"id":"moss","name":"Moss"}"#
-            default:
-                body = #"{"error":"Management failed."}"#
-            }
+            let body = status == 201 ? #"{"id":"moss","name":"Moss"}"# : #"{"error":"Management failed."}"#
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: Data(body.utf8))
             client?.urlProtocolDidFinishLoading(self)
@@ -230,7 +216,7 @@ struct ManagementTests {
     }
 
     @Test func inlineCreationReturnsTheMemberWithoutDismissingAnUnrelatedSheet() async throws {
-        let fixture = try ManagementRecoveryFixture(memberStatus: 201)
+        let fixture = try ManagementFixture(memberStatus: 201)
         defer { fixture.close() }
         let store = ChannelStore(id: "channel", api: fixture.api)
         let channel = Channel(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"),
@@ -263,7 +249,7 @@ struct ManagementTests {
 
     @Test func inlineCreationValidatesBeforeWriting() async throws {
         let name = " lead "
-        let fixture = try ManagementRecoveryFixture()
+        let fixture = try ManagementFixture()
         defer { fixture.close() }
         let store = ChannelStore(id: "channel", api: fixture.api)
         let channel = Channel(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"),
@@ -279,35 +265,6 @@ struct ManagementTests {
                 try #require(ChannelAgent.nameError(name, agents: store.roster))))
         }
         #expect(fixture.requests.isEmpty)
-    }
-
-    @Test func uncertainInlineCreationChecksStateWithoutReplayingTheWrite() async throws {
-        let fixture = try ManagementRecoveryFixture(catalogStatus: 500)
-        defer { fixture.close() }
-        let store = ChannelStore(id: "channel", api: fixture.api)
-        let channel = Channel(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"),
-                              updatedAt: "2026-10-25T12:00:00Z")
-        _ = try store.apply(.init(type: "snapshot", state: .init(
-            revision: 1, channel: channel, lead: .lead(id: store.id))))
-        let catalog = ChannelCatalogStore(api: fixture.api)
-        let presenter = ManagementPresenter()
-        for attempt in 0..<3 {
-            if attempt == 2 { fixture.allowCatalogRead() }
-            do {
-                _ = try await presenter.createMentionMember(name: "Moss", store: store, catalog: catalog)
-                Issue.record("An uncertain creation must require review instead of replaying the write.")
-            } catch let error as ChannelAPIError {
-                if attempt < 2 {
-                    #expect(error.localizedDescription.contains("Current state could not be checked."))
-                } else {
-                    #expect(error.localizedDescription.contains("Review Team"))
-                }
-            }
-        }
-        #expect(fixture.requests == [
-            "POST /api/v1/channels/channel/members",
-            "GET /api/v1/channels", "GET /api/v1/channels", "GET /api/v1/channels"
-        ])
     }
 
     @Test(arguments: [280, 328])

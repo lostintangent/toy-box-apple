@@ -14,27 +14,14 @@ struct ChannelEditor: View {
     @FocusState private var focus: ManagementField?
 
     private var api: ChannelAPI { session.api }
-    private var channel: ChannelDetails? { session.channel }
-    private var name: String { session.name }
-    private var purpose: String { session.purpose }
-    private var model: ModelConfiguration? { session.model }
+    private var form: ChannelForm { session.channelForm }
+    private var channel: ChannelDetails? { form.channel }
     private var saving: Bool { session.pending }
-    private var recovery: ChannelManagementWriteRecovery { session.recovery }
     private var isCurrent: Bool { sessions.isCurrent(session, app: app, presenter: presenter) }
     private var isCurrentHost: Bool { host == nil || host == presentation.placement }
 
-    private var nextName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var nextPurpose: String { purpose.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var violation: String? {
-        (nextName.isEmpty ? nil : Channel.nameError(nextName)) ?? Channel.purposeError(nextPurpose)
-    }
-    private var changed: Bool {
-        guard let channel else { return true }
-        return nextName != channel.name || nextPurpose != (channel.purpose ?? "") || model != channel.model
-    }
     private var canSave: Bool {
-        !nextName.isEmpty && model != nil && violation == nil && changed && !saving && !recovery.blocksWrites
-            && (store == nil || store?.phase.isConnected == true)
+        form.isSubmittable && !saving && (store == nil || store?.phase.isConnected == true)
     }
     private var catalog: ChannelCatalogStore? {
         app.catalogs.contains { $0 === session.catalog } ? session.catalog : nil
@@ -54,27 +41,16 @@ struct ChannelEditor: View {
                             Text(catalog.name).tag(catalog.api.baseURL.absoluteString)
                         }
                     }
-                    .disabled(recovery.state != nil)
                     .accessibilityIdentifier("channel-server")
                 }
             }
             if let store, store.phase.isUnavailable {
                 Section { ManagementConnectionNotice(store: store) }
             }
-            if recovery.error != nil || recovery.state != nil {
-                Section {
-                    if let error = recovery.error { ManagementError(message: error) }
-                    if let state = recovery.state {
-                        ManagementRecoveryNotice(
-                            state: state,
-                            reviewTitle: recovery.result?.state == nil ? nil : "Use Current Server Values",
-                            onCheck: { Task { await check(catalog: catalog) } }, onReview: useCurrentValues)
-                    }
-                }
-            }
+            if let error = session.error { Section { ManagementError(message: error) } }
             Section {
                 LabeledContent {
-                    TextField("Name", text: $session.name,
+                    TextField("Name", text: $session.channelForm.name,
                               prompt: Text("Required").foregroundStyle(ChannelInk.secondary))
                         .labelsHidden()
                         .multilineTextAlignment(.trailing)
@@ -85,16 +61,18 @@ struct ChannelEditor: View {
                 } label: {
                     Text("Name").accessibilityIdentifier("channel-name-label")
                 }
-                TextField("Purpose", text: $session.purpose,
+                TextField("Purpose", text: $session.channelForm.purpose,
                           prompt: Text("What should this team work toward?").foregroundStyle(ChannelInk.secondary),
                           axis: .vertical)
                     .lineLimit(3...6)
                     .focused($focus, equals: .purpose)
                     .accessibilityIdentifier("channel-purpose")
             } footer: {
-                if let violation { ManagementError(message: violation, systemImage: "exclamationmark.circle.fill") }
+                if let violation = form.nameViolation ?? form.purposeViolation {
+                    ManagementError(message: violation, systemImage: "exclamationmark.circle.fill")
+                }
             }
-            ModelSelectionFields(model: $session.model, openingModel: session.openingModel,
+            ModelSelectionFields(model: $session.channelForm.model, openingModel: channel?.model,
                                  api: api, provider: channel?.model.provider,
                                  allowsInheritance: false, title: "Lead model",
                                  help: channel == nil ? [] : ["Model changes apply the next time the lead works."])
@@ -132,32 +110,26 @@ struct ChannelEditor: View {
     }
 
     private func submit() {
-        guard canSave, let model else { return }
+        guard canSave else { return }
         let submittedFocus = focus
         let submittedFlow = presenter.flow
+        let form = form
         session.pending = true
-        recovery.clearError()
+        session.error = nil
         let catalog = catalog
         let api = api
         Task {
             var failed = false
             do {
-                if let channel {
-                    _ = try await api.editChannel(
-                        id: channel.id, changes: .init(
-                            name: nextName == channel.name ? nil : nextName,
-                            purpose: nextPurpose == (channel.purpose ?? "")
-                                ? nil : nextPurpose.isEmpty ? .clear : .set(nextPurpose),
-                            model: model == channel.model ? nil : model))
-                    if isCurrent { presenter.flow = nil }
-                } else {
-                    let created = try await api.createChannel(creationInput(model: model))
-                    if isCurrent { presenter.didCreate(created, on: api.baseURL.absoluteString) }
+                let saved = try await form.submit(to: api)
+                if isCurrent {
+                    if form.channel == nil { presenter.didCreate(saved, on: api.baseURL.absoluteString) }
+                    else { presenter.flow = nil }
                 }
                 await catalog?.refresh()
             } catch {
                 failed = true
-                if recovery.record(error) { await check(catalog: catalog) }
+                session.error = error.localizedDescription
             }
             session.pending = false
             if failed, presenter.flow == submittedFlow, isCurrent {
@@ -166,28 +138,5 @@ struct ChannelEditor: View {
                 session.focus = submittedFocus
             }
         }
-    }
-
-    func creationInput(model: ModelConfiguration) -> CreateChannelInput {
-        .init(name: nextName, purpose: nextPurpose.isEmpty ? nil : nextPurpose, model: model)
-    }
-
-    private func check(catalog: ChannelCatalogStore?) async {
-        await recovery.check(catalog: catalog, channelId: channel?.id) { current in
-            if current.channelWasDeleted { return "The channel is no longer present on the server. No further save is available." }
-            if let channel = current.state?.channel {
-                return "The server's current channel is \(channel.name). Your entries are preserved. Use Current Server Values replaces them with the refreshed name, purpose and model."
-            }
-            return "The channel list has been refreshed. Close this sheet and review the list before creating another channel. Your entries are preserved until you close the sheet."
-        }
-    }
-
-    private func useCurrentValues() {
-        guard let current = recovery.result?.state?.channel else { return }
-        session.channel = ChannelDetails(current)
-        session.name = current.name
-        session.purpose = current.purpose ?? ""
-        session.model = current.model
-        recovery.finishReview()
     }
 }

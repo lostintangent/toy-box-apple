@@ -108,12 +108,12 @@ private struct ManagementSheet: View {
         case .editChannel:
             ChannelEditor(channel: details, store: store, catalog: catalog, presenter: presenter)
         case .addMember(_, let name):
-            MemberEditor(channel: details, member: nil, initialName: name, store: store,
+            MemberEditor(channel: details, form: MemberForm(name: name), store: store,
                          catalog: catalog, presenter: presenter)
         case .editMember(_, let agentId):
             if let member = store.roster.dropFirst().first(where: { $0.id == agentId }) {
-                MemberEditor(channel: details, member: member, initialName: member.name,
-                             store: store, catalog: catalog, presenter: presenter)
+                MemberEditor(channel: details, form: MemberForm(member), store: store,
+                             catalog: catalog, presenter: presenter)
             } else {
                 unavailable("This member is no longer in the channel.")
             }

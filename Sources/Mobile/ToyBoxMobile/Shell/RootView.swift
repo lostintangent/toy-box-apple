@@ -215,6 +215,7 @@ struct RootView: View {
                 .environment(management)
                 .environment(overview)
                 .environment(managementSessions)
+                .environment(\.overviewWindowSizeClass, sizeClass)
                 .accessibilityHidden(false)
         }
     }

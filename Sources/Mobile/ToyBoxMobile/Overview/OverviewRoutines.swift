@@ -52,7 +52,6 @@ struct OverviewRoutineLabel: View {
 struct OverviewRoutineRow: View {
     let routine: ChannelRoutine
     let store: ChannelStore
-    @Environment(AppModel.self) private var app
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Bindable var state: ChannelOverview.Routine
@@ -60,15 +59,14 @@ struct OverviewRoutineRow: View {
     @ScaledMetric(relativeTo: .title2) private var iconLane = 24
     private var pending: Bool { state.pending }
     private var requestedAt: Date? { state.requestedAt }
-    private var recovery: ChannelManagementWriteRecovery { state.recovery }
 
-    private var canRun: Bool { store.phase.isConnected && !pending && !recovery.blocksWrites }
+    private var canRun: Bool { store.phase.isConnected && !pending }
     private var canDelete: Bool { store.phase.isConnected && !pending }
     private var schedule: String { RoutineScheduleSummary.text(for: routine.schedule) }
     private var scheduleLine: String {
         ChannelRoutineRunPresentation.label(schedule: schedule, pending: pending, requestedAt: requestedAt)
     }
-    private var contentEndsSection: Bool { isLast && recovery.error == nil && recovery.state == nil }
+    private var contentEndsSection: Bool { isLast && state.error == nil }
 
     var body: some View {
         Button(action: toggle) {
@@ -108,8 +106,7 @@ struct OverviewRoutineRow: View {
         .task(id: requestedAt) {
             guard let requestedAt else { return }
             do { try await Task.sleep(for: .seconds(max(0, 4 + requestedAt.timeIntervalSinceNow))) }
-            catch is CancellationError { return }
-            catch { recovery.record(error); return }
+            catch { return }
             state.requestedAt = nil
         }
         if state.expanded {
@@ -118,20 +115,10 @@ struct OverviewRoutineRow: View {
                 .padding(.leading, iconLane + 12)
                 .modifier(OverviewListRowBoundary(isLast: contentEndsSection))
         }
-        if let error = recovery.error {
+        if let error = state.error {
             ManagementError(message: error)
-                .modifier(OverviewListRowBoundary(isLast: isLast && recovery.state == nil))
-        }
-        if let state = recovery.state {
-            ManagementRecoveryNotice(state: state, reviewTitle: "I've Reviewed the Conversation",
-                                     onCheck: { Task { await check(catalog: matchingCatalog) } },
-                                     onReview: recovery.finishReview)
                 .modifier(OverviewListRowBoundary(isLast: isLast))
         }
-    }
-
-    private var matchingCatalog: ChannelCatalogStore? {
-        app.catalog.flatMap { $0.api.baseURL == store.api.baseURL ? $0 : nil }
     }
 
     private func toggle() { state.expanded.toggle() }
@@ -145,23 +132,15 @@ struct OverviewRoutineRow: View {
         guard canRun else { return }
         state.pending = true
         state.requestedAt = nil
-        recovery.clearError()
-        let catalog = matchingCatalog
+        state.error = nil
         Task {
             defer { state.pending = false }
             do {
                 try await store.api.runRoutine(channelId: store.id, routineId: routine.id)
                 state.requestedAt = .now
             } catch {
-                if recovery.record(error) { await check(catalog: catalog) }
+                state.error = error.localizedDescription
             }
-        }
-    }
-
-    private func check(catalog: ChannelCatalogStore?) async {
-        await recovery.check(catalog: catalog, channelId: store.id) { current in
-            if current.channelWasDeleted { return "The channel is no longer present on the server." }
-            return "Channel details have been refreshed. This routine may already have started. Review the current conversation before requesting another run."
         }
     }
 }

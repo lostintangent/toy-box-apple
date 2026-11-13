@@ -12,47 +12,30 @@ extension ManagementFlow {
         }
     }
 
-    /// Whether the server's checked state still holds what this deletion targets.
-    func remains(in current: ChannelManagementReconciliation) -> Bool {
-        guard !current.channelWasDeleted, let state = current.state else { return false }
+    fileprivate var deletionCopy: (verb: String, noun: String, action: String) {
         switch self {
-        case .removeMember(_, let id): return state.members.contains { $0.id == id }
-        case .deleteRoutine(_, let id): return state.routines.contains { $0.id == id }
-        default: return true
-        }
-    }
-
-    fileprivate var deletionCopy: (verb: String, noun: String, action: String, outcome: String) {
-        switch self {
-        case .removeMember: ("Remove", "agent", "Remove Agent", "Agent Removed")
-        case .deleteRoutine: ("Delete", "routine", "Delete Routine", "Routine Deleted")
-        default: ("Delete", "channel", "Delete Channel", "Channel Deleted")
+        case .removeMember: ("Remove", "agent", "Remove Agent")
+        case .deleteRoutine: ("Delete", "routine", "Delete Routine")
+        default: ("Delete", "channel", "Delete Channel")
         }
     }
 }
 
 extension ManagementSession {
     enum DeletionStep: Equatable {
-        case confirm, failed(String), checkFailed(String), remains(String), gone(String)
+        case confirm, failed(String)
     }
 
-    /// What the alert asks next. It asks nothing while the delete or its check is in flight.
+    /// What the alert asks next. It asks nothing while the delete is in flight.
     var deletionStep: DeletionStep? {
-        if pending { return nil }
-        switch recovery.state {
-        case nil: return recovery.error.map(DeletionStep.failed) ?? .confirm
-        case .checking: return nil
-        case .checkFailed(let message): return .checkFailed(message)
-        case .reconciled(let message):
-            return recovery.result.map(flow.remains) == true ? .remains(message) : .gone(message)
-        }
+        pending ? nil : error.map(DeletionStep.failed) ?? .confirm
     }
 
-    /// Sends the delete once. An uncertain failure checks the server before the alert offers anything else.
+    /// Sends the delete once. A failure shows its error, and the live list shows whether it landed.
     func delete() async -> Bool {
-        guard !pending, !recovery.blocksWrites else { return false }
+        guard !pending else { return false }
         pending = true
-        recovery.clearError()
+        error = nil
         defer { pending = false }
         do {
             switch flow {
@@ -65,16 +48,8 @@ extension ManagementSession {
             }
             return true
         } catch {
-            if recovery.record(error) { await checkDeletion() }
+            self.error = error.localizedDescription
             return false
-        }
-    }
-
-    func checkDeletion() async {
-        await recovery.check(catalog: catalog, channelId: flow.channelId) { [flow] current in
-            flow.remains(in: current)
-                ? "The server couldn't confirm the change, and the \(flow.deletionCopy.noun) is still there."
-                : "The server couldn't confirm the change, but the \(flow.deletionCopy.noun) is gone now."
         }
     }
 }
@@ -89,7 +64,7 @@ struct ManagementConfirmation: ViewModifier {
     @Environment(ManagementSessions.self) private var sessions: ManagementSessions?
 
     private var deletion: ManagementFlow? { flow?.isDeletion == true ? flow : nil }
-    private var copy: (verb: String, noun: String, action: String, outcome: String) {
+    private var copy: (verb: String, noun: String, action: String) {
         (deletion ?? .newChannel(server: "")).deletionCopy
     }
     /// The deletion's server.
@@ -136,10 +111,7 @@ struct ManagementConfirmation: ViewModifier {
 
     private func text(_ step: ManagementSession.DeletionStep?) -> (title: String, message: String) {
         switch step {
-        case .failed(let message), .remains(let message): ("Couldn't \(copy.action)", message)
-        case .checkFailed(let message):
-            ("Couldn't Check the Server", "The server couldn't confirm the change, so it wasn't sent again. \(message)")
-        case .gone(let message): (copy.outcome, message)
+        case .failed(let message): ("Couldn't \(copy.action)", message)
         case .confirm, nil: ("\(copy.verb) \(target ?? copy.noun)?", consequence)
         }
     }
@@ -147,29 +119,22 @@ struct ManagementConfirmation: ViewModifier {
     @ViewBuilder
     private func actions(_ step: ManagementSession.DeletionStep?, session: ManagementSession) -> some View {
         switch step {
-        case .confirm, .remains:
+        case .confirm:
             Button(copy.action, role: .destructive) { delete(session) }.disabled(!canDelete)
             Button("Cancel", role: .cancel) { close(session) }
-        case .checkFailed:
-            Button("Check Again") { Task.immediate { await session.checkDeletion() } }
-            Button("Cancel", role: .cancel) { close(session) }
-        case .failed, .gone, nil:
+        case .failed, nil:
             Button("OK", role: .cancel) { close(session) }
         }
     }
 
-    /// A failed check keeps blocking writes, so reopening the alert checks again before it deletes.
     private func close(_ session: ManagementSession) {
-        if case .gone = session.deletionStep { presenter.flow = nil }
-        session.recovery.finishReview()
-        session.recovery.clearError()
+        session.error = nil
         flow = nil
     }
 
     private func delete(_ session: ManagementSession) {
         guard canDelete else { return }
         let origin = presenter.flow
-        session.recovery.finishReview()
         Task.immediate {
             guard await session.delete() else { return }
             if presenter.flow == origin { presenter.flow = nil }
