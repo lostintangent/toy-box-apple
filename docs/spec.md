@@ -186,10 +186,8 @@ this spec holds within each server unchanged. Nothing else is new. Where this sp
 change, it means moving or removing one server, which touches only that server's channels.
 Drafts stay keyed to the address, so adding it back finds them, and move with a server that moves.
 
-- **The Mac groups by server even with one.** Its sidebar has room, so every server always has
-  its header and adding a second never reshapes the list. The phone's list has less room and its
-  large title already anchors it, so with one server it has no section headers, and what follows
-  about the phone's list applies with two or more.
+- **Both apps group by server even with one.** Every server always has its header, so the list
+  always says whose channels it shows and adding a second never reshapes it.
 - **Grouped list.** The Mac sidebar and the phone list show one collapsible section per server, in
   Settings' order. Its header is the server's name, with the status line's help and VoiceOver
   value. A connected or connecting server shows no dot, since the list is shaped for success. Only
@@ -1012,17 +1010,15 @@ restores the bar. No hand-built safe-area text field or duplicate gear in the ra
 Toy Box title at the top, with New Channel and then Screens (an outline `display`) in separate
 glass groups, and no More menu or Refresh item. A native placement limitation in the unfolded column
 never justifies substituting custom controls.
-With one server, the phone list has no connection dot, server label or busy
-footer spinner, and with several each server's header names it (see
+The phone list has no busy footer spinner, and every server's header names it, even with one (see
 [Several servers](#several-servers)).
 Settings owns server identity and connection details. The list has pull to refresh, and search
 uses the shared name/purpose/directory filtering. Pull to refresh holds its spinner until the
 finger lifts, so a fast fetch never ends it mid-pull. Command-F focuses channel search when the
 list is active, without replacing in-conversation Find. The list never shows a connection error, a
 pill or a Retry, because pull to refresh already retries. A failing server shows only its orange or
-red dot, with the same colors as the Mac's (see Sidebar), and only in its header when there are
-several servers. A connected or connecting server's header shows no dot. With one server the list
-shows no dot at all, and its status lives in Settings' server list, as on the Mac. Tapping a header's dot, through a 44-point
+red dot, with the same colors as the Mac's (see Sidebar), in its header. A connected or
+connecting server's header shows no dot. Tapping a header's dot, through a 44-point
 hit area, opens a popover with the status line, like "Reconnecting to 127.0.0.1:3211", over the
 readable failure in secondary, then a Server Settings button, which opens Settings because a wrong
 address is the one failure a retry can't fix. The rest of a header still collapses and expands.
@@ -1171,8 +1167,8 @@ Parts labelled **Phone** apply only to the iPhone companion.
 
 Use the system sidebar search field from `.searchable(placement: .sidebar)`. It filters the local
 catalog by channel name, purpose or directory without making a network search request. Preserve
-the selected channel while filtering. The list remains one "Channels" group in server order, or
-one group per server when there are several (see [Several servers](#several-servers)).
+the selected channel while filtering. The list has one group per server, in Settings' order, even
+with one (see [Several servers](#several-servers)).
 Do not reorder it for presence or attention. Refresh preserves scroll and selection.
 
 Rows follow the Mail and Messages list pattern: who or what on the left, when on the right, and
