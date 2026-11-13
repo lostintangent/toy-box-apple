@@ -80,10 +80,6 @@ struct SettingsView: View {
             }
         } header: {
             Text("Servers")
-        } footer: {
-            if model.catalogs.count > 1 {
-                Text("Drag to reorder in Edit. The list shows servers in this order.")
-            }
         }
         .confirmationDialog("Remove \(removal?.name ?? "this server")?", isPresented: Binding(
             get: { removal != nil }, set: { if !$0 { removal = nil } }
