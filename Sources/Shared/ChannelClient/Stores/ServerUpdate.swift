@@ -63,7 +63,7 @@ public struct ServerInfo: Codable, Equatable, Sendable {
     }
 }
 
-/// A server's release in Settings' server list: checking for a newer one and restarting onto it.
+/// A server's release in Settings' server list: checking for a newer one and restarting.
 /// Each catalog has one, so every window agrees, and the catalog's `refreshServer()` reads it with
 /// the server's name and links, as each catalog stream that connects does too. The list's
 /// one Check for Updates checks every server together with `checkForUpdates()`. A restart is an
@@ -72,7 +72,7 @@ public struct ServerInfo: Codable, Equatable, Sendable {
 public final class ServerUpdate {
     /// What the server's row offers.
     public enum Phase: Equatable, Sendable {
-        /// Check for Updates.
+        /// Check for Updates, with nothing newer installed.
         case idle
         /// A spinner while the server installs whatever is newer.
         case checking
@@ -143,13 +143,19 @@ public final class ServerUpdate {
         if outcome != nil { outcome = nil }
     }
 
+    /// A connected server with an installed release can restart, onto a newer release once one is
+    /// installed or onto the one it runs otherwise. Not while it checks or reconnects.
+    public var canRestart: Bool {
+        catalog?.phase == .connected && (phase == .idle || phase == .restartPending)
+    }
+
     /// Asks the server to restart onto its installed release. One that accepts answers, then drops
     /// every connection at once, so the row reconnects as it would for any disconnect and then shows
     /// the release the server came back running. A rejection keeps Restart, with the server's words.
     /// A restart whose answer never arrives needs nothing, since the catalog's connection reports a
     /// server that doesn't come back.
     public func restart() async {
-        guard phase == .restartPending else { return }
+        guard canRestart else { return }
         outcome = nil
         do {
             try await api.restartServer()

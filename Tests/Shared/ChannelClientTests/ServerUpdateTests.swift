@@ -232,12 +232,30 @@ struct ServerUpdateTests {
         #expect(reads(mock) == 2, "Each connection reads the server once")
     }
 
+    @Test func anIdleServerRestartsOntoItsOwnReleaseButOneWithoutAnInstalledReleaseCant() async throws {
+        let servers = [Server(), Server(installed: nil)]
+        let mocks = servers.map { $0.transport() }
+        let catalogs = try mocks.map { ChannelCatalogStore(api: try $0.api()) }
+        for catalog in catalogs { catalog.startPolling() }
+        defer { for catalog in catalogs { catalog.stopPolling() } }
+        try await eventually { catalogs.allSatisfy { $0.phase == .connected && !$0.update.isReconnecting } }
+        #expect(catalogs.map(\.update.phase) == [.idle, nil])
+        #expect(catalogs.map(\.update.canRestart) == [true, false])
+
+        for catalog in catalogs { await catalog.update.restart() }
+        let restarts = mocks.map { $0.requests.filter { $0.url?.path == "/api/v1/server/restart" }.count }
+        #expect(restarts == [1, 0])
+        #expect(catalogs[0].update.outcome == nil)
+    }
+
     @Test func aRejectedRestartKeepsRestartWithTheServersWordsAndALostAnswerShowsNothing() async throws {
         let server = Server(installed: Self.new)
         let mock = server.transport()
         let catalog = ChannelCatalogStore(api: try mock.api())
+        catalog.startPolling()
+        defer { catalog.stopPolling() }
         let update = catalog.update
-        await catalog.refreshServer()
+        try await eventually { catalog.phase == .connected && update.phase == .restartPending }
 
         try server.set { $0.restart = try .json(["error": "The installed release doesn't run."], status: 422) }
         await update.restart()
@@ -281,6 +299,7 @@ struct ServerUpdateTests {
         clock.withLock { $0 += 10 }
         try await eventually { catalog.phase.failure != nil }
         #expect(update.phase == .idle, "A server that failed for the grace shows its failure instead")
+        #expect(!update.canRestart, "Only a connected server can restart")
 
         let current = try JSONEncoder().encode(Self.info(Self.old, Self.old))
         server.set {
