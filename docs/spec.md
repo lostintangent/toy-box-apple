@@ -1889,7 +1889,9 @@ known size use 120 x 90 and resize once. An image that can't load keeps that sam
 Clicking or tapping it tries again. On the Mac its help reads "Couldn't load this image. Click to
 try again.", and VoiceOver reads the tile's usual label with the value "Couldn't load" and the hint
 "Tries again".
-Videos have a poster, duration when known, and an explicit Play action.
+Videos have a poster, duration when known, and an explicit Play action. Play opens the system's
+native player, never SwiftUI's `VideoPlayer`, which crashes on the Mac. A format that player can't
+decode, like WebM, still plays, as it does on the web.
 Other files show document icon, name and Open. Resolve resources against the server base URL.
 An unavailable file keeps its name and an explicit retryable error, not a blank thumbnail.
 Opening remote URLs must not assume a matching local filesystem path.
