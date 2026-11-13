@@ -571,11 +571,7 @@ struct ComposerDraftTests {
     }
 
     private func finishLoading(_ draft: ComposerDraft) async throws {
-        let deadline = ContinuousClock.now + .seconds(30)
-        while draft.isLoadingImages {
-            try #require(ContinuousClock.now < deadline, "The images never finished loading.")
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await eventually { !draft.isLoadingImages }
     }
 
     private func remove(_ url: URL) {

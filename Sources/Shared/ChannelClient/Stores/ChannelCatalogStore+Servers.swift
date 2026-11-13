@@ -71,30 +71,18 @@ extension ChannelCatalogStore {
     /// Reads the server's identity, name, releases and links together. A failure keeps the last
     /// answer, since the server's connection status already says it's unreachable.
     public func refreshServer() async {
-        try? await readServer()
+        if let server = try? await api.server() { apply(server) }
     }
 
     /// Renames the server for every device and lead. An empty name gives it back its computer's
-    /// name. A name over `nameLimit` is refused without sending, and a refusal throws the server's
-    /// words. A failure that may have renamed it anyway reads the server, and throws only if the
-    /// name didn't take.
+    /// name. A name over `nameLimit` is refused without sending, and a failure throws, with the
+    /// server's words for a refusal.
     public func rename(to input: String) async throws {
         let requested = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard requested.utf16.count <= Self.nameLimit else {
             throw ChannelAPIError.invalidMessage("Name must be \(Self.nameLimit) characters or fewer.")
         }
-        let previous = name
-        do {
-            apply(try await api.renameServer(requested))
-        } catch {
-            guard ChannelManagementWriteRecovery.Phase.isRequired(after: error),
-                  (try? await readServer()) != nil,
-                  requested.isEmpty ? name != previous : name == requested else { throw error }
-        }
-    }
-
-    private func readServer() async throws {
-        apply(try await api.server())
+        apply(try await api.renameServer(requested))
     }
 
     /// The server's answer.

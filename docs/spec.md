@@ -258,9 +258,7 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   nothing. A name that's too long or a rename that fails keeps what the user typed and adds a row
   under the field, like a failed link: a yellow `exclamationmark.triangle.fill` and "Couldn't
   rename Mac mini.", with "Name must be 64 characters or fewer." or the error on a second line in
-  secondary ink. It's a management write, so after a timeout or a lost connection the app reads
-  the server again before showing a failure. While a server isn't connected, Name shows its last
-  name and can't be edited.
+  secondary ink. While a server isn't connected, Name shows its last name and can't be edited.
 - **Updating a server.** Settings' server list updates each server and restarts it onto the new
   release, the same way on both apps, through `GET /api/v1/server`, `POST /api/v1/server/update`
   and `POST /api/v1/server/restart`. The server answers `id`, an identity it makes once and keeps,
@@ -290,12 +288,12 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   spins while they reconnect with the usual backoff and grace, then reads the new server and shows
   its version. A rejected restart shows its error the same way, with the old server still running,
   and a server that doesn't come back reads like any other that can't connect. The apps read
-  `GET /api/v1/server` once each time Settings opens, after each check, each time a server
+  `GET /api/v1/server` once each time Settings opens, each time a server
   connects, each time the app comes to the foreground and on each Refresh of the channel list,
   which is how a rename made elsewhere reaches them. A failed read changes nothing and reports
-  nothing, and a read never adds a server, since only adding one follows its links. Updates and
-  restarts are management writes: an update that times out or drops
-  may still have installed, so the row reads the server again before offering another try.
+  nothing, and a read never adds a server, since only adding one follows its links. A check
+  shows the update's own answer, and a failed one shows its error. Checking again is harmless,
+  since a server installs only what's newer.
 - **Linking servers.** A linked server's channel leads can find and privately message the leads
   on the user's other linked servers, with every app closed. A link is the other server's origin,
   like `https://mac-mini.tail1234.ts.net` or `http://studio:3000`. Servers listen on `127.0.0.1`
@@ -343,8 +341,8 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
     same fix, checking the address and that the server is running, so the row shows no reason or
     server text. The one exception asks for something else, so it adds a second line in secondary
     ink: "Studio needs its Tailscale address."
-    Results stay until Settings closes. These are management writes, so after a timeout or a lost
-    connection the row reads both servers' links again before offering Try Again.
+    Results stay until Settings closes. After each change the apps read every server's links
+    again, so a pair that ended up as asked shows no failure.
   - **A server on this Mac.** Other servers can't reach a server saved at a loopback address,
     like `127.0.0.1:3100` or `localhost`, so it links by its Tailscale address. The Linked card
     shows a field under the switch for each saved server that linking would need one for,

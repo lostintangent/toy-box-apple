@@ -231,16 +231,6 @@ public struct ChannelAPI: Sendable {
         try await get(channelPath(channelId) + ["members", agentId, "models"])
     }
 
-    func snapshot(channelId: String) async throws -> ChannelState {
-        for try await event in subscribe(channelId: channelId) {
-            guard event.type == "snapshot", let state = event.state, state.channel.id == channelId else {
-                throw ChannelAPIError.invalidEvent("snapshot")
-            }
-            return state
-        }
-        throw ChannelAPIError.streamEnded
-    }
-
     public func history(channelId: String, before: Int) async throws -> ChannelHistoryPage {
         guard before > 0 else { throw ChannelAPIError.invalidMessage("History requires a positive sequence.") }
         return try await get(channelPath(channelId) + ["messages"],

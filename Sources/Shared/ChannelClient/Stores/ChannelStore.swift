@@ -56,20 +56,6 @@ public enum ChannelCatalogPhase: Equatable, Sendable {
     }
 }
 
-public struct ChannelManagementReconciliation: Sendable {
-    public let catalog: ChannelCatalog
-    public let channelId: String?
-    public let state: ChannelState?
-
-    public var channelWasDeleted: Bool { channelId != nil && state == nil }
-
-    public init(catalog: ChannelCatalog, channelId: String?, state: ChannelState?) {
-        self.catalog = catalog
-        self.channelId = channelId
-        self.state = state
-    }
-}
-
 @MainActor @Observable
 public final class ChannelStore {
     public let id: String
@@ -328,22 +314,6 @@ public final class ChannelStore {
         observation = nil
         heldReplay = nil
         stopGrace()
-    }
-
-    fileprivate func reconcileManagementSnapshot(_ snapshot: ChannelState) throws -> ChannelState {
-        if let state, state.revision > snapshot.revision { return state }
-        let wasObserving = observation != nil
-        disconnect()
-        _ = try apply(.init(type: "snapshot", state: snapshot))
-        if wasObserving { connect() }
-        else { phase = .connecting }
-        return snapshot
-    }
-
-    fileprivate func reconcileManagementDeletion() {
-        disconnect()
-        historyGeneration = UUID()
-        phase = .deleted
     }
 
     /// Places the New divider for someone opening the channel. A store that disconnected kept its
@@ -633,7 +603,6 @@ public final class ChannelCatalogStore {
     /// The stream loop is waiting out a backoff with no request under way, so a prompt retry can
     /// start over without cancelling anything.
     @ObservationIgnored private var isBackingOff = false
-    @ObservationIgnored private var reconcilingManagement = false
     @ObservationIgnored private let reconnectPolicy: ReconnectPolicy
     /// When the stream began failing without reporting it.
     @ObservationIgnored private var failingSince: Date?
@@ -641,7 +610,7 @@ public final class ChannelCatalogStore {
     /// A refresh is waiting for the stream's next catalog or failure, so that failure reports at once.
     /// Internal and observed, so tests can wait for a refresh to reach the stream.
     private(set) var isRequested = false
-    /// A refresh or management check is in flight. When it ends, the refreshes that joined it return.
+    /// A refresh is in flight. When it ends, the refreshes that joined it return.
     /// Internal, so no view spins for background work. Tests wait on it.
     private(set) var isFetching = false {
         didSet {
@@ -721,41 +690,6 @@ public final class ChannelCatalogStore {
                   (error as? URLError)?.code != .cancelled,
                   catalogGeneration == token, !isLive else { return }
             phase = .failed(error)
-        }
-    }
-
-    public func reconcileManagementWrite(channelId: String? = nil) async throws -> ChannelManagementReconciliation {
-        guard !reconcilingManagement else {
-            throw ChannelAPIError.invalidMessage("Another management change is being checked. Check again when it finishes.")
-        }
-        reconcilingManagement = true
-        catalogGeneration = UUID()
-        isFetching = true
-        defer {
-            reconcilingManagement = false
-            isFetching = false
-        }
-        do {
-            var catalog = try await api.catalog()
-            var snapshot: ChannelState?
-            if let channelId, catalog.channels.contains(where: { $0.id == channelId }) {
-                do { snapshot = try await api.snapshot(channelId: channelId) }
-                catch let failure as ChannelAPIError {
-                    guard case .http(status: 404, message: _) = failure else { throw failure }
-                    catalog = try await api.catalog()
-                    guard !catalog.channels.contains(where: { $0.id == channelId }) else { throw failure }
-                }
-            }
-            try Task.checkCancellation()
-            if let channelId, let store = detailStores[channelId] {
-                if let current = snapshot { snapshot = try store.reconcileManagementSnapshot(current) }
-                else { store.reconcileManagementDeletion() }
-            }
-            applyCatalog(catalog)
-            return .init(catalog: catalog, channelId: channelId, state: snapshot)
-        } catch {
-            phase = .failed(error)
-            throw error
         }
     }
 
@@ -895,7 +829,7 @@ public final class ChannelCatalogStore {
     private func settleRequest() {
         guard isRequested else { return }
         isRequested = false
-        if !reconcilingManagement { isFetching = false }
+        isFetching = false
     }
 
     /// Ends the stream's backoff early. An attempt already under way keeps going.

@@ -16,9 +16,8 @@ struct ServerNameTests {
             var accentColor = "#123abc"
             /// Answers a read instead of the server, as a failing server would.
             var read: MockResponse?
-            /// Answers a rename instead of taking it. A rename that answers nil takes it, then
-            /// loses the connection.
-            var rename: MockResponse??
+            /// Answers a rename instead of taking it.
+            var rename: MockResponse?
             var renames: [String] = []
             /// The computer's name, which an empty rename gives back.
             var computer = "Mac mini"
@@ -42,9 +41,8 @@ struct ServerNameTests {
                     let input = try JSONDecoder().decode([String: String].self, from: requestBody(request))
                     let name = try #require(input["name"])
                     answers.renames.append(name)
-                    if case .some(.some(let refusal)) = answers.rename { return refusal }
+                    if let refusal = answers.rename { return refusal }
                     answers.name = name.isEmpty ? answers.computer : name
-                    if case .some(.none) = answers.rename { throw URLError(.networkConnectionLost) }
                     return try info()
                 default:
                     return MockResponse(status: 404)
@@ -118,25 +116,19 @@ struct ServerNameTests {
         await #expect(throws: ChannelAPIError.http(status: 422, message: "Invalid request.")) {
             try await catalog.rename(to: "Work")
         }
-        #expect(catalog.name == "Studio" && reads(mock) == 1, "A refusal never committed, so nothing is read.")
+        #expect(catalog.name == "Studio" && reads(mock) == 1)
     }
 
-    @Test func aRenameThatMayHaveLandedReadsTheServerBeforeFailing() async throws {
+    @Test func aRenameTakesTheServersAnswerAndAnEmptyOneGivesBackTheComputersName() async throws {
         let server = Server()
         let (catalog, mock) = try catalog(server)
         await catalog.refreshServer()
 
-        server.set { $0.rename = .some(nil) }
         try await catalog.rename(to: "Work")
-        #expect(catalog.name == "Work" && reads(mock) == 2, "It took, so the lost answer isn't a failure.")
-
+        #expect(catalog.name == "Work")
         try await catalog.rename(to: "")
         #expect(server.answers.withLock { $0.renames } == ["Work", ""])
-        #expect(catalog.name == "Mac mini", "Clearing it gives back the computer's name.")
-
-        server.set { $0.rename = MockResponse(status: 500) }
-        await #expect(throws: ChannelAPIError.self) { try await catalog.rename(to: "Build") }
-        #expect(catalog.name == "Mac mini" && reads(mock) == 4, "It read the server, and the name didn't take.")
+        #expect(catalog.name == "Mac mini" && reads(mock) == 1, "Each answer is the server's name, so nothing is read.")
     }
 
     @Test func connectingComingForwardAndRefreshingReadTheServer() async throws {

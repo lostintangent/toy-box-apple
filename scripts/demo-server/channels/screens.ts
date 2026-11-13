@@ -249,8 +249,6 @@ export function createDemoScreens() {
     };
 }
 
-export type DemoScreens = ReturnType<typeof createDemoScreens>;
-
 function apply(screen: DemoScreen, action: Input) {
     if (action.type === "scroll") {
         screen.scroll.x += action.dx;
