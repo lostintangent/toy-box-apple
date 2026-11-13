@@ -258,8 +258,8 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
 - **Updating a server.** Settings' server list updates each server and restarts it onto the new
   release, the same way on both apps, through `GET /api/v1/server`, `POST /api/v1/server/update`
   and `POST /api/v1/server/restart`. The server answers `id`, an identity it makes once and keeps,
-  `name`, `version`, the release it runs, `installedVersion`, the release on disk, which is null
-  when no package manager owns the install, `links`, which Linking servers describes, and
+  `name`, `version`, the release it runs, `installedVersion`, the installed release a restart would
+  start, which is null when the server runs from source, `links`, which Linking servers describes, and
   `accentColor`, the server's accent as `#` and six hex digits, `#facc15` until someone changes
   it from the web, an agent or a `PATCH`. The apps keep it on each server, but nothing shows it
   or changes it yet, so both apps keep the system accent.
@@ -271,7 +271,7 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   spinner in its version's place, and the button dims until every check ends. Then a row reads
   Up to date when nothing was newer, or the error in words after a yellow
   `exclamationmark.triangle.fill`, in the row on the Mac and under the name on the phone.
-  A failed install's error is its package manager's own output and can run to many lines, so the
+  A failed install's error is the server's own output and can run to many lines, so the
   Mac shows its first line with the rest in its help tag, and the phone shows up to three lines.
   VoiceOver reads all of it. Results stay until the next check or until Settings closes. While a server isn't connected, its
   row shows a spinner in its version's place as the app reconnects, for any reason, until it
