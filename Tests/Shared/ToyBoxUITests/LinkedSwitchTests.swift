@@ -30,11 +30,11 @@ struct LinkedSwitchTests {
         #expect(!LinkedSwitch.isShown(in: [studio]), "Linking needs two saved servers.")
     }
 
-    @Test func aFailureRowNamesThePairThenWhy() throws {
+    @Test func aFailureRowNamesThePairAndSaysWhyOnlyWhenAServerNeedsItsAddress() throws {
         let studio = try add("Studio"), mini = try add("Mac mini"), build = try add("Build Box")
         let card = LinkedSwitch(studio, in: [studio, mini, build])
         func failure(_ server: ChannelCatalogStore, _ peer: String, linking: Bool = true,
-                     _ reason: ServerLinks.Failure.Reason = .failed("")) -> ServerLinks.Failure {
+                     _ reason: ServerLinks.Failure.Reason = .failed) -> ServerLinks.Failure {
             .init(server: server.links.key, peer: peer, linking: linking, reason: reason)
         }
 
@@ -44,10 +44,9 @@ struct LinkedSwitchTests {
         #expect(card.words(failure(mini, build.links.key, linking: false)) == "Couldn't unlink Mac mini from Build Box.")
         #expect(card.words(failure(studio, "http://127.0.0.1:3482")) == "Couldn't link with 127.0.0.1:3482.")
 
-        let refused = failure(studio, mini.links.key, .failed("This server can't reach http://mini (fetch failed)."))
         let needsAddress = failure(studio, mini.links.key, .needsAddress(studio.links.key))
-        #expect([refused, needsAddress].map(card.reason) == [
-            "This server can't reach http://mini (fetch failed).", "Studio needs its Tailscale address.",
+        #expect([failure(studio, mini.links.key), needsAddress].map(card.reason) == [
+            nil, "Studio needs its Tailscale address.",
         ])
     }
 

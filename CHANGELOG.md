@@ -10,6 +10,7 @@
 ### Bugs/Polish
 
 - The channel list now always shows your server's name, even when you have just one, so it's clear whose channels you're looking at.
+- When servers can't link, Settings now says so in one plain line with Try Again, instead of an error only a developer could read.
 
 ## iPhone 0.1.34
 
@@ -21,6 +22,7 @@
 ### Bugs/Polish
 
 - The channel list now always shows your server's name, even when you have just one, so it's clear whose channels you're looking at.
+- When servers can't link, Settings now says so in one plain line with Try Again, instead of an error only a developer could read.
 
 ## Mac 0.1.36
 

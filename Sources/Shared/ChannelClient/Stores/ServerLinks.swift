@@ -12,8 +12,9 @@ public final class ServerLinks {
     /// Two saved servers that didn't link or unlink as a switch asked.
     public struct Failure: Equatable, Identifiable, Sendable {
         public enum Reason: Equatable, Sendable {
-            /// A server refused or couldn't be reached, with the words to show.
-            case failed(String)
+            /// A server refused or couldn't be reached. Every such failure has the same fix, checking the
+            /// address and that the server is running, so it carries no words.
+            case failed
             /// The server at this address is saved at a loopback address, so other servers can't
             /// reach it until it has its Tailscale address.
             case needsAddress(String)
@@ -281,7 +282,7 @@ extension [ChannelCatalogStore] {
             if !isTailscale { catalog.apply(server) }
             return nil
         } catch {
-            return .failed(error.localizedDescription)
+            return .failed
         }
     }
 }
