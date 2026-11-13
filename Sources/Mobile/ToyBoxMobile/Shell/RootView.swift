@@ -28,19 +28,28 @@ struct RootView: View {
     @ViewBuilder
     private var navigationWithOverview: some View {
         channelNavigation
+        // Overview's column fills the detail's gap from outside the split view. Inside it, Overview's own
+        // navigation would join the channel's, hiding the channel's bar and pushing over the conversation.
+        // It stops at the trailing safe area, which stays the channel's for the status bar and its
+        // vertical bar.
+        .overlay(alignment: .trailing) {
+            if let interaction = selectedInteraction, overview.showsColumn(for: interaction) {
+                OverviewColumn(content: overviewContent(at: .inspector)
+                    .environment(model)
+                    .environment(model.following))
+                    .frame(width: OverviewPlacement.columnWidth)
+                    .ignoresSafeArea(.container, edges: .bottom)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Overview")
+                    .transaction(value: selectedInteraction?.isInspectorPresented) { $0.disablesAnimations = true }
+            }
+        }
         .managementConfirmation(presenter: management, hosting: selectedInteraction?.isInspectorPresented != true)
         .environment(management)
         .environment(overview)
         .environment(managementSessions)
         .accessibilityHidden(overview.isCompactSheetPresented
                              || (overview.placement == .sheet && selectedInteraction?.isInspectorPresented == true))
-        .inspector(isPresented: overview.columnBinding(for: selectedInteraction)) {
-            overviewContent(at: .inspector)
-                .inspectorColumnWidth(min: OverviewPlacement.columnWidth, ideal: OverviewPlacement.columnWidth, max: 360)
-        }
-        // An animated inspector narrows the detail every frame, re-wrapping the transcript each time.
-        // Cutting straight to the final width lays it out once. The sheet below keeps its animation.
-        .transaction(value: selectedInteraction?.isInspectorPresented) { $0.disablesAnimations = true }
         .sheet(isPresented: Binding(
             get: { overview.placement == .sheet && selectedInteraction?.isInspectorPresented == true },
             set: { if overview.placement == .sheet { selectedInteraction?.isInspectorPresented = $0 } }
@@ -161,24 +170,42 @@ struct RootView: View {
 
     private var channelNavigation: some View {
         @Bindable var model = model
-        return NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $preferredCompactColumn) {
+        // Folded, the split view shows one column and reports `.all`, which unfolding would then expand to.
+        // The folded phone's column is what unfolding shows, so only the unfolded split view writes here.
+        let visibility = Binding(get: { columnVisibility }, set: { [sizeClass] in
+            if sizeClass == .regular { columnVisibility = $0 }
+        })
+        return NavigationSplitView(columnVisibility: visibility, preferredCompactColumn: $preferredCompactColumn) {
             ChannelSidebar(searchFocused: $isSearchFocused, isCollapsed: sizeClass == .compact)
                 .navigationSplitViewColumnWidth(min: 240, ideal: 256, max: 320)
         } detail: {
             if let store = model.selectedStore, let interaction = selectedInteraction {
-                ChannelScreen(store: store)
-                    .environment(interaction)
-                    .environment(model.artifactSession(for: store))
-                    .environment(model.gallery(for: store))
+                // The detail keeps a gap for Overview's column, so the split view's own widths, and the
+                // channel's bar over the conversation, stay as they are. The gap's background carries the
+                // column's under the vertical bar.
+                HStack(spacing: 0) {
+                    ChannelScreen(store: store)
+                        .environment(interaction)
+                        .environment(model.artifactSession(for: store))
+                        .environment(model.gallery(for: store))
+                    if overview.showsColumn(for: interaction) {
+                        Color.clear
+                            .frame(width: OverviewPlacement.columnWidth)
+                            .background { OverviewColumnBackground().ignoresSafeArea() }
+                    }
+                }
+                // An animated column narrows the conversation every frame, re-wrapping the transcript each
+                // time. Cutting straight to the final width lays it out once. The sheet keeps its animation.
+                .transaction(value: interaction.isInspectorPresented) { $0.disablesAnimations = true }
             } else {
                 ContentUnavailableView("Choose a channel", systemImage: "bubble.left.and.bubble.right",
                                        description: Text("Open a channel from the list to join the conversation."))
             }
         }
-        // Unfolding shows what the folded phone showed, the channel alone or the list. Set as the size
-        // class changes, the split view expands straight to it.
-        .onChange(of: sizeClass) { _, sizeClass in
-            if sizeClass == .regular { columnVisibility = preferredCompactColumn == .detail ? .detailOnly : .all }
+        // Unfolding shows what the folded phone shows, the channel alone or the list. Kept current while
+        // folded, the split view expands straight to it.
+        .onChange(of: sizeClass == .compact ? preferredCompactColumn : nil) { _, column in
+            if let column { columnVisibility = column == .detail ? .detailOnly : .all }
         }
     }
 

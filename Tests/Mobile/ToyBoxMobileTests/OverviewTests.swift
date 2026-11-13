@@ -63,24 +63,17 @@ struct OverviewTests {
         #expect(OverviewPlacement(sceneWidth: 951, sizeClass: .regular) == .inspector)
     }
 
-    @Test func theColumnIgnoresReflowWritesAndShowsOnlyAnUncoveredRequestedOverview() {
+    @Test func theColumnShowsOnlyAnUncoveredRequestedOverview() {
         let presentation = Overview()
         let interaction = ChannelInteraction(isInspectorPresented: true)
-        let column = presentation.columnBinding(for: interaction)
-        #expect(!column.wrappedValue)
+        #expect(!presentation.showsColumn(for: interaction))
         presentation.move(to: .inspector)
-        #expect(column.wrappedValue)
-        column.wrappedValue = false
-        #expect(interaction.isInspectorPresented)
-        #expect(column.wrappedValue)
+        #expect(presentation.showsColumn(for: interaction))
         interaction.isArtifactViewerPresented = true
-        #expect(!column.wrappedValue)
+        #expect(!presentation.showsColumn(for: interaction))
         interaction.isArtifactViewerPresented = false
         interaction.isInspectorPresented = false
-        #expect(!column.wrappedValue)
-        column.wrappedValue = true
-        #expect(!interaction.isInspectorPresented)
-        #expect(presentation.columnBinding(for: nil).wrappedValue == false)
+        #expect(!presentation.showsColumn(for: interaction))
     }
 
     @Test func compactCoverageEndsOnDismissalAndObsoleteDismissalKeepsTheRequestedReplacementCovered() {
