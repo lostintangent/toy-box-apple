@@ -304,13 +304,6 @@ struct RootView: View {
             }
         case "overview-tasks", "overview-artifacts", "overview-routines":
             setOverviewVisible(true)
-        case "quick-send-servers":
-            model.quickSend.presentForSnapshot(appearance: snapshot.appearance)
-        case "settings-servers", "settings-server-renamed", "settings-server-rename-failed",
-             "settings-server-removed", "settings-server-links", "settings-server-link-addresses",
-             "settings-server-link-failed", "settings-add-server", "settings-no-servers":
-            model.settingsTab = .servers
-            openSettings()
         default: break
         }
     }

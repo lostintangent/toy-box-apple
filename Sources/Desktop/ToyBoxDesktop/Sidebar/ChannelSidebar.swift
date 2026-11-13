@@ -111,39 +111,6 @@ struct ChannelSidebar: View {
         .searchFocused($searchFocused)
         .onChange(of: selection) { _, id in listSelection = id }
         .onChange(of: searchFocusRequest) { _, _ in searchFocused = true }
-        .task(id: model.snapshot?.requestedState) {
-            await prepareRetrySnapshot()
-            await prepareServersSnapshot()
-        }
-    }
-
-    /// The `sidebar-retry` capture state refreshes the catalog once it has failed, as View > Refresh
-    /// does, so a capture against a server that then stops answering shows its header's spinner.
-    private func prepareRetrySnapshot() async {
-        let state = "sidebar-retry"
-        guard model.snapshot?.requestedState == state, let catalog = model.catalog else { return }
-        while catalog.phase.failure == nil {
-            do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
-        }
-        model.refreshCatalog()
-        model.snapshot?.markStateReady(state)
-    }
-
-    /// The `sidebar-servers` capture state waits until no server is still connecting, so a server
-    /// that doesn't answer shows its red dot. `sidebar-servers-collapsed` then
-    /// collapses the first server, and `sidebar-servers-reconnecting` waits for a loaded server to
-    /// stop answering.
-    private func prepareServersSnapshot() async {
-        guard let state = model.snapshot?.requestedState,
-              ["sidebar-servers", "sidebar-servers-collapsed", "sidebar-servers-reconnecting"].contains(state)
-        else { return }
-        let reconnecting = { model.catalogs.contains { SidebarFooter(phase: $0.phase, isLoaded: $0.isLoaded).isReconnecting } }
-        while model.catalogs.contains(where: { $0.phase == .connecting })
-                || state == "sidebar-servers-reconnecting" && !reconnecting() {
-            do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
-        }
-        if state == "sidebar-servers-collapsed", let first = model.catalogs.first { collapsed.insert(first.api.baseURL) }
-        model.snapshot?.markStateReady(state)
     }
 
     private func isExpanded(_ catalog: ChannelCatalogStore) -> Binding<Bool> {

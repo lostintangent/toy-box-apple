@@ -112,13 +112,10 @@ struct RequestSpotlightTests {
         #expect(fake.operations.last == .add([entry.id]) && renders == 2)
     }
 
-    @Test func validationAndSessionLaunchesCannotTouchEitherSpotlightIndex() {
+    @Test func isolatedLaunchesCannotTouchEitherSpotlightIndex() {
         #expect(!ChannelSpotlight.indexes(.init(), bundleID: "dev.toybox.desktop.test", environment: [:]))
         #expect(!ChannelSpotlight.indexes(.init(), bundleID: "dev.toybox.desktop.benchmark", environment: [:]))
         var options = LaunchOptions()
-        options.quickSendValidation = .trace
-        #expect(!ChannelSpotlight.indexes(options, bundleID: "dev.toybox.desktop", environment: [:]))
-        options = .init()
         options.servers = ["http://127.0.0.1:3210"]
         #expect(!ChannelSpotlight.indexes(options, bundleID: "dev.toybox.desktop", environment: [:]))
         options = .init()

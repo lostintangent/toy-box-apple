@@ -321,14 +321,12 @@ struct ShellTests {
         #expect(options.width == 1280)
         #expect(options.height == 840)
         #expect(!options.isSnapshot)
-        #expect(options.quickSendValidation == nil)
     }
 
     @MainActor @Test(arguments: [
         [], ["--server", "http://127.0.0.1:3210"],
         ["--channel", "studio-demo", "--snapshot", "/tmp/integrations.png"],
         ["--channel", "studio-demo", "--benchmark", "scroll"],
-        ["--validate-quick-send", "hold"],
     ], [[:], ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"]])
     func userIntegrationsShareLaunchIsolation(_ arguments: [String], _ environment: [String: String]) throws {
         let options = try LaunchOptions.parse(arguments)
@@ -425,30 +423,9 @@ struct ShellTests {
         ["--benchmark", "messages"],
         ["--channel", "history-demo", "--benchmark", "wheel"],
         ["--channel", "history-demo", "--benchmark", "paging", "--snapshot", "/tmp/test.png"],
-        ["--validate-quick-send", "yes"],
-        ["--validate-quick-send"],
-        ["--validate-quick-send", "trace", "--validate-quick-send", "hold"],
-        ["--channel", "studio-demo", "--snapshot", "/tmp/test.png", "--validate-quick-send", "hold"],
-        ["--channel", "studio-demo", "--benchmark", "scroll", "--validate-quick-send", "trace"]
     ])
     func malformedArgumentsFailExplicitly(_ arguments: [String]) {
         #expect(throws: LaunchArgumentError.self) { try LaunchOptions.parse(arguments) }
-    }
-
-    @Test func quickSendValidationIsExplicitAndCommandLineOverridesItsLaunchEnvironment() throws {
-        #expect(try LaunchOptions.parse(["--validate-quick-send", "trace"]).quickSendValidation == .trace)
-        #expect(try LaunchOptions.parse([], environment: ["TOY_BOX_QUICK_SEND_VALIDATION": "hold"])
-            .quickSendValidation == .hold)
-        #expect(try LaunchOptions.parse(["--validate-quick-send", "trace"],
-                                       environment: ["TOY_BOX_QUICK_SEND_VALIDATION": "hold"])
-            .quickSendValidation == .trace)
-        #expect(throws: LaunchArgumentError.self) {
-            try LaunchOptions.parse([], environment: ["TOY_BOX_QUICK_SEND_VALIDATION": "yes"])
-        }
-        #expect(throws: LaunchArgumentError.self) {
-            try LaunchOptions.parse(["--channel", "studio-demo", "--benchmark", "scroll"],
-                                    environment: ["TOY_BOX_QUICK_SEND_VALIDATION": "hold"])
-        }
     }
 
     @Test func benchmarkNamesItsScenarioAndChannel() throws {
@@ -501,43 +478,6 @@ struct ShellTests {
         let second = ChannelWindowValue(channel)
         #expect(first.channelID == second.channelID)
         #expect(first != second)
-    }
-
-    @MainActor @Test(arguments: [1, 2])
-    func attachedSheetCompositePreservesScaleAndPosition(_ scale: Int) throws {
-        func bitmap(width: Int, height: Int, components: [CGFloat]) throws -> NSBitmapImageRep {
-            let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
-            let context = try #require(CGContext(
-                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-                space: space,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ))
-            context.setFillColorSpace(space)
-            context.setFillColor(components)
-            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-            return NSBitmapImageRep(cgImage: try #require(context.makeImage()))
-        }
-        let base = try bitmap(width: 100 * scale, height: 80 * scale,
-                              components: [1, 0, 0, 1])
-        let sheet = try bitmap(width: 20 * scale, height: 10 * scale,
-                               components: [0, 0, 1, 1])
-        let result = try WindowSnapshot.composite(
-            sheet, in: NSRect(x: 10, y: 20, width: 20, height: 10),
-            onto: base, logicalSize: NSSize(width: 100, height: 80)
-        )
-        #expect(result.pixelsWide == 100 * scale)
-        #expect(result.pixelsHigh == 80 * scale)
-        let inside = try #require(result.colorAt(x: 20 * scale, y: 55 * scale)?.usingColorSpace(.sRGB))
-        let outside = try #require(result.colorAt(x: 2 * scale, y: 2 * scale)?.usingColorSpace(.sRGB))
-        let expectedInside = try #require(sheet.colorAt(x: 10 * scale, y: 5 * scale)?.usingColorSpace(.sRGB))
-        let expectedOutside = try #require(base.colorAt(x: 2 * scale, y: 2 * scale)?.usingColorSpace(.sRGB))
-        #expect(abs(inside.redComponent - expectedInside.redComponent) < 0.01)
-        #expect(abs(inside.greenComponent - expectedInside.greenComponent) < 0.01)
-        #expect(abs(inside.blueComponent - expectedInside.blueComponent) < 0.01)
-        #expect(abs(outside.redComponent - expectedOutside.redComponent) < 0.01)
-        #expect(abs(outside.greenComponent - expectedOutside.greenComponent) < 0.01)
-        #expect(abs(outside.blueComponent - expectedOutside.blueComponent) < 0.01)
-        #expect(result.representation(using: .png, properties: [:]) != nil)
     }
 
     @MainActor @Test func notificationBaselineAndMilestonesAreDeduplicated() {

@@ -18,18 +18,14 @@ struct ToyBoxDesktopApp: App {
 
     init() {
         do {
-            let options = try LaunchOptions.parse(Array(ProcessInfo.processInfo.arguments.dropFirst()),
-                                                 environment: ProcessInfo.processInfo.environment)
+            let options = try LaunchOptions.parse(Array(ProcessInfo.processInfo.arguments.dropFirst()))
             let delegate = _appDelegate.wrappedValue
             delegate.isSnapshot = options.isSnapshot
             delegate.launchedInBackground = NSRunningApplication.current.activationPolicy == .prohibited
             delegate.detectLoginLaunch()
-            if options.isSnapshot || options.quickSendValidation != nil {
+            if options.isSnapshot {
                 var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-                if options.isSnapshot { arguments["ApplePersistenceIgnoreState"] = true }
-                if let validation = options.quickSendValidation {
-                    arguments[QuickSendValidation.argumentKey] = validation.rawValue
-                }
+                arguments["ApplePersistenceIgnoreState"] = true
                 UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
             }
             let model = AppModel(launchOptions: options)

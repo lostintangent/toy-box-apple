@@ -1,4 +1,3 @@
-import AppKit
 import ChannelClient
 import SwiftUI
 import ToyBoxUI
@@ -9,8 +8,7 @@ struct ServerSettings: View {
     @Environment(AppModel.self) private var model
     /// The selected server's address.
     @ViewState private var selection: String?
-    /// The Add Server sheet while it shows, with the address it opens on.
-    @ViewState private var newServer: AddServerSheet.NewServer?
+    @ViewState private var addsServer = false
     @ViewState private var confirmsRemoval = false
 
     /// The form insets its rows by this much, and a list's rows inset their content by the same.
@@ -24,7 +22,7 @@ struct ServerSettings: View {
                 list.padding(.horizontal, -Self.formInset)
                 Divider()
                 HStack(spacing: 2) {
-                    Button("Add Server", systemImage: "plus") { newServer = AddServerSheet.NewServer() }
+                    Button("Add Server", systemImage: "plus") { addsServer = true }
                     Divider().frame(height: 14)
                     Button("Remove Server", systemImage: "minus") { confirmsRemoval = true }
                         .disabled(!canRemove)
@@ -50,14 +48,13 @@ struct ServerSettings: View {
         .onAppear { if selected == nil { select(model.catalogs.first) } }
         // A first server added from the sidebar while this is open shows its details too.
         .onChange(of: model.catalogs.isEmpty) { _, isEmpty in if !isEmpty, selected == nil { select(model.catalogs.first) } }
-        .sheet(item: $newServer) { AddServerSheet(address: $0.address, added: select) }
+        .sheet(isPresented: $addsServer) { AddServerSheet(added: select) }
         .confirmationDialog("Remove \(selected?.name ?? "this server")?", isPresented: $confirmsRemoval) {
             Button("Remove Server", role: .destructive, action: remove)
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Toy Box disconnects from it and removes its channels from this Mac. Drafts stay saved, so adding it back finds them.")
         }
-        .task(id: model.snapshot?.requestedState) { await prepareSnapshot() }
         // Every server again as one connects, so one that was down when Settings opened shows.
         .task(id: model.catalogs.filter { $0.phase == .connected }.map(\.api.baseURL)) {
             await model.catalogs.refreshServers()
@@ -121,72 +118,6 @@ struct ServerSettings: View {
         guard let selected, let index = model.catalogs.firstIndex(where: { $0 === selected }) else { return }
         model.servers.remove(selected)
         select(model.catalogs.indices.contains(index) ? model.catalogs[index] : model.catalogs.last)
-    }
-
-    /// The `settings-servers`, `settings-server-renamed` and `settings-server-removed` capture
-    /// states wait until no server is still connecting, then show the server that can't connect,
-    /// the first server named Studio, or the list once the server that can't connect is removed.
-    /// `settings-server-rename-failed` shows the first server after a name too long to take.
-    /// `settings-server-link-addresses` reads every server's links and shows the first server.
-    /// `settings-server-links` does too, after giving each server on this Mac its own address as its
-    /// Tailscale address, the way the demos link. `settings-server-link-failed` gives the last one an
-    /// address no server can reach and turns the first one's Linked switch on, and
-    /// `settings-add-server` opens Add Server on another server on this Mac, and `settings-no-servers`
-    /// removes every server.
-    private func prepareSnapshot() async {
-        guard let state = model.snapshot?.requestedState,
-              ["settings-servers", "settings-server-renamed", "settings-server-rename-failed",
-               "settings-server-removed", "settings-server-link-addresses", "settings-server-links",
-               "settings-server-link-failed", "settings-add-server", "settings-no-servers"].contains(state)
-        else { return }
-        do {
-            while model.catalogs.contains(where: { $0.phase == .connecting }) {
-                try await Task.sleep(for: .milliseconds(50))
-            }
-            let unreachable = model.catalogs.first { $0.phase.failure != nil }
-            switch state {
-            case "settings-server-renamed":
-                guard let first = model.catalogs.first else { return }
-                select(first)
-                try await first.rename(to: "Studio")
-            case "settings-server-rename-failed":
-                select(model.catalogs.first)
-            case "settings-no-servers":
-                select(model.catalogs.first)
-                while selected != nil { remove() }
-            case "settings-server-link-addresses", "settings-server-links", "settings-server-link-failed",
-                 "settings-add-server":
-                if state != "settings-server-link-addresses" {
-                    for catalog in model.catalogs where catalog.links.isLoopback {
-                        let unreachable = state == "settings-server-link-failed" && catalog === model.catalogs.last
-                        let address = unreachable ? "box.tail1234.ts.net" : catalog.api.baseURL.absoluteString
-                        try model.servers.setTailscaleAddress(address, of: catalog)
-                    }
-                }
-                await model.catalogs.refreshServers()
-                select(model.catalogs.first)
-                if state == "settings-server-link-failed", let first = model.catalogs.first {
-                    await model.catalogs.setLinked(first, true)
-                }
-                if state == "settings-add-server" {
-                    newServer = AddServerSheet.NewServer(address: "http://localhost:3200")
-                }
-            default:
-                select(unreachable)
-            }
-            if state == "settings-server-removed" {
-                try await Task.sleep(for: .milliseconds(100))
-                remove()
-            }
-            try await Task.sleep(for: .milliseconds(100))
-        } catch { return }
-        let windows = NSApp.windows.filter { $0.isVisible && $0.identifier?.rawValue.contains("Settings") == true }
-        guard windows.count == 1 else {
-            let found = NSApp.windows.map { "\($0.identifier?.rawValue ?? "nil") \"\($0.title)\"" }
-            model.snapshot?.failState(state, message: "Found \(windows.count) Settings windows among \(found)")
-            return
-        }
-        model.snapshot?.markStateReady(state, capturing: windows)
     }
 
     static func address(_ catalog: ChannelCatalogStore) -> String { catalog.api.baseURL.absoluteString }
@@ -290,7 +221,6 @@ private struct ServerNameRows: View {
             .onSubmit(commit)
             .onChange(of: isFocused) { _, focused in if !focused { commit() } }
             .onDisappear(perform: commit)
-            .task { await prepareSnapshot() }
         if let failure = field.failure {
             FailureLabel(words: failure.words, reason: failure.reason)
         }
@@ -301,22 +231,11 @@ private struct ServerNameRows: View {
         guard model.catalogs.contains(where: { $0 === field.catalog }) else { return }
         Task { await field.commit() }
     }
-
-    /// The `settings-server-rename-failed` capture state types a name too long to take.
-    private func prepareSnapshot() async {
-        guard model.snapshot?.requestedState == "settings-server-rename-failed" else { return }
-        field.text = "The Mac Studio in the upstairs office, on the desk by the window seat"
-        await field.commit()
-    }
 }
 
 /// Add Server: an address, tested if you like, then added, linked when its switch is on, and
 /// selected. An address already listed selects that server.
 struct AddServerSheet: View {
-    struct NewServer: Identifiable {
-        let id = UUID()
-        var address = ""
-    }
     let added: (ChannelCatalogStore) -> Void
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -324,11 +243,6 @@ struct AddServerSheet: View {
     @ViewState private var failure: String?
     @ViewState private var links = true
     @ViewState private var addresses = LinkAddresses()
-
-    init(address: String = "", added: @escaping (ChannelCatalogStore) -> Void) {
-        self.added = added
-        _connection = ViewState(initialValue: ServerConnectionProbe(address: address))
-    }
 
     var body: some View {
         Form {

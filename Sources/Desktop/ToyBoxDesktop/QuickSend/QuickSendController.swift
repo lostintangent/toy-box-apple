@@ -1,7 +1,6 @@
 import AppKit
 import ChannelKit
 import Observation
-import OSLog
 import SwiftUI
 import ToyBoxUI
 
@@ -21,13 +20,10 @@ final class QuickSendController: NSObject, NSWindowDelegate {
     @ObservationIgnored private var panel: QuickSendPanel?
     @ObservationIgnored private var hosting: NSHostingView<AnyView>?
     @ObservationIgnored private var content = AnyView(QuickSendPlaceholder())
-    @ObservationIgnored private let validation: QuickSendValidation?
-    private static let logger = Logger(subsystem: "dev.toybox.desktop", category: "QuickSend")
 
     init(options: LaunchOptions = .init(), defaults: UserDefaults = .standard,
          hotKey: any QuickSendHotKeyRegistering = CarbonQuickSendHotKey()) {
         isEnabled = !options.isSnapshot && options.benchmark == nil
-        validation = options.quickSendValidation
         self.defaults = defaults
         self.hotKey = hotKey
         super.init()
@@ -120,22 +116,8 @@ final class QuickSendController: NSObject, NSWindowDelegate {
 
     func leaveReply() { replyTarget = nil }
 
-    /// Shows the panel for a snapshot, which never registers the shortcut, in the snapshot's
-    /// appearance.
-    func presentForSnapshot(appearance: NSAppearance?) {
-        replyTarget = nil
-        open(appearance: appearance)
-    }
-
-    /// The panel and the windows it holds, like the channel chooser.
-    var windows: [NSWindow] { panel.map { [$0] + ($0.childWindows ?? []) } ?? [] }
-
     private func show() {
         guard isEnabled else { return }
-        open()
-    }
-
-    private func open(appearance: NSAppearance? = nil) {
         if panel == nil {
             let panel = QuickSendPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 220),
                                       styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
@@ -162,7 +144,6 @@ final class QuickSendController: NSObject, NSWindowDelegate {
             self.panel = panel
         }
         guard let panel else { return }
-        if let appearance { panel.appearance = appearance }
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         if let screen {
             panel.setFrame(Self.frame(size: panel.frame.size, in: screen.visibleFrame), display: false)
@@ -170,10 +151,6 @@ final class QuickSendController: NSObject, NSWindowDelegate {
         presentationID = UUID()
         isPresented = true
         panel.makeKeyAndOrderFront(nil)
-        if validation != nil {
-            tracePanel("presented")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.tracePanel("settled") }
-        }
     }
 
     func present(prefill: QuickSendPrefill) {
@@ -189,26 +166,13 @@ final class QuickSendController: NSObject, NSWindowDelegate {
         if pendingPrefill?.id == id { pendingPrefill = nil }
     }
 
-    private func tracePanel(_ phase: String) {
-        guard let panel else { return }
-        Self.logger.notice("""
-            Quick Send \(phase, privacy: .public): visible=\(panel.isVisible), key=\(panel.isKeyWindow), \
-            alpha=\(panel.alphaValue), frame=\(String(describing: panel.frame), privacy: .public), \
-            role=\(panel.accessibilityRole()?.rawValue ?? "nil", privacy: .public), \
-            subrole=\(panel.accessibilitySubrole()?.rawValue ?? "nil", privacy: .public)
-            """)
-    }
-
     func dismiss() {
         guard isPresented else { return }
         isPresented = false
         panel?.orderOut(nil)
-        if validation != nil { Self.logger.notice("Dismissed Quick Send") }
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        if validation != nil { Self.logger.notice("Quick Send resigned key") }
-        guard validation != .hold else { return }
         // Attachment sheets and popovers belong to the panel, not to a click away.
         DispatchQueue.main.async { [weak self] in
             guard let self, let panel = self.panel, !panel.isKeyWindow, panel.attachedSheet == nil else { return }
@@ -217,7 +181,6 @@ final class QuickSendController: NSObject, NSWindowDelegate {
                 if window == panel { return }
                 parent = window.parent
             }
-            if self.validation != nil { Self.logger.notice("Dismissing Quick Send after resign key") }
             self.dismiss()
         }
     }

@@ -12,16 +12,26 @@ struct SidebarConnectionFooter: View {
     let openSettings: () -> Void
     /// File > Open Screen…, or nil without a server.
     let openScreen: (() -> Void)?
+    @Environment(\.channelTextScale) private var scale
 
     /// The dot's leading edge, 4 points before the channel icons.
-    static let leading: CGFloat = 20
+    private static let leading: CGFloat = 20
     /// The status line's capsule reaches this far past the dot on each side.
-    static let capsuleOutset: CGFloat = 6
+    private static let capsuleOutset: CGFloat = 6
 
     var body: some View {
         HStack {
             Button(action: openSettings) {
-                SidebarStatusLine(footer: summary.footer, title: summary.title)
+                HStack(spacing: 6) {
+                    SidebarStatusDot(footer: summary.footer, spinning: false)
+                    // Secondary from the button's style, and primary while it's lit.
+                    Text(summary.title)
+                        .font(.system(size: 11 * scale))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, Self.capsuleOutset)
+                .frame(height: 22 * scale)
+                .contentShape(Capsule())
             }
             .buttonStyle(HoverFillButtonStyle(shape: Capsule()))
             .help(summary.help)
@@ -111,25 +121,5 @@ extension SidebarFooter {
     /// while there is one.
     func help(_ serverURL: String, failure: String?) -> String {
         ["\(verb) \(serverURL)", failure, "Change the server in Settings."].compactMap { $0 }.joined(separator: "\n")
-    }
-}
-
-/// The dot, then how many servers there are.
-struct SidebarStatusLine: View {
-    let footer: SidebarFooter
-    let title: String
-    @Environment(\.channelTextScale) private var scale
-
-    var body: some View {
-        HStack(spacing: 6) {
-            SidebarStatusDot(footer: footer, spinning: false)
-            // Secondary from the button's style, and primary while it's lit.
-            Text(title)
-                .font(.system(size: 11 * scale))
-                .lineLimit(1)
-        }
-        .padding(.horizontal, SidebarConnectionFooter.capsuleOutset)
-        .frame(height: 22 * scale)
-        .contentShape(Capsule())
     }
 }

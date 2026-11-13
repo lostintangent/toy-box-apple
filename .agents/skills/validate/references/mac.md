@@ -9,7 +9,8 @@ SCRATCH_PATH=/tmp/tbm-<you> bun run snapshot --server http://127.0.0.1:3210 \
 
 Snapshot mode never marks read, saves settings or posts notifications. It uses the normal SwiftUI
 scene, disables restoration only in the volatile argument domain, refuses application-state saving
-and restoration, and renders attached sheets' layers into the PNG.
+and restoration, and captures the window as the window server composites it, attached sheets
+included. Without Screen Recording the snapshot fails instead of writing a blank PNG.
 
 It's layout evidence only. It has no native interaction, WindowServer shadows or corner masks, or
 correct 27+ Liquid Glass and sidebar selection. Verify materials, selection and scroll-edge effects
