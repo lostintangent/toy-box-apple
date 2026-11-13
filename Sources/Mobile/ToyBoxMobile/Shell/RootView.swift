@@ -8,6 +8,7 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @ViewState private var management = ManagementPresenter()
     @ViewState private var overview = Overview()
     @ViewState private var managementSessions = ManagementSessions()
@@ -41,7 +42,6 @@ struct RootView: View {
                     .ignoresSafeArea(.container, edges: .bottom)
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Overview")
-                    .transaction(value: selectedInteraction?.isInspectorPresented) { $0.disablesAnimations = true }
             }
         }
         .managementConfirmation(presenter: management, hosting: selectedInteraction?.isInspectorPresented != true)
@@ -63,8 +63,8 @@ struct RootView: View {
                 .presentationDetents([.large])
                 .presentationBackgroundInteraction(.disabled)
         }
-        .onGeometryChange(for: OverviewPlacement.self) { [sizeClass] in
-            OverviewPlacement(sceneWidth: $0.size.width, sizeClass: sizeClass)
+        .onGeometryChange(for: OverviewPlacement.self) { [sizeClass, verticalSizeClass] in
+            OverviewPlacement(sceneWidth: $0.size.width, sizeClass: sizeClass, verticalSizeClass: verticalSizeClass)
         } action: { overview.move(to: $0) }
         // Overview moves only once the screen has fully gone, so its sheet never meets a closing cover.
         .onChange(of: model.cover?.screenID != nil || isScreenUp, initial: true) { _, held in overview.isHeld = held }

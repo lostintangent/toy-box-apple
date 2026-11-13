@@ -15,8 +15,13 @@ enum OverviewPlacement: Equatable {
     /// portrait also reports a regular size class, so the scene's width decides.
     static let inspectorSceneWidth: CGFloat = 716
 
-    init(sceneWidth: CGFloat, sizeClass: UserInterfaceSizeClass?) {
-        self = sizeClass == .regular && sceneWidth >= Self.inspectorSceneWidth ? .inspector : .sheet
+    /// The column covers the detail's trailing corner, so it also needs regular height, where the
+    /// channel's Overview button stands in the trailing vertical bar beside it. A compact-height scene
+    /// as wide, like a Pro Max in landscape, keeps a horizontal bar whose Overview button the column
+    /// would cover.
+    init(sceneWidth: CGFloat, sizeClass: UserInterfaceSizeClass?, verticalSizeClass: UserInterfaceSizeClass?) {
+        self = sizeClass == .regular && verticalSizeClass == .regular && sceneWidth >= Self.inspectorSceneWidth
+            ? .inspector : .sheet
     }
 
     /// Folded landscape stands the sheet's bar items in a leading vertical bar, which would move the

@@ -55,12 +55,16 @@ struct OverviewTests {
     }
 
     @Test func onlyUnfoldedLandscapeLeavesTheConversationRoomBesideTheColumn() {
-        #expect(OverviewPlacement(sceneWidth: 0, sizeClass: nil) == .sheet)
-        #expect(OverviewPlacement(sceneWidth: 466, sizeClass: .compact) == .sheet)
-        #expect(OverviewPlacement(sceneWidth: 678, sizeClass: .regular) == .sheet)
-        #expect(OverviewPlacement(sceneWidth: 669, sizeClass: .regular) == .sheet)
-        #expect(OverviewPlacement(sceneWidth: 951, sizeClass: .compact) == .sheet)
-        #expect(OverviewPlacement(sceneWidth: 951, sizeClass: .regular) == .inspector)
+        #expect(OverviewPlacement(sceneWidth: 0, sizeClass: nil, verticalSizeClass: nil) == .sheet)
+        #expect(OverviewPlacement(sceneWidth: 466, sizeClass: .compact, verticalSizeClass: .regular) == .sheet)
+        #expect(OverviewPlacement(sceneWidth: 678, sizeClass: .regular, verticalSizeClass: .compact) == .sheet)
+        #expect(OverviewPlacement(sceneWidth: 669, sizeClass: .regular, verticalSizeClass: .regular) == .sheet)
+        #expect(OverviewPlacement(sceneWidth: 951, sizeClass: .compact, verticalSizeClass: .regular) == .sheet)
+        #expect(OverviewPlacement(sceneWidth: 951, sizeClass: .regular, verticalSizeClass: .regular) == .inspector)
+    }
+
+    @Test func aWideCompactHeightSceneKeepsTheSheetSoTheColumnNeverCoversItsBar() {
+        #expect(OverviewPlacement(sceneWidth: 956, sizeClass: .regular, verticalSizeClass: .compact) == .sheet)
     }
 
     @Test func theColumnShowsOnlyAnUncoveredRequestedOverview() {
