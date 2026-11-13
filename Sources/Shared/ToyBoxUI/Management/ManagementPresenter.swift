@@ -61,7 +61,6 @@ public final class ManagementPresenter {
     public var flow: ManagementFlow?
     public private(set) var createdChannel: (channel: Channel, target: ChannelTarget?, token: UUID)?
     @ObservationIgnored private var creatingMentions: Set<String> = []
-    @ObservationIgnored private var uncertainMentions: Set<String> = []
 
     public init() {}
 
@@ -79,15 +78,10 @@ public final class ManagementPresenter {
         }
     }
 
-    public func createMentionMember(name: String, store: ChannelStore,
-                                    catalog: ChannelCatalogStore? = nil) async throws -> ChannelAgent {
+    public func createMentionMember(name: String, store: ChannelStore) async throws -> ChannelAgent {
         guard store.phase.isConnected, let state = store.state else { throw ChannelAPIError.disconnected }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let key = "\(store.api.baseURL.absoluteString):\(store.id):\(ChannelAgent.handle(forName: trimmed))"
-        if uncertainMentions.contains(key) {
-            try await checkMentionCreation(key: key, store: store, catalog: catalog)
-            throw ChannelAPIError.invalidMessage("The team has been refreshed. Review Team before explicitly creating this agent again.")
-        }
         if let message = ChannelAgent.nameError(trimmed, agents: state.agents) {
             throw ChannelAPIError.invalidMessage(message)
         }
@@ -95,29 +89,6 @@ public final class ManagementPresenter {
             throw ChannelAPIError.invalidMessage("This agent is already being created.")
         }
         defer { creatingMentions.remove(key) }
-        do {
-            return try await store.api.createMember(channelId: store.id, input: .init(name: trimmed))
-        } catch {
-            guard ChannelManagementWriteRecovery.Phase.isRequired(after: error) else { throw error }
-            uncertainMentions.insert(key)
-            try await checkMentionCreation(key: key, store: store, catalog: catalog)
-            throw ChannelAPIError.invalidMessage(
-                "\(ChannelManagementWriteRecovery.Phase.uncertaintyMessage) The team has been refreshed. Review Team before creating another agent.")
-        }
-    }
-
-    private func checkMentionCreation(key: String, store: ChannelStore,
-                                      catalog: ChannelCatalogStore?) async throws {
-        guard let catalog, catalog.api.baseURL == store.api.baseURL else {
-            throw ChannelAPIError.invalidMessage(
-                "\(ChannelManagementWriteRecovery.Phase.uncertaintyMessage) Reconnect to this server before checking Team.")
-        }
-        do {
-            _ = try await catalog.reconcileManagementWrite(channelId: store.id)
-            uncertainMentions.remove(key)
-        } catch {
-            throw ChannelAPIError.invalidMessage(
-                "\(ChannelManagementWriteRecovery.Phase.uncertaintyMessage) Current state could not be checked. \(error.localizedDescription)")
-        }
+        return try await store.api.createMember(channelId: store.id, input: .init(name: trimmed))
     }
 }

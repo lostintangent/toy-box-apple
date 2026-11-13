@@ -8,7 +8,6 @@ import ToyBoxUI
 struct OverviewRoutineRow: View {
     private enum Focus { case row, menu }
 
-    @Environment(AppModel.self) private var app
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.windowSnapshot) private var snapshot
     @Environment(\.channelTextScale) private var textScale
@@ -20,8 +19,6 @@ struct OverviewRoutineRow: View {
     let store: ChannelStore
     let onExpand: () -> Void
     @ViewState private var item = OverviewItemState(Item())
-    /// A routine gets its own recovery when it first runs.
-    @ViewState private var recoveries = OverviewItemState<ChannelManagementWriteRecovery?>(nil)
     @ViewState private var isHovering = false
     @FocusState private var focus: Focus?
 
@@ -29,13 +26,13 @@ struct OverviewRoutineRow: View {
         var expanded = false
         var isRunning = false
         var runRequestedAt: Date?
+        var error: String?
     }
 
     private var expanded: Bool { item[key].expanded }
     private var isRunning: Bool { item[key].isRunning }
     private var runRequestedAt: Date? { item[key].runRequestedAt }
-    private var recovery: ChannelManagementWriteRecovery? { recoveries[key] }
-    private var canRun: Bool { !isRunning && recovery?.blocksWrites != true && store.phase.isConnected }
+    private var canRun: Bool { !isRunning && store.phase.isConnected }
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
     private var scheduleSummary: String { RoutineScheduleSummary.text(for: routine.schedule) }
     private var scheduleLine: String {
@@ -93,16 +90,8 @@ struct OverviewRoutineRow: View {
                     .padding(.bottom, 8)
                     .id("overview-routine-details-\(routine.id)")
             }
-            if let error = recovery?.error {
+            if let error = item[key].error {
                 ManagementError(message: error).padding(.leading, 38).padding(.bottom, 6)
-            }
-            if let recovery, let state = recovery.state {
-                ManagementRecoveryNotice(
-                    state: state, reviewTitle: "I've Reviewed the Conversation",
-                    onCheck: { Task { await checkCurrentState(recovery) } },
-                    onReview: recovery.finishReview)
-                .padding(.leading, 38)
-                .padding(.bottom, 6)
             }
         }
         .task(id: snapshot?.requestedState) {
@@ -133,32 +122,23 @@ struct OverviewRoutineRow: View {
 
     private func run() {
         guard canRun else { return }
-        let recovery = self.recovery ?? ChannelManagementWriteRecovery()
-        recoveries[key] = recovery
         item[key].isRunning = true
         item[key].runRequestedAt = nil
-        recovery.clearError()
+        item[key].error = nil
         Task { [key] in
             var requestedAt: Date?
+            var failure: String?
             do {
                 try await store.api.runRoutine(channelId: store.id, routineId: routine.id)
                 requestedAt = .now
             } catch {
-                if recovery.record(error) { await checkCurrentState(recovery) }
+                failure = error.localizedDescription
             }
             item.update(key) {
                 $0.isRunning = false
+                $0.error = failure
                 if let requestedAt { $0.runRequestedAt = requestedAt }
             }
-        }
-    }
-
-    private func checkCurrentState(_ recovery: ChannelManagementWriteRecovery) async {
-        await recovery.check(catalog: app.catalog, channelId: store.id) { current in
-            if current.channelWasDeleted {
-                return "The channel is no longer present on the server."
-            }
-            return "Channel details have been refreshed. This routine may already have started. Review the current conversation before requesting another run."
         }
     }
 }

@@ -11,7 +11,7 @@ struct ManagementConfirmation: View {
     let catalog: ChannelCatalogStore
     let presenter: ManagementPresenter
     @ViewState private var isDeleting = false
-    @ViewState private var recovery = ChannelManagementWriteRecovery()
+    @ViewState private var error: String?
 
     private var member: ChannelAgent? {
         guard case .removeMember(_, let id) = flow else { return nil }
@@ -49,14 +49,11 @@ struct ManagementConfirmation: View {
         }
     }
     private var exists: Bool {
-        if store.phase == .deleted || recovery.result?.channelWasDeleted == true { return false }
-        let current = recovery.result?.state
+        guard store.phase != .deleted else { return false }
         switch flow {
         case .deleteChannel: return true
-        case .removeMember(_, let id):
-            return current.map { $0.members.contains { $0.id == id } } ?? (member != nil)
-        case .deleteRoutine(_, let id):
-            return current.map { $0.routines.contains { $0.id == id } } ?? (routine != nil)
+        case .removeMember: return member != nil
+        case .deleteRoutine: return routine != nil
         default: return false
         }
     }
@@ -75,20 +72,14 @@ struct ManagementConfirmation: View {
                 }
             }
             ManagementConnectionNotice(store: store)
-            if let error = recovery.error { ManagementError(message: error) }
-            if let state = recovery.state {
-                ManagementRecoveryNotice(
-                    state: state, reviewTitle: exists ? "Review Deletion Again" : nil,
-                    onCheck: { Task { await checkCurrentState() } },
-                    onReview: recovery.finishReview)
-            }
+            if let error { ManagementError(message: error) }
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { presenter.flow = nil }
                     .keyboardShortcut(.cancelAction)
                     .disabled(isDeleting)
                 Button(isDeleting ? "Deleting..." : buttonTitle, role: .destructive) { remove() }
-                    .disabled(isDeleting || recovery.blocksWrites || !exists || !store.phase.isConnected)
+                    .disabled(isDeleting || !exists || !store.phase.isConnected)
             }
         }
         .padding(24)
@@ -97,9 +88,9 @@ struct ManagementConfirmation: View {
     }
 
     private func remove() {
-        guard !isDeleting, !recovery.blocksWrites, exists, store.phase.isConnected else { return }
+        guard !isDeleting, exists, store.phase.isConnected else { return }
         isDeleting = true
-        recovery.clearError()
+        error = nil
         Task {
             defer { isDeleting = false }
             do {
@@ -115,31 +106,8 @@ struct ManagementConfirmation: View {
                 presenter.flow = nil
                 await catalog.refresh()
             } catch {
-                if recovery.record(error) { await checkCurrentState() }
+                self.error = error.localizedDescription
             }
-        }
-    }
-
-    private func checkCurrentState() async {
-        await recovery.check(catalog: catalog, channelId: store.id) { current in
-            let stillExists: Bool
-            if current.channelWasDeleted {
-                stillExists = false
-            } else {
-                switch flow {
-                case .deleteChannel:
-                    stillExists = current.state != nil
-                case .removeMember(_, let id):
-                    stillExists = current.state?.members.contains { $0.id == id } == true
-                case .deleteRoutine(_, let id):
-                    stillExists = current.state?.routines.contains { $0.id == id } == true
-                default:
-                    stillExists = false
-                }
-            }
-            return stillExists
-                ? "The target is still present in current server state. Review the deletion consequences again before explicitly trying another deletion."
-                : "The target is no longer present in current server state. The deletion was not repeated."
         }
     }
 }

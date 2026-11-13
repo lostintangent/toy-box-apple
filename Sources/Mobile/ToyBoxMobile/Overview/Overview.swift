@@ -97,15 +97,15 @@ final class ChannelOverview {
         var expanded = false
         var pending = false
         var requestedAt: Date?
-        let recovery = ChannelManagementWriteRecovery()
+        var error: String?
     }
 
     @MainActor @Observable
     final class Artifact {
         var pending = false
-        let recovery = ChannelManagementWriteRecovery()
+        var error: String?
 
-        func canRemove(connected: Bool) -> Bool { connected && !pending && !recovery.blocksWrites }
+        func canRemove(connected: Bool) -> Bool { connected && !pending }
     }
 
     let store: ChannelStore

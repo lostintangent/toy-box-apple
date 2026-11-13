@@ -5,32 +5,24 @@ import ToyBoxUI
 
 struct ChannelEditor: View {
     @Environment(AppModel.self) private var app
-    @ViewState private var channel: ChannelDetails?
     let store: ChannelStore?
     /// The channel's server, or the one New Channel opened on.
     private let openingCatalog: ChannelCatalogStore
     let presenter: ManagementPresenter
     /// The address New Channel creates on, which its Server menu changes.
     @ViewState private var server: String
-    @ViewState private var name: String
-    @ViewState private var purpose: String
-    @ViewState private var directory: String
-    @ViewState private var model: ModelConfiguration?
+    @ViewState private var form: ChannelForm
     @ViewState private var isSaving = false
-    @ViewState private var recovery = ChannelManagementWriteRecovery()
+    @ViewState private var error: String?
     @FocusState private var nameFocused: Bool
 
     init(channel: ChannelDetails?, store: ChannelStore?, catalog: ChannelCatalogStore,
          presenter: ManagementPresenter) {
-        _channel = ViewState(initialValue: channel)
         self.store = store
         openingCatalog = catalog
         _server = ViewState(initialValue: catalog.api.baseURL.absoluteString)
         self.presenter = presenter
-        _name = ViewState(initialValue: channel?.name ?? "")
-        _purpose = ViewState(initialValue: channel?.purpose ?? "")
-        _directory = ViewState(initialValue: channel?.directory ?? "")
-        _model = ViewState(initialValue: channel?.model)
+        _form = ViewState(initialValue: ChannelForm(channel))
     }
 
     /// The server this sheet writes to. A chosen server that Settings removes falls back to the
@@ -39,31 +31,9 @@ struct ChannelEditor: View {
     private var serverSelection: Binding<String> {
         Binding { catalog.api.baseURL.absoluteString } set: { server = $0 }
     }
-    private var nextName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var nextPurpose: String { purpose.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var nextDirectory: String { directory.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var nameViolation: String? {
-        Channel.nameError(nextName)
-    }
-    private var purposeViolation: String? {
-        Channel.purposeError(nextPurpose)
-    }
-    private var directoryViolation: String? {
-        channel == nil ? Channel.directoryError(nextDirectory) : nil
-    }
-    // An empty name or a missing lead model only disables the default button. The prompt and the
-    // model section's footer already say why.
-    private var isValid: Bool {
-        !nextName.isEmpty && model != nil
-            && nameViolation == nil && purposeViolation == nil && directoryViolation == nil
-    }
-    private var hasChanges: Bool {
-        guard let channel else { return true }
-        return nextName != channel.name || nextPurpose != (channel.purpose ?? "") || model != channel.model
-    }
+    private var channel: ChannelDetails? { form.channel }
     private var canSave: Bool {
-        isValid && hasChanges && !isSaving && !recovery.blocksWrites
-            && (store == nil || store?.phase.isConnected == true)
+        form.isSubmittable && !isSaving && (store == nil || store?.phase.isConnected == true)
     }
 
     var body: some View {
@@ -82,46 +52,45 @@ struct ChannelEditor: View {
                             Text(catalog.name).tag(catalog.api.baseURL.absoluteString)
                         }
                     }
-                    .disabled(recovery.state != nil)
                 }
             }
             Section {
-                TextField("Name", text: $name, prompt: Text("Required"))
+                TextField("Name", text: $form.name, prompt: Text("Required"))
                     .focused($nameFocused)
                     .onSubmit(submit)
-                    .accessibilityHint(nameViolation ?? "")
+                    .accessibilityHint(form.nameViolation ?? "")
                     .accessibilityIdentifier("channel-name")
                 ManagementLongTextField(
                     title: "Purpose",
                     prompt: "What should this team work toward? The lead reads this first.",
-                    text: $purpose, lines: 3...6, violation: purposeViolation)
+                    text: $form.purpose, lines: 3...6, violation: form.purposeViolation)
                     .onSubmit(submit)
             } footer: {
-                if let violation = nameViolation ?? purposeViolation {
+                if let violation = form.nameViolation ?? form.purposeViolation {
                     ManagementFooter(violation: violation)
                 }
             }
             ModelSelectionFields(
-                model: $model, openingModel: channel?.model, api: catalog.api,
+                model: $form.model, openingModel: channel?.model, api: catalog.api,
                 provider: channel?.model.provider, allowsInheritance: false,
                 title: "Lead model",
                 help: [channel == nil
                        ? "A folder on the server. Leave it empty for a discussion-only channel."
                        : "Only the lead can change the directory. Model changes apply the next time the lead works."],
-                violation: directoryViolation
+                violation: form.directoryViolation
             ) {
                 if channel == nil {
-                    TextField("Working directory", text: $directory, prompt: Text("Optional"))
+                    TextField("Working directory", text: $form.directory, prompt: Text("Optional"))
                         .onSubmit(submit)
-                        .accessibilityHint(directoryViolation ?? "")
+                        .accessibilityHint(form.directoryViolation ?? "")
                 } else {
                     LabeledContent("Working directory") {
-                        Text(directory.isEmpty ? "None" : directory)
-                            .foregroundStyle(directory.isEmpty ? .secondary : .primary)
+                        Text(form.directory.isEmpty ? "None" : form.directory)
+                            .foregroundStyle(form.directory.isEmpty ? .secondary : .primary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .textSelection(.enabled)
-                            .help(directory)
+                            .help(form.directory)
                     }
                 }
             }
@@ -129,14 +98,7 @@ struct ChannelEditor: View {
             .id(ObjectIdentifier(catalog))
         } notices: {
             ManagementConnectionNotice(store: store)
-            if let error = recovery.error { ManagementError(message: error) }
-            if let state = recovery.state {
-                ManagementRecoveryNotice(
-                    state: state,
-                    reviewTitle: recovery.result?.state == nil ? nil : "Use Current Server Values",
-                    onCheck: { Task { await checkCurrentState() } },
-                    onReview: useCurrentServerValues)
-            }
+            if let error { ManagementError(message: error) }
         } buttons: {
             Spacer()
             Button("Cancel", role: .cancel) { presenter.flow = nil }
@@ -160,55 +122,24 @@ struct ChannelEditor: View {
     }
 
     private func submit() {
-        guard canSave, let model else { return }
+        guard canSave else { return }
         let catalog = catalog
-        let api = catalog.api
+        let form = form
         isSaving = true
-        recovery.clearError()
+        error = nil
         Task {
             defer { isSaving = false }
             do {
-                if let channel {
-                    _ = try await api.editChannel(
-                        id: channel.id,
-                        changes: .init(name: nextName == channel.name ? nil : nextName,
-                                       purpose: nextPurpose == (channel.purpose ?? "")
-                                       ? nil : nextPurpose.isEmpty ? .clear : .set(nextPurpose),
-                                       model: model == channel.model ? nil : model))
-                    presenter.flow = nil
+                let saved = try await form.submit(to: catalog.api)
+                if form.channel == nil {
+                    presenter.didCreate(saved, on: catalog.api.baseURL.absoluteString)
                 } else {
-                    let path = directory.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let created = try await api.createChannel(
-                        .init(name: nextName, purpose: nextPurpose.isEmpty ? nil : nextPurpose,
-                              directory: path.isEmpty ? nil : path, model: model))
-                    presenter.didCreate(created, on: api.baseURL.absoluteString)
+                    presenter.flow = nil
                 }
                 await catalog.refresh()
             } catch {
-                if recovery.record(error) { await checkCurrentState() }
+                self.error = error.localizedDescription
             }
         }
-    }
-
-    private func checkCurrentState() async {
-        await recovery.check(catalog: catalog, channelId: channel?.id) { current in
-            if current.channelWasDeleted {
-                return "The channel is no longer present on the server. No further save is available."
-            }
-            if let channel = current.state?.channel {
-                return "The server's current channel is \(channel.name). Your entries are preserved. Use Current Server Values replaces them with the refreshed name, purpose and model."
-            }
-            return "The channel list has been refreshed. Close this sheet and review the list before creating another channel. Your entries are preserved until you close the sheet."
-        }
-    }
-
-    private func useCurrentServerValues() {
-        guard let current = recovery.result?.state?.channel else { return }
-        channel = ChannelDetails(current)
-        name = current.name
-        purpose = current.purpose ?? ""
-        directory = current.directory ?? ""
-        model = current.model
-        recovery.finishReview()
     }
 }

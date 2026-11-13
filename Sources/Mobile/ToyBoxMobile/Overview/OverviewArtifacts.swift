@@ -27,31 +27,6 @@ struct OverviewArtifactsSection: View {
     }
 }
 
-struct OverviewArtifactList: View {
-    let store: ChannelStore
-    let onOpen: (ChannelArtifact) -> Void
-
-    var body: some View {
-        Group {
-            if store.artifacts.isEmpty {
-                ContentUnavailableView("No Artifacts Yet", systemImage: "doc",
-                                       description: Text("Files shared by this team will appear here.")
-                                        .foregroundStyle(ChannelInk.secondary))
-            } else {
-                List(store.artifacts.newestFirst) { artifact in
-                    Button { onOpen(artifact) } label: {
-                        OverviewArtifactLabel(artifact: artifact, share: store.artifactShares[artifact.file.id])
-                    }
-                    .buttonStyle(.plain)
-                    .listRowInsets(.vertical, 6)
-                    .accessibilityIdentifier("artifact-list-\(artifact.id)")
-                }
-            }
-        }
-        .accessibilityIdentifier("overview-artifact-list")
-    }
-}
-
 struct OverviewArtifactLabel: View {
     let artifact: ChannelArtifact
     let share: ChannelArtifact.Share?
@@ -112,7 +87,6 @@ struct OverviewArtifactRow: View {
     let share: ChannelArtifact.Share?
     let store: ChannelStore
     let state: ChannelOverview.Artifact
-    @Environment(AppModel.self) private var app
     @Environment(ChannelArtifactSession.self) private var viewer
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.openURL) private var openURL
@@ -125,11 +99,7 @@ struct OverviewArtifactRow: View {
 
     private var api: ChannelAPI { store.api }
     private var resource: URL? { artifact.url.flatMap(api.resourceURL) }
-    private var recovery: ChannelManagementWriteRecovery { state.recovery }
     private var canRemove: Bool { state.canRemove(connected: store.phase.isConnected) }
-    private var matchingCatalog: ChannelCatalogStore? {
-        app.catalog.flatMap { $0.api.baseURL == store.api.baseURL ? $0 : nil }
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -166,12 +136,7 @@ struct OverviewArtifactRow: View {
                     .disabled(!canRemove)
             }
             if let error { ManagementError(message: error) }
-            if let message = recovery.error { ManagementError(message: message) }
-            if let recoveryState = recovery.state {
-                ManagementRecoveryNotice(state: recoveryState, reviewTitle: "I've Reviewed the Conversation",
-                                         onCheck: { Task { await check(catalog: matchingCatalog) } },
-                                         onReview: recovery.finishReview)
-            }
+            if let message = state.error { ManagementError(message: message) }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             if !voiceOver {
@@ -189,8 +154,7 @@ struct OverviewArtifactRow: View {
     private func remove() {
         guard canRemove else { return }
         state.pending = true
-        recovery.clearError()
-        let catalog = matchingCatalog
+        state.error = nil
         Task { [artifact] in
             defer { state.pending = false }
             do {
@@ -198,15 +162,8 @@ struct OverviewArtifactRow: View {
             } catch ChannelAPIError.http(status: 404, message: _) {
                 // Already removed. The stream drops the row.
             } catch {
-                if recovery.record(error) { await check(catalog: catalog) }
+                state.error = error.localizedDescription
             }
-        }
-    }
-
-    private func check(catalog: ChannelCatalogStore?) async {
-        await recovery.check(catalog: catalog, channelId: store.id) { current in
-            if current.channelWasDeleted { return "The channel is no longer present on the server." }
-            return "Channel details have been refreshed. This artifact may already be removed. Review the current conversation before removing it again."
         }
     }
 

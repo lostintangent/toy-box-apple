@@ -92,7 +92,7 @@ struct ModelSelectionFieldsTests {
         var writes = 0
         let fields = ModelSelectionFields(
             model: Binding(get: { model }, set: { model = $0; writes += 1 }),
-            api: api, provider: nil, allowsInheritance: false)
+            openingModel: opening, api: api, provider: nil, allowsInheritance: false)
         let reasoning = fields.optionSelection(key: "reasoningEffort", resolvedValue: "medium")
         let context = fields.optionSelection(key: "contextTier", resolvedValue: "default")
         #expect(reasoning.wrappedValue == "medium")
@@ -123,7 +123,7 @@ struct ModelSelectionFieldsTests {
         var writes = 0
         let fields = ModelSelectionFields(
             model: Binding(get: { model }, set: { model = $0; writes += 1 }),
-            api: api, provider: "copilot", allowsInheritance: true)
+            openingModel: opening, api: api, provider: "copilot", allowsInheritance: true)
         fields.selection.wrappedValue = "copilot/existing-model"
         fields.selection.wrappedValue = "unknown/model"
         #expect(model == opening)

@@ -8,31 +8,11 @@ import UIKit
 
 @MainActor
 struct ChannelEditorTests {
-    @Test(arguments: ["", "  ", "  A purpose  "])
-    func phoneCreationAlwaysOmitsTheFolderFromItsEncodedRequest(purpose: String) async throws {
-        try await withFixture(editing: false) { _, session, _, editor in
-            let model = ModelConfiguration(provider: "test", name: "test")
-            session.name = "  Discussion  "
-            session.purpose = purpose
-            let input = editor.creationInput(model: model)
-            let payload = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(input))
-            let trimmed = purpose.trimmingCharacters(in: .whitespacesAndNewlines)
-            var expected: [String: JSONValue] = [
-                "name": .string("Discussion"),
-                "model": .object(["provider": .string("test"), "name": .string("test")])
-            ]
-            if !trimmed.isEmpty { expected["purpose"] = .string(trimmed) }
-            #expect(payload == .object(expected))
-            #expect(input.directory == nil)
-        }
-    }
-
     #if DEBUG
     @Test(arguments: [false, true], [ColorScheme.light, .dark])
     func phoneFormsLabelNameAndNeverShowAFolderRow(editing: Bool, scheme: ColorScheme) async throws {
         try await withFixture(editing: editing) { app, session, sessions, editor in
-            let originalDirectory = session.channel?.directory
-            session.focus = nil
+                        session.focus = nil
             let host = UIHostingController(rootView: editor
                 .environment(app)
                 .environment(sessions)
@@ -60,10 +40,10 @@ struct ChannelEditorTests {
             let purpose = try #require(purposes.first)
             #expect(name.window === window && !name.isHidden && name.bounds.width > 0)
             #expect(purpose.window === window && !purpose.isHidden && purpose.bounds.height > 0)
-            #expect(name.text == session.name)
+            #expect(name.text == session.channelForm.name)
             #expect(name.placeholder == "Required")
             #expect(name.isEnabled)
-            #expect(purpose.text == session.purpose)
+            #expect(purpose.text == session.channelForm.purpose)
             #expect(purpose.isEditable)
             #expect(!tree.elements.contains { $0.identifier == "channel-directory" })
             for removed in ["Working directory", "Folder on Mac", "Optional",
@@ -72,7 +52,6 @@ struct ChannelEditorTests {
                 #expect(!labels.contains { $0.contains(removed) })
             }
             #expect(!labels.contains("Name and purpose changes appear in the conversation."))
-            #expect(session.channel?.directory == originalDirectory)
         }
     }
 
@@ -107,9 +86,9 @@ struct ChannelEditorTests {
             let field = name.convert(name.bounds, to: window)
             #expect(abs(field.midY - label.frame.midY) <= 2 && field.minX >= label.frame.maxX,
                     "Name's field should trail its label on one row: label \(label.frame), field \(field)")
-            #expect(name.text == session.name)
+            #expect(name.text == session.memberForm.name)
             #expect(name.placeholder == "Required")
-            #expect(role.text == session.role && role.isEditable)
+            #expect(role.text == session.memberForm.role && role.isEditable)
             let placeholder = try #require(descendants(in: role).compactMap { $0 as? UILabel }.first,
                                            "SwiftUI's vertical field keeps its prompt in a UILabel")
             #expect(placeholder.text == "What is this agent's role in the channel?")
@@ -126,13 +105,6 @@ struct ChannelEditorTests {
         view.subviews.flatMap { [$0] + descendants(in: $0) }
     }
     #endif
-
-    @Test func memberConfirmationsUseShortVerbs() {
-        #expect(MemberEditor.submitTitle(adding: true, saving: false) == "Add Agent")
-        #expect(MemberEditor.submitTitle(adding: true, saving: true) == "Adding…")
-        #expect(MemberEditor.submitTitle(adding: false, saving: false) == "Save")
-        #expect(MemberEditor.submitTitle(adding: false, saving: true) == "Saving…")
-    }
 
     private func withMemberFixture<Result>(
         editing: Bool,

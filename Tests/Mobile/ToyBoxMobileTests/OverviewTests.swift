@@ -3,7 +3,6 @@ import Foundation
 import Observation
 import Testing
 import SwiftUI
-import Synchronization
 import ToyBoxUI
 import UIKit
 @testable import ChannelClient
@@ -105,16 +104,16 @@ struct OverviewTests {
             let sessions = ManagementSessions()
             let flow = try ManagementFlow.addMember(#require(catalog.target("channel")), name: "Initial")
             let draft = sessions.session(for: flow, catalog: catalog)
-            draft.name = "Edited"
-            draft.role = "First line\nSecond line"
+            draft.memberForm.name = "Edited"
+            draft.memberForm.role = "First line\nSecond line"
             draft.pending = true
             let pendingSince = try #require(draft.pendingSince)
             draft.pending = true
             draft.focus = .role
             let rebuilt = sessions.session(for: flow, catalog: catalog)
             #expect(rebuilt === draft)
-            #expect(rebuilt.name == "Edited")
-            #expect(rebuilt.role == "First line\nSecond line")
+            #expect(rebuilt.memberForm.name == "Edited")
+            #expect(rebuilt.memberForm.role == "First line\nSecond line")
             #expect(rebuilt.pending && rebuilt.focus == .role)
             #expect(rebuilt.pendingSince == pendingSince)
             rebuilt.pending = false
@@ -932,18 +931,12 @@ struct OverviewTests {
         #expect(collapsed.value == "\(schedule), Collapsed")
     }
 
-    @MainActor @Test func artifactRemovalWaitsForTheChannelAndAnyUnconfirmedWrite() throws {
-            let state = ChannelOverview.Artifact()
+    @MainActor @Test func artifactRemovalWaitsForTheChannelAndItsPendingRequest() throws {
+        let state = ChannelOverview.Artifact()
         #expect(state.canRemove(connected: true))
         #expect(!state.canRemove(connected: false))
         state.pending = true
         #expect(!state.canRemove(connected: true))
-        state.pending = false
-        // A 500 may already have removed the artifact, so the row checks the server before offering another attempt.
-        #expect(state.recovery.record(ChannelAPIError.http(status: 500, message: "Server error")))
-        #expect(!state.canRemove(connected: true))
-        #expect(state.recovery.error == ChannelManagementWriteRecovery.Phase.uncertaintyMessage)
-        #expect(state.recovery.state == ChannelManagementWriteRecovery.Phase.checking)
     }
 
     @Test func artifactRowOffersRemoveFromTheSwipeAndTheActionsOnceConnected() async throws {
@@ -991,35 +984,6 @@ struct OverviewTests {
         let online = try row()
         #expect(names.allSatisfy { name in online.actions.contains { $0.name == name } },
                 "Actions: \(online.actions.map(\.name))")
-    }
-
-    @MainActor @Test func artifactRowShowsTheUnconfirmedRemovalAndItsCheck() async throws {
-        let suite = "mobile-overview-artifact-recovery-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
-        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let artifact = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: "Daily notes")
-        let state = ChannelOverview.Artifact()
-        state.recovery.record(ChannelAPIError.http(status: 500, message: "Server error"))
-        let host = UIHostingController(rootView:
-            OverviewList {
-                OverviewArtifactRow(artifact: artifact, share: nil, store: store, state: state)
-                    .listRowInsets(.vertical, 6)
-            }
-            .environment(model).environment(ManagementPresenter()).environment(ChannelInteraction())
-            .environment(try artifactSession(artifacts: [])))
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 900))
-        window.rootViewController = host
-        window.isHidden = false
-        defer { window.isHidden = true }
-        host.view.layoutIfNeeded()
-        await Task.yield()
-        host.view.layoutIfNeeded()
-
-        let tree = MobileAutomationTree(windows: [window])
-        #expect(!tree.matching(ChannelManagementWriteRecovery.Phase.uncertaintyMessage).isEmpty)
-        #expect(state.recovery.blocksWrites)
     }
 
     @Test(arguments: ["plan.md", "workshop.html", "shapes.svg", "reference.png", "unknown.bin"])
@@ -1311,11 +1275,11 @@ struct OverviewTests {
             let editing = ManagementFlow.editMember(target, agentId: "agent")
             presenter.present(editing)
             let editor = sessions.session(for: editing, catalog: catalog)
-            editor.name = "Unsaved name"
+            editor.memberForm.name = "Unsaved name"
             let removal = sessions.session(for: .removeMember(target, agentId: "agent"), catalog: catalog)
             #expect(removal !== editor && removal.deletionStep == .confirm)
             #expect(sessions.session(for: editing, catalog: catalog) === editor)
-            #expect(sessions.isCurrent(editor, app: app, presenter: presenter) && editor.name == "Unsaved name")
+            #expect(sessions.isCurrent(editor, app: app, presenter: presenter) && editor.memberForm.name == "Unsaved name")
             sessions.reset()
             let replacement = sessions.session(for: editing, catalog: catalog)
             #expect(replacement !== editor)
@@ -1347,40 +1311,25 @@ struct OverviewTests {
             let creating = ManagementFlow.newChannel(server: app.serverURL)
             presenter.present(creating)
             let draft = sessions.session(for: creating, catalog: try #require(app.catalog))
-            draft.name = "Workshop"
+            draft.channelForm.name = "Workshop"
             draft.catalog = third
             #expect(sessions.session(for: creating, catalog: try #require(app.catalog)) === draft)
             #expect(sessions.isCurrent(draft, app: app, presenter: presenter) && draft.api.baseURL == third.api.baseURL)
         }
     }
 
-    @Test(arguments: ["remains", "gone", "unreachable"])
-    func anUncertainDeleteChecksTheServerBeforeOfferingAnother(server: String) async throws {
-        let host = "delete-\(UUID().uuidString).invalid"
-        UncertainDeletionProtocol.outcomes.withLock { $0[host] = server }
+    @Test func aFailedDeleteShowsItsErrorInTheAlert() async throws {
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [UncertainDeletionProtocol.self]
-        let api = try ChannelAPI(serverURL: "https://\(host)", session: URLSession(configuration: configuration))
+        configuration.protocolClasses = [FailingDeletionProtocol.self]
+        let api = try ChannelAPI(serverURL: "https://delete.invalid", session: URLSession(configuration: configuration))
         let catalog = ChannelCatalogStore(api: api)
         let session = ManagementSession(flow: .deleteRoutine(try #require(catalog.target("channel")),
                                                              routineId: "routine"),
                                         catalog: catalog)
-        func requests() -> [String] { UncertainDeletionProtocol.requests.withLock { $0[host] ?? [] } }
-
         #expect(session.deletionStep == .confirm)
         #expect(await !session.delete())
-        // The 500 may have deleted it, so the server is checked before anything else is offered.
-        let checked = ["DELETE /api/v1/channels/channel/routines/routine", "GET /api/v1/channels"]
-            + (server == "unreachable" ? [] : ["GET /api/v1/channels/channel"])
-        #expect(requests() == checked)
-        switch (server, session.deletionStep) {
-        case ("remains", .remains?), ("gone", .gone?), ("unreachable", .checkFailed?): break
-        default: Issue.record("\(server) shows \(String(describing: session.deletionStep))")
-        }
-        if server != "remains" {
-            #expect(await !session.delete())
-            #expect(requests() == checked)
-        }
+        let error = ChannelAPIError.http(status: 500, message: "Internal error.")
+        #expect(session.deletionStep == .failed(error.localizedDescription))
     }
 
     @Test func artifactFactoryRetainsTheStoreSessionAndClosesAReplacedStore() throws {
@@ -2009,44 +1958,20 @@ struct ChannelFollowTests {
     }
 }
 
-/// Fails a routine's delete with a 500, then answers the check by the host's outcome.
-private final class UncertainDeletionProtocol: URLProtocol, @unchecked Sendable {
-    static let outcomes = Mutex<[String: String]>([:])
-    static let requests = Mutex<[String: [String]]>([:])
-
+private final class FailingDeletionProtocol: URLProtocol, @unchecked Sendable {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        do {
-            let url = try #require(request.url)
-            let method = request.httpMethod ?? "GET"
-            let outcome = Self.outcomes.withLock { $0[url.host ?? ""] }
-            Self.requests.withLock { $0[url.host ?? "", default: []].append("\(method) \(url.path)") }
-            let lead = ChannelLeadProfile(name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456"))
-            let channel = Channel(id: "channel", name: "Team", model: .init(provider: "test", name: "test"),
-                                  updatedAt: "2026-10-26T00:00:00Z")
-            let routine = ChannelRoutine(id: "routine", title: "Daily", schedule: "0 9 * * *", prompt: "Review.")
-            let state = ChannelState(revision: 1, channel: channel, lead: .lead(id: "channel", profile: lead),
-                                     routines: outcome == "remains" ? [routine] : [])
-            let (status, type, body): (Int, String, Data) = switch (method, url.path) {
-            case ("DELETE", _): (500, "application/json", Data(#"{"error":"Internal error."}"#.utf8))
-            case (_, "/api/v1/channels") where outcome == "unreachable":
-                (503, "application/json", Data(#"{"error":"Unavailable."}"#.utf8))
-            case (_, "/api/v1/channels"):
-                (200, "application/json", try JSONEncoder().encode(ChannelCatalog(lead: lead, channels: [channel])))
-            default:
-                (200, "text/event-stream", Data(#"data: {"type":"snapshot","state":"#.utf8)
-                    + (try JSONEncoder().encode(state)) + Data("}\n\n".utf8))
-            }
-            let response = try #require(HTTPURLResponse(url: url, statusCode: status, httpVersion: nil,
-                                                        headerFields: ["Content-Type": type]))
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: body)
-            client?.urlProtocolDidFinishLoading(self)
-        } catch {
-            client?.urlProtocol(self, didFailWithError: error)
+        guard let url = request.url,
+              let response = HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil,
+                                             headerFields: ["Content-Type": "application/json"]) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
         }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(#"{"error":"Internal error."}"#.utf8))
+        client?.urlProtocolDidFinishLoading(self)
     }
 
     override func stopLoading() {}

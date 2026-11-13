@@ -139,7 +139,6 @@ struct ComposerHairline: View {
 
 private struct ChannelComposer: View {
     @Bindable var session: ChannelComposerSession
-    @Environment(AppModel.self) private var app
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.channelTextScale) private var textScale
@@ -346,9 +345,7 @@ private struct ChannelComposer: View {
                                     onSend: send, onFiles: draft.attachFiles, onImage: draft.append,
                                     onError: { draft.error = $0 },
                                     agentManagement: store.phase.isConnected ? .enabled(create: { name in
-                                        try await management.createMentionMember(
-                                            name: name, store: store,
-                                            catalog: app.catalogs.first(at: store.api.baseURL.absoluteString))
+                                        try await management.createMentionMember(name: name, store: store)
                                     }, edit: { agent in
                                         if let target = store.target { management.present(.editMember(target, agentId: agent.id)) }
                                     }) : .disabled, snapshot: snapshot,
