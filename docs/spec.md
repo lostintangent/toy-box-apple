@@ -1012,8 +1012,8 @@ restores the bar. No hand-built safe-area text field or duplicate gear in the ra
 top bar leads with the system `EditButton`, like Messages. While the split view is collapsed, the
 inline Toy Box title follows it, never large, and New Channel and then Screens (an outline
 `display`) sit in separate glass groups. The unfolded sidebar shows no title, like the Mac's, and
-New Channel and Screens share one glass group so Edit, both and the sidebar toggle fit its column.
-There's no More menu or Refresh item. A native placement limitation in the unfolded column
+New Channel and Screens share one glass group, which UIKit folds into its own ••• when the column
+can't fit them beside Edit and the sidebar toggle. There's no More menu or Refresh item. A native placement limitation in the unfolded column
 never justifies substituting custom controls.
 The phone list has no busy footer spinner, and every server's header names it, even with one (see
 [Several servers](#several-servers)).
