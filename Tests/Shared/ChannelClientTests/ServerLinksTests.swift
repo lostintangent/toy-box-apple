@@ -18,8 +18,8 @@ struct ServerLinksTests {
             var origin: String?
             var links: [String] = []
             var isDown = false
-            /// Every link this server refuses, with these words, as one it's asked to store.
-            var refusal: String?
+            /// Refuses every link, as one it's asked to store.
+            var refuses = false
             /// Stores a link, then loses the connection before it answers.
             var dropsAfterLinking = false
             /// Other origins this server answers at, like its Tailscale address.
@@ -114,7 +114,7 @@ struct ServerLinksTests {
                 let address = try #require(input["address"])
                 server.asked.append(address)
                 servers[key] = server
-                if let refusal = server.refusal { return try .json(["error": refusal], status: 422) }
+                if server.refuses { return try .json(["error": "Busy."], status: 422) }
                 guard let origin = ServerLinks.origin(address) else {
                     return try .json(["error": "Enter an http or https address."], status: 422)
                 }
@@ -126,7 +126,7 @@ struct ServerLinksTests {
                     return try .json(["error": "This server can't reach \(origin) (fetch failed)."], status: 422)
                 }
                 if changesBoth {
-                    if let refusal = target.refusal { return try .json(["error": refusal], status: 422) }
+                    if target.refuses { return try .json(["error": "Busy."], status: 422) }
                     if !target.links.contains(where: { ServerLinks.origin($0) == reached }) {
                         servers[other]?.links.append(reached)
                     }
@@ -220,31 +220,31 @@ struct ServerLinksTests {
                 "Build had already dropped Studio, so only Studio, which still listed Build, was asked.")
     }
 
-    @Test func eachFailureKeepsTheServersWordsAndTryAgainRepeatsOnlyItsPair() async throws {
+    @Test func eachFailedPairGetsARowAndTryAgainRepeatsOnlyItsPair() async throws {
         let network = Network()
-        let studio = try network.add(), mini = try network.add { $0.refusal = "Mini is busy." }
+        let studio = try network.add(), mini = try network.add { $0.refuses = true }
         let build = try network.add { $0.isDown = true }
         let catalogs = [studio, mini, build]
         await catalogs.refreshServers()
 
         await catalogs.setLinked(studio, true)
 
-        let reach = "This server can't reach \(origin(build)) (fetch failed)."
         #expect(studio.links.failures.map(\.id) == ["\(studio.links.key) \(mini.links.key)",
                                                     "\(studio.links.key) \(build.links.key)",
                                                     "\(mini.links.key) \(build.links.key)"])
-        #expect(studio.links.failures.map(\.reason) == [.failed("Mini is busy."), .failed(reach), .failed("Mini is busy.")])
+        #expect(studio.links.failures.map(\.reason) == [.failed, .failed, .failed])
         #expect(studio.links.failures.map(\.linking) == [true, true, true])
         #expect(!catalogs.isLinked(studio) && network.server(studio).links.isEmpty,
                 "Mini refused Studio, so Studio stored nothing either.")
 
-        network.set(mini) { $0.refusal = nil }
+        network.set(mini) { $0.refuses = false }
         let asked = network.server(studio).asked.count
         await catalogs.tryAgain(studio, studio.links.failures[0])
 
         #expect(names(catalogs.linkedServers(of: studio)) == names([mini]))
         #expect(network.server(studio).asked.count == asked + 1)
-        #expect(studio.links.failures.map(\.reason) == [.failed(reach), .failed("Mini is busy.")],
+        #expect(studio.links.failures.map(\.id) == ["\(studio.links.key) \(build.links.key)",
+                                                    "\(mini.links.key) \(build.links.key)"],
                 "Only that pair is repeated, and the other rows stay.")
 
         studio.links.clearFailures()

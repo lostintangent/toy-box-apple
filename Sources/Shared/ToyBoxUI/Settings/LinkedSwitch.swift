@@ -47,12 +47,11 @@ public struct LinkedSwitch {
         return failure.linking ? "Couldn't link with \(peer)." : "Couldn't unlink from \(peer)."
     }
 
-    /// The row's second line: the server's own words, or which server needs what the app can't send.
-    public func reason(_ failure: ServerLinks.Failure) -> String {
-        switch failure.reason {
-        case .failed(let words): words
-        case .needsAddress(let address): "\(Self.name(address, in: catalogs)) needs its Tailscale address."
-        }
+    /// The row's second line, only when a server needs its Tailscale address, since that's the one
+    /// failure with a different fix.
+    public func reason(_ failure: ServerLinks.Failure) -> String? {
+        guard case .needsAddress(let address) = failure.reason else { return nil }
+        return "\(Self.name(address, in: catalogs)) needs its Tailscale address."
     }
 
     /// The servers, by address, whose Tailscale address the card asks for: each one turning it on

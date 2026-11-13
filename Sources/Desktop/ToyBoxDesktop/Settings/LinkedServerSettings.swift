@@ -117,17 +117,17 @@ private struct LinkAddressCaption: View {
 }
 
 /// What a change in Settings couldn't do, like link a pair or rename a server, after a yellow
-/// triangle on its first line, with the reason under it.
+/// triangle on its first line, with any reason under it.
 struct FailureLabel: View {
     let words: String
-    let reason: String
+    let reason: String?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)
             VStack(alignment: .leading, spacing: 2) {
                 Text(words)
-                Text(reason).font(.caption).foregroundStyle(.secondary)
+                if let reason { Text(reason).font(.caption).foregroundStyle(.secondary) }
             }
             .textSelection(.enabled)
         }
