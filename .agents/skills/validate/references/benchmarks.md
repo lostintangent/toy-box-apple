@@ -1,6 +1,6 @@
 # Benchmarks
 
-`SCRATCH_PATH=/tmp/tbm-<you> bun run benchmark [--summaries] [launch|switch|messages|paging|key|idle ...]`
+`SCRATCH_PATH=/tmp/tbm-<you> bun run benchmark [--summaries] [switch|messages|paging|scroll|key ...]`
 builds the release `dev.toybox.desktop.benchmark` app, runs each scenario on a fresh
 `bun run demo:perf`, prints each result against its budget and exits 1 if any is over. The spec's
 Performance budgets define busy time, saturated spans and frame gaps.

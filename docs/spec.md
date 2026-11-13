@@ -67,8 +67,8 @@ Signing, notarization, in-place updates and TestFlight are in the [release skill
   the main thread's next turn.
   The first window connects its channel only once it appears. Connecting earlier gains nothing,
   because that snapshot already arrives while the window is built, and a channel loaded before the
-  window holds the window back until its whole transcript renders, about 470 ms later on the launch
-  benchmark.
+  window holds the window back until its whole transcript renders, about 470 ms later at
+  launch.
   A window builds Overview and the composer once its first content has drawn and the main thread
   is about to sleep, or after a second for a channel that's slow to connect. Until then, a clear
   bar of the composer's resting height keeps the transcript's inset. That brings launch's first
@@ -3901,8 +3901,6 @@ budgets. It times the main run loop three ways:
 | First visible row during scrolling | At most 1 point of frame drift, in each direction and at each loaded count |
 | Key window with 4, then 20, working agents | 3% process CPU over 15 s, so a continuous animation that updates views every frame fails it |
 
-Launch and idle report the same figures with no budget.
-
 The key-window CPU measurement requires an active app and a visible, uncovered, non-minimized key
 window. It fails before or during measurement if that state is lost, rather than reporting a low CPU
 result from a window that is not drawing. Activation diagnostics include the native state and the
@@ -3935,36 +3933,13 @@ and at most 1 point of frame drift, before any transcript result is reported. A 
 also apply the full delivered distance. The transcript then returns to its end for measurement.
 These controls run outside the timed transcript measurements.
 
-`bun run benchmark trackpad` is a separate, opt-in native check using began/changed/ended phases
-through WindowServer to the benchmark's own PID, never to the global input stream. A listen-only,
-own-PID event tap counts delivery. This check requires Accessibility permission and fails explicitly
-without it. The harness never requests or changes that permission. `NSApp.postEvent` does not
-exercise responsive scrolling, and a local monitor does not see every event consumed by that path.
-The check reports native travel after a one-second end drain. AppKit's interpolation can move
-content beyond the raw delivered delta, so this is not a deterministic wheel baseline or a raw
-wheel-relative row-drift gate.
-
-The app has one transcript container. `TOY_BOX_TRANSCRIPT`, passed through `open --env`, only
-labels the scroll output, `lazy` by default, except that `native-control` runs the plain-table
-self-check described below. This is a benchmark option, not a product preference.
-Hosted native tables are sampled relative to that outer scroll view's clip coordinates, including
+Hosted native tables are sampled relative to the outer scroll view's clip coordinates, including
 the table's offset within the SwiftUI document. Discovery excludes independent nested scroll views
-and never mounts cells to obtain row frames.
-`TOY_BOX_BENCHMARK_SCROLL_DRIFT=0` disables the geometry producer and sampling for paired probe
-overhead checks. It is also benchmark-only. Normal app launches install no geometry
-provider and add no row callbacks.
-The native-table producer reads existing row rects without mounting cells or forcing layout.
-Scroll fixtures do not reorder rows during a gesture, so native row indices are stable for the
-measurement. A row-count change invalidates the sample instead of comparing different rows.
-`TOY_BOX_BENCHMARK_SCROLL_TRACE=1` runs only the first-page upward gesture, retains signed
-per-frame samples in memory and prints them after CPU measurement. The trace includes the tracked
-row and its two viewport positions, delivered wheel delta, signed residual, native top, document
-height and event counts. Lazy samples also retain the row's callback-reported positions for
-comparison with live native clipping.
-Diagnostic traces also retain display-link samples for comparison with the late-run-loop phase the
-measurement uses. Display-link residuals can include input-application lag and are not an acceptance
-metric. `TOY_BOX_TRANSCRIPT=native-control bun run benchmark scroll` runs only the plain-table
-self-check. It is not a product-container performance baseline.
+and never mounts cells to obtain row frames. Normal app launches install no geometry provider and
+add no row callbacks. The native-table producer reads existing row rects without mounting cells or
+forcing layout. Scroll fixtures don't reorder rows during a gesture, so native row indices are
+stable for the measurement, and a row-count change invalidates the sample instead of comparing
+different rows.
 
 ### Native quality gates
 
