@@ -149,7 +149,7 @@ struct TransportTests {
             try .stream([.init(type: "resumed")])
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(initialDelay: 5, grace: 0))
+                                 reconnectPolicy: .init(initialDelay: 600, maximumDelay: 600, grace: 0))
         store.connect()
         defer { store.disconnect() }
         try await eventually {
@@ -202,7 +202,7 @@ struct TransportTests {
             try .stream([.init(type: "snapshot", state: initial)], keepOpen: false)
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(initialDelay: 5, grace: 0))
+                                 reconnectPolicy: .init(initialDelay: 600, maximumDelay: 600, grace: 0))
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.message == ChannelAPIError.streamEnded.localizedDescription }
