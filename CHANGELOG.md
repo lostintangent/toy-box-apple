@@ -1,5 +1,17 @@
 # Changelog
 
+## Mac 0.1.37
+
+### Features
+
+- You can now add a server by just its name, like your Tailscale machine name, without typing `https://`.
+
+## iPhone 0.1.34
+
+### Features
+
+- You can now add a server by just its name, like your Tailscale machine name, without typing `https://`.
+
 ## Mac 0.1.36
 
 This version needs Toy Box 0.4.0 or later on each of your servers. If you added a server by a `.local` name or a short name like `mac-mini`, add it again by its full Tailscale name or IP address.

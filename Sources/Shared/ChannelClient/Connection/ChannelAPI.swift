@@ -115,7 +115,7 @@ public struct ChannelAPI: Sendable {
 
     public init(baseURL: URL, session: URLSession = .shared) throws {
         guard ["http", "https"].contains(baseURL.scheme?.lowercased() ?? ""),
-              baseURL.host != nil, baseURL.user == nil, baseURL.password == nil,
+              baseURL.host?.isEmpty == false, baseURL.user == nil, baseURL.password == nil,
               baseURL.query == nil, baseURL.fragment == nil else {
             throw ChannelAPIError.invalidServerURL
         }
@@ -123,8 +123,9 @@ public struct ChannelAPI: Sendable {
         self.session = session
     }
 
+    /// A server at an address as someone typed it, where one without a scheme is HTTPS.
     public init(serverURL: String, session: URLSession = .shared) throws {
-        guard let url = URL(string: serverURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        guard let url = URLComponents(serverAddress: serverURL)?.url else {
             throw ChannelAPIError.invalidServerURL
         }
         try self.init(baseURL: url, session: session)

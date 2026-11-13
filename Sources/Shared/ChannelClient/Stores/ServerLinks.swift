@@ -57,8 +57,7 @@ public final class ServerLinks {
     /// An address as a link names it: its origin, lowercased and without a default port. A bare
     /// host gets `https://`. Nil for anything but http or https.
     nonisolated static func origin(_ address: String) -> String? {
-        let address = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let parts = URLComponents(string: address.contains("://") ? address : "https://" + address),
+        guard let parts = URLComponents(serverAddress: address),
               let scheme = parts.scheme?.lowercased(), scheme == "http" || scheme == "https",
               let host = parts.host?.lowercased(), !host.isEmpty else { return nil }
         let name = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
