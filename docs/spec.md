@@ -341,9 +341,10 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
     never fight an unlink made elsewhere. Each server that didn't link adds one row under the
     switch: a yellow `exclamationmark.triangle.fill`, "Couldn't link with Mac mini.", "Couldn't
     link Mac mini with Build Box." for a pair that doesn't include this server, or "Couldn't
-    unlink from Mac mini.", with the reason on a second line in secondary ink, and Try Again,
-    which repeats only that pair. The reason is the server's own words, or "Studio needs its
-    Tailscale address."
+    unlink from Mac mini.", and Try Again, which repeats only that pair. Every failure has the
+    same fix, checking the address and that the server is running, so the row shows no reason or
+    server text. The one exception asks for something else, so it adds a second line in secondary
+    ink: "Studio needs its Tailscale address."
     Results stay until Settings closes. These are management writes, so after a timeout or a lost
     connection the row reads both servers' links again before offering Try Again.
   - **A server on this Mac.** Other servers can't reach a server saved at a loopback address,
