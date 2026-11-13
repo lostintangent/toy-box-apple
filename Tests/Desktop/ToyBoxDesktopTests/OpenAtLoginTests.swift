@@ -149,7 +149,6 @@ struct OpenAtLoginTests {
             ["--server", "http://127.0.0.1:3210"],
             ["--channel", "studio-demo", "--snapshot", "/tmp/login-test.png"],
             ["--channel", "studio-demo", "--benchmark", "scroll"],
-            ["--validate-quick-send", "hold"],
         ]
         for arguments in arguments {
             let options = try LaunchOptions.parse(arguments)

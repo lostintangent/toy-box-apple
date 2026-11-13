@@ -237,10 +237,7 @@ struct MorningDigestTests {
         options = LaunchOptions()
         options.benchmark = .scroll
         #expect(!MorningDigest.isAllowed(options, bundleID: "dev.toybox.desktop", environment: [:]))
-        options = LaunchOptions()
-        options.quickSendValidation = .trace
-        #expect(!MorningDigest.isAllowed(options, bundleID: "dev.toybox.desktop", environment: [:]))
-        #expect(!MorningDigest.canTest(bundleID: "dev.toybox.desktop.test", options: options,
+        #expect(!MorningDigest.canTest(bundleID: "dev.toybox.desktop.test", options: LaunchOptions(),
                                       server: "http://localhost:3100"))
         #expect(NotificationPresentation.options(kind: MorningDigest.category, isActiveChannel: true) == [.banner, .list])
     }

@@ -138,11 +138,9 @@ struct DockMenuTests {
         snapshot.snapshotURL = URL(fileURLWithPath: "/tmp/dock-snapshot.png")
         var benchmark = LaunchOptions()
         benchmark.benchmark = .scroll
-        var validation = LaunchOptions()
-        validation.quickSendValidation = .trace
         var server = LaunchOptions()
         server.servers = ["http://127.0.0.1:3210"]
-        for options in [snapshot, benchmark, validation, server] {
+        for options in [snapshot, benchmark, server] {
             #expect(!DockAttention.isAllowed(options, bundleID: "dev.toybox.desktop", environment: [:]))
         }
         #expect(!DockAttention.isAllowed(.init(), bundleID: "dev.toybox.desktop",

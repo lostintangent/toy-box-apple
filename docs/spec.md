@@ -899,8 +899,7 @@ open inspector in a 1000-point window.
 
 **Real-window acceptance.** App snapshots capture the composited window and its sheets with
 ScreenCaptureKit, so they show glass and content beneath a `safeAreaBar` as drawn. Without Screen
-Recording they warn and fall back to `cacheDisplay`, which leaves both blank, and those captures
-cannot judge this section. Judge this section only in a real window on the stamped build,
+Recording a snapshot fails rather than capture a blank window. Judge this section only in a real window on the stamped build,
 captured with ScreenCaptureKit or Computer Use, in Dark, active and inactive, with the
 inspector open and closed, and scrolled to the top and mid-history. Add Light, Reduce
 Transparency and Increase Contrast when a change touches colors or materials. Confirm that the
