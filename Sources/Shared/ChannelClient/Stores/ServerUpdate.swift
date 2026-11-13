@@ -122,11 +122,10 @@ public final class ServerUpdate {
 
     /// Asks the server to install whatever is newer, which can take minutes, and offers Restart if
     /// it did. A server already waiting to restart checks too, since something newer than its
-    /// installed release may have shipped. A rejection keeps the row as it was, with the server's
-    /// words. Any other failure may still have installed, so the row reads the server, and shows the
-    /// failure only if nothing new was installed.
+    /// installed release may have shipped. A failure shows its error, in the server's words for
+    /// a rejection.
     public func check() async {
-        guard !isChecking, let installed = version?.installedVersion else { return }
+        guard !isChecking, version?.installedVersion != nil else { return }
         isChecking = true
         outcome = nil
         defer { isChecking = false }
@@ -135,8 +134,7 @@ public final class ServerUpdate {
             apply(current)
             if !current.isRestartPending { outcome = .upToDate }
         } catch {
-            if ChannelManagementWriteRecovery.Phase.isRequired(after: error) { await catalog?.refreshServer() }
-            if version?.installedVersion == installed { outcome = .failed(error.localizedDescription) }
+            outcome = .failed(error.localizedDescription)
         }
     }
 

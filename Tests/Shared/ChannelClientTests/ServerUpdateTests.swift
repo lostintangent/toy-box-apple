@@ -140,33 +140,23 @@ struct ServerUpdateTests {
         await update.check()
         #expect(update.phase == .idle)
         #expect(update.outcome == .failed(failure(422, "npm couldn't reach the registry.")))
-        #expect(reads(mock) == 1, "A rejection changed nothing, so nothing is read again")
+        #expect(reads(mock) == 1)
     }
 
-    @Test func aCheckWhoseAnswerIsLostReadsTheServerBeforeOfferingAnotherTry() async throws {
+    @Test func aServerWaitingToRestartStillChecksAndSaysWhenThatFails() async throws {
         let server = Server()
+        server.set { $0.installed = Self.new }
         let mock = server.transport()
         let catalog = ChannelCatalogStore(api: try mock.api())
         let update = catalog.update
         await catalog.refreshServer()
+        #expect(update.phase == .restartPending)
 
         server.set { $0.update = MockResponse(status: 504) }
         await update.check()
-        #expect(reads(mock) == 2)
-        #expect(update.phase == .idle)
-        #expect(update.outcome == .failed(failure(504)))
-
-        server.set { $0.installed = Self.new }
-        await update.check()
-        #expect(reads(mock) == 3)
-        #expect(update.phase == .restartPending, "It installed even though its answer was lost")
-        #expect(update.outcome == nil)
-
-        try server.set { $0.update = try .json(["error": "npm couldn't reach the registry."], status: 422) }
-        await update.check()
         #expect(update.phase == .restartPending)
-        #expect(update.outcome == .failed(failure(422, "npm couldn't reach the registry.")),
-                "A server waiting to restart still checks, and says when that fails")
+        #expect(update.outcome == .failed(failure(504)))
+        #expect(reads(mock) == 1, "A failure is sent once, and the live catalog shows if it installed anyway")
     }
 
     @Test func checkForUpdatesChecksEveryConnectedServerWithAnInstalledReleaseTogether() async throws {
