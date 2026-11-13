@@ -340,7 +340,7 @@ public struct ChannelAPI: Sendable {
     }
 
     /// Installs whatever release is newer, then answers the server's releases. The server says
-    /// nothing until its package manager finishes, so this waits up to `updateTimeout`.
+    /// nothing until the install finishes, so this waits up to `updateTimeout`.
     public func updateServer() async throws -> ServerVersion {
         var request = URLRequest(url: endpoint(Self.serverPath + ["update"]), timeoutInterval: Self.updateTimeout)
         request.httpMethod = "POST"
