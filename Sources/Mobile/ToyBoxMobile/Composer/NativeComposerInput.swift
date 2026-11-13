@@ -198,7 +198,6 @@ struct NativeComposerInput: UIViewRepresentable {
         struct DictationSession {
             let base: String
             let replaced: NSRange
-            let replacedText: String
             let attributes: [NSAttributedString.Key: Any]
             var span: NSRange
             var undoEdit: DictationUndoEdit?
@@ -269,41 +268,28 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         }
         var attributes = input.typingAttributes
         attributes[.foregroundColor] = UIColor.label
-        dictationSession = .init(
-            base: input.text, replaced: range, replacedText: (input.text as NSString).substring(with: range),
-            attributes: attributes, span: range
-        )
+        dictationSession = .init(base: input.text, replaced: range, attributes: attributes, span: range)
     }
 
     func showDictation(_ transcript: DictationTranscript) {
         guard let input, var session = dictationSession else { return }
-        let visible = transcript.visible
-        let display = NSMutableAttributedString()
-        var trailingLength = 0
-        if visible.isEmpty {
-            display.append(NSAttributedString(string: session.replacedText, attributes: session.attributes))
-        } else {
-            let (leading, trailing) = session.anchor.padding(for: visible)
-            var tentative = session.attributes
-            tentative[.foregroundColor] = UIColor.secondaryLabel
-            display.append(NSAttributedString(string: leading + transcript.finalized, attributes: session.attributes))
-            display.append(NSAttributedString(string: String(visible.dropFirst(transcript.finalized.count)) + trailing,
-                                              attributes: tentative))
-            trailingLength = trailing.utf16.count
-        }
+        var tentative = session.attributes
+        tentative[.foregroundColor] = UIColor.secondaryLabel
+        let (display, caret) = session.anchor.display(transcript, attributes: session.attributes, tentative: tentative)
         let selection = input.selectedRange
         let old = session.span
         isApplyingDictation = true
         guard replaceDictationDisplay(in: input, range: old, with: display) else {
-            recoverDictation(session, finalized: visible)
+            recoverDictation(session, finalized: transcript.visible)
             return
         }
         session.span = NSRange(location: old.location, length: display.length)
-        updateDictationUndo(&session, hasWords: !visible.isEmpty)
+        updateDictationUndo(&session, hasWords: !transcript.isEmpty)
         dictationSession = session
-        restoreSelection(selection, replacing: old, with: session.span,
-                         caret: visible.isEmpty ? session.span
-                            : NSRange(location: NSMaxRange(session.span) - trailingLength, length: 0))
+        input.selectedRange = DictationAnchor.selection(
+            selection, replacing: old, with: session.span,
+            caret: NSRange(location: old.location + caret.location, length: caret.length)
+        )
         input.typingAttributes = session.attributes
         isApplyingDictation = false
         let model = session.anchor.draft(with: transcript.finalized)
@@ -324,7 +310,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         let selection = input.selectedRange
         let oldSpan = session.span
         let (leading, trailing) = session.anchor.padding(for: finalized)
-        let words = finalized.isEmpty ? session.replacedText : leading + finalized + trailing
+        let words = finalized.isEmpty ? session.anchor.replacedText : leading + finalized + trailing
         isApplyingDictation = true
         guard replaceDictationDisplay(
             in: input, range: session.span,
@@ -340,7 +326,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         } else {
             updateDictationUndo(&session, hasWords: !finalized.isEmpty)
         }
-        restoreSelection(
+        input.selectedRange = DictationAnchor.selection(
             selection, replacing: oldSpan, with: session.span,
             caret: finalized.isEmpty ? session.replaced
                 : NSRange(location: session.replaced.location + words.utf16.count - trailing.utf16.count, length: 0)
@@ -358,7 +344,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         } else if hasWords {
             let edit = DictationUndoEdit(
                 range: session.span,
-                replacement: NSAttributedString(string: session.replacedText, attributes: session.attributes),
+                replacement: NSAttributedString(string: session.anchor.replacedText, attributes: session.attributes),
                 selection: session.replaced
             )
             session.undoEdit = edit
@@ -434,7 +420,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         isApplyingDictation = true
         if !replaceDictationDisplay(
             in: input, range: session.span,
-            with: NSAttributedString(string: session.replacedText, attributes: session.attributes)
+            with: NSAttributedString(string: session.anchor.replacedText, attributes: session.attributes)
         ) {
             Self.logger.error("Dictation lost its native range while applying a replacement draft. Keeping the replacement draft.")
         }
@@ -482,19 +468,6 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
             )
             parent.editor.update(from: input)
             input.invalidateIntrinsicContentSize()
-        }
-    }
-
-    private func restoreSelection(_ selection: NSRange, replacing old: NSRange,
-                                  with new: NSRange, caret: NSRange) {
-        guard let input else { return }
-        if selection.location >= old.location, NSMaxRange(selection) <= NSMaxRange(old) {
-            input.selectedRange = caret
-        } else if selection.location >= NSMaxRange(old) {
-            input.selectedRange = NSRange(location: selection.location + new.length - old.length,
-                                          length: selection.length)
-        } else {
-            input.selectedRange = selection
         }
     }
 }

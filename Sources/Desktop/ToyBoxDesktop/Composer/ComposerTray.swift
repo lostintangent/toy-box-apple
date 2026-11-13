@@ -154,10 +154,6 @@ struct ComposerTray: View {
         }
     }
 
-    static func isVisible(artifacts: [ChannelArtifact], tasks: [ChannelTask], preview: ChannelPreview?) -> Bool {
-        ChannelTray(artifacts: artifacts, tasks: tasks, preview: preview).isVisible
-    }
-
     private func bookmarksButton(count: Int) -> some View {
         Button { showBookmarks.wrappedValue.toggle() } label: {
             Label {

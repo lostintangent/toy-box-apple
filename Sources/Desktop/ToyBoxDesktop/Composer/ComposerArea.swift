@@ -219,7 +219,7 @@ private struct ChannelComposer: View {
             case "composer-draft":
                 draft.text = "@ada Here's the latest screenshot.\nThe draft stays with this channel.\nReady for your review."
                 focusRequest = UUID()
-            case "composer-mentions", "composer-mention-keys":
+            case "composer-mentions":
                 draft.text = "@"
                 focusRequest = UUID()
             case "composer-notices":

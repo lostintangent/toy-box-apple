@@ -80,6 +80,10 @@ package enum DictationMicrophoneAccess: Equatable {
 /// Which permission keeps the Dictate button from listening.
 package enum DictationAccess: Equatable {
     case microphone, speechRecognition
+
+    package var title: String {
+        self == .microphone ? "Microphone Access Is Off" : "Speech Recognition Access Is Off"
+    }
 }
 
 enum DictationError: LocalizedError {
@@ -953,6 +957,31 @@ package final class ComposerDictation {
 }
 
 extension DictationSystem {
+    /// The device's microphone, permissions and on-device transcriber, with each app's audio source,
+    /// announcements and Settings link.
+    package static func device(makeSource: @escaping () -> DictationAudioSource,
+                               announce: @escaping (String) -> Void,
+                               openSettings: @escaping (DictationAccess) -> Void) -> DictationSystem {
+        DictationSystem(
+            supportedLocale: DictationRecognizer.preferredLocale,
+            hasMicrophone: { await Task.detached { AVCaptureDevice.default(for: .audio) != nil }.value },
+            microphoneAccess: {
+                switch AVCaptureDevice.authorizationStatus(for: .audio) {
+                case .authorized: .granted
+                case .notDetermined: .undetermined
+                default: .denied
+                }
+            },
+            requestMicrophoneAccess: { await AVCaptureDevice.requestAccess(for: .audio) },
+            speechRecognitionDenied: { [.denied, .restricted].contains(SFSpeechRecognizer.authorizationStatus()) },
+            installAssets: DictationRecognizer.installAssets,
+            makeSource: makeSource,
+            makeRecognizer: { DictationRecognizer(locale: $0, contextualStrings: $1, source: $2) },
+            announce: announce,
+            openSettings: openSettings
+        )
+    }
+
     /// Deterministic services for snapshot states and tests, with scripted words instead of audio.
     package static func scripted(microphone: DictationMicrophoneAccess = .granted, hasMicrophone: Bool = true,
                          downloadProgress: Double? = nil, results: [(String, Bool)] = [],

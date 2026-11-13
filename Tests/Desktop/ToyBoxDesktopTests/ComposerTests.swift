@@ -732,6 +732,24 @@ struct ComposerTests {
         // The new line ends the mention, so Return sends rather than accepting one.
         try press(36, "\r")
         #expect(draft.text == "@\n")
+
+        // Accepting is one undo step back to the query. Escape then closes the menu for good and
+        // keeps the query.
+        try await type("@")
+        let undo = try #require(input.undoManager)
+        undo.removeAllActions()
+        try press(125, "\u{f701}")
+        try press(48, "\t")
+        #expect(draft.text == "@lead ")
+        undo.undo()
+        #expect(draft.text == "@")
+        input.setSelectedRange(NSRange(location: 1, length: 0))
+        input.coordinator?.updateCompletion()
+        try await waitForUpdate(of: host, "the mention menu reopens") { input.coordinator?.isCompletionVisible == true }
+        try press(53, "\u{1b}")
+        input.coordinator?.updateCompletion()
+        #expect(input.coordinator?.isCompletionVisible == false)
+        #expect(draft.text == "@")
     }
 
     @Test func modelSynchronizationDoesNotOverwriteAnInProgressNativeEdit() throws {
@@ -821,14 +839,6 @@ struct ComposerTests {
             #expect(input.string == "@ada-lovelace Hi there")
             #expect(input.selectedRange() == NSRange(location: "@ada-lovelace ".utf16.count, length: 0))
         }
-    }
-
-    @Test func trayVisibilityTracksArtifactsTasksAndPreview() {
-        let artifact = ChannelArtifact(file: .init(kind: "machine", path: "/tmp/plan.md"), title: "Plan")
-        #expect(!ComposerTray.isVisible(artifacts: [], tasks: [], preview: nil))
-        #expect(ComposerTray.isVisible(artifacts: [artifact], tasks: [], preview: nil))
-        #expect(ComposerTray.isVisible(artifacts: [], tasks: [.init(id: "task", title: "Task")], preview: nil))
-        #expect(ComposerTray.isVisible(artifacts: [], tasks: [], preview: .init(kind: "screen", screenId: "main")))
     }
 
     @Test func bookmarksHighlightStartsAtEitherEndStopsThereAndMovesOnWhenItsRowGoes() {

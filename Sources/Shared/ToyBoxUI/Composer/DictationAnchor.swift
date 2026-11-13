@@ -23,10 +23,39 @@ public struct DictationAnchor {
         return DictationTranscript.padding(for: words, after: previous, before: next)
     }
 
+    /// The text that dictated words replace, which shows until words arrive.
+    public var replacedText: String { (base as NSString).substring(with: replaced) }
+
+    /// What the composer shows for `transcript`, and the caret within it. Padded finalized words
+    /// take `attributes` and tentative ones `tentative`, with the caret after the words. Before words
+    /// arrive, it shows the replaced text, selected.
+    package func display(_ transcript: DictationTranscript, attributes: [NSAttributedString.Key: Any],
+                         tentative: [NSAttributedString.Key: Any]) -> (text: NSAttributedString, caret: NSRange) {
+        let visible = transcript.visible
+        guard !visible.isEmpty else {
+            return (NSAttributedString(string: replacedText, attributes: attributes),
+                    NSRange(location: 0, length: replacedText.utf16.count))
+        }
+        let (leading, trailing) = padding(for: visible)
+        let text = NSMutableAttributedString(string: leading + transcript.finalized, attributes: attributes)
+        text.append(NSAttributedString(string: String(visible.dropFirst(transcript.finalized.count)) + trailing,
+                                       attributes: tentative))
+        return (text, NSRange(location: text.length - trailing.utf16.count, length: 0))
+    }
+
     /// The draft with `finalized` in place of the anchored range. Without words, the draft is unchanged.
     public func draft(with finalized: String) -> String {
         guard !finalized.isEmpty else { return base }
         let (leading, trailing) = padding(for: finalized)
         return (base as NSString).replacingCharacters(in: replaced, with: leading + finalized + trailing)
+    }
+
+    /// Where a selection lands once the shown span `old` becomes `new`: at `caret` from inside the
+    /// span, moved with the text after it, or unchanged before it.
+    public static func selection(_ selection: NSRange, replacing old: NSRange, with new: NSRange,
+                                 caret: NSRange) -> NSRange {
+        if selection.location >= old.location, NSMaxRange(selection) <= NSMaxRange(old) { return caret }
+        guard selection.location >= NSMaxRange(old) else { return selection }
+        return NSRange(location: selection.location + new.length - old.length, length: selection.length)
     }
 }
