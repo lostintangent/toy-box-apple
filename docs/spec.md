@@ -243,7 +243,11 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   then disconnects it and removes its channels from Spotlight, notifications, widgets and Live
   Activities. Removing the last server returns both apps to their first run, which has no
   servers and stays that way after a relaunch: the phone shows Welcome, and the Mac an empty
-  sidebar. Neither app adds a server the user didn't.
+  sidebar that offers Add Server… (see [Loading, empty, error and stale
+  states](#loading-empty-error-and-stale-states)). Neither app adds a server the user didn't.
+  With none, the Mac's Servers tab reads "No Servers" in secondary ink, Add is the only way in
+  and Remove is disabled, and it hides the details, Linked, the reorder footer and Check for
+  Updates.
 - **Naming a server.** Name renames the server itself, for every device and every lead, through
   `PATCH /api/v1/server {name}`, which answers the server. The field has no caption. It saves on
   Return or when the field loses focus, if the name changed, and clearing it gives the server back
@@ -1115,6 +1119,7 @@ navigation keeps list focus until explicitly moving into the conversation.
 | --- | --- |
 | First catalog load | Three static placeholder rows, no fabricated channel names. After 300 ms the connection footer's dot becomes a mini spinner (see Sidebar). Nothing overlays the list |
 | No channels | Source-list empty state: "Your channels live here" and New Channel. The connection footer already names the server, so the empty state doesn't repeat it |
+| No servers (Mac) | The same empty state, "Your channels live here", offers Add Server… instead of New Channel. It opens Settings' Add Server sheet over the window, as the Screens list does, and the channels fill in once the server connects. New Channel and Open Screen are disabled, the connection footer reads "No servers" (see Sidebar), and the detail keeps "Choose a channel". The phone shows Welcome instead |
 | Search has no matches | "No channels match [query]", Clear Search. Do not show the no-channels creation state |
 | Nothing selected | Centered `bubble.left.and.bubble.right` symbol, "Choose a channel", concise navigation hint |
 | First channel snapshot | Static message placeholders and "Connecting", whose spinner appears after 300 ms. On the Mac the label waits with it. Composer shell remains present, Send unavailable |
@@ -1367,7 +1372,9 @@ outset 6 points so the dot never moves. Help reads "Connected to http://localhos
 "Connecting to", "Reconnecting to" or "Can't connect to", then "Change the server in Settings."
 VoiceOver reads one button labeled "Server" with the value "localhost:3100, connected" (or
 connecting, reconnecting, can't connect). Dot colors crossfade over 0.2 seconds, instantly with
-Reduce Motion. Never pulse the dot. The footer reflects the catalog connection only. An open
+Reduce Motion. Never pulse the dot. With no servers, the status line reads "No servers" with no
+dot, its help reads "Add a server in Settings.", and it still opens the Servers tab. The footer
+reflects the catalog connection only. An open
 channel's own stream keeps its floating "Reconnecting to server" pill over the transcript.
 
 The status line's row ends in Open Screen, a large glass circle with the outline `display`
