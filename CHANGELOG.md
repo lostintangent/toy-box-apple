@@ -9,6 +9,7 @@
 ### Bugs/Polish
 
 - When Toy Box can't list a server's screens, it now says so plainly in the middle of the window, with Try Again right there.
+- A new channel now tells you its lead is getting it ready, right in the middle of the conversation, so you know work has started before the first message arrives.
 
 ## iPhone 0.1.35
 
@@ -19,6 +20,7 @@
 ### Bugs/Polish
 
 - When Toy Box can't list a server's screens, it now says so plainly in the middle of the window, with Try Again right there.
+- A new channel now tells you its lead is getting it ready, right in the middle of the conversation, so you know work has started before the first message arrives.
 
 ## Mac 0.1.37
 
