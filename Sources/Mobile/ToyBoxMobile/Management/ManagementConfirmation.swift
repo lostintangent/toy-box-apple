@@ -23,15 +23,15 @@ extension ManagementFlow {
 
 extension ManagementSession {
     enum DeletionStep: Equatable {
-        case confirm, failed(String)
+        case confirm, failed
     }
 
     /// What the alert asks next. It asks nothing while the delete is in flight.
     var deletionStep: DeletionStep? {
-        pending ? nil : error.map(DeletionStep.failed) ?? .confirm
+        pending ? nil : error == nil ? .confirm : .failed
     }
 
-    /// Sends the delete once. A failure shows its error, and the live list shows whether it landed.
+    /// Sends the delete once. A failure only says so, and the live list shows whether it landed.
     func delete() async -> Bool {
         guard !pending else { return false }
         pending = true
@@ -50,6 +50,16 @@ extension ManagementSession {
         } catch {
             self.error = error.localizedDescription
             return false
+        }
+    }
+
+    /// Deletes, then closes what asked unless something else has replaced it.
+    func delete(closing presenter: ManagementPresenter) {
+        let origin = presenter.flow
+        Task.immediate {
+            guard await delete() else { return }
+            if presenter.flow == origin { presenter.flow = nil }
+            await catalog.refresh()
         }
     }
 }
@@ -105,13 +115,13 @@ struct ManagementConfirmation: ViewModifier {
         content.alert(text.title, isPresented: Binding(get: { step != nil }, set: { _ in })) {
             if let session { actions(step, session: session) }
         } message: {
-            Text(text.message)
+            if let message = text.message { Text(message) }
         }
     }
 
-    private func text(_ step: ManagementSession.DeletionStep?) -> (title: String, message: String) {
+    private func text(_ step: ManagementSession.DeletionStep?) -> (title: String, message: String?) {
         switch step {
-        case .failed(let message): ("Couldn't \(copy.action)", message)
+        case .failed: ("Couldn't \(copy.action)", nil)
         case .confirm, nil: ("\(copy.verb) \(target ?? copy.noun)?", consequence)
         }
     }
@@ -134,12 +144,7 @@ struct ManagementConfirmation: ViewModifier {
 
     private func delete(_ session: ManagementSession) {
         guard canDelete else { return }
-        let origin = presenter.flow
-        Task.immediate {
-            guard await session.delete() else { return }
-            if presenter.flow == origin { presenter.flow = nil }
-            await session.catalog.refresh()
-        }
+        session.delete(closing: presenter)
     }
 }
 

@@ -1318,7 +1318,7 @@ struct OverviewTests {
         }
     }
 
-    @Test func aFailedDeleteShowsItsErrorInTheAlert() async throws {
+    @Test func aFailedDeleteShowsAGenericAlert() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FailingDeletionProtocol.self]
         let api = try ChannelAPI(serverURL: "https://delete.invalid", session: URLSession(configuration: configuration))
@@ -1328,8 +1328,7 @@ struct OverviewTests {
                                         catalog: catalog)
         #expect(session.deletionStep == .confirm)
         #expect(await !session.delete())
-        let error = ChannelAPIError.http(status: 500, message: "Internal error.")
-        #expect(session.deletionStep == .failed(error.localizedDescription))
+        #expect(session.deletionStep == .failed)
     }
 
     @Test func artifactFactoryRetainsTheStoreSessionAndClosesAReplacedStore() throws {

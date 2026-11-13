@@ -1,5 +1,15 @@
 # Changelog
 
+## iPhone 0.1.37
+
+### Features
+
+- Tap Edit in the channel list to clear out old channels quickly. Delete removes a channel right away, without asking a second time.
+
+### Bugs/Polish
+
+- On iPhone Duo, the unfolded channel list no longer squeezes a cut-off Toy Box title into its top bar.
+
 ## Mac 0.1.39
 
 ### Bugs/Polish
