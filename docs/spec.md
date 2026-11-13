@@ -234,7 +234,7 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   the labels below, and it's as tall as its rows. Its card keeps the grouped Form's own padding
   around a list, a little roomier than the details card below it. On the phone, each row opens
   its server's page, with Name and then Server URL and its status, Add Server follows the rows,
-  and Edit reorders and deletes. A saved server's address can't be edited, because a server is
+  and Edit reorders and deletes. Neither list has a caption under it. A saved server's address can't be edited, because a server is
   its `id` and its name, and the address is only how this device reaches it. Server URL shows it
   as a plain value in secondary ink that can be selected and copied, and Test Connection is only
   in Add Server and Welcome. To use another server, the user adds it and removes the old one.
@@ -248,8 +248,7 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   sidebar that offers Add Server… (see [Loading, empty, error and stale
   states](#loading-empty-error-and-stale-states)). Neither app adds a server the user didn't.
   With none, the Mac's Servers tab reads "No Servers" in secondary ink, Add is the only way in
-  and Remove is disabled, and it hides the details, Linked, the reorder footer and Check for
-  Updates.
+  and Remove is disabled, and it hides the details, Linked and Check for Updates.
 - **Naming a server.** Name renames the server itself, for every device and every lead, through
   `PATCH /api/v1/server {name}`, which answers the server. The field has no caption. It saves on
   Return or when the field loses focus, if the name changed, and clearing it gives the server back
