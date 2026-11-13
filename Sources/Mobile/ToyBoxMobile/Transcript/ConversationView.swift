@@ -903,11 +903,7 @@ private struct TranscriptPlaceholder: View {
                 }
             }
         } else if isEmpty && !store.hasOlderMessages {
-            ContentUnavailableView {
-                Label("Your lead is getting started", systemImage: "bubble.left.and.bubble.right")
-            } description: {
-                Text("Send a message or type @ to add an agent.")
-            }
+            TranscriptEmptyChannel()
         }
     }
 }

@@ -231,6 +231,7 @@ struct ConversationTranscript: View {
                 .modifier(ConversationRail())
                 .opacity(hidesOpening ? 0 : 1)
         }
+        .overlay { emptyState }
         .scrollEdgeEffectStyle(.soft, for: .vertical)
         .coordinateSpace(name: "transcript-viewport")
         .defaultScrollAnchor(opening.seededRowID == nil ? .bottom : .top, for: .initialOffset)
@@ -297,6 +298,23 @@ struct ConversationTranscript: View {
         }
     }
 
+    /// Centered in the conversation rather than in its rows, so it never sits at the top.
+    @ViewBuilder private var emptyState: some View {
+        if rows.isEmpty && store.sending.isEmpty {
+            if interaction.messageView == .yours && !store.messages.isEmpty {
+                ContentUnavailableView {
+                    Label("No messages for you yet", systemImage: "arrowshape.turn.up.left")
+                } description: {
+                    Text("You're viewing Your Messages.")
+                } actions: {
+                    Button("Show All Messages") { interaction.messageView = .all }
+                }
+            } else if !store.hasOlderMessages {
+                TranscriptEmptyChannel()
+            }
+        }
+    }
+
     private func conversationRows(proxy: ScrollViewProxy) -> some View {
         let rows = rows
         let gaps = transcriptRowGaps(rows)
@@ -310,16 +328,6 @@ struct ConversationTranscript: View {
                                                       isConnected: store.phase.isConnected)
         return LazyVStack(alignment: .leading, spacing: 0) {
             historyHeader
-            if rows.isEmpty {
-                ContentUnavailableView(
-                    interaction.messageView == .yours && !store.messages.isEmpty
-                        ? "No Messages for You" : "A Place to Work Together",
-                    systemImage: "bubble.left.and.bubble.right",
-                    description: Text(interaction.messageView == .yours && !store.messages.isEmpty
-                        ? "Agent coordination is hidden. Choose All Messages to see it."
-                        : "Messages from you and your team will appear here."))
-                    .padding(.vertical, 40)
-            }
             ForEach(rows) { row in
                 TranscriptRowContent(row: row, channel: channel, statusReactions: statusReactions,
                                      highlightedSequence: highlightedSequence, catchUp: catchUp, store: store,
