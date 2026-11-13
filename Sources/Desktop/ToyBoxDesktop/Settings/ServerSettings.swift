@@ -39,11 +39,6 @@ struct ServerSettings: View {
                 .padding(.horizontal, 4)
                 .frame(height: Self.rowHeight)
             }
-        } footer: {
-            if model.catalogs.count > 1 {
-                Text("Drag to reorder. The sidebar shows servers in this order.")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
         }
         .onAppear { if selected == nil { select(model.catalogs.first) } }
         // A first server added from the sidebar while this is open shows its details too.
