@@ -290,7 +290,7 @@ struct ChannelSidebar: View {
             emptyState
         }
         .navigationTitle("Toy Box")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, placement: .toolbar, prompt: "Search")
         // A full search field makes UIKit cancel the first pull to refresh after Back, so the
         // collapsed list minimizes it. The overlay sidebar keeps the field, since UIKit places
