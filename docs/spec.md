@@ -282,8 +282,11 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   connects or has failed for the catalog's grace, when the row shows its failure as it does for any
   server that can't connect. A restart is pending exactly when `installedVersion` isn't null and
   differs from `version`, whichever device ran the update, and then a connected row shows a
-  prominent Restart, after "0.3.10 installed" on the Mac. Restart has no confirmation, and the
-  apps give it no handling of their own. A server that accepts answers 202 and drops every
+  prominent Restart, after "0.3.10 installed" on the Mac. A connected server with an installed
+  release can also restart when nothing newer is installed, which relaunches the same release and
+  reads like any other restart, so the row spins until the app reconnects and reads the server
+  again. A server without an installed release can't restart and offers no Restart. Restart has
+  no confirmation, and the apps give it no handling of their own. A server that accepts answers 202 and drops every
   connection at once, without accepting new ones, so the apps see an ordinary disconnect: the row
   spins while they reconnect with the usual backoff and grace, then reads the new server and shows
   its version. A rejected restart shows its error the same way, with the old server still running,
