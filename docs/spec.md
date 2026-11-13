@@ -3315,13 +3315,6 @@ container. The Share extension's `toybox-desktop://quick-send?pasteboard=<name>`
 `dev.toybox.desktop.share.<UUID>` names. The host copies that named pasteboard and clears it,
 including on failure.
 
-For native validation only, `--validate-quick-send trace` logs panel visibility, key state,
-geometry and accessibility role. `hold` additionally suppresses resign-key dismissal, not Escape,
-Command-W or explicit dismissal. `TOY_BOX_QUICK_SEND_VALIDATION` accepts the same launch-only
-values for a test bundle launched through Launch Services. The command-line value wins.
-The mode is recorded only in the volatile argument domain, never saved as a preference, and
-cannot be combined with snapshots or benchmarks. Normal launches leave it unset.
-
 **Sharing to a channel on iPhone.** `PlugIns/ToyBoxMobileShare.appex` (`dev.toybox.mobile.share`) puts Toy Box in the system share
 sheet for up to ten images or one web link. Anything else, or an image it can't read, shows
 "Can't Share This" with the reason and Close. It reads the servers the app saved from the app
