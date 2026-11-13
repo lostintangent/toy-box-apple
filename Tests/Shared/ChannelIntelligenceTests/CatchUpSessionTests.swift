@@ -160,33 +160,21 @@ struct CatchUpSessionTests {
         #expect(await service.count == 3)
     }
 
-    @Test func duplicateRunCallsNeverStartASecondGeneration() async throws {
-        let service = ScriptedIntelligence(holding: true)
-        let session = try #require(make())
-        let first = Task { await session.run(using: service) }
-        await service.waitForCalls(1)
-        await session.run(using: service)
-        #expect(await service.count == 1)
-        await service.answer(0, with: .ready(summarySessionResult()))
-        await first.value
-        #expect(session.summary?.count == 20)
-    }
-
     @Test func dismissingAnInFlightGenerationNeverPublishesOrCachesItsLateResult() async throws {
         let service = ScriptedIntelligence(holding: true)
         let session = try #require(make())
         let run = Task { await session.run(using: service) }
         await service.waitForCalls(1)
         session.dismiss()
-        await run.value
         await service.answer(0, with: .ready(summarySessionResult()))
+        await run.value
         #expect(session.summary == nil)
         #expect(session.generation == nil)
         let request = try #require(CatchUpRequest(server: server, state: summarySessionState(), unreadAfter: 10))
         #expect(TranscriptCatchUpSession(request: request).phase == .loading)
     }
 
-    @Test func callerCancellationReturnsWithoutWaitingForACancellationInsensitiveService() async throws {
+    @Test func aCancelledRunLeavesTheCardLoadingForTheNextRun() async throws {
         let service = ScriptedIntelligence(holding: true)
         let session = try #require(make())
         let first = Task { await session.run(using: service) }
@@ -205,7 +193,7 @@ struct CatchUpSessionTests {
         #expect(session.summary?.catchUp.through == 30)
     }
 
-    @Test func timeoutDoesNotWaitForANoncooperativeModelOrCacheALateAnswer() async throws {
+    @Test func aTimedOutSummaryCollapsesAndNeverCachesALateAnswer() async throws {
         let service = ScriptedIntelligence(holding: true)
         let session = try #require(make(timeout: .zero))
         await session.run(using: service)

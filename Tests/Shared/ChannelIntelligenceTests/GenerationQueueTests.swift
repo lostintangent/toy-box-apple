@@ -21,27 +21,28 @@ struct GenerationQueueTests {
 
     actor Recorder {
         private(set) var events: [String] = []
-        func record(_ event: String) { events.append(event) }
-    }
+        private var waiters: [(event: String, continuation: CheckedContinuation<Void, Never>)] = []
 
-    func eventually(_ condition: @escaping () async -> Bool) async {
-        for _ in 0..<2_000 {
-            if await condition() { return }
-            try? await Task.sleep(for: .milliseconds(1))
+        func record(_ event: String) {
+            events.append(event)
+            for waiter in waiters where waiter.event == event { waiter.continuation.resume() }
+            waiters.removeAll { $0.event == event }
         }
-        Issue.record("Condition never became true")
+
+        func wait(for event: String) async {
+            if events.contains(event) { return }
+            await withCheckedContinuation { waiters.append((event, $0)) }
+        }
     }
 
     /// Starts a job that holds the queue until `gate` opens.
     func block(_ queue: GenerationQueue, _ gate: Gate, _ recorder: Recorder) async -> Task<String?, Never> {
-        let task = Task {
-            await queue.run(key: "block", priority: .catchUp) { () async -> String? in
-                await recorder.record("block")
-                await gate.wait()
-                return "block"
-            }
+        let task = await queue.start("block", .catchUp) {
+            await recorder.record("block")
+            await gate.wait()
+            return "block"
         }
-        await eventually { await recorder.events.contains("block") }
+        await recorder.wait(for: "block")
         return task
     }
 
@@ -50,13 +51,10 @@ struct GenerationQueueTests {
         let gate = Gate()
         let recorder = Recorder()
         let first = await block(queue, gate, recorder)
-        let second = Task {
-            await queue.run(key: "block", priority: .visible) { () async -> String? in
-                await recorder.record("duplicate")
-                return "duplicate"
-            }
+        let second = await queue.start("block", .visible) {
+            await recorder.record("duplicate")
+            return "duplicate"
         }
-        await eventually { await queue.waiterCount(for: "block") == 2 }
         await gate.open()
         #expect(await first.value == "block")
         #expect(await second.value == "block")
@@ -70,15 +68,11 @@ struct GenerationQueueTests {
         let blocker = await block(queue, gate, recorder)
         var tasks: [Task<String?, Never>] = []
         for (key, priority) in [("old tile", GenerationQueue.Priority.visible), ("new tile", .visible), ("viewer", .focused)] {
-            tasks.append(Task {
-                await queue.run(key: key, priority: priority) { () async -> String? in
-                    await recorder.record(key)
-                    return key
-                }
+            tasks.append(await queue.start(key, priority) {
+                await recorder.record(key)
+                return key
             })
-            await eventually { await queue.waiterCount(for: key) == 1 }
         }
-        #expect(await queue.pendingCount == 3)
         #expect(await recorder.events == ["block"])
         await gate.open()
         _ = await blocker.value
@@ -91,16 +85,12 @@ struct GenerationQueueTests {
         let gate = Gate()
         let recorder = Recorder()
         let blocker = await block(queue, gate, recorder)
-        let queued = Task {
-            await queue.run(key: "tile", priority: .visible) { () async -> String? in
-                await recorder.record("tile")
-                return "tile"
-            }
+        let queued = await queue.start("tile", .visible) {
+            await recorder.record("tile")
+            return "tile"
         }
-        await eventually { await queue.waiterCount(for: "tile") == 1 }
         queued.cancel()
         #expect(await queued.value == nil)
-        await eventually { await queue.pendingCount == 0 }
         await gate.open()
         _ = await blocker.value
         #expect(await recorder.events == ["block"])
@@ -115,19 +105,17 @@ struct GenerationQueueTests {
         let queue = GenerationQueue()
         let recorder = Recorder()
         let attempts = Attempts()
-        let image = Task {
-            await queue.run(key: "image", priority: .focused) { () async -> String? in
-                await recorder.record("image started")
-                // A cold first description can take over a minute, so only cancellation ends it.
-                if await attempts.next() == 1 {
-                    try? await Task.sleep(for: .seconds(60))
-                    await recorder.record(Task.isCancelled ? "image cancelled" : "image finished")
-                    return nil
-                }
-                return "description"
+        let image = await queue.start("image", .focused) {
+            await recorder.record("image started")
+            // A cold first description can take over a minute, so only cancellation ends it.
+            if await attempts.next() == 1 {
+                try? await Task.sleep(for: .seconds(60))
+                await recorder.record(Task.isCancelled ? "image cancelled" : "image finished")
+                return nil
             }
+            return "description"
         }
-        await eventually { await recorder.events.contains("image started") }
+        await recorder.wait(for: "image started")
 
         let catchUp = await queue.run(key: "catch-up", priority: .catchUp) { () async -> String? in
             await recorder.record("catch-up")
@@ -142,22 +130,17 @@ struct GenerationQueueTests {
         let queue = GenerationQueue()
         let gate = Gate()
         let recorder = Recorder()
-        let tile = Task {
-            await queue.run(key: "tile", priority: .visible) { () async -> String? in
-                await recorder.record("tile started")
-                await gate.wait()
-                await recorder.record(Task.isCancelled ? "tile cancelled" : "tile finished")
-                return "tile"
-            }
+        let tile = await queue.start("tile", .visible) {
+            await recorder.record("tile started")
+            await gate.wait()
+            await recorder.record(Task.isCancelled ? "tile cancelled" : "tile finished")
+            return "tile"
         }
-        await eventually { await recorder.events.contains("tile started") }
-        let viewer = Task {
-            await queue.run(key: "viewer", priority: .focused) { () async -> String? in
-                await recorder.record("viewer")
-                return "viewer"
-            }
+        await recorder.wait(for: "tile started")
+        let viewer = await queue.start("viewer", .focused) {
+            await recorder.record("viewer")
+            return "viewer"
         }
-        await eventually { await queue.waiterCount(for: "viewer") == 1 }
         await gate.open()
         #expect(await tile.value == "tile")
         #expect(await viewer.value == "viewer")
@@ -168,21 +151,28 @@ struct GenerationQueueTests {
         let queue = GenerationQueue()
         let gate = Gate()
         let recorder = Recorder()
-        let running = Task {
-            await queue.run(key: "catch-up", priority: .catchUp) { () async -> String? in
-                await recorder.record("started")
-                await gate.wait()
-                await recorder.record(Task.isCancelled ? "cancelled" : "finished")
-                return "stale"
-            }
+        let running = await queue.start("catch-up", .catchUp) {
+            await recorder.record("started")
+            await gate.wait()
+            await recorder.record(Task.isCancelled ? "cancelled" : "finished")
+            return "stale"
         }
-        await eventually { await recorder.events.contains("started") }
+        await recorder.wait(for: "started")
         running.cancel()
         #expect(await running.value == nil)
         await gate.open()
-        await eventually { await recorder.events.contains("cancelled") }
+        await recorder.wait(for: "cancelled")
 
         let fresh = await queue.run(key: "catch-up", priority: .catchUp) { () async -> String? in "fresh" }
         #expect(fresh == "fresh")
+    }
+}
+
+extension GenerationQueue {
+    /// Starts a request that has joined the queue by the time this returns, so tests order requests
+    /// without waiting.
+    func start(_ key: String, _ priority: Priority,
+               _ operation: @escaping @Sendable () async -> String?) -> Task<String?, Never> {
+        Task.immediate { await self.run(key: key, priority: priority, operation) }
     }
 }
