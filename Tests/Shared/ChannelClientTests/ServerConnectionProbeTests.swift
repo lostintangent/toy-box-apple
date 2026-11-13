@@ -85,6 +85,24 @@ struct ServerConnectionProbeTests {
         }
         #expect(error as? ChannelAPIError == .invalidServerURL)
         #expect(mock.requests.isEmpty)
+        #expect(ServerConnectionProbe(address: " ").validationError != nil)
+    }
+
+    @Test(arguments: [
+        ("mac-mini.tail1234.ts.net", "https://mac-mini.tail1234.ts.net"),
+        (" my-server:3100/toy-box ", "https://my-server:3100/toy-box"),
+        ("localhost:3100", "https://localhost:3100"),
+        ("http://localhost:3100", "http://localhost:3100"),
+    ])
+    func anAddressWithoutASchemeIsHTTPS(typed: String, url: String) async throws {
+        let probe = ServerConnectionProbe(address: typed) { _ in ChannelCatalog(lead: testLeadProfile) }
+        #expect(probe.validationError == nil)
+        await probe.start()?.value
+        guard case .connected(let connected, _)? = probe.phase else {
+            Issue.record("\(typed) didn't connect.")
+            return
+        }
+        #expect(connected.absoluteString == url)
     }
 
     @Test(arguments: [true, false])

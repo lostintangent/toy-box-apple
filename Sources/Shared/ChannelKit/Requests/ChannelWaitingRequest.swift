@@ -50,7 +50,7 @@ public struct ChannelWaitingRequest: Equatable, Identifiable, Sendable {
     }
 
     public static func normalizedServer(_ server: String) -> String? {
-        guard var parts = URLComponents(string: server.trimmingCharacters(in: .whitespacesAndNewlines)),
+        guard var parts = URLComponents(serverAddress: server),
               let scheme = parts.scheme?.lowercased(), ["http", "https"].contains(scheme),
               let host = parts.host?.lowercased(), !host.isEmpty, parts.user == nil, parts.password == nil,
               parts.query == nil, parts.fragment == nil else { return nil }

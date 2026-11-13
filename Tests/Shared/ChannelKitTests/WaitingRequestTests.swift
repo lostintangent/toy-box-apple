@@ -15,7 +15,9 @@ struct WaitingRequestTests {
         #expect(try identity("https://server.test/a%2Fb") != identity("https://server.test/a/b"))
         #expect(ChannelWaitingRequest.normalizedServer("HTTP://SERVER.TEST:80/base///") == "http://server.test/base")
         #expect(ChannelWaitingRequest.normalizedServer("http://server.test:3210/") == "http://server.test:3210")
-        for server in ["server.test", "ftp://server.test", "https://", "https://user@server.test",
+        #expect(ChannelWaitingRequest.normalizedServer("server.test:3210") == "https://server.test:3210",
+                "An address without a scheme is HTTPS")
+        for server in ["ftp://server.test", "https://", " ", "https://user@server.test",
                        "https://user:password@server.test", "https://server.test?query", "https://server.test#fragment"] {
             #expect(ChannelWaitingRequest.normalizedServer(server) == nil)
         }
