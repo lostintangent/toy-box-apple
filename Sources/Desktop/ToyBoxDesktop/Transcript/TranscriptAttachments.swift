@@ -93,6 +93,11 @@ private struct TranscriptAttachment: View {
     private var fileType: UTType? { attachment.contentType }
     private var isImage: Bool { fileType?.conforms(to: .image) == true }
     private var isVideo: Bool { fileType?.conforms(to: .movie) == true }
+    /// Where WebKit streams a video the system's player can't decode.
+    private var webVideoURL: URL? {
+        guard !attachment.playsInSystemPlayer, let address = attachment.url else { return nil }
+        return api.resourceURL(address)
+    }
 
     /// The tile steps aside only while the viewer's image stands in for it, zooming out of it or
     /// back into it. A crossfade, and so every transition under Reduce Motion, leaves it in place.
@@ -131,7 +136,9 @@ private struct TranscriptAttachment: View {
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
-                .sheet(isPresented: $isPlaying) { TranscriptVideo(url: localURL, name: name) }
+                .sheet(isPresented: $isPlaying) {
+                    TranscriptVideo(file: localURL, stream: webVideoURL, name: name)
+                }
             } else {
                 HStack(spacing: 8) {
                     Image(systemName: isVideo ? "video" : "doc")
@@ -254,7 +261,7 @@ private struct TranscriptAttachment: View {
             let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: retry > 0)
             guard !Task.isCancelled else { return }
             localURL = file
-            if isVideo {
+            if isVideo, attachment.playsInSystemPlayer {
                 let asset = AVURLAsset(url: file)
                 let generator = AVAssetImageGenerator(asset: asset)
                 generator.appliesPreferredTrackTransform = true
@@ -279,14 +286,10 @@ private struct TranscriptAttachment: View {
 }
 
 private struct TranscriptVideo: View {
+    let file: URL
+    let stream: URL?
     let name: String
-    @ViewState private var player: AVPlayer
     @Environment(\.dismiss) private var dismiss
-
-    init(url: URL, name: String) {
-        self.name = name
-        _player = ViewState(initialValue: AVPlayer(url: url))
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -295,10 +298,33 @@ private struct TranscriptVideo: View {
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding()
-            VideoPlayer(player: player).frame(minWidth: 560, minHeight: 340)
+            Group {
+                if let stream {
+                    TranscriptWebVideo(url: stream)
+                } else {
+                    TranscriptPlayer(url: file)
+                }
+            }
+            .frame(minWidth: 560, minHeight: 340)
         }
-        .onAppear { player.play() }
-        .onDisappear { player.pause() }
+    }
+}
+
+/// The system's player. SwiftUI's `VideoPlayer` crashes building its metadata on macOS 27.2.
+private struct TranscriptPlayer: NSViewRepresentable {
+    let url: URL
+
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.player = AVPlayer(url: url)
+        view.player?.play()
+        return view
+    }
+
+    func updateNSView(_ view: AVPlayerView, context: Context) {}
+
+    static func dismantleNSView(_ view: AVPlayerView, coordinator: ()) {
+        view.player?.pause()
     }
 }
 
