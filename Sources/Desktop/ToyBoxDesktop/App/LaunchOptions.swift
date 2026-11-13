@@ -16,6 +16,12 @@ struct LaunchOptions: Equatable, Sendable {
 
     var isSnapshot: Bool { snapshotURL != nil }
 
+    /// The servers a launch override keeps to the session: each `--server`, or else
+    /// `TOY_BOX_SERVER_URL`.
+    func sessionServers(environment: [String: String] = ProcessInfo.processInfo.environment) -> [String] {
+        servers.isEmpty ? environment["TOY_BOX_SERVER_URL"].map { [$0] } ?? [] : servers
+    }
+
     /// Isolated launches never change the user's integrations with the saved server.
     func allowsUserIntegrations(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
         !isSnapshot && benchmark == nil && resizeBenchmark == nil && quickSendValidation == nil

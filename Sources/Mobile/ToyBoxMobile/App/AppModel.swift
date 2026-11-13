@@ -200,14 +200,16 @@ final class AppModel {
     }
 
     /// Push and Share reach every server. The first server stands in for a launch address the app
-    /// couldn't use, so a new one clears that error and any navigation in flight.
+    /// couldn't use, so a new one clears that error and any navigation in flight. Removing the last
+    /// one takes the app back to its first run, so Settings closes onto Welcome.
     private func serversDidChange() {
-        if let catalog, catalog !== first {
+        if catalog !== first {
             first = catalog
             cancelNavigation()
-            serverURL = catalog.api.baseURL.absoluteString
+            serverURL = catalog?.api.baseURL.absoluteString ?? ""
             configurationError = nil
             navigationNotice = nil
+            if catalog == nil { cover = nil }
         }
         notifications.configure(apis: catalogs.map(\.api))
         configureShareHistory()

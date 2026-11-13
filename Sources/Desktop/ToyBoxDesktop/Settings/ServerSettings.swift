@@ -48,6 +48,8 @@ struct ServerSettings: View {
             }
         }
         .onAppear { if selected == nil { select(model.catalogs.first) } }
+        // A first server added from the sidebar while this is open shows its details too.
+        .onChange(of: model.catalogs.isEmpty) { _, isEmpty in if !isEmpty, selected == nil { select(model.catalogs.first) } }
         .sheet(item: $newServer) { AddServerSheet(address: $0.address, added: select) }
         .confirmationDialog("Remove \(selected?.name ?? "this server")?", isPresented: $confirmsRemoval) {
             Button("Remove Server", role: .destructive, action: remove)
@@ -70,7 +72,7 @@ struct ServerSettings: View {
         model.catalogs.first { Self.address($0) == selection }
     }
 
-    private var canRemove: Bool { model.catalogs.count > 1 && selected != nil }
+    private var canRemove: Bool { selected != nil }
 
     private var list: some View {
         List(selection: $selection) {
@@ -82,7 +84,10 @@ struct ServerSettings: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .scrollDisabled(true)
-        .frame(height: CGFloat(model.catalogs.count) * Self.rowHeight)
+        .frame(height: CGFloat(max(model.catalogs.count, 1)) * Self.rowHeight)
+        .overlay {
+            if model.catalogs.isEmpty { Text("No Servers").foregroundStyle(.secondary) }
+        }
         .onDeleteCommand { if canRemove { confirmsRemoval = true } }
     }
 
@@ -115,7 +120,7 @@ struct ServerSettings: View {
     private func remove() {
         guard let selected, let index = model.catalogs.firstIndex(where: { $0 === selected }) else { return }
         model.servers.remove(selected)
-        select(model.catalogs[min(index, model.catalogs.count - 1)])
+        select(model.catalogs.indices.contains(index) ? model.catalogs[index] : model.catalogs.last)
     }
 
     /// The `settings-servers`, `settings-server-renamed` and `settings-server-removed` capture
@@ -126,12 +131,13 @@ struct ServerSettings: View {
     /// `settings-server-links` does too, after giving each server on this Mac its own address as its
     /// Tailscale address, the way the demos link. `settings-server-link-failed` gives the last one an
     /// address no server can reach and turns the first one's Linked switch on, and
-    /// `settings-add-server` opens Add Server on another server on this Mac.
+    /// `settings-add-server` opens Add Server on another server on this Mac, and `settings-no-servers`
+    /// removes every server.
     private func prepareSnapshot() async {
         guard let state = model.snapshot?.requestedState,
               ["settings-servers", "settings-server-renamed", "settings-server-rename-failed",
                "settings-server-removed", "settings-server-link-addresses", "settings-server-links",
-               "settings-server-link-failed", "settings-add-server"].contains(state)
+               "settings-server-link-failed", "settings-add-server", "settings-no-servers"].contains(state)
         else { return }
         do {
             while model.catalogs.contains(where: { $0.phase == .connecting }) {
@@ -145,6 +151,9 @@ struct ServerSettings: View {
                 try await first.rename(to: "Studio")
             case "settings-server-rename-failed":
                 select(model.catalogs.first)
+            case "settings-no-servers":
+                select(model.catalogs.first)
+                while selected != nil { remove() }
             case "settings-server-link-addresses", "settings-server-links", "settings-server-link-failed",
                  "settings-add-server":
                 if state != "settings-server-link-addresses" {
@@ -324,7 +333,7 @@ struct AddServerSheet: View {
     var body: some View {
         Form {
             Section("Add a Toy Box Server") {
-                ServerAddressFields(connection: connection, failure: failure, prompt: "https://")
+                ServerAddressFields(connection: connection, failure: failure, prompt: "machine.tail1234.ts.net")
                     .onSubmit(add)
             }
             if !model.catalogs.isEmpty {
@@ -374,7 +383,7 @@ private struct ServerAddressFields: View {
     var body: some View {
         TextField("Server URL", text: $connection.address, prompt: prompt.map { Text($0) })
             .textContentType(.URL)
-        Text("Use an HTTP or HTTPS URL, including any server path prefix.")
+        Text("Use your server's address, including its port and any path prefix.")
             .font(.caption).foregroundStyle(.secondary)
         HStack {
             Button(connection.isConnecting ? "Connecting..." : "Test Connection") { connection.start() }

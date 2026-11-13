@@ -315,6 +315,9 @@ struct ShellTests {
     @Test func ordinaryLaunchKeepsNativeDefaults() throws {
         let options = try LaunchOptions.parse([])
         #expect(options.servers.isEmpty)
+        #expect(options.sessionServers(environment: [:]).isEmpty, "The app adds no server the user didn't.")
+        #expect(options.sessionServers(environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"])
+                == ["http://127.0.0.1:3210"])
         #expect(options.channelID == nil)
         #expect(options.appearance == nil)
         #expect(options.width == 1280)
@@ -368,6 +371,7 @@ struct ShellTests {
     @Test func serverRepeatsAsSessionOnlyServersInOrder() throws {
         let options = try LaunchOptions.parse(["--server", "http://127.0.0.1:3210", "--server", "http://127.0.0.1:3211"])
         #expect(options.servers == ["http://127.0.0.1:3210", "http://127.0.0.1:3211"])
+        #expect(options.sessionServers(environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3299"]) == options.servers)
         #expect(!options.allowsUserIntegrations(environment: [:]))
         #expect(throws: LaunchArgumentError("Repeated argument: --channel")) {
             try LaunchOptions.parse(["--channel", "a", "--channel", "b"])
@@ -813,16 +817,21 @@ struct SidebarConnectionFooterTests {
 
         let url = "http://localhost:3100"
         let badGateway = ChannelCatalogPhase.failed(ChannelAPIError.http(status: 502, message: nil))
-        let failing = SidebarConnectionFooter.Status.server(SidebarFooter(phase: badGateway, isLoaded: true),
-                                                            url: url, failure: badGateway.message)
-        #expect(failing.help == "Reconnecting to http://localhost:3100\nbad gateway (HTTP 502)\nChange the server in Settings.")
-        #expect(failing.failure == "bad gateway (HTTP 502)", "VoiceOver reads the failure as the hint")
+        let failing = SidebarFooter.Summary(servers: [("Mac mini", SidebarFooter(phase: badGateway, isLoaded: true),
+                                                       badGateway.message)])
+        #expect(failing.title == "1 server")
+        #expect(failing.help == "Reconnecting to Mac mini\nbad gateway (HTTP 502)\nChange servers in Settings.")
+        #expect(failing.accessibilityValue == "1 server, reconnecting")
+        #expect(failing.accessibilityHint == "Reconnecting to Mac mini\nbad gateway (HTTP 502)",
+                "VoiceOver reads the failure as the hint")
 
-        let connected = SidebarConnectionFooter.Status.server(footers[1], url: url, failure: nil)
-        #expect(connected.help == "Connected to http://localhost:3100\nChange the server in Settings.")
-        let servers = SidebarConnectionFooter.Status.servers(.init(servers: [("a", footers[1]), ("b", footers[3])]))
-        #expect(servers.help == "Can't connect to b\nChange servers in Settings.")
-        #expect(servers.failure == nil, "Each server's own header reads its failure")
+        let connected = SidebarFooter.Summary(servers: [("Mac mini", footers[1], nil)])
+        #expect(connected.help == "Connected to Mac mini\nChange servers in Settings.")
+        #expect(connected.accessibilityValue == "1 server, connected")
+        let servers = SidebarFooter.Summary(servers: [("a", footers[1], nil), ("b", footers[3], "offline")])
+        #expect(servers.help == "Can't connect to b\noffline\nChange servers in Settings.")
+        #expect(SidebarFooter(phase: .connected, isLoaded: true).help(url, failure: nil)
+                    == "Connected to http://localhost:3100\nChange the server in Settings.", "A header names its address")
     }
 
     @Test(arguments: [
@@ -846,30 +855,21 @@ struct SidebarConnectionFooterTests {
         let reconnecting = SidebarFooter(phase: .failed(offline), isLoaded: true)
         let failing = SidebarFooter(phase: .failed(offline), isLoaded: false)
         func summary(_ footers: SidebarFooter...) -> SidebarFooter.Summary {
-            .init(servers: footers.enumerated().map { ("s\($0.offset)", $0.element) })
+            .init(servers: footers.enumerated().map { ("s\($0.offset)", $0.element, nil) })
         }
 
         let healthy = summary(connected, connected)
         #expect(healthy.title == "2 servers")
         #expect(healthy.server == nil && healthy.footer == connected)
         #expect(healthy.status == "Connected to 2 servers")
+        #expect(summary(connected).title == "1 server")
+        #expect(summary(connected).status == "Connected to s0", "One server is named")
+        #expect(summary(loading).status == "Connecting to s0")
 
         #expect(summary(connected, loading).status == "Connecting to s1")
         #expect(summary(loading, reconnecting, connected).status == "Reconnecting to s1")
         #expect(summary(reconnecting, failing, loading).status == "Can't connect to s1")
         #expect(summary(connected, reconnecting, reconnecting).server == "s1", "The first of the least healthy wins")
-    }
-
-    @Test func theSpinnerKeepsTheSameStatusLineSize() {
-        func size(spinning: Bool) -> CGSize {
-            NSHostingView(rootView:
-                SidebarStatusLine(footer: SidebarFooter(phase: .failed(URLError(.timedOut)), isLoaded: true),
-                                  spinning: spinning, title: "localhost:3100")
-            ).fittingSize
-        }
-        let resting = size(spinning: false)
-        #expect(resting.width > 60 && resting.height > 0)
-        #expect(size(spinning: true) == resting)
     }
 
     /// A load that lands keeps the main actor busy just as the spinner's delay ends, so the delay's

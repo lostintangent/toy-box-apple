@@ -36,7 +36,7 @@ struct ServerSettingsView: View {
                 .id(ObjectIdentifier(catalog))
             } else {
                 ServerConnectionSection(
-                    connection: connection, placeholder: "http://my-server:3100",
+                    connection: connection, placeholder: "machine.tail1234.ts.net",
                     footer: "Use your server's address, including its port and any path prefix. Toy Box adds it once the test connects.",
                     isSwitching: isAdding, failure: $failure)
                     .disabled(isAdding)

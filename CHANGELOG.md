@@ -5,12 +5,22 @@
 ### Features
 
 - You can now add a server by just its name, like your Tailscale machine name, without typing `https://`.
+- You can now remove all of your servers, and Toy Box goes back to how it looked the first time, ready for you to add one.
+
+### Bugs/Polish
+
+- The channel list now always shows your server's name, even when you have just one, so it's clear whose channels you're looking at.
 
 ## iPhone 0.1.34
 
 ### Features
 
 - You can now add a server by just its name, like your Tailscale machine name, without typing `https://`.
+- You can now remove all of your servers, and Toy Box goes back to how it looked the first time, ready for you to add one.
+
+### Bugs/Polish
+
+- The channel list now always shows your server's name, even when you have just one, so it's clear whose channels you're looking at.
 
 ## Mac 0.1.36
 

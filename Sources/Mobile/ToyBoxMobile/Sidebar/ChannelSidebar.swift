@@ -53,11 +53,8 @@ struct ChannelSidebar: View {
         var presentation: ChannelSidebarPresentation
     }
 
-    /// With several servers, each gets a section under its own header.
-    private var isGrouped: Bool { model.catalogs.count > 1 }
-
     private func isExpanded(_ catalog: ChannelCatalogStore) -> Bool {
-        !isGrouped || !collapsed.contains(catalog.api.baseURL)
+        !collapsed.contains(catalog.api.baseURL)
     }
 
     private func expansion(of catalog: ChannelCatalogStore) -> Binding<Bool> {
@@ -113,23 +110,20 @@ struct ChannelSidebar: View {
                                            searchFocused.wrappedValue]
         let rows = Rows(waiting: waitingRows, open: open, hiddenLines: hiddenLines, now: now)
         return ScrollViewReader { proxy in
+            // Every server has its section, even one, so the list always says whose channels it
+            // shows and adding a second never reshapes it.
             List(selection: $model.selection) {
-                if isGrouped {
-                    ForEach(model.catalogs, id: \.api.baseURL) { catalog in
-                        Section(isExpanded: expansion(of: catalog)) {
-                            section(catalog, items: listed.filter { $0.catalog === catalog }, rows: rows)
-                        } header: {
-                            let expansion = expansion(of: catalog)
-                            ChannelSidebarServerHeader(catalog: catalog, isExpanded: expansion,
-                                                       waits: !expansion.wrappedValue && waits(catalog)) {
-                                model.cover = .settings
-                            }
+                ForEach(model.catalogs, id: \.api.baseURL) { catalog in
+                    Section(isExpanded: expansion(of: catalog)) {
+                        section(catalog, items: listed.filter { $0.catalog === catalog }, rows: rows)
+                    } header: {
+                        let expansion = expansion(of: catalog)
+                        ChannelSidebarServerHeader(catalog: catalog, isExpanded: expansion,
+                                                   waits: !expansion.wrappedValue && waits(catalog)) {
+                            model.cover = .settings
                         }
-                        .listSectionSeparator(.hidden)
                     }
-                } else if let catalog = model.catalog {
-                    Section { section(catalog, items: listed, rows: rows) }
-                        .listSectionSeparator(.hidden)
+                    .listSectionSeparator(.hidden)
                 }
             }
             .accessibilityIdentifier("channel-list")
@@ -367,7 +361,7 @@ struct ChannelSidebar: View {
                    order: listed.map(\.target))
     }
 
-    /// With several servers, the empty state waits until every server has answered with nothing.
+    /// The empty state waits until every server has answered with nothing.
     private var isEmpty: Bool {
         model.catalogs.allSatisfy { $0.phase == .connected && listed(in: $0).isEmpty }
     }
@@ -475,7 +469,7 @@ private struct ChannelSidebarPlaceholder: View {
     }
 }
 
-/// A server's section header when the list shows several: its name, led by its dot only while it's
+/// A server's section header: its name, led by its dot only while it's
 /// failing, then its channel count once its catalog has loaded, which collapse and expand its
 /// channels. A collapsed one trails the waiting symbol while any of its channels waits. A failing
 /// server's dot is its own button, over the header's, which opens the failure.

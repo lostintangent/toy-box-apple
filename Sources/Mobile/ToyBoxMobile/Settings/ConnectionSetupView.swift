@@ -29,7 +29,7 @@ struct ConnectionSetupView: View {
                 .listRowInsets(.horizontal, 0)
             }
             ServerConnectionSection(
-                connection: connection, placeholder: "http://my-server:3100",
+                connection: connection, placeholder: "machine.tail1234.ts.net",
                 footer: "Use your server's address, including its port and any path prefix. If it runs on another computer, this iPhone needs to reach it, for example over Tailscale.",
                 failure: $connectFailure)
             // A pinned bar would cover the card at accessibility sizes, so Continue follows it instead.

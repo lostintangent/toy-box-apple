@@ -288,6 +288,12 @@ struct RootView: View {
             setOverviewVisible(false)
             columnVisibility = .detailOnly
             snapshot.markStateReady(state)
+        case "sidebar-no-servers":
+            // The first run, as removing every server in Settings leaves it, with nothing for
+            // Overview to describe.
+            setOverviewVisible(false)
+            for catalog in model.catalogs { model.servers.remove(catalog) }
+            snapshot.markStateReady(state)
         case "handoff-unavailable":
             if handoff.phase == .missing { snapshot.markStateReady(state) }
         case "new-channel":
@@ -304,7 +310,7 @@ struct RootView: View {
             model.quickSend.presentForSnapshot(appearance: snapshot.appearance)
         case "settings-servers", "settings-server-renamed", "settings-server-rename-failed",
              "settings-server-removed", "settings-server-links", "settings-server-link-addresses",
-             "settings-server-link-failed", "settings-add-server":
+             "settings-server-link-failed", "settings-add-server", "settings-no-servers":
             model.settingsTab = .servers
             openSettings()
         default: break

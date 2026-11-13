@@ -60,8 +60,7 @@ struct SettingsView: View {
         }
     }
 
-    /// Each server with its dot and name, in the order the list shows them. Removing one asks first,
-    /// and the last can't be removed.
+    /// Each server with its dot and name, in the order the list shows them. Removing one asks first.
     private var servers: some View {
         Section {
             ForEach(model.catalogs, id: \.api.baseURL) { catalog in
@@ -69,7 +68,6 @@ struct SettingsView: View {
             }
             .onMove { model.servers.move(fromOffsets: $0, toOffset: $1) }
             .onDelete { removal = $0.first.map { model.catalogs[$0] } }
-            .deleteDisabled(model.catalogs.count < 2)
             Button("Add Server", systemImage: "plus") { addsServer = true }
             if model.catalogs.offersUpdateCheck {
                 let isChecking = model.catalogs.isCheckingForUpdates

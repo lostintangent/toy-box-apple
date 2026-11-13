@@ -7,11 +7,6 @@ import Observation
 import SwiftUI
 import ToyBoxUI
 
-enum AppConfiguration {
-    static let defaultServerURL = ProcessInfo.processInfo.environment["TOY_BOX_SERVER_URL"]
-        ?? "http://localhost:3000"
-}
-
 @MainActor @Observable
 final class AppModel {
     let launchOptions: LaunchOptions
@@ -28,7 +23,7 @@ final class AppModel {
     var catalogs: [ChannelCatalogStore] { servers.catalogs }
     /// The first server, which the windows and integrations show until they span every server.
     var catalog: ChannelCatalogStore? { catalogs.first }
-    /// The first server's address, or a launch address that isn't usable.
+    /// The first server's address, a launch address that isn't usable, or empty with no servers.
     private(set) var serverURL: String
     /// Every message the user sends until its server confirms it. Each server's catalog delivers its own.
     let outbox: ChannelOutbox
@@ -92,12 +87,11 @@ final class AppModel {
             launchOptions.channelID.map { PerformanceBenchmark(scenario: scenario, channelID: $0) }
         }
         // A launch override, snapshot or benchmark keeps its server to the session, so Settings never
-        // saves over the user's servers.
+        // saves over the user's servers. The app starts with no server the user didn't add.
         let savesServers = launchOptions.allowsUserIntegrations()
-        let saved = savesServers ? ChannelCatalogStore.Saved.load(from: .standard)
-            : launchOptions.servers.map { ChannelCatalogStore.Saved(url: $0) }
-        let list = saved.isEmpty ? [.init(url: AppConfiguration.defaultServerURL)] : saved
-        serverURL = list[0].url
+        let list = savesServers ? ChannelCatalogStore.Saved.load(from: .standard)
+            : launchOptions.sessionServers().map { ChannelCatalogStore.Saved(url: $0) }
+        serverURL = list.first?.url ?? ""
         servers = ChannelServers(list, savingTo: savesServers ? .standard : nil, outbox: outbox,
                                  connections: connections, isActive: NSApplication.shared.isActive,
                                  streamsInBackground: true)
@@ -205,7 +199,9 @@ final class AppModel {
     // MARK: Servers
 
     private func serversDidChange() {
-        if let address = catalog?.api.baseURL.absoluteString, address != serverURL { serverURL = address }
+        // A launch address that isn't usable stays in the footer until a server is added.
+        let address = catalog?.api.baseURL.absoluteString ?? ""
+        if configurationError == nil, address != serverURL { serverURL = address }
         catalogGeneration = UUID()
         observeCatalog(generation: catalogGeneration)
         updateWidget()
