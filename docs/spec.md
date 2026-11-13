@@ -1112,7 +1112,7 @@ navigation keeps list focus until explicitly moving into the conversation.
 
 | State | Presentation and available actions |
 | --- | --- |
-| First catalog load | Three static placeholder rows, no fabricated channel names. On the Mac, after 300 ms the server's header shows a mini spinner (see Several servers). Nothing overlays the list |
+| First catalog load | Three static placeholder rows shaped like a channel row: the avatar's rounded square, the name with its time trailing, and the folder line, with no fabricated channel names. On the Mac, after 300 ms the server's header shows a mini spinner (see Several servers). Nothing overlays the list |
 | No channels | Source-list empty state: "Your channels live here" and New Channel. The connection footer already names the server, so the empty state doesn't repeat it |
 | No servers (Mac) | The sidebar's empty state welcomes the user: "Welcome to Toy Box" over "Add a server to see its channels.", and Add Server…, which opens Settings' Add Server sheet over the window, as the Screens list does. The channels fill in once the server connects. The sidebar has no connection footer, New Channel and Open Screen are disabled, and the detail keeps "Choose a channel". The phone shows Welcome instead |
 | Search has no matches | "No channels match [query]", Clear Search. Do not show the no-channels creation state |
