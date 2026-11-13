@@ -383,7 +383,7 @@ private struct ServerAddressFields: View {
     var body: some View {
         TextField("Server URL", text: $connection.address, prompt: prompt.map { Text($0) })
             .textContentType(.URL)
-        Text("Use an HTTP or HTTPS URL, including any server path prefix.")
+        Text("Use your server's address, including its port and any path prefix.")
             .font(.caption).foregroundStyle(.secondary)
         HStack {
             Button(connection.isConnecting ? "Connecting..." : "Test Connection") { connection.start() }

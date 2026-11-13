@@ -92,11 +92,8 @@ struct ServerConnectionSection: View {
 
     static func validationMessage(address: String, error: String?) -> String? {
         guard let error, !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        guard let parts = URLComponents(string: address.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            return error
-        }
-        guard let scheme = parts.scheme else { return "Enter the full server URL, starting with http:// or https://." }
-        guard ["http", "https"].contains(scheme.lowercased()) else { return "Use HTTP or HTTPS for your Toy Box server." }
+        guard let parts = URLComponents(serverAddress: address) else { return error }
+        guard ["http", "https"].contains(parts.scheme?.lowercased()) else { return "Use HTTP or HTTPS for your Toy Box server." }
         guard let host = parts.host, !host.isEmpty else { return "Include your server's hostname or IP address." }
         if parts.user != nil || parts.password != nil { return "Remove usernames and passwords from the server URL." }
         if parts.query != nil || parts.fragment != nil { return "Use the server's base URL without a query or fragment." }
