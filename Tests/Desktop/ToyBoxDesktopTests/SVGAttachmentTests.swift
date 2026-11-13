@@ -60,8 +60,7 @@ struct SVGAttachmentTests {
     }
 
     @MainActor @Test func aDecodedThumbnailRemembersTheVectorsIntrinsicSize() async throws {
-        let attachment = ChannelAttachment(name: "cached-vector.svg", mimeType: "image/svg+xml",
-                                           base64: Data(Self.picture.utf8).base64EncodedString())
+        let attachment = svgAttachment(Self.picture, named: "cached-vector.svg")
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api)
         defer { try? FileManager.default.removeItem(at: file) }
@@ -78,8 +77,7 @@ struct SVGAttachmentTests {
               <rect width="100%" height="100%" fill="#327785"/>
             </svg>
             """
-        let attachment = ChannelAttachment(name: "natural-size.svg", mimeType: "image/svg+xml",
-                                           base64: Data(source.utf8).base64EncodedString())
+        let attachment = svgAttachment(source, named: "natural-size.svg")
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api)
         defer { try? FileManager.default.removeItem(at: file) }
@@ -173,8 +171,7 @@ struct SVGAttachmentTests {
     @MainActor @Test func zoomAndDisplayScaleRerasterizeWithoutChangingIntrinsicGeometry() async throws {
         let source = Self.picture.replacingOccurrences(of: "800", with: "12000")
             .replacingOccurrences(of: "400", with: "6000")
-        let attachment = ChannelAttachment(name: "vector.svg", mimeType: "image/svg+xml",
-                                           base64: Data(source.utf8).base64EncodedString())
+        let attachment = svgAttachment(source, named: "vector.svg")
         #expect(attachment.isImage)
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         let viewer = ImageViewer()
@@ -214,8 +211,7 @@ struct SVGAttachmentTests {
 
     @MainActor @Test func aFailedRerasterPreservesTheImageAndARetryRecovers() async throws {
         let source = Self.picture + "\n<!-- reraster recovery -->"
-        let attachment = ChannelAttachment(name: "recovery.svg", mimeType: "image/svg+xml",
-                                           base64: Data(source.utf8).base64EncodedString())
+        let attachment = svgAttachment(source, named: "recovery.svg")
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         let viewer = ImageViewer()
         viewer.layout = .init(size: CGSize(width: 1000, height: 800), topInset: 52)
@@ -249,6 +245,16 @@ struct SVGAttachmentTests {
           <text x="40" y="200" font-size="48" fill="white">Vector attachment</text>
         </svg>
         """
+
+    /// Every test process on this Mac shares the attachment cache, which names each file by its
+    /// content, so a run's SVGs carry its own comment. Then one run's cleanup never deletes a file
+    /// another run is still reading.
+    private static let run = UUID().uuidString
+
+    private func svgAttachment(_ source: String, named name: String) -> ChannelAttachment {
+        ChannelAttachment(name: name, mimeType: "image/svg+xml",
+                          base64: Data("\(source)\n<!-- \(Self.run) -->".utf8).base64EncodedString())
+    }
 
     private func svgFile(_ source: String, suffix: String = "svg") throws -> URL {
         let url = FileManager.default.temporaryDirectory
