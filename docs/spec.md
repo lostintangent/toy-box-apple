@@ -131,9 +131,9 @@ Send, management and read marking wait for `isConnected`. A read write belongs t
 cancelling the reader that started it neither interrupts it nor reports an error. A later read
 joins that write, which sends the newest position before it finishes. A failed read shows nothing,
 since marking read is never something you asked to save, and the next read sends it again. Notices, agent status and working
-presence change on `isUnavailable` (failed or deleted), never on a view timer. The outbox, Retry
-and `reconcileManagementWrite` are delivery, not connection, and a handed-off channel that
-couldn't be opened is Handoff's `missing`.
+presence change on `isUnavailable` (failed or deleted), never on a view timer. The outbox and
+Retry are delivery, not connection, and a handed-off channel that couldn't be opened is Handoff's
+`missing`.
 
 - **Channel stream:** `connect()` starts the stream and keeps retrying until `disconnect()`, and
   does nothing while already trying. `disconnect()` stops trying and leaves `connecting` unless
@@ -382,7 +382,7 @@ a card, a choice, a notification, Siri, Quick Send or the share sheet. Each app 
 launch, and the catalog store for the current server delivers that server's messages, whether or
 not their channel is open. So every entry point just calls `send` and moves on. None waits on the
 network, retries or reports a delivery failure itself. Management writes aren't messages, so they
-keep `reconcileManagementWrite`.
+don't go through it.
 
 - **Saved before it returns.** `send` shows the message in its channel at once as Sending, saves
   it as its own file and returns. It never throws, and if saving fails the message still sends
@@ -506,15 +506,12 @@ Management routes (documented in Toy Box's Channels `AGENTS.md`):
 Errors return `{error}`, and every JSON answer is `Cache-Control: no-store`. A malformed request
 is 400 "Invalid request.", a missing channel, member or routine is 404,
 and a domain rejection such as a taken mention is 422 with a user-facing message. An unexpected
-management failure is 500 with a generic `{error}`, and details stay in server logs. A 500 can
-follow a committed change, including a deletion, so the client never retries a write on 500,
-automatically or through an unchanged resubmission. It treats the outcome as uncertain and
-reconciles from the authoritative catalog or channel detail before offering another write.
+management failure is 500 with a generic `{error}`, and details stay in server logs.
 The apps show a server's own `{error}` words as they are, without a status code. Only a failure
 without them reads the generic status text with its code, like "bad gateway (HTTP 502)".
-A timeout or lost connection is also uncertain, since the request may already have reached the
-server. The same reconciliation is required. Can't-connect, offline and bad-host failures remain
-ordinary retryable errors rather than blocking management editing.
+A management write is sent once and never retried on its own. Any failure shows its error and
+keeps what the user entered, so they can try again. The catalog and channel stay live, so a
+change that landed despite a 500 or a timeout shows up there, with no separate check.
 
 Attachments are `{name, url}` or inline `{mimeType, base64}`. Avatars are SVG path data in a
 24×24 viewBox plus a hex color, and may carry an optional `ink` for the mark that only Toy Box's
@@ -2766,9 +2763,7 @@ Copy Link, without Quick Look, which Space already gives. A `…` menu on the ro
 Remove from Channel is destructive and has no confirmation. It sends `removeArtifact` once and
 disables the row while the request is in flight, with a spinner and "Removing from channel". It never
 removes the row optimistically. The row leaves when the server's `artifact_removed` event arrives. A
-rejected request shows its error inline. After a 500, timeout or lost connection, the row shows that
-the removal is unconfirmed, checks the server with `reconcileManagementWrite`, and offers no new attempt
-until the check finishes. Markdown, HTML, SVG and image artifacts open the in-window artifact viewer below,
+failed request shows its error inline. Markdown, HTML, SVG and image artifacts open the in-window artifact viewer below,
 not a reader sheet. Other types use Quick Look and the default application. Show actual
 fetching and error states, and never open a blank success-shaped reader. Load content from the
 server resource URL, never by assuming the file is local.
@@ -2791,8 +2786,7 @@ short and two-line titles. Rows keep readable content and the full target and ar
 the button, like Mail. Team and Routines swipes keep full swipe off. The row stays in place with its
 "Removing from channel" spinner until the server's event arrives, so a full swipe must not animate
 it away and bring it back. Its context menu and accessibility action say "Remove from Channel". All
-three use the same rules as Mac: no confirmation, one request, no optimistic removal, and
-unconfirmed results are checked before another attempt. This is the Artifacts section, not the
+three use the same rules as Mac: no confirmation, one request and no optimistic removal. This is the Artifacts section, not the
 separate task-artifact link.
 
 **Routines.** Rows share the artifact geometry: a 28-point icon cell with a 15-point secondary
@@ -2829,7 +2823,7 @@ expanded content. Swiping right reveals Run Now (`play`) in the accent color, an
 reveals only a destructive Delete (`trash`), as Mail keeps its main action on the leading edge and
 Delete alone on the trailing edge. Neither fires on a full swipe, because a run can't be undone,
 and the long-press menu offers Run Now and Delete Routine. Run Now is
-unavailable while a run is pending, while disconnected or while a recovery check blocks writes.
+unavailable while a run is pending or while disconnected.
 Delete is unavailable while a run is pending or while disconnected. VoiceOver reads the title as
 the label, the schedule line then "Expanded" or "Collapsed" as the value, "Shows the prompt" or
 "Hides the prompt" as the hint, with Expand or Collapse, Run Now and Delete Routine as actions.
@@ -2934,9 +2928,7 @@ there is no compatible workspace default or the catalog has no choices. Never de
 workspace default's provider as forbidding it. Restrict explicit model choices to the current
 provider where required. Never invent a model when the catalog is unavailable. Cancel and the
 default button sit trailing. Command-Return submits a valid sheet, Escape cancels. A failed mutation
-leaves all fields and the sheet intact. After a 500, say the change may have been applied, block
-resubmitting against the old baseline, and refresh from the server. Then either show the
-reconciled state or offer a reviewed retry.
+shows its error and leaves all fields and the sheet intact.
 
 **Phone channel forms.** Neither New Channel nor Edit Channel shows
 a Folder/Working directory field. Phone creation omits the directory from its request and
@@ -3017,10 +3009,8 @@ screen they came from, never a sheet: the sidebar, the channel's title menu, Tea
 Edit Agent, where Cancel returns to the unchanged editor. The alert's title names the target,
 its message is the consequence above, and it offers the destructive action and Cancel. The
 action is disabled while disconnected or once the target is gone. It sends one request, removes
-nothing optimistically and adds no pending UI. A rejection or offline failure follows with an
-alert that explains it and offers OK. An uncertain failure checks the server first, then says
-the target is gone, says it's still there and offers the deletion again, or says the check
-failed and offers Check Again. Nothing is sent again before that check.
+nothing optimistically and adds no pending UI. A failure follows with an alert that shows its
+error and offers OK.
 
 Settings uses a native scene with General and Notifications sections. The Mac adds a Servers tab
 between them for the servers (see [Several servers](#several-servers)), each with its Name,

@@ -148,9 +148,9 @@ Surfaces meet at these seams:
   the outbox's sends or a bookmark in flight, so a stale update can't hide it and a failure leaves
   nothing to undo. Once the server answers, upsert it into the store. Report a failure only when
   the user would otherwise think it saved, like a bookmark.
-- **Management writes are never retried.** A 422 is a rejection, but a 500, timeout or lost
-  connection may have committed, so call `reconcileManagementWrite(channelId:)` before offering
-  another attempt. Can't connect, offline and bad-host failures stay ordinary retryable errors.
+- **Management writes are sent once.** A failure shows its error and keeps what the user entered,
+  and the live store shows whether it landed anyway. Never retry one on its own or add a check
+  step.
 - **Reading never answers a request.**
 - **The catalog's `lead` profile is required.** Treat a missing one as a protocol error, and never
   substitute client art.
