@@ -251,15 +251,17 @@ struct ComposerDraftTests {
         #expect(draft.error == nil)
     }
 
+    /// Noise at full quality passes 5 MB with few pixels, which keeps this inside its time limit while a CI
+    /// simulator is still busy with its first boot.
     @Test func oversizedImagesRespectBothProviderLimits() async throws {
         let images = try await Task.detached {
             [
                 try Self.generatedImage(width: 9_001, height: 2, type: .png),
-                try Self.generatedImage(width: 3_600, height: 2_600, type: .jpeg, noisy: true),
+                try Self.generatedImage(width: 1_200, height: 1_200, type: .jpeg, noisy: true, quality: 1),
             ]
         }.value
+        try #require(images[1].data.count > 5_000_000)
         for image in images {
-            if image.mimeType == "image/jpeg" { try #require(image.data.count > 5_000_000) }
             let draft = imageIODraft()
             draft.append(image)
             try await finishLoading(draft)
@@ -273,6 +275,19 @@ struct ComposerDraftTests {
             #expect(max(width, height) <= 8_000)
             #expect(draft.error == nil)
         }
+    }
+
+    @Test func aHeavyImageShrinksUntilItFitsTheBytesItsGiven() async throws {
+        let image = try await Task.detached {
+            try Self.generatedImage(width: 512, height: 512, type: .jpeg, noisy: true, quality: 1)
+        }.value
+        let prepared = try await Task.detached { try image.preparedForSending(maximumBytes: 150_000) }.value
+        #expect(prepared.data.count <= 150_000)
+        #expect(prepared.mimeType == "image/jpeg")
+        let source = try #require(CGImageSourceCreateWithData(prepared.data as CFData, nil))
+        let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        let width = try #require(properties[kCGImagePropertyPixelWidth] as? Int)
+        #expect(width < 512)
     }
 
     @Test func nativeRasterizationRunsOffTheMainActorWithTheProviderBound() async throws {
@@ -499,7 +514,8 @@ struct ComposerDraftTests {
     }
 
     nonisolated static func generatedImage(width: Int, height: Int, type: UTType,
-                                          orientation: Int = 1, noisy: Bool = false) throws -> ComposerImage {
+                                          orientation: Int = 1, noisy: Bool = false,
+                                          quality: Double = 0.85) throws -> ComposerImage {
         var pixels = Data(count: width * height * 4)
         pixels.withUnsafeMutableBytes { bytes in
             let words = bytes.bindMemory(to: UInt32.self)
@@ -519,7 +535,7 @@ struct ComposerDraftTests {
         let data = NSMutableData()
         let destination = try #require(CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil))
         CGImageDestinationAddImage(destination, bitmap, [
-            kCGImageDestinationLossyCompressionQuality: 0.85, kCGImagePropertyOrientation: orientation,
+            kCGImageDestinationLossyCompressionQuality: quality, kCGImagePropertyOrientation: orientation,
         ] as CFDictionary)
         try #require(CGImageDestinationFinalize(destination))
         return ComposerImage(name: "Generated.\(type.preferredFilenameExtension ?? "image")",
