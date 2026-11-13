@@ -5,8 +5,8 @@ import Observation
 public struct ServerVersion: Codable, Equatable, Sendable {
     /// The release the server runs.
     public var version: String
-    /// The release on disk, which a restart starts. Nil when no package manager owns the install,
-    /// so the server can't update or restart itself.
+    /// The installed release, which a restart starts. Nil when the server runs from source, so it
+    /// has nothing to update or restart into.
     public var installedVersion: String?
 
     public init(version: String, installedVersion: String?) {
@@ -14,8 +14,8 @@ public struct ServerVersion: Codable, Equatable, Sendable {
         self.installedVersion = installedVersion
     }
 
-    /// A restart would start a different release. It reads the release on disk, so it holds on every
-    /// device, whichever one ran the update.
+    /// A restart would start a different release. It reads the installed release, so it holds on
+    /// every device, whichever one ran the update.
     public var isRestartPending: Bool {
         guard let installedVersion else { return false }
         return installedVersion != version

@@ -120,7 +120,7 @@ struct ServerUpdateTests {
         #expect(update.phase == .checking)
         #expect(update.outcome == nil)
         #expect(mock.requests.last?.timeoutInterval == ChannelAPI.updateTimeout,
-                "The server answers only after its package manager finishes")
+                "The server says nothing until the install finishes")
 
         mock.finishPendingResponses(path: "/api/v1/server/update")
         await check.value
