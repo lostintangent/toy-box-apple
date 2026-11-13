@@ -37,8 +37,7 @@ Signing, notarization, in-place updates and TestFlight are in the [release skill
      toggle, and Open in Toy Box
    - Menu commands and shortcuts: next and previous channel, next unread, toggle inspector, focus the
      composer, jump to the request, refresh, and open the channel in a new window
-   - A Settings scene for the server URL (default `http://localhost:3000`, the port the `toy-box` CLI
-     serves) and connection test
+   - A Settings scene for the servers, with a connection test, starting with none
    - A Dock badge counting channels that need attention, plus user notifications for requests and
      completions in channels that aren't currently focused
    - Multiple windows, state restoration, and accent color and vibrancy that respect system settings
