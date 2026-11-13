@@ -1009,7 +1009,7 @@ The unfolded overlay sidebar keeps the full field, since UIKit places the minimi
 past the sidebar's trailing edge. Its prompt is "Search", which fits the unfolded sidebar without
 truncating. Search raises the keyboard with its field above it, and Cancel
 restores the bar. No hand-built safe-area text field or duplicate gear in the rail. The Toy Box
-title is always inline, centered in the top bar, never large, with New Channel and then Screens (an outline `display`) in separate
+title is always inline, never large, with New Channel and then Screens (an outline `display`) in separate
 glass groups, and no More menu or Refresh item. A native placement limitation in the unfolded column
 never justifies substituting custom controls.
 The phone list has no busy footer spinner, and every server's header names it, even with one (see

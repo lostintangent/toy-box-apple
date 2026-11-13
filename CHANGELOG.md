@@ -11,6 +11,7 @@
 ### Bugs/Polish
 
 - WebM videos in a conversation now play.
+- The channel list's Toy Box title now stays small at the top, leaving more room for your channels.
 
 ## Mac 0.1.38
 
