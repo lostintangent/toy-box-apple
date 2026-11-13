@@ -2416,7 +2416,7 @@ column beside the status bar, as every trailing bar item does. Folded landscape 
 the leading edge, so in compact height the sheet sets `toolbarVerticalBehavior(.disabled)` and the
 bar stays horizontal, with the close at the top trailing edge, clear of the list. The vertical size
 class decides, never the reported edge, because a horizontal bar reports none and switching on it
-would never settle. The landscape inspector
+would never settle. The landscape
 column has no close and keeps its root bar hidden, because the channel toolbar's Overview button
 closes it, like the sidebar. Overview has no channel-actions menu: Follow, Edit Channel and
 Delete Channel live in the channel's Channel Actions menu. The purpose starts 12 points below
@@ -2424,16 +2424,17 @@ the bar (or the column's safe content edge) at every text size, using the full c
 and Folder and Preview use the full width below it. All opening information stays outside cards.
 Both presentations have the Overview accessibility label, native sheet dismissal, nested task
 navigation and the same content.
-Overview takes the inspector column only where the conversation keeps the Mac's 420 points beside
-it, which on the Duo is unfolded landscape. The column opens at its 280-point minimum and widens to
-360. Folded and unfolded portrait use the
+Overview takes a trailing column only where the conversation keeps the Mac's 420 points beside
+it, which on the Duo is unfolded landscape. The column is a fixed 280 points, Toy Box's own trailing
+column beside the conversation rather than the system inspector, because UIKit's inspector column
+shows and hides itself as the split view collapses and expands. Folded and unfolded portrait use the
 sheet, decided by the scene's width rather than its size class alone. Overview's presence is one
 state the sheet and column share, so rotating, folding or unfolding never opens or closes it, and
 the first tap of the Overview button after any of them toggles it. An open Overview moves between
 the two, keeping its open page, disclosures and section state. The new presentation opens at its top rather than the reader's scroll position: SwiftUI's
 List ignores a restored offset, and a restored top row doesn't hold through every Duo rotation and
-fold. The column never writes back to Overview's presence, so the transient close SwiftUI
-reports while columns reflow cannot dismiss it.
+fold. Only Overview's presence decides whether the column shows, so no posture change can open or
+close it.
 Apply the compact 16-point / regular 20-point outer rail once, with no compounded
 44-point list margin. Treat purpose, folder and Preview as the headerless first section.
 Use one 24-point section-gap constant from that block's last row to Team and between every
