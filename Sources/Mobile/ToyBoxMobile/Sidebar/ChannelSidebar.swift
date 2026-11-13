@@ -7,6 +7,7 @@ import UIKit
 struct ChannelSidebar: View {
     @Environment(AppModel.self) private var model
     @Environment(ManagementPresenter.self) private var management
+    @Environment(ManagementSessions.self) private var managementSessions
     var searchFocused: FocusState<Bool>.Binding
     /// The split view shows one column at a time, as on a folded Duo.
     let isCollapsed: Bool
@@ -189,6 +190,8 @@ struct ChannelSidebar: View {
             ForEach(items, id: \.target) { item in
                 listRow(item, rows: rows)
             }
+            // Gives Edit its red minus, which reveals the row's own Delete.
+            .onDelete { offsets in offsets.forEach { delete(items[$0]) } }
         }
     }
 
@@ -216,10 +219,11 @@ struct ChannelSidebar: View {
                 ChannelSidebarPreview(channel: item.presentation.channel(item.channel),
                                       agents: item.presentation.agents(item.channel))
             }
+            // Revealing Delete is its confirmation, so it deletes with no alert.
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if !talk.isLifted {
                     Button(role: .destructive) {
-                        management.present(.deleteChannel(item.target))
+                        delete(item)
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
@@ -227,6 +231,7 @@ struct ChannelSidebar: View {
                     .disabled(!model.canManageChannels(on: item.catalog))
                 }
             }
+            .deleteDisabled(!model.canManageChannels(on: item.catalog))
             // UIKit hides the line under a selected row until its highlight fades, which
             // lingers after Back on the folded phone.
             .talkRow(target, recorder: talk,
@@ -291,6 +296,8 @@ struct ChannelSidebar: View {
         }
         .navigationTitle("Toy Box")
         .navigationBarTitleDisplayMode(.inline)
+        // The unfolded sidebar's column has room for its controls, not a title, as on the Mac.
+        .toolbar(removing: isCollapsed ? nil : .title)
         .searchable(text: $query, placement: .toolbar, prompt: "Search")
         // A full search field makes UIKit cancel the first pull to refresh after Back, so the
         // collapsed list minimizes it. The overlay sidebar keeps the field, since UIKit places
@@ -303,11 +310,15 @@ struct ChannelSidebar: View {
             await pull.released()
         }
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) { EditButton() }
             ToolbarItem(placement: .primaryAction) {
                 Button("New Channel", systemImage: "plus") { management.present(.newChannel(server: model.selectedServer)) }
                     .disabled(!canCreate)
             }
-            ToolbarSpacer(.fixed, placement: .primaryAction)
+            // The unfolded sidebar fits Edit and its toggle only with these two in one group.
+            if isCollapsed {
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+            }
             ToolbarItem(placement: .primaryAction) {
                 // A toolbar ignores SwiftUI's rendering mode, and the symbol's own mode shades its screen.
                 let outline = UIImage(systemName: "display",
@@ -359,6 +370,13 @@ struct ChannelSidebar: View {
         talk.start(item.catalog.channel(id: item.channel.id), name: item.channel.name,
                    contextualNames: item.presentation.agents(item.channel).map(\.name), catalog: item.catalog,
                    order: listed.map(\.target))
+    }
+
+    /// A revealed Delete skips the deletion's question, so its alert appears only if it fails.
+    private func delete(_ item: Listed) {
+        let flow = ManagementFlow.deleteChannel(item.target)
+        management.present(flow)
+        managementSessions.session(for: flow, catalog: item.catalog).delete(closing: management)
     }
 
     /// The empty state waits until every server has answered with nothing.
