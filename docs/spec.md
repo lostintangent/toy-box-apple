@@ -3022,7 +3022,8 @@ Cancel. A channel row's revealed Delete is the one exception: Edit's red minus o
 swipe reveals it, and tapping it deletes the channel with no alert, because revealing it was the
 confirmation. Full swipe stays off. Every deletion is disabled while disconnected or once the
 target is gone. It sends one request, removes nothing optimistically and adds no pending UI. A
-failure follows with an alert that shows its error and offers OK.
+failure, which in practice means the phone lost its server, follows with one generic alert, such as
+"Couldn't Delete Channel", with no detail and OK.
 
 Settings uses a native scene with General and Notifications sections. The Mac adds a Servers tab
 between them for the servers (see [Several servers](#several-servers)), each with its Name,
