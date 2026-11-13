@@ -2404,7 +2404,8 @@ with a zero-spacing `VStack` and 16-point horizontal insets. Order: About (untit
 Members, Tasks, Artifacts, Routines. Separate sections with a native `Divider()` across the content
 width, with 2 points of vertical padding. No cards, count capsules, section fills or uppercase.
 
-**Phone Overview.** The phone Overview has a plain native background.
+**Phone Overview.** The phone Overview has a plain native background, the same elevated
+`systemBackground` in the column as in the sheet, on its root and every pushed page.
 Section distinction comes from larger headings and deliberate space, not grouped cards.
 No colored panels, glass, shadows, section fills or nested task cards. Count, diff and
 disclosure share one minimum-44 heading button.
