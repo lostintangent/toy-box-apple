@@ -181,7 +181,7 @@ struct ChannelSidebar: View {
     @ViewBuilder private func section(_ catalog: ChannelCatalogStore, items: [Listed], rows: Rows) -> some View {
         if catalog.phase == .connecting {
             ForEach(0..<3) { _ in
-                ChannelSidebarPlaceholder()
+                ChannelSidebarPlaceholder(isCollapsed: isCollapsed)
                     .listRowInsets(.vertical, 0)
                     .listRowSeparator(.hidden)
             }
@@ -454,14 +454,25 @@ private struct ChannelSidebarPreview: View {
 }
 
 private struct ChannelSidebarPlaceholder: View {
+    let isCollapsed: Bool
+
     var body: some View {
         HStack(spacing: 12) {
-            Circle().fill(.quaternary).frame(width: 28, height: 28)
+            ChannelMark.shape(size: 28).fill(.quaternary).frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 8) {
-                RoundedRectangle(cornerRadius: 4).fill(.quaternary).frame(width: 128, height: 12)
+                HStack(spacing: 8) {
+                    RoundedRectangle(cornerRadius: 4).fill(.quaternary).frame(width: 128, height: 12)
+                    Spacer(minLength: 0)
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 4).fill(.quaternary).frame(width: 32, height: 8)
+                        // Real rows' times sit before the collapsed list's chevron.
+                        if isCollapsed {
+                            Image(systemName: "chevron.forward").font(.caption2.weight(.semibold)).hidden()
+                        }
+                    }
+                }
                 RoundedRectangle(cornerRadius: 4).fill(.quaternary).frame(width: 96, height: 8)
             }
-            Spacer()
         }
         .padding(.vertical, 12)
         .frame(minHeight: 72)

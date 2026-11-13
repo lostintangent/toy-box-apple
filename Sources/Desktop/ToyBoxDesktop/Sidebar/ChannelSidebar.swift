@@ -294,12 +294,15 @@ private struct OpenFolderWithMenu: View {
 private struct SidebarPlaceholder: View {
     var body: some View {
         HStack(spacing: 10) {
-            Circle().fill(.quaternary).frame(width: 30, height: 30)
+            ChannelMark.shape(size: 30).fill(.quaternary).frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 9) {
-                RoundedRectangle(cornerRadius: 3).fill(.quaternary).frame(width: 110, height: 10)
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 3).fill(.quaternary).frame(width: 110, height: 10)
+                    Spacer(minLength: 0)
+                    RoundedRectangle(cornerRadius: 3).fill(.quaternary).frame(width: 28, height: 8)
+                }
                 RoundedRectangle(cornerRadius: 3).fill(.quaternary).frame(width: 72, height: 8)
             }
-            Spacer()
         }
         .padding(.horizontal, 8).padding(.vertical, 8)
         .frame(minHeight: 52)

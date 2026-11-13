@@ -24,9 +24,11 @@ public struct ChannelMark: View {
     }
 
     /// Corners at 26% of the side, continuous like the system's icons.
-    private var shape: RoundedRectangle {
+    public static func shape(size: CGFloat) -> RoundedRectangle {
         RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
     }
+
+    private var shape: RoundedRectangle { Self.shape(size: size) }
 
     public var body: some View {
         face
