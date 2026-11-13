@@ -166,7 +166,7 @@ couldn't be opened is Handoff's `missing`.
   per server with streams and stall every other request.
 - **Footer:** `SidebarFooter` (ToyBoxUI) turns `phase` and `isLoaded` into the dot, heading, help
   verb and VoiceOver value on both apps (see Sidebar). Only a refresh the user asked for lights the
-  Mac's footer spinner, through `AppModel.isRefreshingCatalog`. The stream, Handoff, management and the
+  Mac's header spinner, through `AppModel.isRefreshingCatalog`. The stream, Handoff, management and the
   widget never do.
 - **Test Connection:** `ServerConnectionProbe.phase` is nil until a test runs, then `connecting`,
   `connected` with the channel count, or `failed`. `isConnecting` drives the button.
@@ -186,13 +186,15 @@ this spec holds within each server unchanged. Nothing else is new. Where this sp
 change, it means moving or removing one server, which touches only that server's channels.
 Drafts stay keyed to the address, so adding it back finds them, and move with a server that moves.
 
-- **One server looks exactly as it does today.** The list has no section headers, and the Mac
-  footer keeps its status line as Sidebar describes. Everything below applies with two or more.
+- **The Mac groups by server even with one.** Its sidebar has room, so every server always has
+  its header and adding a second never reshapes the list. The phone's list has less room and its
+  large title already anchors it, so with one server it has no section headers, and what follows
+  about the phone's list applies with two or more.
 - **Grouped list.** The Mac sidebar and the phone list show one collapsible section per server, in
   Settings' order. Its header is the server's name, with the status line's help and VoiceOver
   value. A connected or connecting server shows no dot, since the list is shaped for success. Only
   a failing server's orange or red dot leads its name, and on the Mac a load longer than 300 ms
-  shows the footer's mini spinner there until it resolves. Nothing holds that spot empty, so a
+  shows a mini spinner there until it resolves. Nothing holds that spot empty, so a
   healthy server's name starts at the header's edge. On the Mac, the name is secondary, the same
   color as the footer's status line at rest. The header keeps the sidebar's own section header
   inset, which puts its leading edge 4 points inside the search field's edge, and every header has the same room above it, whether it follows the
@@ -204,11 +206,13 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   While a section is collapsed and any of its channels waits for the user's response, its header
   also shows the waiting attention symbol, trailing in its color and without a count, so
   collapsing a server never hides a request. It hides while the section is open, and VoiceOver
-  adds "waiting for you" after the header's value. The Mac footer's status line reads "2 servers" instead of a host, with its dot showing the
+  adds "waiting for you" after the header's value. The Mac footer's status line counts the servers, "1 server" or "2 servers", never a host,
+  with its dot showing the
   least healthy server: red, then orange, then the first load's gray, then green. That dot never
   spins, since each header shows its own server's load. Its help names the least healthy server,
-  like "Reconnecting to 127.0.0.1:3211", or reads "Connected to 2 servers" when every server is
-  connected, then "Change servers in Settings.", and VoiceOver reads the same. Search filters every server and keeps the sections. The phone
+  like "Reconnecting to Mac mini", or when every server is connected reads "Connected to Mac
+  mini" with one and "Connected to 2 servers" with several, then "Change servers in Settings.",
+  and VoiceOver reads the same. Search filters every server and keeps the sections. The phone
   keeps one open Needs You card, the newest across every server, in its server's section.
 - **Choosing a server.** New Channel and the Screens list start on the selected channel's server,
   with a server menu to pick another.
@@ -1117,9 +1121,9 @@ navigation keeps list focus until explicitly moving into the conversation.
 
 | State | Presentation and available actions |
 | --- | --- |
-| First catalog load | Three static placeholder rows, no fabricated channel names. After 300 ms the connection footer's dot becomes a mini spinner (see Sidebar). Nothing overlays the list |
+| First catalog load | Three static placeholder rows, no fabricated channel names. On the Mac, after 300 ms the server's header shows a mini spinner (see Several servers). Nothing overlays the list |
 | No channels | Source-list empty state: "Your channels live here" and New Channel. The connection footer already names the server, so the empty state doesn't repeat it |
-| No servers (Mac) | The same empty state, "Your channels live here", offers Add Server… instead of New Channel. It opens Settings' Add Server sheet over the window, as the Screens list does, and the channels fill in once the server connects. New Channel and Open Screen are disabled, the connection footer reads "No servers" (see Sidebar), and the detail keeps "Choose a channel". The phone shows Welcome instead |
+| No servers (Mac) | The sidebar's empty state welcomes the user: "Welcome to Toy Box" over "Add a server to see its channels.", and Add Server…, which opens Settings' Add Server sheet over the window, as the Screens list does. The channels fill in once the server connects. The sidebar has no connection footer, New Channel and Open Screen are disabled, and the detail keeps "Choose a channel". The phone shows Welcome instead |
 | Search has no matches | "No channels match [query]", Clear Search. Do not show the no-channels creation state |
 | Nothing selected | Centered `bubble.left.and.bubble.right` symbol, "Choose a channel", concise navigation hint |
 | First channel snapshot | Static message placeholders and "Connecting", whose spinner appears after 300 ms. On the Mac the label waits with it. Composer shell remains present, Send unavailable |
@@ -1323,21 +1327,22 @@ with its status text when its status is working, and otherwise waiting when its 
 idle when not. Activity can lag by one catalog refresh. It must clear when observation is lost
 rather than keep animating.
 
-**Connection footer.** The bottom of the sidebar names the server this window talks to, as the
-wireframe's `sidebar-connection` group draws it. With several servers, each server's header
-carries its own status, and the footer's status line sums them up (see
-[Several servers](#several-servers)). Attach it with `.safeAreaBar(edge: .bottom)` on
+**Connection footer.** The bottom of the sidebar sums up the servers this window talks to. Each
+server's header carries its own status, and the footer's status line counts the servers and sums
+up their health (see [Several servers](#several-servers)). With no servers there is no footer,
+since the sidebar's welcome offers Add Server… (see [Loading, empty, error and stale
+states](#loading-empty-error-and-stale-states)). Attach it with `.safeAreaBar(edge: .bottom)` on
 the sidebar list so rows scroll beneath it under the system scroll edge effect. Give it no
 background, divider or material of its own. The status line is a 7-point dot (the unread dot's
-size), 6 points, then the server's host and port in 11 regular, secondary, one line, middle
-truncation. Omit the port when it is the scheme's default. The line is 22 high, and its row is as
+size), 6 points, then the count, like "1 server", in 11 regular secondary on one line. The line
+is 22 high, and its row is as
 tall as the large glass Open Screen button at its end, with 10 points above and below so the row
 centers in the bar. The dot's leading edge sits 20 points from the sidebar's leading edge, 4
 before the channel icons, and its center sits 24 points above the sidebar's bottom edge.
 
 | Catalog state | Dot |
 | --- | --- |
-| First load | `.secondary`, then a spinner after 300 ms. The placeholder rows already show loading |
+| First load | `.secondary`. The placeholder rows and the server's header already show loading |
 | Last refresh succeeded | `.green` |
 | Refresh failing, rows kept | `.orange`. Recovery retries every failed channel at once |
 | Never loaded, invalid URL or authorization failure | `.red` |
@@ -1345,21 +1350,20 @@ before the channel icons, and its center sits 24 points above the sidebar's bott
 The dot is the sidebar's only sign of a problem. The sidebar never shows an error message, so it
 always holds the list and the footer, and nothing appears above the status line. The status line's
 help puts the readable failure, like "bad gateway (HTTP 502)", on its own line between the status
-and "Change the server in Settings.", and VoiceOver reads it as the button's hint. The catalog keeps
+and "Change servers in Settings.", and VoiceOver reads it as the button's hint. The catalog keeps
 retrying on its own and the status line already opens Settings, so there is no Retry. With
 Differentiate Without Color, an orange or red dot becomes an `exclamationmark.circle.fill` of the
 same color and size, so a problem never depends on color alone.
 
-The footer is the sidebar's only progress indicator. When the first load or a refresh the user
-asked for (View > Refresh, which refreshes only the channel list) takes longer than 300 ms, the dot's slot shows a native
-indeterminate spinner,
-`ProgressView().controlSize(.mini)`, which is 10 points. Center it on the dot's center and don't
-clip it, so it overhangs the 7-point slot by 1.5 points on each side and the host text never moves.
-When the attempt resolves, it crossfades back to the resulting dot. The catalog's stream never shows
-the spinner. A dropped stream also stays quiet and reconnects with backoff until it has failed for
+Each server's header is the sidebar's only progress indicator. When its first load or a refresh
+the user asked for (View > Refresh, which refreshes only the channel list) takes longer than 300
+ms, the header shows a native indeterminate spinner, `ProgressView().controlSize(.mini)`, which is
+10 points, where a failing server's dot would lead its name (see [Several
+servers](#several-servers)). When the attempt resolves, it crossfades to the resulting dot or to
+nothing. The footer's dot never spins. The catalog's stream never shows the spinner. A dropped stream also stays quiet and reconnects with backoff until it has failed for
 about three seconds, the same grace a channel gets, so coming back to the app never flashes the
 orange dot. A refresh the user asked for reports its failure at once. Never overlay a spinner or "Loading Channels" on the list. The static placeholder rows
-show the shape and the footer shows the activity.
+show the shape and the header shows the activity.
 
 In an inactive window the system draws a hairline above the bar, just as it does under the
 toolbar. Keep it, because the soft edge in the active window comes from the same system effect.
@@ -1368,13 +1372,11 @@ Never fake that line, and never hide the scroll edge effect to remove it.
 The status line is a borderless button that opens Settings on the Servers tab, where the server
 URL lives. Hover and
 press use the folder token's capsule of the hover fill,
-outset 6 points so the dot never moves. Help reads "Connected to http://localhost:3100", or
-"Connecting to", "Reconnecting to" or "Can't connect to", then "Change the server in Settings."
-VoiceOver reads one button labeled "Server" with the value "localhost:3100, connected" (or
-connecting, reconnecting, can't connect). Dot colors crossfade over 0.2 seconds, instantly with
-Reduce Motion. Never pulse the dot. With no servers, the status line reads "No servers" with no
-dot, its help reads "Add a server in Settings.", and it still opens the Servers tab. The footer
-reflects the catalog connection only. An open
+outset 6 points so the dot never moves. Help reads as [Several servers](#several-servers)
+describes, like "Connected to Mac mini" then "Change servers in Settings." VoiceOver reads one
+button labeled "Servers" with the value "1 server, connected" (or connecting, reconnecting, can't
+connect). Dot colors crossfade over 0.2 seconds, instantly with
+Reduce Motion. Never pulse the dot. The footer reflects the catalog connection only. An open
 channel's own stream keeps its floating "Reconnecting to server" pill over the transcript.
 
 The status line's row ends in Open Screen, a large glass circle with the outline `display`
@@ -3026,7 +3028,9 @@ failed and offers Check Again. Nothing is sent again before that check.
 Settings uses a native scene with General and Notifications sections. The Mac adds a Servers tab
 between them for the servers (see [Several servers](#several-servers)), each with its Name,
 Server URL and status. General includes the selected appearance (System by default). Adding a
-server validates HTTP(S), preserves path prefixes and displays actionable failures. On iPhone,
+server validates HTTP(S), preserves path prefixes and displays actionable failures. An address
+without a scheme, like `machine.tail1234.ts.net`, gets `https://`, so a server needs `http://`
+typed to use HTTP. Both apps' Server URL placeholder is `machine.tail1234.ts.net`. On iPhone,
 Welcome and Add Server share the Server URL card, with no separate Use Server action or
 confirmation. Return or Test Connection runs the test: while it runs, the field is disabled and
 the row reads Connecting…, then a green checkmark marks a server that answered, and a failed test
