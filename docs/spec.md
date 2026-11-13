@@ -3027,7 +3027,9 @@ between them for the servers (see [Several servers](#several-servers)), each wit
 Server URL and status. General includes the selected appearance (System by default). Adding a
 server validates HTTP(S), preserves path prefixes and displays actionable failures. An address
 without a scheme, like `machine.tail1234.ts.net`, gets `https://`, so a server needs `http://`
-typed to use HTTP. Both apps' Server URL placeholder is `machine.tail1234.ts.net`. On iPhone,
+typed to use HTTP. Both apps' Server URL placeholder is `machine.tail1234.ts.net`, and its
+caption starts "Use your server's address, including its port and any path prefix." Only another
+scheme, like `ftp://`, is refused, with "Use HTTP or HTTPS for your Toy Box server." On iPhone,
 Welcome and Add Server share the Server URL card, with no separate Use Server action or
 confirmation. Return or Test Connection runs the test: while it runs, the field is disabled and
 the row reads Connecting…, then a green checkmark marks a server that answered, and a failed test
