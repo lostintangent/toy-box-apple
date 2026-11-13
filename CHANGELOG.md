@@ -6,11 +6,19 @@
 
 - You can now restart any of your servers from Settings whenever you like, not just after an update, so a server that's acting up is one tap from a fresh start.
 
+### Bugs/Polish
+
+- When Toy Box can't list a server's screens, it now says so plainly in the middle of the window, with Try Again right there.
+
 ## iPhone 0.1.35
 
 ### Features
 
 - You can now restart any of your servers from Settings whenever you like, not just after an update, so a server that's acting up is one tap from a fresh start.
+
+### Bugs/Polish
+
+- When Toy Box can't list a server's screens, it now says so plainly in the middle of the window, with Try Again right there.
 
 ## Mac 0.1.37
 
