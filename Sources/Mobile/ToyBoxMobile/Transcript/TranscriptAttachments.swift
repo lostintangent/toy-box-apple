@@ -43,7 +43,8 @@ struct TranscriptAttachments: View {
             }
         } else if attachment.contentType?.conforms(to: .movie) == true,
                   let address = attachment.url, let url = api.resourceURL(address) {
-            TranscriptVideo(url: url, name: attachment.displayName)
+            TranscriptVideo(url: url, name: attachment.displayName,
+                            playsInSystemPlayer: attachment.playsInSystemPlayer)
         } else {
             TranscriptFileRow(attachment: attachment, api: api)
         }
@@ -195,10 +196,12 @@ private struct TranscriptFileRow: View {
     }
 }
 
-/// A poster that plays only when tapped, in the system player. A missing poster still plays.
+/// A poster that plays only when tapped, in the system player, or WebKit's for a format the system
+/// can't decode. A missing poster still plays.
 private struct TranscriptVideo: View {
     let url: URL
     let name: String
+    let playsInSystemPlayer: Bool
     @ViewState private var poster: UIImage?
     @ViewState private var isPlaying = false
 
@@ -220,12 +223,37 @@ private struct TranscriptVideo: View {
             .background(.quaternary, in: .rect(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
-        .fullScreenCover(isPresented: $isPlaying) { TranscriptPlayer(url: url).ignoresSafeArea() }
+        .fullScreenCover(isPresented: $isPlaying) {
+            if playsInSystemPlayer {
+                TranscriptPlayer(url: url).ignoresSafeArea()
+            } else {
+                TranscriptWebPlayer(url: url, name: name)
+            }
+        }
         .task(id: url) {
+            guard playsInSystemPlayer else { return }
             let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = CGSize(width: 480, height: 320)
             poster = try? await UIImage(cgImage: generator.image(at: .zero).image)
+        }
+    }
+}
+
+private struct TranscriptWebPlayer: View {
+    let url: URL
+    let name: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            TranscriptWebVideo(url: url)
+                .ignoresSafeArea(edges: .bottom)
+                .navigationTitle(name)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                }
         }
     }
 }

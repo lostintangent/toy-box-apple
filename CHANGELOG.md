@@ -1,5 +1,17 @@
 # Changelog
 
+## Mac 0.1.39
+
+### Bugs/Polish
+
+- Playing a video in a conversation no longer closes Toy Box, and WebM videos now play too.
+
+## iPhone 0.1.36
+
+### Bugs/Polish
+
+- WebM videos in a conversation now play.
+
 ## Mac 0.1.38
 
 ### Features
