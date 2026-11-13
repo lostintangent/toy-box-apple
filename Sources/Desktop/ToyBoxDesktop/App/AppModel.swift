@@ -11,7 +11,6 @@ import ToyBoxUI
 final class AppModel {
     let launchOptions: LaunchOptions
     let snapshot: WindowSnapshot?
-    let resizeBenchmark: ResizeBenchmark?
     let performanceBenchmark: PerformanceBenchmark?
     let updates: AppUpdates
     let openAtLogin: OpenAtLogin
@@ -80,9 +79,6 @@ final class AppModel {
             request: { _ = NSApplication.shared.requestUserAttention($0) }
         )
         snapshot = launchOptions.isSnapshot ? WindowSnapshot(options: launchOptions) : nil
-        resizeBenchmark = launchOptions.resizeBenchmark.flatMap { mode in
-            launchOptions.channelID.map { ResizeBenchmark(mode: mode, channelID: $0) }
-        }
         performanceBenchmark = launchOptions.benchmark.flatMap { scenario in
             launchOptions.channelID.map { PerformanceBenchmark(scenario: scenario, channelID: $0) }
         }
@@ -344,7 +340,7 @@ final class AppModel {
 
     /// Captures, snapshots and benchmarks keep the menu bar out of what they measure.
     var showsMenuBarExtra: Bool {
-        !launchOptions.isSnapshot && resizeBenchmark == nil && performanceBenchmark == nil
+        !launchOptions.isSnapshot && performanceBenchmark == nil
     }
 
     /// What the menu bar extra shows across every server, from the same waiting requests and

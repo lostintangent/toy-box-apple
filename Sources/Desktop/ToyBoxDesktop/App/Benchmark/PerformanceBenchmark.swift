@@ -4,7 +4,7 @@ import Darwin
 import Observation
 import QuartzCore
 
-/// `--benchmark launch|switch|messages|paging|scroll|trackpad|idle|key` measures one scenario in the first window,
+/// `--benchmark switch|messages|paging|scroll|key` measures one scenario in the first window,
 /// prints each result beside its budget and exits. `bun run benchmark` builds a release bundle and
 /// runs the scenarios against `bun run demo:perf`, whose `/perf/messages` route streams the agent
 /// messages that `messages` measures.
@@ -17,16 +17,12 @@ import QuartzCore
 /// exiting until it next exits or sleeps, which is where Core Animation commits.
 ///
 /// Hover under a resting pointer changes what a scenario costs, so the window moves away from the
-/// pointer before any scenario but `launch`. The benchmark moves only its own window, never the
-/// pointer.
+/// pointer before each scenario. The benchmark moves only its own window, never the pointer.
 ///
-/// - `launch`: when the channel's first frame appears after the process starts. No budget.
 /// - `switch`: selects another catalog channel and back, four times each way. The first visit to the
 ///   other channel is cold, and the rest are warm. A warm switch's budget is on its longest
 ///   saturated span from the selection until the window settles, because a switch that lands over
-///   several frames feels as slow as one long frame. It also counts the warm switches to a channel
-///   that was still connected, then measures idle while the channel it left lingers and again once
-///   it disconnects.
+///   several frames feels as slow as one long frame.
 /// - `messages`: streams messages one at a time, for what each costs, then 50 of them 20 ms apart,
 ///   for the longest frame gap. It measures both with the pointer away, then again with the
 ///   transcript moved under the still pointer, where a person reading often rests it. It does all
@@ -44,16 +40,13 @@ import QuartzCore
 ///   scrolls it, so hover runs as it does for them. Late-run-loop samples compare the first
 ///   visible row's movement with wheel deltas delivered since the preceding sample, with a 1-point
 ///   drift budget.
-/// - `trackpad`: an opt-in phased native check. It reports delivery and native travel after AppKit's
-///   interpolation, not wheel-baseline performance or raw wheel-relative row drift.
-/// - `idle`: a minute of wakeups and busy time once the channel settles. No budget.
 /// - `key`: makes the window key, which a person's window is, and measures the whole process's CPU
 ///   while it sits there, first with the channel's own working agents and then with 20 working.
 ///   Animations that run only in the key window, like the working ellipsis, show up here.
 @MainActor
 final class PerformanceBenchmark {
     enum Scenario: String, CaseIterable, Sendable {
-        case launch, messages, paging, scroll, trackpad, idle, key
+        case messages, paging, scroll, key
         case switching = "switch"
     }
 
@@ -87,7 +80,6 @@ final class PerformanceBenchmark {
     private weak var model: AppModel?
     private var select: ((String) -> Void)?
     private var meter: MainRunLoopMeter?
-    private var appearance: NSObjectProtocol?
     private var task: Task<Void, Never>?
 
     init(scenario: Scenario, channelID: String) {
@@ -107,24 +99,18 @@ final class PerformanceBenchmark {
         window.orderFrontRegardless()
         let meter = MainRunLoopMeter()
         self.meter = meter
-        // Launch watches for the catalog and the channel before either can arrive.
-        let launch = scenario == .launch ? launchMoments(meter: meter) : nil
         Task.detached {
             try? await Task.sleep(for: .seconds(600))
             FileHandle.standardError.write(Data("Benchmark failed: the scenario didn't finish in 10 minutes\n".utf8))
             exit(EXIT_FAILURE)
         }
         task = Task {
-            // Moving the window would add to what launch times, before anything loads under the pointer.
-            if scenario != .launch { placeAwayFromPointer() }
+            placeAwayFromPointer()
             switch scenario {
-            case .launch: if let launch { await self.launch(launch) }
             case .switching: await switching()
             case .messages: await messages()
             case .paging: await paging()
             case .scroll: await scrolling()
-            case .trackpad: await trackpad()
-            case .idle: await idle()
             case .key: await keyWindow()
             }
             exit(EXIT_SUCCESS)
@@ -132,88 +118,6 @@ final class PerformanceBenchmark {
     }
 
     // MARK: Scenarios
-
-    private struct LaunchMoments {
-        let window: Date
-        let appeared: AsyncStream<Date>
-        let catalog: AsyncStream<Date>
-        let channel: AsyncStream<(applied: Date, frame: Date)>
-    }
-
-    private func launchMoments(meter: MainRunLoopMeter) -> LaunchMoments? {
-        guard let window, let catalog = model?.catalog, let store = store(channelID) else { return nil }
-        let now = Date.now
-        // AppKit can show the window partway through the pass that builds it, before that pass
-        // draws the channel, so the window appears on its own schedule.
-        let (appeared, appearedContinuation) = AsyncStream.makeStream(of: Date.self)
-        if window.occlusionState.contains(.visible) {
-            appearedContinuation.yield(now)
-        } else {
-            appearance = NotificationCenter.default.addObserver(
-                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, self.window?.occlusionState.contains(.visible) == true else { return }
-                    appearedContinuation.yield(.now)
-                    appearedContinuation.finish()
-                    if let appearance = self.appearance { NotificationCenter.default.removeObserver(appearance) }
-                    self.appearance = nil
-                }
-            }
-        }
-        let (catalogLoaded, catalogContinuation) = AsyncStream.makeStream(of: Date.self)
-        if catalog.state != nil {
-            catalogContinuation.yield(now)
-        } else {
-            withObservationTracking { _ = catalog.state } onChange: {
-                catalogContinuation.yield(.now)
-                catalogContinuation.finish()
-            }
-        }
-        let (channelLoaded, channelContinuation) = AsyncStream.makeStream(of: (applied: Date, frame: Date).self)
-        if store.isLoaded {
-            // A channel connected before the window opened first draws when the pass that opens
-            // the window ends.
-            meter.afterPass { _ in
-                channelContinuation.yield((now, .now))
-                channelContinuation.finish()
-            }
-        } else {
-            withObservationTracking { _ = store.isLoaded } onChange: {
-                let applied = Date.now
-                // The pass that applies the snapshot ends once SwiftUI has drawn it.
-                MainActor.assumeIsolated {
-                    meter.afterPass { _ in
-                        channelContinuation.yield((applied, .now))
-                        channelContinuation.finish()
-                    }
-                }
-            }
-        }
-        return LaunchMoments(window: now, appeared: appeared, catalog: catalogLoaded, channel: channelLoaded)
-    }
-
-    private func launch(_ moments: LaunchMoments) async {
-        func first<Value>(_ stream: AsyncStream<Value>) async -> Value? {
-            for await value in stream { return value }
-            return nil
-        }
-        guard let meter, let catalog = await first(moments.catalog), let channel = await first(moments.channel),
-              let appeared = await first(moments.appeared) else {
-            fail("\(channelID) didn't load")
-        }
-        let settledAt = await settled(quiet: 1)
-        let settled = Date.now.addingTimeInterval(settledAt - CACurrentMediaTime())
-        let start = Self.processStart()
-        func since(_ date: Date) -> String { String(format: "%.0f ms", date.timeIntervalSince(start) * 1000) }
-        header()
-        info("First content", "\(since(channel.frame)) after the process started. The window opened at "
-             + "\(since(moments.window)) and appeared at \(since(appeared)), the catalog arrived at \(since(catalog)) "
-             + "and the channel at \(since(channel.applied))")
-        info("Settled", "\(since(settled)), after \(format(Self.mainThreadCPU() * 1000)) of main-thread CPU, with a "
-             + "\(format(meter.longestGap * 1000)) longest frame gap and \(format(meter.longestSpan * 1000)) longest "
-             + "saturated span after the window opened")
-    }
 
     private func switching() async {
         await load(channelID)
@@ -223,25 +127,20 @@ final class PerformanceBenchmark {
         guard let meter else { return }
         _ = await settled()
         header()
-        var warm: [(frame: Double, span: Double, gap: Double, busy: Double, connected: Double, wasConnected: Bool)] = []
-        var lastSelection = ContinuousClock.now
+        var warm: [(frame: Double, span: Double, gap: Double, busy: Double)] = []
         for round in 0..<8 {
             let target = round.isMultiple(of: 2) ? other : channelID
             let isWarm = store(target)?.isLoaded == true
             try? await Task.sleep(for: .milliseconds(300))
             _ = await settled(quiet: 0.3)
-            let wasConnected = store(target)?.phase.isConnected == true
             meter.reset()
             let start = CACurrentMediaTime()
-            lastSelection = .now
             select?(target)
             let frame = await meter.passEnd()
             await load(target)
-            // The main thread can't apply a connection's first event before the first frame ends.
-            let connected = wasConnected ? start : CACurrentMediaTime()
             _ = await settled()
             let result = (frame: (frame - start) * 1000, span: meter.longestSpan * 1000, gap: meter.longestGap * 1000,
-                          busy: meter.busy * 1000, connected: (connected - start) * 1000, wasConnected: wasConnected)
+                          busy: meter.busy * 1000)
             if isWarm {
                 warm.append(result)
             } else {
@@ -256,38 +155,6 @@ final class PerformanceBenchmark {
               + "\(format(median(warm.map(\.frame).sorted()))) median first frame, "
               + "\(format(median(warm.map(\.busy).sorted()))) median busy, over \(warm.count) switches",
               value: median(spans), budget: Budget.warmSwitch)
-        info("Warm switch connection", "\(warm.filter(\.wasConnected).count) of \(warm.count) still connected when "
-             + "selected, \(format(median(warm.map(\.connected).sorted()))) median until connected")
-        await afterSwitching(since: lastSelection, channels: [channelID, other])
-    }
-
-    /// What leaving a channel costs: idle while its store lingers, then once the linger has ended.
-    private func afterSwitching(since selection: ContinuousClock.Instant, channels: [String]) async {
-        guard let meter else { return }
-        func connected() -> Int {
-            let held = model?.connections.stores ?? []
-            return channels.filter { id in held.contains { $0.id == id } }.count
-        }
-        _ = await settled()
-        let lingering = connected()
-        meter.reset()
-        var start = CACurrentMediaTime()
-        try? await Task.sleep(for: .seconds(3))
-        info("Idle after the last switch", "\(idleRate(since: start)), with \(lingering) of \(channels.count) channels connected")
-        let linger = model?.connections.linger ?? .zero
-        try? await Task.sleep(until: selection + linger + .seconds(1.5), clock: .continuous)
-        let settledCount = connected()
-        meter.reset()
-        start = CACurrentMediaTime()
-        try? await Task.sleep(for: .seconds(10))
-        info("Idle once the linger ended", "\(idleRate(since: start)), with \(settledCount) of \(channels.count) channels connected")
-    }
-
-    private func idleRate(since start: CFTimeInterval) -> String {
-        guard let meter else { return "" }
-        let seconds = CACurrentMediaTime() - start
-        return String(format: "%.1f wakeups and %.2f ms busy a second", Double(meter.passes) / seconds,
-                      meter.busy * 1000 / seconds)
     }
 
     private func messages() async {
@@ -438,9 +305,6 @@ final class PerformanceBenchmark {
     }
 
     private func scrolling() async {
-        guard !BenchmarkScrollGeometry.traceEnabled || BenchmarkScrollGeometry.isEnabled else {
-            fail("signed frame tracing requires geometry sampling")
-        }
         await load(channelID)
         guard let store = store(channelID) else { return }
         // The first rows' images load before the first measurement.
@@ -449,10 +313,8 @@ final class PerformanceBenchmark {
         header()
         info("Wheel driver", "unphased precise input through the app-local event queue")
         await verifyWheelDriver()
-        if ProcessInfo.processInfo.environment["TOY_BOX_TRANSCRIPT"] == "native-control" { return }
         await verifyTranscriptInput()
         await measureScrolling(in: store)
-        if BenchmarkScrollGeometry.traceEnabled { return }
         await measureScrollingUnderPointer(in: store)
         let loaded = store.messages.count
         while store.hasOlderMessages {
@@ -544,28 +406,6 @@ final class PerformanceBenchmark {
         guard gap < 2 else { fail("the transcript input control didn't restore the latest message") }
     }
 
-    private func trackpad() async {
-        await load(channelID)
-        _ = await settled()
-        header()
-        info("Phased trackpad check",
-             "own-PID WindowServer delivery, requires Accessibility; not a wheel baseline or a row-drift gate")
-        guard let window, let scroll = transcriptScrollView() else { fail("there's no transcript scroll view") }
-        let distance = min(Self.scrollDistance, offsetFromTop(scroll) - Self.scrollMargin)
-        guard distance >= Self.scrollDistance / 2 else { fail("the transcript is too short for the trackpad check") }
-        let start = offsetFromTop(scroll)
-        let gesture = WheelGesture(window: window, over: scroll, geometry: nil, speed: Self.scrollSpeed,
-                                   distance: distance, phased: true) { self.offsetFromTop(scroll) < Self.scrollMargin }
-        let frames = await gesture.run()
-        requireDelivery(frames.delivery)
-        let moved = abs(offsetFromTop(scroll) - start)
-        guard moved > gesture.scrolled / 4 else { fail("the phased trackpad input didn't move the transcript") }
-        info("Phased trackpad input",
-             "\(frames.delivery.deliveredEvents)/\(frames.delivery.postedEvents) events, "
-             + "\(frames.delivery.deliveredDelta) pt delivered, \(moved) pt native travel after a 1 s end drain. "
-             + "AppKit interpolation is included in native travel.")
-    }
-
     private func requireDelivery(_ delivery: BenchmarkScrollDelivery) {
         guard delivery.matches else {
             fail("wheel delivery mismatch: \(delivery.postedEvents) posted, "
@@ -579,8 +419,7 @@ final class PerformanceBenchmark {
     private func measureScrolling(in store: ChannelStore) async {
         guard let meter, let window else { return }
         guard let scroll = transcriptScrollView() else { fail("there's no transcript scroll view") }
-        let geometry = BenchmarkScrollGeometry.isEnabled ? BenchmarkScrollGeometry.source(in: scroll) : nil
-        guard !BenchmarkScrollGeometry.isEnabled || geometry != nil else {
+        guard let geometry = BenchmarkScrollGeometry.source(in: scroll) else {
             fail("the transcript has no benchmark geometry source")
         }
         let loaded = store.messages.count
@@ -607,16 +446,6 @@ final class PerformanceBenchmark {
             let frames = await gesture.run()
             let cpuMilliseconds = (Self.mainThreadCPU() - cpuStart) * 1000
             let busy = meter.busy
-            if !frames.trace.isEmpty {
-                do {
-                    let encoder = JSONEncoder()
-                    for frame in frames.trace {
-                        let data = try encoder.encode(frame)
-                        info("Scroll trace \(up ? "up" : "down") \(place)",
-                             String(decoding: data, as: UTF8.self))
-                    }
-                } catch { fail("couldn't encode the signed scroll trace: \(error.localizedDescription)") }
-            }
             requireDelivery(frames.delivery)
             requireStill(pointer, over: scroll)
             info("Wheel delivery \(up ? "up" : "down") \(place)",
@@ -635,7 +464,6 @@ final class PerformanceBenchmark {
                            cpuMilliseconds, Double(moved), cpuMilliseconds / Double(moved) * 1000),
                   value: hitches, budget: Budget.scrollHitches, unit: " ms/s")
             distance = gesture.scrolled
-            guard geometry != nil else { continue }
             guard frames.drift.measuredFrames > 0, frames.drift.unmeasuredFrames == 0 else {
                 fail("scroll drift measured \(frames.drift.measuredFrames) frame pairs, "
                      + "with \(frames.drift.unmeasuredFrames) unmeasurable frame pairs")
@@ -645,17 +473,6 @@ final class PerformanceBenchmark {
                   + String(format: "%.3f pt maximum, %.3f pt total absolute drift",
                            frames.drift.maximum, frames.drift.total),
                   value: frames.drift.maximum, budget: Budget.scrollDrift, unit: " pt")
-            if BenchmarkScrollGeometry.traceEnabled {
-                guard frames.displayLinkDrift.measuredFrames == frames.drift.measuredFrames,
-                      frames.displayLinkDrift.unmeasuredFrames == 0 else {
-                    fail("the diagnostic display-link sampler had incomplete geometry coverage")
-                }
-                info("Diagnostic display-link drift \(up ? "up" : "down") \(place)",
-                     "\(frames.displayLinkDrift.measuredFrames) frame pairs, "
-                     + "\(frames.displayLinkDrift.exceedingFrames) over 1 pt, "
-                     + String(format: "%.3f pt maximum, not an acceptance metric", frames.displayLinkDrift.maximum))
-                return
-            }
         }
     }
 
@@ -678,22 +495,6 @@ final class PerformanceBenchmark {
         let pointer = NSEvent.mouseLocation
         return window.convertToScreen(scroll.convert(scroll.bounds, to: nil)).contains(pointer)
             && NSWindow.windowNumber(at: pointer, belowWindowWithWindowNumber: 0) == window.windowNumber
-    }
-
-    private func idle() async {
-        await load(channelID)
-        guard let meter else { return }
-        _ = await settled()
-        try? await Task.sleep(for: .seconds(5))
-        header()
-        meter.reset()
-        let start = CACurrentMediaTime()
-        try? await Task.sleep(for: .seconds(60))
-        let seconds = CACurrentMediaTime() - start
-        info("Idle for \(Int(seconds.rounded())) s", String(format: "%.1f wakeups and %.2f ms busy a second, ",
-                                                           Double(meter.passes) / seconds, meter.busy * 1000 / seconds)
-             + "\(format(meter.longestGap * 1000)) longest frame gap, \(format(meter.longestSpan * 1000)) longest "
-             + "saturated span")
     }
 
     private func keyWindow() async {
@@ -963,13 +764,6 @@ final class PerformanceBenchmark {
         let rate = window?.screen?.maximumFramesPerSecond ?? 60
         let visible = window?.occlusionState.contains(.visible) == true
         emit("Benchmark \(scenario.rawValue) on \(channelID): \(rate) Hz display, window \(visible ? "visible" : "covered")")
-        info("Transcript", ProcessInfo.processInfo.environment["TOY_BOX_TRANSCRIPT"] ?? "lazy")
-        if scenario == .scroll, !BenchmarkScrollGeometry.isEnabled {
-            info("Frame drift", "disabled for the probe overhead control")
-        }
-        if scenario == .scroll, BenchmarkScrollGeometry.traceEnabled {
-            info("Signed frame trace", "first-page upward gesture only, buffered until CPU measurement ends")
-        }
     }
 
     private func check(_ name: String, _ detail: String, value: Double, budget: Double, unit: String = " ms") {
@@ -1018,14 +812,6 @@ final class PerformanceBenchmark {
             + Double(info.system_time.seconds) + Double(info.system_time.microseconds) / 1_000_000
     }
 
-    private static func processStart() -> Date {
-        var info = kinfo_proc()
-        var size = MemoryLayout<kinfo_proc>.stride
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
-        sysctl(&mib, 4, &info, &size, nil, 0)
-        let time = info.kp_proc.p_un.__p_starttime
-        return Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_usec) / 1_000_000)
-    }
 }
 
 struct BenchmarkKeyWindowState: Equatable, Sendable, CustomStringConvertible {
@@ -1088,12 +874,9 @@ enum BenchmarkWindowPlacement {
 /// Row tops in viewport coordinates, increasing downward, including nearby rows for handoffs.
 struct BenchmarkScrollGeometry: Equatable, Sendable {
     static let isEnabled = ProcessInfo.processInfo.arguments.contains("--benchmark")
-        && ProcessInfo.processInfo.environment["TOY_BOX_BENCHMARK_SCROLL_DRIFT"] != "0"
-    static let traceEnabled = ProcessInfo.processInfo.environment["TOY_BOX_BENCHMARK_SCROLL_TRACE"] == "1"
 
     var firstVisibleRow: String
     var rowTops: [String: CGFloat]
-    var reportedTops: [String: CGFloat] = [:]
 
     @MainActor
     static func source(in scroll: NSScrollView) -> (any BenchmarkScrollGeometrySource)? {
@@ -1214,16 +997,6 @@ private final class BenchmarkNativeScrollControl: NSObject, NSTableViewDataSourc
 }
 
 struct BenchmarkScrollDrift: Equatable, Sendable {
-    struct Sample: Equatable, Sendable, Encodable {
-        var rowID: String
-        var before: CGFloat
-        var after: CGFloat
-        var wheel: CGFloat
-        var residual: CGFloat
-        var reportedBefore: CGFloat?
-        var reportedAfter: CGFloat?
-    }
-
     private var previous: BenchmarkScrollGeometry?
     private var hasSampled = false
     private(set) var measuredFrames = 0
@@ -1233,55 +1006,38 @@ struct BenchmarkScrollDrift: Equatable, Sendable {
     private(set) var total = 0.0
 
     /// A positive wheel delta moves a row downward. Input still queued for delivery is not included.
-    @discardableResult
-    mutating func sample(_ current: BenchmarkScrollGeometry?, scrollDelta: CGFloat) -> Sample? {
+    mutating func sample(_ current: BenchmarkScrollGeometry?, scrollDelta: CGFloat) {
         defer {
             previous = current
             hasSampled = true
         }
-        guard hasSampled else { return nil }
+        guard hasSampled else { return }
         guard let previous, let current, scrollDelta.isFinite,
               previous.rowTops[previous.firstVisibleRow]?.isFinite == true,
               current.rowTops[current.firstVisibleRow]?.isFinite == true else {
             unmeasuredFrames += 1
-            return nil
+            return
         }
         let id = current.rowTops[previous.firstVisibleRow] != nil
             ? previous.firstVisibleRow : current.firstVisibleRow
         guard let before = previous.rowTops[id], let after = current.rowTops[id],
               before.isFinite, after.isFinite else {
             unmeasuredFrames += 1
-            return nil
+            return
         }
-        let residual = after - before - scrollDelta
-        let drift = Double(abs(residual))
+        let drift = Double(abs(after - before - scrollDelta))
         measuredFrames += 1
         if drift > PerformanceBenchmark.Budget.scrollDrift { exceedingFrames += 1 }
         maximum = max(maximum, drift)
         total += drift
-        return .init(rowID: id, before: before, after: after, wheel: scrollDelta, residual: residual,
-                     reportedBefore: previous.reportedTops[id], reportedAfter: current.reportedTops[id])
     }
 }
 
-/// One steady scroll over `scroll`, a step each display frame. Unphased wheel input uses the
-/// app-local queue. Opt-in phased input uses WindowServer delivery to this PID only.
-/// Each step covers the time since the last frame, so a
-/// late frame scrolls further, as the coalesced events of a held-up gesture do.
+/// One steady scroll over `scroll`, a step each display frame, of unphased wheel input through the
+/// app-local queue. Each step covers the time since the last frame, so a late frame scrolls further,
+/// as the coalesced events of a held-up gesture do.
 @MainActor
 private final class WheelGesture: NSObject {
-    struct Trace: Encodable {
-        var phase: String
-        var time: CFTimeInterval
-        var sampleTime: CFTimeInterval
-        var sample: BenchmarkScrollDrift.Sample?
-        var nativeTop: CGFloat?
-        var documentHeight: CGFloat?
-        var postedEvents: Int
-        var deliveredEvents: Int
-        var deliveredDelta: CGFloat
-    }
-
     struct Frames {
         /// Display frames the gesture spanned, including the ones it dropped.
         var count = 0
@@ -1290,9 +1046,7 @@ private final class WheelGesture: NSObject {
         var seconds: CFTimeInterval = 0
         var duration: CFTimeInterval = 1.0 / 60
         var drift = BenchmarkScrollDrift()
-        var displayLinkDrift = BenchmarkScrollDrift()
         var delivery = BenchmarkScrollDelivery()
-        var trace: [Trace] = []
     }
 
     private weak var window: NSWindow?
@@ -1301,7 +1055,6 @@ private final class WheelGesture: NSObject {
     /// Points a second. Positive scrolls toward the top.
     private let speed: Double
     private let distance: Double
-    private let phased: Bool
     private let stop: @MainActor () -> Bool
     private(set) var scrolled = 0.0
     private var frames = Frames()
@@ -1310,21 +1063,18 @@ private final class WheelGesture: NSObject {
     private var last: CFTimeInterval?
     private var carried = 0.0
     private var finished: CheckedContinuation<Void, Never>?
-    private var displayLinkSampledScroll: CGFloat = 0
     private var endedAt: CFTimeInterval?
     private var pendingLateTime: CFTimeInterval?
     private var sampledScroll: CGFloat = 0
     private var finishAfterLateSample = false
 
     init(window: NSWindow, over scroll: NSScrollView, geometry: (any BenchmarkScrollGeometrySource)?,
-         speed: Double, distance: Double, phased: Bool = false,
-         stop: @escaping @MainActor () -> Bool) {
+         speed: Double, distance: Double, stop: @escaping @MainActor () -> Bool) {
         self.window = window
         self.scroll = scroll
         self.geometry = geometry
         self.speed = speed
         self.distance = distance
-        self.phased = phased
         self.stop = stop
     }
 
@@ -1332,13 +1082,7 @@ private final class WheelGesture: NSObject {
         guard let scroll else { return frames }
         let stopObserving = observeDelivery()
         defer { stopObserving() }
-        if let geometry {
-            let initial = geometry.benchmarkScrollGeometry()
-            frames.drift.sample(initial, scrollDelta: 0)
-            if BenchmarkScrollGeometry.traceEnabled {
-                frames.displayLinkDrift.sample(initial, scrollDelta: 0)
-            }
-        }
+        if let geometry { frames.drift.sample(geometry.benchmarkScrollGeometry(), scrollDelta: 0) }
         let lateObserver: CFRunLoopObserver?
         if geometry != nil {
             let activities = CFRunLoopActivity.beforeWaiting.rawValue | CFRunLoopActivity.exit.rawValue
@@ -1368,64 +1112,25 @@ private final class WheelGesture: NSObject {
     }
 
     private func observeDelivery() -> () -> Void {
-        if !phased {
-            guard let monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel, handler: { [weak self] event in
-                MainActor.assumeIsolated {
-                    if let self, event.window === self.window {
-                        self.frames.delivery.deliveredEvents += 1
-                        self.frames.delivery.deliveredDelta += event.scrollingDeltaY
-                        if !event.phase.isEmpty { self.frames.delivery.observationFailures += 1 }
-                    }
-                }
-                return event
-            }) else {
-                FileHandle.standardError.write(Data("Benchmark failed: couldn't observe app-local wheel delivery\n".utf8))
-                exit(EXIT_FAILURE)
-            }
-            return { NSEvent.removeMonitor(monitor) }
-        }
-        guard CGPreflightPostEventAccess() else {
-            FileHandle.standardError.write(Data(
-                "Benchmark failed: Toy Box Benchmark needs Accessibility permission for own-PID wheel delivery\n".utf8))
-            exit(EXIT_FAILURE)
-        }
-        guard let tap = CGEvent.tapCreateForPid(
-            pid: getpid(), place: .tailAppendEventTap, options: .listenOnly,
-            eventsOfInterest: CGEventMask(1) << CGEventType.scrollWheel.rawValue,
-            callback: { _, type, event, context in
+        guard let monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel, handler: { [weak self] event in
             MainActor.assumeIsolated {
-                guard let context else { return }
-                let gesture = Unmanaged<WheelGesture>.fromOpaque(context).takeUnretainedValue()
-                if type == .scrollWheel, let native = NSEvent(cgEvent: event) {
-                    gesture.frames.delivery.deliveredEvents += 1
-                    gesture.frames.delivery.deliveredDelta += native.scrollingDeltaY
-                } else {
-                    gesture.frames.delivery.observationFailures += 1
+                if let self, event.window === self.window {
+                    self.frames.delivery.deliveredEvents += 1
+                    self.frames.delivery.deliveredDelta += event.scrollingDeltaY
+                    if !event.phase.isEmpty { self.frames.delivery.observationFailures += 1 }
                 }
             }
-            return Unmanaged.passUnretained(event)
-        }, userInfo: Unmanaged.passUnretained(self).toOpaque()),
-              let source = CFMachPortCreateRunLoopSource(nil, tap, 0) else {
-            FileHandle.standardError.write(Data("Benchmark failed: couldn't observe own-process wheel delivery\n".utf8))
+            return event
+        }) else {
+            FileHandle.standardError.write(Data("Benchmark failed: couldn't observe app-local wheel delivery\n".utf8))
             exit(EXIT_FAILURE)
         }
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-        return {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
-            CFMachPortInvalidate(tap)
-        }
+        return { NSEvent.removeMonitor(monitor) }
     }
 
     @objc private func tick(_ link: CADisplayLink) {
         guard finished != nil else { return }
         if geometry != nil { pendingLateTime = link.timestamp }
-        if BenchmarkScrollGeometry.traceEnabled, let geometry {
-            let sample = frames.displayLinkDrift.sample(
-                geometry.benchmarkScrollGeometry(),
-                scrollDelta: frames.delivery.deliveredDelta - displayLinkSampledScroll)
-            appendTrace(sample, at: link.timestamp, phase: "display-link")
-            displayLinkSampledScroll = frames.delivery.deliveredDelta
-        }
         let now = link.timestamp
         frames.duration = link.targetTimestamp - link.timestamp
         let elapsed = last.map { now - $0 } ?? frames.duration
@@ -1438,27 +1143,22 @@ private final class WheelGesture: NSObject {
         } else {
             first = now
         }
-        let begins = last == nil
         last = now
         if let endedAt {
-            if (frames.delivery.matches && now - endedAt >= (phased ? 1 : 0)) || now - endedAt >= 2 {
+            if frames.delivery.matches || now - endedAt >= 2 {
                 if geometry != nil { finishAfterLateSample = true } else { finish() }
             }
             return
         }
-        if begins, phased {
-            post(.began, delta: 0)
-            return
-        }
         guard scrolled < distance, !stop() else {
-            post(.ended, delta: 0)
+            post(delta: 0)
             endedAt = now
             return
         }
         let step = speed * elapsed + carried
         let whole = min(abs(step.rounded(.towardZero)), distance - scrolled).rounded(.up)
         carried = step - whole * (speed < 0 ? -1 : 1)
-        post(.changed, delta: Int32(whole * (speed < 0 ? -1 : 1)))
+        post(delta: Int32(whole * (speed < 0 ? -1 : 1)))
         scrolled += whole
     }
 
@@ -1468,30 +1168,17 @@ private final class WheelGesture: NSObject {
     }
 
     private func sampleAtEndOfLoop() {
-        guard let time = pendingLateTime, let geometry else { return }
+        guard pendingLateTime != nil, let geometry else { return }
         pendingLateTime = nil
-        let sample = frames.drift.sample(geometry.benchmarkScrollGeometry(),
-                                        scrollDelta: frames.delivery.deliveredDelta - sampledScroll)
+        frames.drift.sample(geometry.benchmarkScrollGeometry(), scrollDelta: frames.delivery.deliveredDelta - sampledScroll)
         sampledScroll = frames.delivery.deliveredDelta
-        if BenchmarkScrollGeometry.traceEnabled { appendTrace(sample, at: time, phase: "end-of-loop") }
         if finishAfterLateSample { finish() }
     }
 
-    private func appendTrace(_ sample: BenchmarkScrollDrift.Sample?, at time: CFTimeInterval, phase: String) {
-        frames.trace.append(.init(
-            phase: phase, time: time - (first ?? time), sampleTime: CACurrentMediaTime() - (first ?? time),
-            sample: sample,
-            nativeTop: scroll.map { $0.contentView.bounds.minY + $0.contentInsets.top },
-            documentHeight: scroll?.documentView?.frame.height,
-            postedEvents: frames.delivery.postedEvents,
-            deliveredEvents: frames.delivery.deliveredEvents,
-            deliveredDelta: frames.delivery.deliveredDelta))
-    }
-
-    private func post(_ phase: CGScrollPhase, delta: Int32) {
+    private func post(delta: Int32) {
         guard let window, let scroll,
               let posted = BenchmarkWheelEvent.make(
-                  delta: delta, phase: phased ? phase : nil,
+                  delta: delta,
                   location: scroll.convert(NSPoint(x: scroll.bounds.midX, y: scroll.bounds.midY), to: nil),
                   windowNumber: window.windowNumber) else {
             frames.delivery.creationFailures += 1
@@ -1499,21 +1186,13 @@ private final class WheelGesture: NSObject {
         }
         frames.delivery.postedEvents += 1
         frames.delivery.postedDelta += posted.scrollingDeltaY
-        if !phased {
-            NSApp.postEvent(posted, atStart: false)
-            return
-        }
-        guard let event = posted.cgEvent else {
-            frames.delivery.creationFailures += 1
-            return
-        }
-        event.postToPid(getpid())
+        NSApp.postEvent(posted, atStart: false)
     }
 }
 
 enum BenchmarkWheelEvent {
     /// Quartz's scroll event can't name a window, so its fields move onto an AppKit event that does.
-    static func make(delta: Int32, phase: CGScrollPhase? = nil, location: NSPoint, windowNumber: Int) -> NSEvent? {
+    static func make(delta: Int32, location: NSPoint, windowNumber: Int) -> NSEvent? {
         guard let wheel = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
                                   wheel1: delta, wheel2: 0, wheel3: 0),
               let event = NSEvent.mouseEvent(
@@ -1523,7 +1202,7 @@ enum BenchmarkWheelEvent {
         event.type = .scrollWheel
         for field in Self.integerFields { event.setIntegerValueField(field, value: wheel.getIntegerValueField(field)) }
         for field in Self.fractionalFields { event.setDoubleValueField(field, value: wheel.getDoubleValueField(field)) }
-        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(phase?.rawValue ?? 0))
+        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: 0)
         return NSEvent(cgEvent: event)
     }
 

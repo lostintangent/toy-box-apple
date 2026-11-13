@@ -1,7 +1,6 @@
 import ChannelClient
 import ChannelIntelligence
 import ChannelKit
-import OSLog
 import SwiftUI
 import ToyBoxUI
 
@@ -174,9 +173,6 @@ struct ConversationTranscript: View {
                 }
                 .task(id: visibleReadSequence) { await markVisibleRead() }
                 .task(id: pagingRestoreTarget) { await settlePagingRestore(using: proxy) }
-                .task(id: snapshot?.requestedState) {
-                    await prepareSnapshot(using: proxy)
-                }
                 // Owned here rather than by the card, which the lazy stack drops when it scrolls away.
                 .task(id: catchUp?.session.generation) { await catchUp?.session.run(using: intelligence) }
         }
@@ -307,7 +303,7 @@ struct ConversationTranscript: View {
         let channel = TranscriptRowChannel(agents: store.roster, id: store.id,
                                            historyStart: store.messages.first?.sequence ?? 0, api: store.api)
         let statusReactions = statusReactions
-        let findHighlights = find.highlights
+        let findHighlights = find.highlights(TranscriptFindHighlight.mac)
         let bookmarks = Set(store.bookmarks)
         let catchUp = interaction.messageView == .all ? catchUp : nil
         let requestChoices = TranscriptRequestChoices(request: store.request, store: store,
@@ -543,11 +539,6 @@ struct ConversationTranscript: View {
         }
     }
 
-    func showsStart(of row: TranscriptRow) -> Bool {
-        guard let top = row.frameIDs.compactMap({ frames[$0]?.rect.minY }).min() else { return false }
-        return top >= -0.5 && top < min(120, viewport.height / 2)
-    }
-
     /// Hides the rows of a transcript opening on its first unread message until the first layout
     /// pass puts that message in place, so the first frame drawn never shows the bottom. Later
     /// corrections move rows in view, so streaming or a busy run loop can't keep them hidden.
@@ -639,10 +630,10 @@ struct ConversationTranscript: View {
     }
 
     /// The summary exists only when this landing is eligible, so an ineligible one reserves no space.
-    /// Snapshots other than the catch-up's own never show it, so they stay deterministic.
+    /// Snapshots never show it, so they stay deterministic.
     private func prepareCatchUp(unreadAfter: Int) {
         guard catchUp == nil, let state = store.state,
-              snapshot == nil || snapshot?.requestedState == "transcript-catchup",
+              snapshot == nil,
               let made = TranscriptCatchUp.make(
                   server: store.api.baseURL, state: state, unreadAfter: unreadAfter, filter: interaction.messageView,
                   availability: intelligence.availability,
@@ -665,14 +656,14 @@ struct ConversationTranscript: View {
         let failure = await store.loadHistory(through: sequence)
         guard revealIsCurrent(token, findToken: findToken) else { return nil }
         guard let message = store.state?.messages.first(where: { $0.sequence == sequence }) else {
-            return missReveal(sequence, token: token, failure: failure)
+            return missReveal(token: token, failure: failure)
         }
         if !rows.contains(where: { $0.messages.contains { $0.id == message.id } }) {
             interaction.messageView = .all
         }
         if find.isPresented { expandedMessageIds.insert(message.id) }
         guard let row = rows.first(where: { $0.messages.contains { $0.id == message.id } }) else {
-            return missReveal(sequence, token: token, failure: failure)
+            return missReveal(token: token, failure: failure)
         }
         let membership = message.system?.type == "member_joined" || message.system?.type == "member_left"
         let individualSystem = ChannelArtifactGroup.Verb(systemType: message.system?.type) != nil
@@ -693,19 +684,12 @@ struct ConversationTranscript: View {
 
     /// Messages are never deleted, so a caught-up channel without the target shows no notice.
     /// The transcript lands as usual, and a failed page keeps its own history error.
-    private func missReveal(_ sequence: Int, token: UUID, failure: String?) -> RevealProgress.Outcome {
-        #if DEBUG
-        Self.logger.debug("Reveal of \(sequence) found no message: \(failure ?? "not in the caught-up history")")
-        #endif
+    private func missReveal(token: UUID, failure: String?) -> RevealProgress.Outcome {
         let outcome = RevealProgress.Outcome.failed(failure ?? "Couldn't reveal this message.")
         interaction.finishReveal(token, outcome)
         isRevealing = false
         return outcome
     }
-
-    #if DEBUG
-    private static let logger = Logger(subsystem: "dev.toybox.desktop", category: "Transcript")
-    #endif
 
     private func revealIsCurrent(_ token: UUID, findToken: UUID?) -> Bool {
         guard !Task.isCancelled, interaction.revealRequestToken == token,

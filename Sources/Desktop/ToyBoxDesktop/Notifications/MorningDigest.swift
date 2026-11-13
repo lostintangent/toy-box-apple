@@ -181,7 +181,7 @@ final class MorningDigest {
 
     static func canTest(bundleID: String?, options: LaunchOptions?, server: String) -> Bool {
         guard bundleID == "dev.toybox.desktop.test",
-              options?.isSnapshot != true, options?.benchmark == nil, options?.resizeBenchmark == nil,
+              options?.isSnapshot != true, options?.benchmark == nil,
               let url = URL(string: server), ["127.0.0.1", "localhost", "::1"].contains(url.host),
               url.port != 3100 else { return false }
         return true

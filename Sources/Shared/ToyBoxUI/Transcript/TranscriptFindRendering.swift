@@ -1,3 +1,4 @@
+import ChannelKit
 import Foundation
 import SwiftUI
 
@@ -57,5 +58,14 @@ public struct TranscriptFindHighlight: Equatable {
             result[start..<end].foregroundColor = foreground
         }
         return result
+    }
+}
+
+extension TranscriptFind {
+    /// Every match while Find is open, by sequence, with the current one emphasized.
+    public func highlights(_ make: (_ query: String, _ isCurrent: Bool) -> TranscriptFindHighlight)
+        -> [Int: TranscriptFindHighlight] {
+        guard isPresented else { return [:] }
+        return Dictionary(uniqueKeysWithValues: matches.map { ($0.sequence, make(query, $0.sequence == selectedSequence)) })
     }
 }

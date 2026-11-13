@@ -10,7 +10,6 @@ struct LaunchOptions: Equatable, Sendable {
     var height = 840
     var snapshotURL: URL?
     var snapshotState: String?
-    var resizeBenchmark: ResizeBenchmark.Mode?
     var benchmark: PerformanceBenchmark.Scenario?
     var quickSendValidation: QuickSendValidation?
 
@@ -24,7 +23,7 @@ struct LaunchOptions: Equatable, Sendable {
 
     /// Isolated launches never change the user's integrations with the saved server.
     func allowsUserIntegrations(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
-        !isSnapshot && benchmark == nil && resizeBenchmark == nil && quickSendValidation == nil
+        !isSnapshot && benchmark == nil && quickSendValidation == nil
             && servers.isEmpty && environment["TOY_BOX_SERVER_URL"] == nil
     }
 
@@ -39,7 +38,7 @@ struct LaunchOptions: Equatable, Sendable {
                 continue
             }
             guard ["--server", "--channel", "--appearance", "--size", "--snapshot", "--state",
-                   "--benchmark-resize", "--benchmark", "--validate-quick-send"].contains(flag) else {
+                   "--benchmark", "--validate-quick-send"].contains(flag) else {
                 throw LaunchArgumentError("Unknown argument: \(flag)")
             }
             guard flag == "--server" || seen.insert(flag).inserted else {
@@ -75,14 +74,9 @@ struct LaunchOptions: Equatable, Sendable {
             case "--state":
                 guard !value.isEmpty else { throw LaunchArgumentError("--state must not be empty") }
                 options.snapshotState = value
-            case "--benchmark-resize":
-                guard let mode = ResizeBenchmark.Mode(rawValue: value) else {
-                    throw LaunchArgumentError("--benchmark-resize must be width, both, drag-width or drag-both")
-                }
-                options.resizeBenchmark = mode
             case "--benchmark":
                 guard let scenario = PerformanceBenchmark.Scenario(rawValue: value) else {
-                    throw LaunchArgumentError("--benchmark must be launch, switch, messages, paging, scroll, idle or key")
+                    throw LaunchArgumentError("--benchmark must be switch, messages, paging, scroll or key")
                 }
                 options.benchmark = scenario
             case "--validate-quick-send":
@@ -100,11 +94,8 @@ struct LaunchOptions: Equatable, Sendable {
         if options.snapshotState != nil, !options.isSnapshot {
             throw LaunchArgumentError("--state requires --snapshot")
         }
-        if options.resizeBenchmark != nil, options.isSnapshot || options.channelID == nil {
-            throw LaunchArgumentError("--benchmark-resize requires --channel and can't take a snapshot")
-        }
-        if options.benchmark != nil, options.isSnapshot || options.channelID == nil || options.resizeBenchmark != nil {
-            throw LaunchArgumentError("--benchmark requires --channel and can't take a snapshot or run with --benchmark-resize")
+        if options.benchmark != nil, options.isSnapshot || options.channelID == nil {
+            throw LaunchArgumentError("--benchmark requires --channel and can't take a snapshot")
         }
         if options.quickSendValidation == nil, let value = environment["TOY_BOX_QUICK_SEND_VALIDATION"] {
             guard let mode = QuickSendValidation(rawValue: value) else {
@@ -113,7 +104,7 @@ struct LaunchOptions: Equatable, Sendable {
             options.quickSendValidation = mode
         }
         if options.quickSendValidation != nil,
-           options.isSnapshot || options.benchmark != nil || options.resizeBenchmark != nil {
+           options.isSnapshot || options.benchmark != nil {
             throw LaunchArgumentError("Quick Send validation can't run with snapshots or benchmarks")
         }
         return options

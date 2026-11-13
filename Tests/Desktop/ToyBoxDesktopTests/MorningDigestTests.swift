@@ -235,7 +235,7 @@ struct MorningDigestTests {
         #expect(!MorningDigest.canTest(bundleID: "dev.toybox.desktop.test", options: options,
                                       server: "http://localhost:3210"))
         options = LaunchOptions()
-        options.benchmark = .idle
+        options.benchmark = .scroll
         #expect(!MorningDigest.isAllowed(options, bundleID: "dev.toybox.desktop", environment: [:]))
         options = LaunchOptions()
         options.quickSendValidation = .trace

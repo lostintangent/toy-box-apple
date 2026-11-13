@@ -1,7 +1,6 @@
 import ChannelClient
 import ChannelIntelligence
 import ChannelKit
-import OSLog
 import SwiftUI
 import ToyBoxUI
 
@@ -253,9 +252,7 @@ struct ConversationView: View {
                                                       isConnected: store.phase.isConnected)
         let bookmarks = Set(store.bookmarks)
         let isConnected = store.phase.isConnected
-        let findMatches = find.isPresented
-            ? Dictionary(uniqueKeysWithValues: find.matches.map { ($0.sequence, $0.sequence == find.selectedSequence) })
-            : [:]
+        let findHighlights = find.highlights(TranscriptFindHighlight.phone)
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if store.hasOlderMessages && !items.isEmpty {
@@ -267,8 +264,7 @@ struct ConversationView: View {
                     TranscriptItemView(item: item, channel: channel, statusReactions: statusReactions,
                                        isHighlighted: item.messages.contains { $0.sequence == highlightedSequence },
                                        isExpanded: expanded.contains(item.id),
-                                       findHighlight: item.messages.lazy.compactMap { findMatches[$0.sequence] }.first
-                                           .map { TranscriptFindHighlight.phone(query: find.query, isCurrent: $0) },
+                                       findHighlight: item.messages.lazy.compactMap { findHighlights[$0.sequence] }.first,
                                        catchUp: item.divider?.unread == true ? card : nil,
                                        choices: item.messages.contains { $0.sequence == requestChoices?.sequence }
                                            ? requestChoices : nil,
@@ -562,10 +558,6 @@ struct ConversationView: View {
         items.map { .init(id: $0.id, order: $0.order) }
     }
 
-    #if DEBUG
-    private static let logger = Logger(subsystem: "dev.toybox.mobile", category: "Transcript")
-    #endif
-
     private func reveal(sequence: Int, token: UUID) async {
         defer {
             interaction.consumeRevealRequest(token)
@@ -580,9 +572,6 @@ struct ConversationView: View {
         // Messages are never deleted, so a miss shows no notice. The defer lands as usual, and a
         // failed page keeps its own history error.
         func miss() {
-            #if DEBUG
-            Self.logger.debug("Reveal of \(sequence) found no message: \(failure ?? "not in the caught-up history")")
-            #endif
             interaction.finishReveal(token, .failed(failure ?? "Couldn't reveal this message."))
         }
         guard await store.catchUp(toReveal: sequence), interaction.revealRequestToken == token else { return }

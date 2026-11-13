@@ -17,26 +17,13 @@ async function reachable(url: string, successful = false) {
     }
 }
 
-export function benchmarkLaunchCommand(options: {
-    app: string; scenario: string; out: string; err: string; server: string; channel: string;
-    transcript: string | undefined; scrollDrift?: string; scrollTrace?: string;
-}) {
-    const { app, scenario, out, err, server, channel, transcript } = options;
-    return ["open", "-n", ...(scenario === "key" ? [] : ["-g"]), "-W",
-        "--env", `TOY_BOX_TRANSCRIPT=${transcript ?? "lazy"}`,
-        "--env", `TOY_BOX_BENCHMARK_SCROLL_DRIFT=${options.scrollDrift ?? "1"}`,
-        "--env", `TOY_BOX_BENCHMARK_SCROLL_TRACE=${options.scrollTrace ?? "0"}`,
-        "--stdout", out, "--stderr", err, app, "--args", "--server", server, "--channel", channel,
-        "--benchmark", scenario, "-ApplePersistenceIgnoreState", "YES"];
-}
-
 if (import.meta.main) await main(async () => {
     const { values, positionals } = parseArgs({ allowPositionals: true,
         options: { summaries: { type: "boolean", default: false } } });
-    const scenarios = positionals.length ? positionals : ["launch", "switch", "messages", "paging", "scroll"];
+    const scenarios = positionals.length ? positionals : ["switch", "messages", "paging", "scroll"];
     for (const scenario of scenarios) {
-        if (!["launch", "switch", "messages", "paging", "scroll", "trackpad", "key", "idle"].includes(scenario)) {
-            throw new Error(`Unknown scenario: ${scenario}. Use launch, switch, messages, paging, scroll, trackpad, key or idle.`);
+        if (!["switch", "messages", "paging", "scroll", "key"].includes(scenario)) {
+            throw new Error(`Unknown scenario: ${scenario}. Use switch, messages, paging, scroll or key.`);
         }
     }
     const build = resolve(required("SCRATCH_PATH").replace(/\/$/, "") + "-benchmark");
@@ -89,7 +76,7 @@ if (import.meta.main) await main(async () => {
                 if (values.summaries) console.log("Catch-up summaries are on");
                 for (const scenario of scenarios) {
                     const channel = ["switch", "key"].includes(scenario) ? "studio-demo"
-                        : ["scroll", "trackpad"].includes(scenario) ? "scroll-demo" : "history-demo";
+                        : scenario === "scroll" ? "scroll-demo" : "history-demo";
                     const deletion = await command(["defaults", "delete", identity], { quiet: true, allowFailure: true });
                     if (deletion.exitCode && !/not found|does not exist/i.test(deletion.stderr.toString())) {
                         throw new Error(deletion.stderr.toString() || "Could not reset benchmark preferences.");
@@ -112,10 +99,9 @@ if (import.meta.main) await main(async () => {
                     }
                     const out = join(logs, `${scenario}.out`), err = join(logs, `${scenario}.err`);
                     await Bun.write(out, ""); await Bun.write(err, "");
-                    await command(benchmarkLaunchCommand({ app, scenario, out, err, server, channel,
-                        transcript: process.env.TOY_BOX_TRANSCRIPT,
-                        scrollDrift: process.env.TOY_BOX_BENCHMARK_SCROLL_DRIFT,
-                        scrollTrace: process.env.TOY_BOX_BENCHMARK_SCROLL_TRACE }));
+                    await command(["open", "-n", ...(scenario === "key" ? [] : ["-g"]), "-W",
+                        "--stdout", out, "--stderr", err, app, "--args", "--server", server, "--channel", channel,
+                        "--benchmark", scenario, "-ApplePersistenceIgnoreState", "YES"]);
                     await stopFixture();
                     const stdout = await Bun.file(out).text(), stderr = await Bun.file(err).text();
                     for (const line of stdout.split("\n").filter(line => /^(Benchmark |  )/.test(line) && !line.startsWith("Benchmark failed"))) {

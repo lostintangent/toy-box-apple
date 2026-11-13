@@ -102,14 +102,12 @@ final class QuickSendShellTests {
         #expect(controller.error != nil)
     }
 
-    @Test func snapshotsAndBothBenchmarksNeverRegisterOrPresent() {
+    @Test func snapshotsAndBenchmarksNeverRegisterOrPresent() {
         var snapshot = LaunchOptions()
         snapshot.snapshotURL = URL(fileURLWithPath: "/tmp/quick-send-test.png")
         var benchmark = LaunchOptions()
         benchmark.benchmark = .scroll
-        var resize = LaunchOptions()
-        resize.resizeBenchmark = .width
-        for options in [snapshot, benchmark, resize] {
+        for options in [snapshot, benchmark] {
             let hotKey = FakeQuickSendHotKey()
             let controller = QuickSendController(options: options, defaults: defaults, hotKey: hotKey)
             controller.present()
@@ -329,8 +327,7 @@ struct ShellTests {
     @MainActor @Test(arguments: [
         [], ["--server", "http://127.0.0.1:3210"],
         ["--channel", "studio-demo", "--snapshot", "/tmp/integrations.png"],
-        ["--channel", "studio-demo", "--benchmark", "launch"],
-        ["--channel", "studio-demo", "--benchmark-resize", "width"],
+        ["--channel", "studio-demo", "--benchmark", "scroll"],
         ["--validate-quick-send", "hold"],
     ], [[:], ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"]])
     func userIntegrationsShareLaunchIsolation(_ arguments: [String], _ environment: [String: String]) throws {
@@ -425,20 +422,14 @@ struct ShellTests {
         ["--state", "inspector"],
         ["--channel", "one", "--channel", "two"],
         ["--unknown", "value"],
-        ["--benchmark-resize", "width"],
-        ["--channel", "studio-demo", "--benchmark-resize", "height"],
-        ["--channel", "studio-demo", "--benchmark-resize", "drag"],
-        ["--channel", "studio-demo", "--benchmark-resize", "width", "--snapshot", "/tmp/test.png"],
         ["--benchmark", "messages"],
         ["--channel", "history-demo", "--benchmark", "wheel"],
         ["--channel", "history-demo", "--benchmark", "paging", "--snapshot", "/tmp/test.png"],
-        ["--channel", "history-demo", "--benchmark", "paging", "--benchmark-resize", "width"],
         ["--validate-quick-send", "yes"],
         ["--validate-quick-send"],
         ["--validate-quick-send", "trace", "--validate-quick-send", "hold"],
         ["--channel", "studio-demo", "--snapshot", "/tmp/test.png", "--validate-quick-send", "hold"],
-        ["--channel", "studio-demo", "--benchmark", "scroll", "--validate-quick-send", "trace"],
-        ["--channel", "studio-demo", "--benchmark-resize", "width", "--validate-quick-send", "hold"]
+        ["--channel", "studio-demo", "--benchmark", "scroll", "--validate-quick-send", "trace"]
     ])
     func malformedArgumentsFailExplicitly(_ arguments: [String]) {
         #expect(throws: LaunchArgumentError.self) { try LaunchOptions.parse(arguments) }
@@ -458,21 +449,6 @@ struct ShellTests {
             try LaunchOptions.parse(["--channel", "studio-demo", "--benchmark", "scroll"],
                                     environment: ["TOY_BOX_QUICK_SEND_VALIDATION": "hold"])
         }
-    }
-
-    @Test func resizeBenchmarkNamesItsModeAndChannel() throws {
-        let width = try LaunchOptions.parse(["--channel", "studio-demo", "--benchmark-resize", "width"])
-        #expect(width.resizeBenchmark == .width)
-        #expect(width.resizeBenchmark?.drags == false)
-        #expect(!width.isSnapshot)
-        let both = try LaunchOptions.parse(["--channel", "studio-demo", "--benchmark-resize", "both"])
-        #expect(both.resizeBenchmark?.axis == .both)
-        let drag = try LaunchOptions.parse(["--channel", "studio-demo", "--benchmark-resize", "drag-width"])
-        #expect(drag.resizeBenchmark?.axis == .width)
-        #expect(drag.resizeBenchmark?.drags == true)
-        #expect(try LaunchOptions.parse(["--channel", "studio-demo", "--benchmark-resize", "drag-both"])
-            .resizeBenchmark?.axis == .both)
-        #expect(try LaunchOptions.parse(["--channel", "studio-demo"]).resizeBenchmark == nil)
     }
 
     @Test func benchmarkNamesItsScenarioAndChannel() throws {
@@ -511,18 +487,6 @@ struct ShellTests {
         #expect(origin(300, 800) == CGPoint(x: 0, y: 380))
         #expect(origin(100, 800) == nil)
         #expect(origin(1440, 1600) == nil)
-    }
-
-    /// A round drags out to the widest size and back, one size per display frame.
-    @MainActor @Test func resizeBenchmarkRoundsReturnToTheirStart() {
-        let width = ResizeBenchmark.sizes(axis: .width)
-        #expect(width.count == ResizeBenchmark.stepsPerRound)
-        #expect(width.first == CGSize(width: 1040, height: 700))
-        #expect(width.allSatisfy { $0.height == 700 })
-        #expect(width.map(\.width).max() == CGFloat(1040 + 60 * 8))
-        let both = ResizeBenchmark.sizes(axis: .both)
-        #expect(both.map(\.height).max() == CGFloat(700 + 60 * 4))
-        #expect(both.last == CGSize(width: 1048, height: 704))
     }
 
     @Test func appKitLaunchPreferencesDoNotBecomeAppArguments() throws {

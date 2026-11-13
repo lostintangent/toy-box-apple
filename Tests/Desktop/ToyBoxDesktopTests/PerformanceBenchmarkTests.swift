@@ -70,24 +70,12 @@ struct PerformanceBenchmarkTests {
         #expect(drift.exceedingFrames == 1)
     }
 
-    @Test func signedSamplesKeepTheAnchorAndExposeCancellingSpikes() throws {
+    @Test func cancellingSpikesStillCountAsDrift() {
         var drift = BenchmarkScrollDrift()
-        let seed = drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0], reportedTops: ["a": 0]),
-                                scrollDelta: 0)
-        #expect(seed == nil)
-        let firstSample = drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0], reportedTops: ["a": 0]),
-                                       scrollDelta: 40)
-        let nextSample = drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 80], reportedTops: ["a": 80]),
-                                      scrollDelta: 40)
-        let first = try #require(firstSample)
-        let next = try #require(nextSample)
-        #expect(first.rowID == "a")
-        #expect(first.residual == -40)
-        #expect(next.residual == 40)
-        #expect(first.residual + next.residual == 0)
-        #expect(first.reportedBefore == 0)
-        #expect(first.reportedAfter == 0)
-        #expect(next.reportedAfter == 80)
+        drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0]), scrollDelta: 0)
+        drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0]), scrollDelta: 40)
+        drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 80]), scrollDelta: 40)
+        #expect(drift.maximum == 40)
         #expect(drift.exceedingFrames == 2)
     }
 
@@ -190,18 +178,6 @@ struct PerformanceBenchmarkTests {
         #expect(event.scrollingDeltaX == 0)
         #expect(event.windowNumber == 0)
         #expect(event.locationInWindow == CGPoint(x: 200, y: 300))
-    }
-
-    @MainActor @Test(arguments: [
-        (CGScrollPhase.began, NSEvent.Phase.began),
-        (.changed, .changed),
-        (.ended, .ended),
-    ])
-    func optInTrackpadEventsBridgeTheQuartzPhaseCorrectly(_ quartz: CGScrollPhase, _ native: NSEvent.Phase) throws {
-        let event = try #require(BenchmarkWheelEvent.make(
-            delta: 0, phase: quartz, location: .zero, windowNumber: 0))
-        #expect(event.phase == native)
-        #expect(event.momentumPhase.isEmpty)
     }
 
     @Test func nonFiniteWheelTotalsFailDeliveryValidation() {

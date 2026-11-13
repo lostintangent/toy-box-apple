@@ -149,7 +149,6 @@ struct RootView: View {
             artifactOpener.window = window
             reportScreen()
             model.snapshot?.attach(window: window, model: model)
-            model.resizeBenchmark?.attach(window: window, model: model)
             model.performanceBenchmark?.attach(window: window, model: model) { selection = model.target($0) }
         }, onChange: { isKey, size, isLiveResizing in
             // A resize reports every frame, so this changes state only when something the views
@@ -165,8 +164,7 @@ struct RootView: View {
             var transaction = Transaction()
             transaction.disablesAnimations = !isLiveResizing && size.width < placement.widthNeeded
             withTransaction(transaction) { placement.update(windowWidth: size.width) }
-            let isResizing = isLiveResizing || model.resizeBenchmark?.isResizing == true
-            if size.height != windowHeight, isOverviewSheetPresented || !isResizing {
+            if size.height != windowHeight, isOverviewSheetPresented || !isLiveResizing {
                 windowHeight = size.height
             }
         }, onColumns: { sidebar, inspector in

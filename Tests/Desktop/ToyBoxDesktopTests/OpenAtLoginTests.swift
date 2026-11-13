@@ -148,8 +148,7 @@ struct OpenAtLoginTests {
         let arguments = [
             ["--server", "http://127.0.0.1:3210"],
             ["--channel", "studio-demo", "--snapshot", "/tmp/login-test.png"],
-            ["--channel", "studio-demo", "--benchmark", "launch"],
-            ["--channel", "studio-demo", "--benchmark-resize", "width"],
+            ["--channel", "studio-demo", "--benchmark", "scroll"],
             ["--validate-quick-send", "hold"],
         ]
         for arguments in arguments {

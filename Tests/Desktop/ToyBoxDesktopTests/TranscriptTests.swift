@@ -844,7 +844,7 @@ struct TranscriptTests {
             let after = harness.windowFrames[id] ?? .null
             #expect(abs(after.minY - rect.minY) < 0.5, "Clearing Find moved \(id) from \(rect) to \(after)")
         }
-        #expect(find.highlights.isEmpty)
+        #expect(find.highlights(TranscriptFindHighlight.mac).isEmpty)
         #expect(memberships.allSatisfy { harness.capture.frames[$0.id]?.sequence == $0.sequence })
         #expect(harness.readRequests == 0)
     }

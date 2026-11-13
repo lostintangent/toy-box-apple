@@ -25,21 +25,21 @@ struct TranscriptFindTests {
     @Test func highlightsPersistForEveryMatchAndClearWithoutLosingTheQuery() throws {
         let find = make([message(1, "hit hit"), message(2, "no match"), message(3, "HIT")])
         find.query = "hit"
-        #expect(find.highlights.keys.sorted() == [1, 3])
-        #expect(find.highlights[1]?.isCurrent == true)
-        #expect(find.highlights[3]?.isCurrent == false)
-        let first = try #require(find.highlights[1])
+        #expect(find.highlights(TranscriptFindHighlight.mac).keys.sorted() == [1, 3])
+        #expect(find.highlights(TranscriptFindHighlight.mac)[1]?.isCurrent == true)
+        #expect(find.highlights(TranscriptFindHighlight.mac)[3]?.isCurrent == false)
+        let first = try #require(find.highlights(TranscriptFindHighlight.mac)[1])
         #expect(highlighted(first.applying(to: AttributedString("hit hit"))) == ["hit", "hit"])
         find.move(1)
-        #expect(find.highlights[1]?.isCurrent == false)
-        #expect(find.highlights[3]?.isCurrent == true)
+        #expect(find.highlights(TranscriptFindHighlight.mac)[1]?.isCurrent == false)
+        #expect(find.highlights(TranscriptFindHighlight.mac)[3]?.isCurrent == true)
         find.close()
-        #expect(find.highlights.isEmpty)
+        #expect(find.highlights(TranscriptFindHighlight.mac).isEmpty)
         #expect(find.query == "hit")
         find.present()
-        #expect(find.highlights.keys.sorted() == [1, 3])
+        #expect(find.highlights(TranscriptFindHighlight.mac).keys.sorted() == [1, 3])
         find.query = ""
-        #expect(find.highlights.isEmpty)
+        #expect(find.highlights(TranscriptFindHighlight.mac).isEmpty)
     }
 
     @Test func decorationPreservesMarkdownLinksCodeMentionsAndUnmatchedAttributes() throws {

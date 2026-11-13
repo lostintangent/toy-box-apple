@@ -26,7 +26,7 @@ final class QuickSendController: NSObject, NSWindowDelegate {
 
     init(options: LaunchOptions = .init(), defaults: UserDefaults = .standard,
          hotKey: any QuickSendHotKeyRegistering = CarbonQuickSendHotKey()) {
-        isEnabled = !options.isSnapshot && options.benchmark == nil && options.resizeBenchmark == nil
+        isEnabled = !options.isSnapshot && options.benchmark == nil
         validation = options.quickSendValidation
         self.defaults = defaults
         self.hotKey = hotKey
