@@ -1008,9 +1008,12 @@ the bottom field, because a full field makes UIKit cancel the first pull to refr
 The unfolded overlay sidebar keeps the full field, since UIKit places the minimized button
 past the sidebar's trailing edge. Its prompt is "Search", which fits the unfolded sidebar without
 truncating. Search raises the keyboard with its field above it, and Cancel
-restores the bar. No hand-built safe-area text field or duplicate gear in the rail. The Toy Box
-title is always inline, never large, with New Channel and then Screens (an outline `display`) in separate
-glass groups, and no More menu or Refresh item. A native placement limitation in the unfolded column
+restores the bar. No hand-built safe-area text field or duplicate gear in the rail. The list's
+top bar leads with the system `EditButton`, like Messages. While the split view is collapsed, the
+inline Toy Box title follows it, never large, and New Channel and then Screens (an outline
+`display`) sit in separate glass groups. The unfolded sidebar shows no title, like the Mac's, and
+New Channel and Screens share one glass group so Edit, both and the sidebar toggle fit its column.
+There's no More menu or Refresh item. A native placement limitation in the unfolded column
 never justifies substituting custom controls.
 The phone list has no busy footer spinner, and every server's header names it, even with one (see
 [Several servers](#several-servers)).
@@ -3012,12 +3015,14 @@ messages and reactions as Deleted agent, and deleting a routine stops future sch
 Cancel is the safe default. There is no fake Undo for irreversible server deletion.
 
 On iPhone, Delete Channel, Remove Agent and Delete Routine ask only in a system alert over the
-screen they came from, never a sheet: the sidebar, the channel's title menu, Team, Routines or
-Edit Agent, where Cancel returns to the unchanged editor. The alert's title names the target,
-its message is the consequence above, and it offers the destructive action and Cancel. The
-action is disabled while disconnected or once the target is gone. It sends one request, removes
-nothing optimistically and adds no pending UI. A failure follows with an alert that shows its
-error and offers OK.
+screen they came from, never a sheet: the sidebar's context menu, the channel's title menu, Team,
+Routines or Edit Agent, where Cancel returns to the unchanged editor. The alert's title names
+the target, its message is the consequence above, and it offers the destructive action and
+Cancel. A channel row's revealed Delete is the one exception: Edit's red minus or a short trailing
+swipe reveals it, and tapping it deletes the channel with no alert, because revealing it was the
+confirmation. Full swipe stays off. Every deletion is disabled while disconnected or once the
+target is gone. It sends one request, removes nothing optimistically and adds no pending UI. A
+failure follows with an alert that shows its error and offers OK.
 
 Settings uses a native scene with General and Notifications sections. The Mac adds a Servers tab
 between them for the servers (see [Several servers](#several-servers)), each with its Name,
