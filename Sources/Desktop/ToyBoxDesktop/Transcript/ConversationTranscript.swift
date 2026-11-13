@@ -300,18 +300,8 @@ struct ConversationTranscript: View {
 
     /// Centered in the conversation rather than in its rows, so it never sits at the top.
     @ViewBuilder private var emptyState: some View {
-        if rows.isEmpty && store.sending.isEmpty {
-            if interaction.messageView == .yours && !store.messages.isEmpty {
-                ContentUnavailableView {
-                    Label("No messages for you yet", systemImage: "arrowshape.turn.up.left")
-                } description: {
-                    Text("You're viewing Your Messages.")
-                } actions: {
-                    Button("Show All Messages") { interaction.messageView = .all }
-                }
-            } else if !store.hasOlderMessages {
-                TranscriptEmptyChannel()
-            }
+        if rows.isEmpty && store.sending.isEmpty && !store.hasOlderMessages {
+            TranscriptEmptyChannel()
         }
     }
 

@@ -374,9 +374,7 @@ struct ConversationView: View {
         }
         .overlay {
             if store.phase != .deleted {
-                TranscriptPlaceholder(store: store, isEmpty: items.isEmpty && store.sending.isEmpty) {
-                    Task { await store.loadOlder() }
-                }
+                TranscriptPlaceholder(store: store, isEmpty: items.isEmpty && store.sending.isEmpty)
             }
         }
         .onChange(of: items.map(\.id), initial: true) {
@@ -868,9 +866,7 @@ private struct TranscriptWorkingNow: View {
 private struct TranscriptPlaceholder: View {
     let store: ChannelStore
     let isEmpty: Bool
-    let loadOlder: () -> Void
     @Environment(AppModel.self) private var model
-    @Environment(ChannelInteraction.self) private var interaction
 
     var body: some View {
         if !store.isLoaded {
@@ -887,19 +883,6 @@ private struct TranscriptPlaceholder: View {
                 VStack(spacing: 12) {
                     DelayedProgressView()
                     Text("Connecting").font(.footnote).foregroundStyle(TranscriptInk.secondary)
-                }
-            }
-        } else if isEmpty && interaction.messageView == .yours {
-            ContentUnavailableView {
-                Label("No messages for you yet", systemImage: "arrowshape.turn.up.left")
-            } description: {
-                Text(store.hasOlderMessages
-                     ? "You're viewing Your Messages. Earlier messages haven't loaded yet."
-                     : "You're viewing Your Messages.")
-            } actions: {
-                Button("Show All Messages") { interaction.messageView = .all }
-                if store.hasOlderMessages {
-                    Button("Load Earlier Messages", action: loadOlder).disabled(store.isLoadingOlder)
                 }
             }
         } else if isEmpty && !store.hasOlderMessages {
