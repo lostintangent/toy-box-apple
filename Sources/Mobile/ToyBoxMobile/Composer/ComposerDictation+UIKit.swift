@@ -1,30 +1,14 @@
 import AVFoundation
 import ChannelClient
 import OSLog
-import Speech
 import ToyBoxUI
 import UIKit
 
 extension DictationSystem {
     static var live: DictationSystem {
-        var system = DictationSystem(
-            supportedLocale: DictationRecognizer.preferredLocale,
-            hasMicrophone: { await Task.detached { AVCaptureDevice.default(for: .audio) != nil }.value },
-            microphoneAccess: {
-                switch AVCaptureDevice.authorizationStatus(for: .audio) {
-                case .authorized: .granted
-                case .notDetermined: .undetermined
-                default: .denied
-                }
-            },
-            requestMicrophoneAccess: { await AVCaptureDevice.requestAccess(for: .audio) },
-            speechRecognitionDenied: {
-                [.denied, .restricted].contains(SFSpeechRecognizer.authorizationStatus())
-            },
-            installAssets: DictationRecognizer.installAssets,
+        var system = DictationSystem.device(
             // The microphone takes the audio session itself, so the reader leaves it active.
             makeSource: { TranscriptReadAloud.Microphone(MobileDictationAudioSource(), releasingAudio: false) },
-            makeRecognizer: { DictationRecognizer(locale: $0, contextualStrings: $1, source: $2) },
             announce: { UIAccessibility.post(notification: .announcement, argument: $0) },
             openSettings: { _ in
                 guard let url = URL(string: UIApplication.openSettingsURLString) else {
@@ -106,10 +90,6 @@ extension DictationSystem {
 #endif
 
 extension DictationAccess {
-    var title: String {
-        self == .microphone ? "Microphone Access Is Off" : "Speech Recognition Access Is Off"
-    }
-
     var explanation: String {
         self == .microphone
             ? "Allow Toy Box to use the microphone in Settings. Keyboard dictation still works."

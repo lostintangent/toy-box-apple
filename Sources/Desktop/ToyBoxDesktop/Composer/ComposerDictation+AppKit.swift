@@ -1,7 +1,5 @@
 import AppKit
-import AVFoundation
 import ChannelClient
-import Speech
 import ToyBoxUI
 
 extension ComposerDictation {
@@ -9,10 +7,6 @@ extension ComposerDictation {
 }
 
 extension DictationAccess {
-    var title: String {
-        self == .microphone ? "Microphone Access Is Off" : "Speech Recognition Access Is Off"
-    }
-
     var explanation: String {
         self == .microphone
             ? "Allow Toy Box to use the microphone in Privacy & Security settings. The Dictation key still works."
@@ -27,24 +21,9 @@ extension DictationAccess {
 
 extension DictationSystem {
     static var live: DictationSystem {
-        var system = DictationSystem(
-            supportedLocale: DictationRecognizer.preferredLocale,
-            hasMicrophone: { await Task.detached { AVCaptureDevice.default(for: .audio) != nil }.value },
-            microphoneAccess: {
-                switch AVCaptureDevice.authorizationStatus(for: .audio) {
-                case .authorized: .granted
-                case .notDetermined: .undetermined
-                default: .denied
-                }
-            },
-            requestMicrophoneAccess: { await AVCaptureDevice.requestAccess(for: .audio) },
-            speechRecognitionDenied: {
-                [.denied, .restricted].contains(SFSpeechRecognizer.authorizationStatus())
-            },
-            installAssets: DictationRecognizer.installAssets,
+        var system = DictationSystem.device(
             // The microphone would hear the reader's voice.
             makeSource: { TranscriptReadAloud.Microphone(MicrophoneDictationSource()) },
-            makeRecognizer: { DictationRecognizer(locale: $0, contextualStrings: $1, source: $2) },
             announce: { message in
                 guard let element = NSApp.keyWindow ?? NSApp.mainWindow else { return }
                 NSAccessibility.post(element: element, notification: .announcementRequested,

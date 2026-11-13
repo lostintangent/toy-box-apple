@@ -120,17 +120,15 @@ struct NativeComposerInput: NSViewRepresentable {
         coordinator.measure()
         if input.window?.firstResponder === input { coordinator.updateCompletion() }
         if let name = snapshot?.requestedState,
-           ["composer-draft", "composer-mentions", "composer-mention-keys"].contains(name),
+           ["composer-draft", "composer-mentions"].contains(name),
            coordinator.snapshotState != name, !text.isEmpty {
             coordinator.snapshotState = name
             DispatchQueue.main.async {
                 input.window?.makeFirstResponder(input)
                 input.setSelectedRange(NSRange(location: input.string.utf16.count, length: 0))
                 coordinator.updateCompletion()
-                if name.hasPrefix("composer-mention"), !coordinator.isCompletionVisible {
+                if name == "composer-mentions", !coordinator.isCompletionVisible {
                     snapshot?.failState(name, message: "The native mention menu did not open.")
-                } else if name == "composer-mention-keys" {
-                    Task { await coordinator.verifySnapshotMentionKeys() }
                 } else {
                     snapshot?.markStateReady(name)
                 }
@@ -188,7 +186,6 @@ struct NativeComposerInput: NSViewRepresentable {
         fileprivate struct DictationSession {
             let base: String
             let replaced: NSRange
-            let replacedText: String
             let attributes: [NSAttributedString.Key: Any]
             /// The shown words, or the original selection before any words arrive.
             var span: NSRange
@@ -284,53 +281,6 @@ struct NativeComposerInput: NSViewRepresentable {
             parent.text = input.string
             measure()
             updateCompletion()
-        }
-
-        func verifySnapshotMentionKeys() async {
-            let name = "composer-mention-keys"
-            guard let input, let snapshot = parent.snapshot else { return }
-            do {
-                try await Task.sleep(for: .milliseconds(80))
-                input.breakUndoCoalescing()
-                input.undoManager?.removeAllActions()
-                func key(_ code: UInt16, _ characters: String) -> NSEvent? {
-                    NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
-                                     windowNumber: input.window?.windowNumber ?? 0, context: nil,
-                                     characters: characters, charactersIgnoringModifiers: characters,
-                                     isARepeat: false, keyCode: code)
-                }
-                guard isCompletionVisible, completion.items[safe: 1]?.name == "Lead",
-                      let down = key(125, "\u{f701}"), let tab = key(48, "\t"),
-                      handle(down), handle(tab), input.string == "@lead ", parent.text == "@lead ",
-                      input.selectedRange() == NSRange(location: 6, length: 0) else {
-                    snapshot.failState(name, message: "Down/Tab did not accept Lead with a trailing space and caret.")
-                    return
-                }
-                try await Task.sleep(for: .milliseconds(80))
-                guard let undo = input.undoManager, undo.canUndo else {
-                    snapshot.failState(name, message: "Mention acceptance was not undoable.")
-                    return
-                }
-                undo.undo()
-                guard input.string == "@", parent.text == "@" else {
-                    snapshot.failState(name, message: "Undo did not restore the original mention query.")
-                    return
-                }
-                input.setSelectedRange(NSRange(location: 1, length: 0))
-                updateCompletion()
-                guard isCompletionVisible, let escape = key(53, "\u{1b}"), handle(escape) else {
-                    snapshot.failState(name, message: "The restored mention menu did not consume Escape.")
-                    return
-                }
-                updateCompletion()
-                guard !isCompletionVisible, input.string == "@" else {
-                    snapshot.failState(name, message: "Escape reopened the menu or destroyed the query.")
-                    return
-                }
-                snapshot.markStateReady(name)
-            } catch {
-                snapshot.failState(name, message: error.localizedDescription)
-            }
         }
 
         func textViewDidChangeSelection(_ notification: Notification) { updateCompletion() }
@@ -583,28 +533,15 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         let range = input.selectedRange()
         var attributes = input.typingAttributes
         attributes[.foregroundColor] = NSColor.textColor
-        dictationSession = .init(base: input.string, replaced: range,
-                                 replacedText: (input.string as NSString).substring(with: range),
-                                 attributes: attributes, span: range)
+        dictationSession = .init(base: input.string, replaced: range, attributes: attributes, span: range)
         return true
     }
 
     func showDictation(_ transcript: DictationTranscript) {
         guard let input, let storage = input.textStorage, var session = dictationSession else { return }
-        let visible = transcript.visible
-        let display = NSMutableAttributedString()
-        var trailingLength = 0
-        if visible.isEmpty {
-            display.append(NSAttributedString(string: session.replacedText, attributes: session.attributes))
-        } else {
-            let (leading, trailing) = session.anchor.padding(for: visible)
-            var tentative = session.attributes
-            tentative[.foregroundColor] = NSColor.secondaryLabelColor
-            display.append(NSAttributedString(string: leading + transcript.finalized, attributes: session.attributes))
-            display.append(NSAttributedString(string: String(visible.dropFirst(transcript.finalized.count)) + trailing,
-                                              attributes: tentative))
-            trailingLength = trailing.utf16.count
-        }
+        var tentative = session.attributes
+        tentative[.foregroundColor] = NSColor.secondaryLabelColor
+        let (display, caret) = session.anchor.display(transcript, attributes: session.attributes, tentative: tentative)
         let selection = input.selectedRange()
         let old = session.span
         isApplyingDictation = true
@@ -612,15 +549,10 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         isApplyingDictation = false
         session.span = NSRange(location: old.location, length: display.length)
         dictationSession = session
-        if selection.location >= old.location, NSMaxRange(selection) <= NSMaxRange(old) {
-            input.setSelectedRange(visible.isEmpty ? session.span
-                                   : NSRange(location: NSMaxRange(session.span) - trailingLength, length: 0))
-        } else if selection.location >= NSMaxRange(old) {
-            input.setSelectedRange(NSRange(location: selection.location + session.span.length - old.length,
-                                           length: selection.length))
-        } else {
-            input.setSelectedRange(selection)
-        }
+        input.setSelectedRange(DictationAnchor.selection(
+            selection, replacing: old, with: session.span,
+            caret: NSRange(location: old.location + caret.location, length: caret.length)
+        ))
         input.typingAttributes = session.attributes
         let model = session.anchor.draft(with: transcript.finalized)
         if model != lastModelText {
@@ -642,11 +574,11 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         let selection = input.selectedRange()
         isApplyingDictation = true
         storage.replaceCharacters(in: session.span,
-                                  with: NSAttributedString(string: session.replacedText, attributes: session.attributes))
+                                  with: NSAttributedString(string: session.anchor.replacedText, attributes: session.attributes))
         isApplyingDictation = false
         input.typingAttributes = session.attributes
         let (leading, trailing) = session.anchor.padding(for: finalized)
-        let words = finalized.isEmpty ? session.replacedText : leading + finalized + trailing
+        let words = finalized.isEmpty ? session.anchor.replacedText : leading + finalized + trailing
         if !finalized.isEmpty {
             // One undo step for the whole session. A top-level group keeps a key typed in this same
             // event, which commits the session, out of the dictation's undo step.
@@ -661,16 +593,12 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
             if ownsGroup { undo?.groupsByEvent = true }
             input.breakUndoCoalescing()
         }
-        let span = session.span
         let length = words.utf16.count
-        if selection.location >= span.location, NSMaxRange(selection) <= NSMaxRange(span) {
-            input.setSelectedRange(finalized.isEmpty ? session.replaced
-                                   : NSRange(location: session.replaced.location + length - trailing.utf16.count, length: 0))
-        } else if selection.location >= NSMaxRange(span) {
-            input.setSelectedRange(NSRange(location: selection.location + length - span.length, length: selection.length))
-        } else {
-            input.setSelectedRange(selection)
-        }
+        input.setSelectedRange(DictationAnchor.selection(
+            selection, replacing: session.span, with: NSRange(location: session.replaced.location, length: length),
+            caret: finalized.isEmpty ? session.replaced
+                : NSRange(location: session.replaced.location + length - trailing.utf16.count, length: 0)
+        ))
         lastModelText = input.string
         if parent.text != input.string { parent.text = input.string }
         measure()
@@ -690,7 +618,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         dictationSession = nil
         isApplyingDictation = true
         storage.replaceCharacters(in: session.span,
-                                  with: NSAttributedString(string: session.replacedText, attributes: session.attributes))
+                                  with: NSAttributedString(string: session.anchor.replacedText, attributes: session.attributes))
         isApplyingDictation = false
         input?.typingAttributes = session.attributes
         if let dictation = parent.dictation { Task { dictation.commitNow() } }

@@ -19,4 +19,17 @@ struct DictationAnchorTests {
         #expect(draft("ab", NSRange(location: 1, length: 0), "?") == "a? b")
         #expect(draft("😀x", NSRange(location: 2, length: 0), "hi") == "😀 hi x")
     }
+
+    @Test("puts a selection inside the shown words at the caret and moves one after them")
+    func selectionFollowsTheShownWords() {
+        func selection(_ location: Int, _ length: Int = 0) -> NSRange {
+            DictationAnchor.selection(NSRange(location: location, length: length),
+                                      replacing: NSRange(location: 4, length: 2), with: NSRange(location: 4, length: 7),
+                                      caret: NSRange(location: 11, length: 0))
+        }
+
+        #expect(selection(2, 2) == NSRange(location: 2, length: 2))
+        #expect(selection(4, 2) == NSRange(location: 11, length: 0))
+        #expect(selection(8, 1) == NSRange(location: 13, length: 1))
+    }
 }
