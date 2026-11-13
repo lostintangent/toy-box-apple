@@ -1390,7 +1390,7 @@ struct ShellTests {
         }
     }
 
-    @Test func settingsKeepsEveryServerInItsOrderAndTheLastOneStays() async throws {
+    @Test func settingsKeepsEveryServerInItsOrderAndTheLastOneCanGo() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: [], environment: [:], defaults: defaults, session: fixtureSession())
             let first = try model.addServer("https://first.example")
@@ -1400,10 +1400,13 @@ struct ShellTests {
             #expect(model.catalog === second)
             #expect(model.serverURL == "https://second.example")
             model.servers.remove(first)
-            model.servers.remove(second)
             #expect(model.catalogs.count == 1 && model.catalog === second)
+            model.cover = .settings
+            model.servers.remove(second)
+            #expect(model.catalog == nil && model.serverURL.isEmpty)
+            #expect(model.cover == nil, "Settings closes onto Welcome.")
             let relaunched = AppModel(arguments: [], environment: [:], defaults: defaults)
-            #expect(relaunched.catalogs.map(\.saved) == [.init(url: "https://second.example")])
+            #expect(relaunched.catalogs.isEmpty && relaunched.serverURL.isEmpty)
         }
     }
 

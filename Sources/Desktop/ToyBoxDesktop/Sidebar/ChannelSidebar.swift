@@ -15,9 +15,7 @@ struct ChannelSidebar: View {
     @FocusState private var searchFocused: Bool
     /// The servers whose sections are collapsed, by address.
     @ViewState private var collapsed: Set<URL> = []
-
-    /// With several servers, each gets a section under its own header.
-    private var isGrouped: Bool { model.catalogs.count > 1 }
+    @ViewState private var addsServer = false
 
     /// A server's channels that match the search.
     private func channels(in catalog: ChannelCatalogStore?) -> [Listed] {
@@ -29,14 +27,8 @@ struct ChannelSidebar: View {
         }
     }
 
-    /// A server address the app can't use has no catalog phase to show.
-    private var phase: ChannelCatalogPhase? {
-        model.configurationError == nil ? model.catalog?.phase ?? .connecting : nil
-    }
-
-    private var initialLoading: Bool { phase == .connecting }
-
-    private var busy: Bool { model.catalog.map(busy) ?? false }
+    /// The first run, or after removing every server, which welcomes the person instead.
+    private var hasNoServers: Bool { model.catalogs.isEmpty && model.configurationError == nil }
 
     /// The first load, or a refresh the person asked for.
     private func busy(_ catalog: ChannelCatalogStore) -> Bool {
@@ -44,8 +36,14 @@ struct ChannelSidebar: View {
     }
 
     private var isEmpty: Bool {
-        isGrouped ? model.catalogs.allSatisfy { $0.phase == .connected && channels(in: $0).isEmpty }
-            : phase == .connected && channels(in: model.catalog).isEmpty
+        hasNoServers || (!model.catalogs.isEmpty
+            && model.catalogs.allSatisfy { $0.phase == .connected && channels(in: $0).isEmpty })
+    }
+
+    /// The footer's servers. A launch server the app can't use counts as one that can't connect.
+    private var summary: SidebarFooter.Summary {
+        guard let error = model.configurationError else { return .init(catalogs: model.catalogs) }
+        return .init(servers: [(SidebarFooter.server(model.serverURL), SidebarFooter(phase: nil, isLoaded: false), error)])
     }
 
     /// The list's own selection, which follows `selection` except during a Command-click.
@@ -75,42 +73,39 @@ struct ChannelSidebar: View {
     }
 
     var body: some View {
+        // Every server has its section, even one, so adding a second never reshapes the list.
         List(selection: listSelectionBinding) {
-            if isGrouped {
-                ForEach(model.catalogs, id: \.api.baseURL) { catalog in
-                    let expansion = isExpanded(catalog)
-                    Section(isExpanded: expansion) {
-                        serverRows(catalog)
-                    } header: {
-                        SidebarServerHeader(catalog: catalog, busy: busy(catalog),
-                                            waits: !expansion.wrappedValue && waits(catalog))
-                    }
+            ForEach(model.catalogs, id: \.api.baseURL) { catalog in
+                let expansion = isExpanded(catalog)
+                Section(isExpanded: expansion) {
+                    serverRows(catalog)
+                } header: {
+                    SidebarServerHeader(catalog: catalog, busy: busy(catalog),
+                                        waits: !expansion.wrappedValue && waits(catalog))
                 }
-            } else if initialLoading {
-                placeholders
-            } else if let catalog = model.catalog, catalog.state != nil {
-                rows(catalog)
             }
         }
         .listStyle(.sidebar)
         // The sidebar leaves this much less room under the search field than between two
         // sections, so the first server's header gets the same room as the others.
-        .safeAreaPadding(.top, isGrouped ? 4 : 0)
+        .safeAreaPadding(.top, 4)
         .overlay {
             if isEmpty { emptyState }
         }
         .safeAreaBar(edge: .bottom) {
-            SidebarConnectionFooter(
-                status: isGrouped ? .servers(.init(catalogs: model.catalogs))
-                    : .server(SidebarFooter(phase: phase, isLoaded: model.catalog?.isLoaded == true), url: model.serverURL,
-                              failure: model.configurationError ?? model.catalog?.phase.message),
-                busy: !isGrouped && busy,
-                openSettings: { model.settingsTab = .servers; openSettings() },
-                openScreen: model.api == nil ? nil : {
-                    openWindow(id: "screens", value: ScreenWindowValue(serverURL: selection?.serverURL ?? model.serverURL))
-                }
-            )
+            // With no servers, the welcome's Add Server… is the way in.
+            if !hasNoServers {
+                SidebarConnectionFooter(
+                    summary: summary,
+                    openSettings: { model.settingsTab = .servers; openSettings() },
+                    openScreen: model.api == nil ? nil : {
+                        openWindow(id: "screens", value: ScreenWindowValue(serverURL: selection?.serverURL ?? model.serverURL))
+                    }
+                )
+            }
         }
+        // Add Server… opens over this window, and the server's channels fill the list once it connects.
+        .sheet(isPresented: $addsServer) { AddServerSheet { _ in } }
         .navigationTitle("Channels")
         .searchable(text: $query, placement: .sidebar, prompt: "Search Channels")
         .searchFocused($searchFocused)
@@ -123,7 +118,7 @@ struct ChannelSidebar: View {
     }
 
     /// The `sidebar-retry` capture state refreshes the catalog once it has failed, as View > Refresh
-    /// does, so a capture against a server that then stops answering shows the footer's spinner.
+    /// does, so a capture against a server that then stops answering shows its header's spinner.
     private func prepareRetrySnapshot() async {
         let state = "sidebar-retry"
         guard model.snapshot?.requestedState == state, let catalog = model.catalog else { return }
@@ -190,11 +185,21 @@ struct ChannelSidebar: View {
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            Image(systemName: query.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass")
+            Image(systemName: query.isEmpty || hasNoServers ? "bubble.left.and.bubble.right" : "magnifyingglass")
                 .font(.system(size: 28)).foregroundStyle(.tertiary)
-            Text(query.isEmpty ? "Your channels live here" : "No channels match \"\(query)\"")
-                .font(.headline).multilineTextAlignment(.center)
-            if query.isEmpty {
+            if hasNoServers {
+                VStack(spacing: 4) {
+                    Text("Welcome to Toy Box").font(.headline)
+                    Text("Add a server to see its channels.").foregroundStyle(.secondary)
+                }
+                .multilineTextAlignment(.center)
+            } else {
+                Text(query.isEmpty ? "Your channels live here" : "No channels match \"\(query)\"")
+                    .font(.headline).multilineTextAlignment(.center)
+            }
+            if hasNoServers {
+                Button("Add Server…") { addsServer = true }
+            } else if query.isEmpty {
                 Button("New Channel") { management.present(.newChannel(server: model.serverURL)) }
             } else {
                 Button("Clear Search") { query = "" }
@@ -255,10 +260,9 @@ private struct Listed: Identifiable {
     var id: ChannelTarget { target }
 }
 
-/// A server's section header when the sidebar lists several: its name, led by its dot only while
-/// it's failing, or by a spinner while a load runs long, with the status line's help, VoiceOver
-/// value and failure as the hint. A collapsed one trails the waiting symbol while any of its
-/// channels waits.
+/// A server's section header: its name, led by its dot only while it's failing, or by a spinner
+/// while a load runs long, with its help naming its address, its VoiceOver value, and its failure
+/// as the hint. A collapsed one trails the waiting symbol while any of its channels waits.
 private struct SidebarServerHeader: View {
     let catalog: ChannelCatalogStore
     let busy: Bool

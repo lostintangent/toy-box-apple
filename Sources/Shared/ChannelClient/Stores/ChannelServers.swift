@@ -66,9 +66,9 @@ public final class ChannelServers {
         return catalog
     }
 
-    /// Disconnects a server and forgets it. The last one stays, so there's always a server.
+    /// Disconnects a server and forgets it. Removing the last one leaves no servers.
     public func remove(_ catalog: ChannelCatalogStore) {
-        guard catalogs.count > 1, catalogs.contains(where: { $0 === catalog }) else { return }
+        guard catalogs.contains(where: { $0 === catalog }) else { return }
         disconnect(catalog)
         catalogs.removeAll { $0 === catalog }
         save()

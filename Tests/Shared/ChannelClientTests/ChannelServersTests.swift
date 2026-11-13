@@ -176,7 +176,7 @@ struct ChannelServersTests {
         #expect(servers.catalogs.count == 2, "A server removed before its links answer adds none of them.")
     }
 
-    @Test func eachChangeSavesTheListAndTheLastServerStays() throws {
+    @Test func eachChangeSavesTheListAndTheLastServerCanGo() throws {
         let studio = Server(id: "studio"), mini = Server(id: "mini"), laptop = Server(id: "laptop")
         let suite = "tbm-servers-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -193,8 +193,11 @@ struct ChannelServersTests {
         let last = servers.catalogs[2]
         servers.remove(servers.catalogs[0])
         servers.remove(servers.catalogs[0])
-        servers.remove(last)
         #expect(servers.catalogs.count == 1 && servers.catalogs[0] === last && saves == 3)
         #expect(ChannelCatalogStore.Saved.load(from: defaults) == [last.saved])
+
+        servers.remove(last)
+        #expect(servers.catalogs.isEmpty && saves == 4 && last.servers == nil)
+        #expect(ChannelCatalogStore.Saved.load(from: defaults).isEmpty, "An empty list stays empty after a relaunch.")
     }
 }

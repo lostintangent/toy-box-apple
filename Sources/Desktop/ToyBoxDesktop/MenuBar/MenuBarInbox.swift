@@ -70,7 +70,7 @@ struct MenuBarInbox: View {
     @ViewBuilder
     private func contents(_ status: MenuBarStatus) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            if model.configurationError != nil {
+            if model.configurationError != nil || model.catalogs.isEmpty {
                 empty(title: "Connect to Toy Box", detail: "Set a server in Settings to send a message.")
                 Button("Open Settings") { closeThen { openSettingsWindow() } }
             } else {
