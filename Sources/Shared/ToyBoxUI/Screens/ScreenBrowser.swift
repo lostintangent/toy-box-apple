@@ -40,30 +40,32 @@ public struct ScreenBrowser<Toolbar: ToolbarContent>: View {
     }
 
     public var body: some View {
-        ScrollView {
-            switch screens {
-            case nil:
-                DelayedProgressView().padding(.top, 80)
-            case .failure(let error):
+        Group {
+            // Not in the scroll view, which would hug it to the top and only be as wide as it is.
+            if case .failure = screens {
                 ContentUnavailableView {
-                    Label("Couldn't Load Screens", systemImage: "display.trianglebadge.exclamationmark")
-                } description: {
-                    Text(error.localizedDescription)
+                    Label("Unable to List Screens", systemImage: "display.trianglebadge.exclamationmark")
                 } actions: {
                     Button("Try Again") { Task { await load() } }
                 }
-            case .success(let list):
-                let term = query.trimmingCharacters(in: .whitespaces)
-                let windows = list.windows.filter { $0.matches(term) }
-                VStack(alignment: .leading, spacing: 20) {
-                    section("Displays", list.displays, minimumWidth: 260)
-                    section("Windows", windows, minimumWidth: 150)
-                    if windows.isEmpty {
-                        Text("No windows found").italic().foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity).padding(.vertical, 24)
+            } else {
+                ScrollView {
+                    if case .success(let list) = screens {
+                        let term = query.trimmingCharacters(in: .whitespaces)
+                        let windows = list.windows.filter { $0.matches(term) }
+                        VStack(alignment: .leading, spacing: 20) {
+                            section("Displays", list.displays, minimumWidth: 260)
+                            section("Windows", windows, minimumWidth: 150)
+                            if windows.isEmpty {
+                                Text("No windows found").italic().foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 24)
+                            }
+                        }
+                        .padding()
+                    } else {
+                        DelayedProgressView().padding(.top, 80)
                     }
                 }
-                .padding()
             }
         }
         .searchable(text: $query, prompt: "Search windows")
