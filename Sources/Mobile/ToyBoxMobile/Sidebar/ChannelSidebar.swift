@@ -315,7 +315,7 @@ struct ChannelSidebar: View {
                 Button("New Channel", systemImage: "plus") { management.present(.newChannel(server: model.selectedServer)) }
                     .disabled(!canCreate)
             }
-            // The unfolded sidebar fits Edit and its toggle only with these two in one group.
+            // The unfolded sidebar keeps these two in one group, which UIKit folds into ••• when narrow.
             if isCollapsed {
                 ToolbarSpacer(.fixed, placement: .primaryAction)
             }
