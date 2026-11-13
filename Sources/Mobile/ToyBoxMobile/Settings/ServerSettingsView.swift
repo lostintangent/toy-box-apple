@@ -3,10 +3,10 @@ import ChannelKit
 import SwiftUI
 import ToyBoxUI
 
-/// One server in Settings: its name, then its address and status, then its Linked switch. The
-/// address is only how this iPhone reaches the server, so it can be copied but not edited. Without a
-/// server, this is Add Server: Welcome's Server URL card, whose test adds the server, linked when
-/// Add Server's switch is on, and then shows it.
+/// One server in Settings: its name, then its address and status, then its release, then its Linked
+/// switch. The address is only how this iPhone reaches the server, so it can be copied but not
+/// edited. Without a server, this is Add Server: Welcome's Server URL card, whose test adds the
+/// server, linked when Add Server's switch is on, and then shows it.
 struct ServerSettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
@@ -29,6 +29,7 @@ struct ServerSettingsView: View {
                 Group {
                     ServerNameSection(catalog: catalog)
                     ServerAddressSection(catalog: catalog)
+                    ServerVersionSection(update: catalog.update)
                     if LinkedSwitch.isShown(in: model.catalogs) {
                         LinkedSection(catalog: catalog)
                     }
@@ -120,6 +121,29 @@ private struct ServerNameSection: View {
     private func commit() {
         guard model.catalogs.contains(where: { $0 === field.catalog }) else { return }
         Task { await field.commit() }
+    }
+}
+
+/// The release a server runs, with Restart when it has an installed release to restart onto. See
+/// Updating a server in docs/spec.md.
+private struct ServerVersionSection: View {
+    let update: ServerUpdate
+
+    var body: some View {
+        if let release = update.version {
+            Section("Version") {
+                HStack {
+                    Text(release.version).textSelection(.enabled)
+                    if release.installedVersion != nil {
+                        Spacer()
+                        Button("Restart") { Task { await update.restart() } }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
+                            .disabled(!update.canRestart)
+                    }
+                }
+            }
+        }
     }
 }
 

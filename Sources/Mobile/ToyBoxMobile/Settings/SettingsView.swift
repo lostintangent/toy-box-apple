@@ -65,6 +65,14 @@ struct SettingsView: View {
         Section {
             ForEach(model.catalogs, id: \.api.baseURL) { catalog in
                 NavigationLink(value: ServerRoute(catalog: catalog)) { ServerRow(catalog: catalog) }
+                    // No items, so no menu, while the server can't restart.
+                    .contextMenu {
+                        if catalog.update.canRestart {
+                            Button("Restart", systemImage: "arrow.clockwise") {
+                                Task { await catalog.update.restart() }
+                            }
+                        }
+                    }
             }
             .onMove { model.servers.move(fromOffsets: $0, toOffset: $1) }
             .onDelete { removal = $0.first.map { model.catalogs[$0] } }
@@ -139,7 +147,7 @@ private struct ServerRow: View {
         let isLinked = !model.catalogs.linkedServers(of: catalog).isEmpty
         let failure: String? = if case .failed(let words)? = update.outcome { words } else { nil }
         // The dot already says it can't connect, so the row says so only when it shows nothing else.
-        let cantConnect = !isConnected && failure == nil && (update.phase == nil || update.phase == .idle)
+        let cantConnect = !isConnected && failure == nil && update.phase != .checking && update.phase != .reconnecting
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: Self.dotSpacing) {
@@ -178,7 +186,8 @@ private struct ServerRow: View {
 }
 
 /// The end of a server's row: its version, a spinner while it checks or reconnects, Up to date after
-/// a check that found nothing newer, or Restart once a newer release is installed.
+/// a check that found nothing newer, or Restart once a newer release is installed and while the
+/// server can restart.
 private struct ServerUpdateStatus: View {
     let update: ServerUpdate
     /// A server that can't connect says so instead.
@@ -191,9 +200,11 @@ private struct ServerUpdateStatus: View {
         case .reconnecting?:
             ProgressView().accessibilityRepresentation { Text("Reconnecting") }
         case .restartPending?:
-            Button("Restart") { Task { await update.restart() } }
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
+            if update.canRestart {
+                Button("Restart") { Task { await update.restart() } }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+            }
         case .idle?, nil:
             if update.outcome == .upToDate {
                 Text("Up to date").foregroundStyle(.secondary)

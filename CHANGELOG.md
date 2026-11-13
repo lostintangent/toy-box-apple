@@ -1,5 +1,17 @@
 # Changelog
 
+## Mac 0.1.38
+
+### Features
+
+- You can now restart any of your servers from Settings whenever you like, not just after an update, so a server that's acting up is one tap from a fresh start.
+
+## iPhone 0.1.35
+
+### Features
+
+- You can now restart any of your servers from Settings whenever you like, not just after an update, so a server that's acting up is one tap from a fresh start.
+
 ## Mac 0.1.37
 
 ### Features

@@ -2,8 +2,8 @@ import ChannelClient
 import SwiftUI
 import ToyBoxUI
 
-/// The Servers tab: the list in Settings order, then the selected server's name, address and
-/// status.
+/// The Servers tab: the list in Settings order, then the selected server's name, address, status and
+/// release.
 struct ServerSettings: View {
     @Environment(AppModel.self) private var model
     /// The selected server's address.
@@ -103,6 +103,12 @@ struct ServerSettings: View {
             ServerUpdateStatus(update: catalog.update)
         }
         .frame(height: 20)
+        // No items, so no menu, while the server can't restart.
+        .contextMenu {
+            if catalog.update.canRestart {
+                Button("Restart", systemImage: "arrow.clockwise") { Task { await catalog.update.restart() } }
+            }
+        }
     }
 
     private func select(_ catalog: ChannelCatalogStore?) {
@@ -119,8 +125,8 @@ struct ServerSettings: View {
 }
 
 /// The end of a server's row: its version, a spinner while it checks or reconnects, how its last
-/// check or restart ended, or Restart once a newer release is installed. See Updating a server in
-/// docs/spec.md.
+/// check or restart ended, or Restart once a newer release is installed and while the server can
+/// restart. See Updating a server in docs/spec.md.
 private struct ServerUpdateStatus: View {
     let update: ServerUpdate
 
@@ -137,9 +143,11 @@ private struct ServerUpdateStatus: View {
                 } else if let installed = update.version?.installedVersion {
                     Text("\(installed) installed").foregroundStyle(.secondary)
                 }
-                Button("Restart") { Task { await update.restart() } }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                if update.canRestart {
+                    Button("Restart") { Task { await update.restart() } }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
             case .idle?, nil:
                 switch update.outcome {
                 case .upToDate?: Text("Up to date").foregroundStyle(.secondary)
@@ -162,15 +170,16 @@ private struct ServerUpdateStatus: View {
     }
 }
 
-/// One server's name, address and status. Each server gets its own, so a name being typed is saved
-/// to the server it was typed for. The address is only how this Mac reaches the server, so it can be
-/// copied but not edited, and adding the server at another address moves it there.
+/// One server's name, address, status and release. Each server gets its own, so a name being typed is
+/// saved to the server it was typed for. The address is only how this Mac reaches the server, so it
+/// can be copied but not edited, and adding the server at another address moves it there.
 private struct ServerDetails: View {
     let catalog: ChannelCatalogStore
     @Environment(AppModel.self) private var model
 
     var body: some View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
+        let update = catalog.update
         Section {
             ServerNameRows(catalog: catalog)
             LabeledContent("Server URL") {
@@ -180,6 +189,19 @@ private struct ServerDetails: View {
                 HStack(spacing: 6) {
                     Circle().fill(footer.dot).frame(width: 7, height: 7)
                     Text(Self.status(catalog.phase)).textSelection(.enabled)
+                }
+            }
+            if let release = update.version {
+                LabeledContent("Version") {
+                    HStack(spacing: 8) {
+                        Text(release.version).foregroundStyle(.secondary).textSelection(.enabled)
+                        if release.installedVersion != nil {
+                            Button("Restart") { Task { await update.restart() } }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .disabled(!update.canRestart)
+                        }
+                    }
                 }
             }
         }
