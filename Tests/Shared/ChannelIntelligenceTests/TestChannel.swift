@@ -53,7 +53,8 @@ enum TestChannel {
 
 /// Answers catch-ups in turn, then keeps the last result (declining when there are none), and answers
 /// alt text with `text`. `count` tallies every model call. A `holding` service suspends each call until
-/// the test answers it, so tests can interleave cancellation, timeouts and late answers.
+/// the test answers it, so tests can interleave cancellation, timeouts and late answers. Like the live
+/// queue, a cancelled catch-up declines at once, while alt text waits for its answer.
 actor ScriptedIntelligence: ChannelIntelligenceService {
     nonisolated let availability: IntelligenceAvailability
     private var results: [CatchUpResult]
@@ -75,9 +76,14 @@ actor ScriptedIntelligence: ChannelIntelligenceService {
     func catchUp(_ request: CatchUpRequest) async -> CatchUpResult {
         count += 1
         guard holding else { return results.count > 1 ? results.removeFirst() : results.first ?? .declined }
-        return await withCheckedContinuation { continuation in
-            catchUps.append(continuation)
-            resumeWaiters()
+        let index = catchUps.count
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                catchUps.append(continuation)
+                resumeWaiters()
+            }
+        } onCancel: {
+            Task { await self.answer(index, with: .declined) }
         }
     }
 

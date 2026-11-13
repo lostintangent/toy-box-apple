@@ -33,8 +33,8 @@ struct LRUCache<Key: Hashable & Sendable, Value: Sendable>: Sendable {
     }
 }
 
-/// Alt text by attachment, in memory and in Caches, with a byte cap on disk. Entries without text
-/// record images the model couldn't describe, so they aren't retried.
+/// Alt text by attachment in Caches, with a byte cap. Entries without text record images the model
+/// couldn't describe, so they aren't retried.
 actor AltTextStore {
     struct Entry: Codable, Sendable, Hashable {
         let text: String?
@@ -46,25 +46,19 @@ actor AltTextStore {
 
     let directory: URL
     let byteLimit: Int
-    private var memory: LRUCache<String, Entry>
     private var diskBytes: Int?
 
-    init(directory: URL = AltTextStore.defaultDirectory, byteLimit: Int = 2_000_000, memoryLimit: Int = 512) {
+    init(directory: URL = AltTextStore.defaultDirectory, byteLimit: Int = 2_000_000) {
         self.directory = directory
         self.byteLimit = byteLimit
-        memory = LRUCache(limit: memoryLimit)
     }
 
     func entry(for key: String) -> Entry? {
-        if let entry = memory.value(for: key) { return entry }
-        guard let data = try? Data(contentsOf: file(for: key)),
-              let entry = try? JSONDecoder().decode(Entry.self, from: data) else { return nil }
-        memory.set(entry, for: key)
-        return entry
+        guard let data = try? Data(contentsOf: file(for: key)) else { return nil }
+        return try? JSONDecoder().decode(Entry.self, from: data)
     }
 
     func store(_ entry: Entry, for key: String) {
-        memory.set(entry, for: key)
         guard let data = try? JSONEncoder().encode(entry) else { return }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

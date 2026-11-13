@@ -38,28 +38,15 @@ public final class TranscriptCatchUpSession {
     public private(set) var request: CatchUpRequest
     public private(set) var phase: Phase
     public private(set) var isFading = false
-    /// Hosts run generation outside their lazy card's lifetime.
+    /// Hosts run generation in a task keyed on this, outside their lazy card's lifetime, so a new
+    /// generation or a dismissal cancels the run in flight.
     public private(set) var generation: UUID?
 
     @ObservationIgnored private let timeout: Duration
     @ObservationIgnored private var updatingFrom: CatchUpRequest?
-    @ObservationIgnored private var work: Work?
-    @ObservationIgnored private var activeAttempt: UUID?
-
-    private enum Outcome: Sendable {
-        case result(CatchUpResult), timedOut, cancelled
-    }
-
-    private struct Work {
-        let attempt: UUID
-        let continuation: CheckedContinuation<Outcome, Never>
-        let model: Task<Void, Never>
-        let timer: Task<Void, Never>
-    }
 
     private static var dismissed: Set<Boundary> = []
-    private static var results: [CatchUpRequest.Key: Summary] = [:]
-    private static var resultOrder: [CatchUpRequest.Key] = []
+    private static var results = LRUCache<CatchUpRequest.Key, Summary>(limit: 32)
 
     /// A missing loaded boundary never triggers history loading just to make a summary.
     public static func make(server: URL, state: ChannelState, unreadAfter: Int?, filter: TranscriptFilter,
@@ -78,7 +65,7 @@ public final class TranscriptCatchUpSession {
                             unreadAfter: request.key.unreadAfter)
         self.request = request
         self.timeout = timeout
-        if let summary = Self.results[request.key] {
+        if let summary = Self.results.value(for: request.key) {
             phase = .ready(summary)
         } else {
             phase = .loading
@@ -107,37 +94,14 @@ public final class TranscriptCatchUpSession {
 
     public func run(using service: any ChannelIntelligenceService) async {
         guard !Task.isCancelled, let generation, isGenerating, !isFading,
-              !Self.dismissed.contains(boundary), activeAttempt == nil else { return }
-        let attempt = UUID()
-        activeAttempt = attempt
-        defer { if activeAttempt == attempt { activeAttempt = nil } }
+              !Self.dismissed.contains(boundary) else { return }
         let request = request
-        let timeout = timeout
-        let outcome = await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                let model = Task { [weak self] in
-                    let result = await service.catchUp(request)
-                    self?.finish(attempt, with: .result(result))
-                }
-                let timer = Task { [weak self] in
-                    do {
-                        try await Task.sleep(for: timeout)
-                    } catch {
-                        return
-                    }
-                    self?.finish(attempt, with: .timedOut)
-                }
-                work = Work(attempt: attempt, continuation: continuation, model: model, timer: timer)
-            }
-        } onCancel: {
-            Task { @MainActor [weak self] in self?.finish(attempt, with: .cancelled) }
-        }
+        let catchUp = await service.catchUp(request, within: timeout)
         guard !Task.isCancelled, generation == self.generation, request == self.request,
               !isFading, !Self.dismissed.contains(boundary) else { return }
-        if case .cancelled = outcome { return }
-        if case .result(.ready(let catchUp)) = outcome {
+        if let catchUp {
             let summary = Summary(catchUp: catchUp, count: request.unreadFromOthers)
-            Self.remember(summary, for: request.key)
+            Self.results.set(summary, for: request.key)
             phase = .ready(summary)
         } else if case .updating(let previous) = phase {
             if let updatingFrom { self.request = updatingFrom }
@@ -157,7 +121,7 @@ public final class TranscriptCatchUpSession {
               request.key.through > self.request.key.through else { return }
         updatingFrom = self.request
         self.request = request
-        if let summary = Self.results[request.key] {
+        if let summary = Self.results.value(for: request.key) {
             updatingFrom = nil
             phase = .ready(summary)
             return
@@ -168,17 +132,8 @@ public final class TranscriptCatchUpSession {
 
     public func dismiss() {
         Self.dismissed.insert(boundary)
-        if let work { finish(work.attempt, with: .cancelled) }
         generation = nil
         Task { await collapse() }
-    }
-
-    private func finish(_ attempt: UUID, with outcome: Outcome) {
-        guard let work, work.attempt == attempt else { return }
-        self.work = nil
-        work.model.cancel()
-        work.timer.cancel()
-        work.continuation.resume(returning: outcome)
     }
 
     private func collapse() async {
@@ -186,11 +141,6 @@ public final class TranscriptCatchUpSession {
         isFading = true
         try? await Task.sleep(for: .milliseconds(150))
         phase = .collapsed
-    }
-
-    private static func remember(_ summary: Summary, for key: CatchUpRequest.Key) {
-        if results.updateValue(summary, forKey: key) == nil { resultOrder.append(key) }
-        while resultOrder.count > 32 { results.removeValue(forKey: resultOrder.removeFirst()) }
     }
 }
 

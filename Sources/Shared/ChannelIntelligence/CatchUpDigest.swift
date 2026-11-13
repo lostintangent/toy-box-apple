@@ -17,19 +17,7 @@ public struct CatchUpDigest: Sendable, Hashable {
         /// The IDs of the agents `written` mentions, in order, apart from @everyone.
         public let mentioned: [String]
         public let images: Int
-
-        public init(sequence: Int, speaker: String, text: String, written: String? = nil,
-                    mentioned: [String] = [], images: Int) {
-            self.sequence = sequence
-            self.speaker = speaker
-            self.text = text
-            self.written = written ?? text
-            self.mentioned = mentioned
-            self.images = images
-        }
     }
-
-    public static let defaultLimit = 280
 
     /// The pending request, whether or not it's been read.
     public let request: Message?
@@ -39,7 +27,8 @@ public struct CatchUpDigest: Sendable, Hashable {
     /// its newest part.
     public let isComplete: Bool
 
-    public init(state: ChannelState, unreadAfter: Int?, limit: Int = CatchUpDigest.defaultLimit) {
+    public init(state: ChannelState, unreadAfter: Int?) {
+        let limit = 280
         let pending = state.channel.requestSequence.flatMap { ChannelWaitingRequest.message(at: $0, in: state) }
         // A request's ask is usually at its end, so a long one keeps both ends like the model's.
         request = pending.flatMap { Message($0, state: state) { $0.condensed(limit: limit) } }
@@ -76,7 +65,11 @@ private extension CatchUpDigest.Message {
             if !mentioned.contains(agent.id) { mentioned.append(agent.id) }
             return "@" + agent.name
         })
-        self.init(sequence: message.sequence, speaker: CatchUpDescriber(state: state).name(message.sender),
-                  text: text, written: written, mentioned: mentioned, images: images)
+        sequence = message.sequence
+        speaker = CatchUpDescriber(state: state).name(message.sender)
+        self.text = text
+        self.written = written
+        self.mentioned = mentioned
+        self.images = images
     }
 }

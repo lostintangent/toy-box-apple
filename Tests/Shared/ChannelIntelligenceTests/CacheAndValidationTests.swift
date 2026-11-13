@@ -35,7 +35,7 @@ struct IntelligenceCacheTests {
     @Test func diskCacheStaysUnderItsCap() async throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = AltTextStore(directory: directory, byteLimit: 2_000, memoryLimit: 1)
+        let store = AltTextStore(directory: directory, byteLimit: 2_000)
         let text = String(repeating: "x", count: 180)
         for index in 0..<40 {
             await store.store(.init(text: text), for: "key-\(index)")

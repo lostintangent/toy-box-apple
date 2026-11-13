@@ -53,10 +53,6 @@ actor GenerationQueue {
         return value as? Value
     }
 
-    var pendingCount: Int { jobs.values.filter { $0.task == nil }.count }
-
-    func waiterCount(for key: String) -> Int { jobs[key]?.waiters.count ?? 0 }
-
     private func enqueue(key: String, priority: Priority, waiter: Int,
                          continuation: CheckedContinuation<(any Sendable)?, Never>,
                          operation: @escaping @Sendable () async -> (any Sendable)?) {

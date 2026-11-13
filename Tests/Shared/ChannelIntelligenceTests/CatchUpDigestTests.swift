@@ -16,7 +16,8 @@ struct CatchUpDigestTests {
         let state = try TestChannel.state(messages, requestSequence: 13)
         let digest = CatchUpDigest(state: state, unreadAfter: 8)
 
-        #expect(digest.request == .init(sequence: 13, speaker: "Lead", text: "Which layout should we keep?", images: 0))
+        #expect(digest.request == .init(sequence: 13, speaker: "Lead", text: "Which layout should we keep?",
+                                        written: "Which layout should we keep?", mentioned: [], images: 0))
         #expect(digest.unread.map(\.sequence) == [10, 12])
         #expect(digest.unread[0].text == "Shipped the handoff notes.")
         #expect(digest.unread[1].text.isEmpty && digest.unread[1].images == 2)
@@ -67,8 +68,8 @@ struct CatchUpDigestTests {
 
     @Test func longMessagesAreCutAtAWord() throws {
         let state = try TestChannel.state([TestChannel.message(2, from: "ada-engineer", TestChannel.paragraph)])
-        let text = try #require(CatchUpDigest(state: state, unreadAfter: 1, limit: 80).unread.first?.text)
-        #expect(text.count <= 81 && text.hasSuffix("\u{2026}"))
+        let text = try #require(CatchUpDigest(state: state, unreadAfter: 1).unread.first?.text)
+        #expect(text.count <= 281 && text.hasSuffix("\u{2026}"))
         #expect(text.hasPrefix("Messages and reconnects now share"))
     }
 }
