@@ -40,6 +40,7 @@ struct MenuBarStatus: Equatable {
         var agents: [ChannelAgent] = []
         /// The request's suggested replies, in the lead's order.
         var replies: [String] = []
+        var avatar: ChannelAvatar? = nil
 
         var id: ChannelTarget { target }
     }
@@ -86,7 +87,8 @@ struct MenuBarStatus: Equatable {
             return Item(target: target, name: entry.channel.name,
                         subtitle: requester.map { ChannelNotification.Content.subtitle(requester: $0.name) } ?? ChannelNotification.Content.needsReply,
                         agent: requester, sequence: entry.sequence, quote: entry.request?.quote,
-                        requestedAt: entry.requestedAt, replies: entry.request?.message.suggestedReplies ?? [])
+                        requestedAt: entry.requestedAt, replies: entry.request?.message.suggestedReplies ?? [],
+                        avatar: entry.channel.avatar)
         }
         let waitingTargets = Set(waiting.map(\.target))
         working = inputs.filter { !waitingTargets.contains($0.target) && !$0.working.isEmpty }
@@ -95,7 +97,7 @@ struct MenuBarStatus: Equatable {
             .map { input, _ in
                 Item(target: input.target, name: input.channel.name,
                      subtitle: Self.workingSubtitle(input.working.map(\.name)), agent: input.working.first,
-                     agents: input.working)
+                     agents: input.working, avatar: input.channel.avatar)
             }
     }
 

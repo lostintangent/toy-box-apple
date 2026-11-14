@@ -410,13 +410,13 @@ struct QuickSendChannelChooser: View {
                 List(selection: $highlighted) {
                     if grouped {
                         if !choices.recent.isEmpty {
-                            Section("Recent") { ForEach(choices.recent, content: row) }
+                            Section { header("Recent"); ForEach(choices.recent, content: row) }
                         }
                         ForEach(catalogs.indices, id: \.self) { index in
                             if !catalogs[index].isLoaded {
-                                Section(catalogs[index].name) { status(catalogs[index]).listRowSeparator(.hidden) }
+                                Section { header(catalogs[index].name); status(catalogs[index]).listRowSeparator(.hidden) }
                             } else if !choices.others[index].isEmpty {
-                                Section(catalogs[index].name) { ForEach(choices.others[index], content: row) }
+                                Section { header(catalogs[index].name); ForEach(choices.others[index], content: row) }
                             }
                         }
                     } else {
@@ -444,12 +444,21 @@ struct QuickSendChannelChooser: View {
         .onKeyPress(.upArrow) { moveHighlight(-1); return .handled }
     }
 
+    /// A group's title as a row of its own, since the list pins a section header to its top and
+    /// rules off whichever one is pinned.
+    private func header(_ title: String) -> some View {
+        Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+            .listRowSeparator(.hidden)
+            .accessibilityAddTraits(.isHeader)
+    }
+
     private func row(_ choice: QuickSendTargetHistory.Choice) -> some View {
         HStack(spacing: 8) {
+            ChannelMark(choice.channel.avatar, api: catalogs.first(at: choice.target.serverURL)?.api, size: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(choice.channel.name).lineLimit(1)
-                if let purpose = choice.channel.purpose, !purpose.isEmpty {
-                    Text(purpose).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                if let directory = choice.channel.directory, !directory.isEmpty {
+                    ChannelFolderToken.Label(path: directory).foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 0)
@@ -457,6 +466,7 @@ struct QuickSendChannelChooser: View {
                 Image(systemName: "checkmark").foregroundStyle(.secondary)
             }
         }
+        .padding(.vertical, 4)
         // A click anywhere in the row chooses it, including the row that's already highlighted,
         // which never changes the selection.
         .contentShape(Rectangle().inset(by: -8))
