@@ -2335,7 +2335,10 @@ never red, which reads as recording or error.
   any character, switch channels, the window resigns key, or 30 seconds pass with no new words.
   Stopping finalizes the pending tentative words before returning to Ready.
 - **Send while listening.** Return, Command-Return or Send stop dictation, wait for the final
-  result and then send the finalized draft. Never post tentative words.
+  result and then send the finalized draft. Never post tentative words. Sending while the
+  microphone is still starting stops it and sends what's typed, so listening never begins in the
+  next draft. A first-use language download keeps going, and Dictate returns to Ready when it
+  finishes.
 - **Text.** One dictation session is one undo group. Only finalized words enter the persisted
   draft. The audience preview updates from dictated text exactly as it does from typed text, but
   dictation never invents mentions. Pass the channel's agent names, "Lead" and "Everyone" as
