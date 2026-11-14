@@ -4,7 +4,7 @@
 
 ### Bugs/Polish
 
-- Screens windows you leave open now come back when Toy Box restarts or updates. One showing another of your Macs fills in as soon as that Mac answers.
+- Windows you leave open now come back where you left them when Toy Box restarts or updates, on the same channel or screens. One showing another of your Macs fills in as soon as that Mac answers.
 
 ## Mac 0.1.40
 

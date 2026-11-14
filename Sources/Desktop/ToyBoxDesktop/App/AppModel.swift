@@ -105,7 +105,9 @@ final class AppModel {
             notifications.forget(catalog.api.baseURL.absoluteString)
         }
         serversDidChange()
-        if !launchOptions.isSnapshot { launchChannelID = launchChannel.channelID(serverURL: self.serverURL) }
+        if !launchOptions.isSnapshot, launchOptions.channelID == nil {
+            launchChannelID = launchChannel.channelID(serverURL: self.serverURL)
+        }
         launchTarget = launchOptions.channelID.map { id in
             let catalogs = catalogs
             return Task { await catalogs.first(listing: id)?.target(id) }
@@ -258,13 +260,14 @@ final class AppModel {
 
     // MARK: Launch
 
-    /// The channel you were last in on this server, for the first window to appear. Only that
-    /// window takes it, so File > New Window still opens without a channel. Launch doesn't connect
-    /// it early: the snapshot already arrives while the window is built, and a channel that's
-    /// loaded first holds the window back until its whole transcript renders.
-    func takeLaunchChannelID() -> String? {
+    /// The channel you were last in on this server, for the launch's first new window. Only that
+    /// window takes it, so restored windows keep their own and File > New Window still opens
+    /// without a channel. Launch doesn't connect it early: the snapshot already arrives while the
+    /// window is built, and a channel that's loaded first holds the window back until its whole
+    /// transcript renders.
+    func takeLaunchChannel() -> ChannelTarget? {
         defer { launchChannelID = nil }
-        return launchChannelID
+        return launchChannelID.flatMap { target($0) }
     }
 
     func catalogDidChange() {
