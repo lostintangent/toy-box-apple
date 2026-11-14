@@ -2429,10 +2429,12 @@ and Folder and Preview use the full width below it. All opening information stay
 Both presentations have the Overview accessibility label, native sheet dismissal, nested task
 navigation and the same content.
 Overview takes a trailing column only where the conversation keeps the Mac's 420 points beside
-it, which on the Duo is unfolded landscape. The column is a fixed 280 points, Toy Box's own trailing
+it and the scene has regular height, which on the Duo is unfolded landscape. A wide compact-height
+scene, like a Pro Max in landscape, keeps a horizontal bar whose Overview button the column would
+cover, so it gets the sheet. The column is a fixed 280 points, Toy Box's own trailing
 column beside the conversation rather than the system inspector, because UIKit's inspector column
 shows and hides itself as the split view collapses and expands. Folded and unfolded portrait use the
-sheet, decided by the scene's width rather than its size class alone. Overview's presence is one
+sheet, decided by the scene's width and both size classes. Overview's presence is one
 state the sheet and column share, so rotating, folding or unfolding never opens or closes it, and
 the first tap of the Overview button after any of them toggles it. An open Overview moves between
 the two, keeping its open page, disclosures and section state. The new presentation opens at its top rather than the reader's scroll position: SwiftUI's
