@@ -190,14 +190,11 @@ and are there again when it comes back.
   first in the list, with its failure while it can't connect, so the list never empties and
   always says why. Its peers follow, in `peers` order, the ones that answered the latest read (see
   Peer servers): a Mac that sleeps, or doesn't run Toy Box, leaves the list with the first read
-  it doesn't answer, and one that wakes joins with the first it does. So restarting every server
-  never empties the list: a peer still restarting when the server the user connected through
-  reads it leaves the list for that moment, and rejoins with its own first answer (see Following
-  peers). Between reads, a server in
-  the list that can't connect shows its failure like any other. Until the first read after a
-  launch, and while the server the user connected through is asleep, the list is only that server,
-  until it wakes or the user disconnects and connects through another Mac. Settings, the Screens
-  list, New Channel's server menu and the footer's count follow the same list. A channel that's
+  it doesn't answer, and one that wakes joins with the first it does, or with its own first
+  answer (see Following peers). Between reads, a server in the list that can't connect shows its
+  failure like any other. Until the first read after a launch, the list is only that server.
+  While it reconnects, from a restart or any other drop, its last peers stay in the list, and
+  only a peer's own read that fails takes it out. Settings, the Screens list, New Channel's server menu and the footer's count follow the same list. A channel that's
   open when its server leaves stays open with its own reconnecting notice, and only the list
   drops it. A window restored at launch on a peer's channel or screens waits for that peer to
   open, whichever peers answer first, so it fills in once that Mac answers. Only Disconnect
@@ -302,8 +299,13 @@ and are there again when it comes back.
   version's place. VoiceOver reads it as "0.3.9, 0.3.10 after restart". One Restart serves the whole list
   too, like the web's: a prominent button before Check for Updates in the Mac's bar, and a row
   after Check for Updates with `arrow.clockwise` on the phone. It's there while any connected
-  server's restart is pending, and it restarts each of those servers together and no other, so a
-  server with nothing new to run keeps its turns going. Each one's row spins as it restarts. A
+  server's restart is pending, and it restarts those servers and no other, so a server with
+  nothing new to run keeps its turns going. It restarts the pending peers first, together, and
+  waits until each answers `GET /api/v1/server` running the release it had installed, or about
+  30 s in all, then restarts the server the user connected through if it's pending, so the list's
+  peers, which come from that server, never all drop out at once. Every server it restarts spins
+  in its row from the press, the one it restarts last included, and the one Restart is gone until
+  they're back. A
   connected server with an installed release can also restart when nothing newer is installed,
   which relaunches the same release and reads like any other restart, so the row spins until the
   app reconnects and reads the server again. A server without an installed release can't restart
