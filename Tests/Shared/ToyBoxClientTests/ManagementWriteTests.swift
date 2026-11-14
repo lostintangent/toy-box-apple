@@ -64,19 +64,13 @@ struct ManagementWriteTests {
         }
     }
 
-    @Test func explicitCrossProviderAssignmentStillSurfacesTheDomainRejection() async throws {
-        let message = "A member's provider cannot change without losing its session history."
-        let mock = MockTransport { _, _ in
-            try .json(["error": message], status: 422)
-        }
-        let api = try mock.api()
-        await #expect(throws: ChannelAPIError.http(status: 422, message: message)) {
-            try await api.editMember(channelId: "test", agentId: "member",
-                                     changes: .init(model: .set(.init(provider: "claude", name: "sonnet"))))
-        }
-        #expect(mock.requests.count == 1)
+    @Test func removalDeletesTheEncodedArtifactAndAcceptsNoContent() async throws {
+        let mock = MockTransport { _, _ in MockResponse(status: 204) }
+        try await Write.removeArtifact.perform(using: try mock.api())
         let request = try #require(mock.requests.first)
-        let body = try JSONDecoder().decode(JSONValue.self, from: requestBody(request))
-        #expect(body == .object(["model": .object(["provider": .string("claude"), "name": .string("sonnet")])]))
+        #expect(request.httpMethod == "DELETE")
+        let url = try #require(request.url)
+        let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        #expect(components.percentEncodedPath == "/api/v1/channels/test/artifacts/machine%3A%2Fdemo%2FPlan.md")
     }
 }

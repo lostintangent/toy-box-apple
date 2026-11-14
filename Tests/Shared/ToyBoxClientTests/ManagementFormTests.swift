@@ -45,11 +45,13 @@ struct ManagementFormTests {
         #expect(body == .object(["purpose": .null]))
     }
 
-    @Test func anAgentEditClearsItsModelOverrideToInherit() async throws {
+    @Test(arguments: [nil, ModelConfiguration(provider: "claude", name: "sonnet")])
+    func anAgentEditSendsOnlyItsChangedModelOrClearsItToInherit(next: ModelConfiguration?) async throws {
         var form = MemberForm(ChannelAgent(id: "ada", name: "Ada", role: "Builds", model: model))
-        form.model = nil
+        form.model = next
         form.role = " Builds "
         let body = try await sentBody { _ = try await form.submit(to: $0, channelId: "test") }
-        #expect(body == .object(["model": .null]))
+        let sent: JSONValue = next.map { .object(["provider": .string($0.provider), "name": .string($0.name)]) } ?? .null
+        #expect(body == .object(["model": sent]))
     }
 }

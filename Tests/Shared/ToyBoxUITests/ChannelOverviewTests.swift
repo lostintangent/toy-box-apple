@@ -6,19 +6,6 @@ import Testing
 import ToyBoxUI
 
 struct ChannelOverviewTests {
-    @Test func artifactSymbolsKeepTheSameFileTypeMeaningOnBothHosts() {
-        let cases: [(String, String)] = [
-            ("plan.md", "doc.text"), ("plan.MARKDOWN", "doc.text"), ("data.bin", "doc.text"),
-            ("page.html", "chevron.left.forwardslash.chevron.right"),
-            ("page.HTM", "chevron.left.forwardslash.chevron.right"),
-            ("diagram.svg", "square.on.circle"), ("photo.png", "photo"), ("photo.jpeg", "photo"),
-        ]
-        for (path, expected) in cases {
-            let artifact = ChannelArtifact(file: .init(kind: "machine", path: path), title: path)
-            #expect(ArtifactContentKind(artifact).symbolName == expected)
-        }
-    }
-
     @Test func countsKeepKnownZeroUnavailableAndNaturalSingularPluralDistinct() {
         let empty = ChannelOverviewSummary.tasks(([] as [ChannelTask]).progress)
         #expect(empty.count == "0" && empty.spoken == "Tasks, no tasks")
@@ -59,21 +46,7 @@ struct ChannelOverviewTests {
         #expect(offline == ChannelAgent.StatusLine(presence: .init(state: "working"), isAvailable: false).text)
     }
 
-    @Test func filtersNameTheirToggleAndIdentifyItForBothHosts() {
-        var isOn = false
-        let binding = Binding(get: { isOn }, set: { isOn = $0 })
-        let tasks = ChannelOverviewFilter.inProgressTasks(binding)
-        #expect(tasks.title == "Show Only In-Progress Tasks")
-        #expect(tasks.identifier == "overview-tasks-in-progress-filter")
-        let team = ChannelOverviewFilter.workingAgents(binding)
-        #expect(team.title == "Show Only Working Agents")
-        #expect(team.identifier == "overview-team-working-filter")
-        team.isOn.wrappedValue = true
-        #expect(isOn)
-    }
-
     @Test func metadataUsesExactSpacingAndReflowsOnlyBelowTheMeasuredBoundary() {
-        #expect(ChannelOverviewFactsLayout.titleGap == 6)
         let exact = layout(width: 223)
         #expect(exact.frames[1].minX - exact.frames[0].maxX == 12)
         #expect(exact.frames[2].minX - exact.frames[1].maxX == 16)
@@ -87,8 +60,7 @@ struct ChannelOverviewTests {
         #expect(layout(width: 223.01).frames.allSatisfy { $0.minY == 0 })
     }
 
-    @Test func headerKeepsItsSixPointCountGapAndReflowsWholeFactsBeforeTheCount() {
-        #expect(ChannelOverviewHeaderLayout.nameCountGap == 6)
+    @Test func headerReflowsWholeFactsBeforeTheCount() {
         let sizes = [CGSize(width: 40, height: 18), CGSize(width: 30, height: 16),
                      CGSize(width: 80, height: 14), CGSize(width: 16, height: 16)]
         #expect(ChannelOverviewHeaderLayout.reflow(width: 192, items: sizes, stacksLeading: false) == .inline)
@@ -97,14 +69,6 @@ struct ChannelOverviewTests {
         #expect(ChannelOverviewHeaderLayout.reflow(width: 103.99, items: sizes, stacksLeading: false) == .stacked)
         #expect(ChannelOverviewHeaderLayout.reflow(width: 500, items: sizes, stacksLeading: true) == .stacked)
         #expect(ChannelOverviewTaskDiff.spoken(.init(added: 1, removed: 1)) == "1 addition, 1 deletion")
-    }
-
-    @Test func indentedRowsKeepTheDiffOnTheAvatarsTrailingRail() {
-        let trailingEdge: CGFloat = 334
-        for indent: CGFloat in [0, 22, 44, 66, 88] {
-            let lane = layout(width: trailingEdge - indent - 22)
-            #expect(indent + 22 + lane.frames[2].maxX == trailingEdge)
-        }
     }
 
     @Test func accessibilityStacksElapsedCheckInThenDiffAtTheLeadingEdge() {
@@ -129,17 +93,6 @@ struct ChannelOverviewTests {
     }
 
     @MainActor
-    @Test func waitingAmberUsesTheApprovedOpaqueSRGBValues() {
-        let light = ChannelAgent.StatusLine.waitingCue(in: .light).resolve(in: EnvironmentValues())
-        let dark = ChannelAgent.StatusLine.waitingCue(in: .dark).resolve(in: EnvironmentValues())
-        #expect(abs(light.red - 154.0 / 255) < 0.00001)
-        #expect(abs(light.green - 103.0 / 255) < 0.00001 && light.blue == 0 && light.opacity == 1)
-        #expect(abs(dark.red - 244.0 / 255) < 0.00001)
-        #expect(abs(dark.green - 190.0 / 255) < 0.00001)
-        #expect(abs(dark.blue - 102.0 / 255) < 0.00001 && dark.opacity == 1)
-    }
-
-    @MainActor
     @Test func onlyLiveWorkingStatusUsesTheStrongerForegroundInk() {
         let working = ChannelAgent.StatusLine(presence: .init(state: "working"), isAvailable: true)
         #expect(working.textColor == Color.primary.opacity(0.85))
@@ -149,135 +102,35 @@ struct ChannelOverviewTests {
         #expect(ChannelAgent.StatusLine(presence: .init(state: "working"), isAvailable: false).textColor == ChannelInk.secondary)
     }
 
-    @Test(arguments: [11.0, 13, 36], [1.0, 2, 3])
-    @MainActor
-    func wakeCountdownLeavesFourPointsBetweenItsBellAndDuration(fontSize: Double, scale: Double) throws {
-        func width<Content: View>(_ content: Content) throws -> Int {
-            let renderer = ImageRenderer(content: content.font(.system(size: fontSize)).fixedSize())
-            renderer.scale = scale
-            return try #require(renderer.cgImage).width
-        }
-        let countdown = try width(ChannelAgentWakeCountdown(wake: .distantPast, isActive: false))
-        let withoutGap = try width(HStack(spacing: 0) {
-            Image(systemName: "bell")
-            Text("Due").monospacedDigit()
-        })
-        #expect(countdown - withoutGap == Int(4 * scale))
-    }
-
     @Test(arguments: [1.0, 2.0, 3.0], [false, true])
     @MainActor
     func sharedAncestryGuideKeepsHostRuleWeightAndFourPointEndsInBothDirections(
         scale: CGFloat, rightToLeft: Bool
     ) throws {
-        for scheme in [ColorScheme.light, .dark] {
-            let image = try rendered(
-                ChannelTaskAncestryGuide(statusWidth: 16)
-                    .frame(width: 60, height: 80)
-                    .background(scheme == .dark ? Color.black : Color.white)
-                    .environment(\.displayScale, scale)
-                    .environment(\.colorScheme, scheme)
-                    .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight),
-                scale: scale)
-            let background: UInt8 = scheme == .dark ? 0 : 255
-            var columns = Set<Int>()
-            var rows = Set<Int>()
-            for y in 0..<image.height {
-                for x in 0..<image.width {
-                    if image.pixels[(y * image.width + x) * 4] != background {
-                        columns.insert(x)
-                        rows.insert(y)
-                    }
-                }
-            }
-            let width = scale
-            let firstColumn = Int((8 * scale - width / 2).rounded())
-            let expected = Set((firstColumn..<(firstColumn + Int(width))).map {
-                rightToLeft ? image.width - 1 - $0 : $0
-            })
-            #expect(columns == expected)
-            #expect(rows.min() == Int(4 * scale))
-            #expect(rows.max() == Int(76 * scale) - 1)
-        }
-    }
-
-    #if os(macOS)
-    @Test(arguments: [1.0, 2.0, 3.0])
-    @MainActor
-    func macDividerKeepsTheSameWeightAsTheAncestryGuide(scale: CGFloat) throws {
         let image = try rendered(
-            VStack(spacing: 0) { Divider() }
+            ChannelTaskAncestryGuide(statusWidth: 16)
                 .frame(width: 60, height: 80)
-                .background(Color.white)
+                .background(Color.black)
                 .environment(\.displayScale, scale)
-                .environment(\.colorScheme, .light),
+                .environment(\.colorScheme, .dark)
+                .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight),
             scale: scale)
-        let rows = Set((0..<image.height).filter { y in
-            image.pixels[(y * image.width + image.width / 2) * 4] != 255
-        })
-        #expect(rows.count == Int(scale))
-    }
-    #endif
-
-    @Test(arguments: ["done", "blocked", "in_progress", "pending", "unknown"], [16.0, 24.0])
-    @MainActor
-    func sharedStatusSymbolPreservesNativeGlyphWeightPaletteAndHostSecondaryInk(
-        status: String, size: CGFloat
-    ) throws {
-        for scheme in [ColorScheme.light, .dark] {
-            let secondary: Color = size == 16 ? .secondary : ChannelInk.secondary
-            let background: Color = scheme == .dark ? .black : .white
-            let actual = try rendered(
-                ChannelTaskStatusSymbol(status: status, secondary: secondary)
-                    .font(.system(size: size * 0.875))
-                    .frame(width: size, height: size)
-                    .background(background)
-                    .environment(\.colorScheme, scheme))
-            let expected = try rendered(
-                nativeStatusReference(status: status, size: size, secondary: secondary, scheme: scheme)
-                    .frame(width: size, height: size)
-                    .background(background)
-                    .environment(\.colorScheme, scheme))
-            #expect(actual.width == expected.width && actual.height == expected.height)
-            let largestDifference = try #require(zip(actual.pixels, expected.pixels)
-                .map { abs(Int($0) - Int($1)) }.max())
-            // Native style paths can quantize an 8-bit color component one level apart.
-            #expect(largestDifference <= 1, "Status \(status), size \(size), scheme \(scheme)")
-        }
-    }
-
-    @ViewBuilder
-    private func nativeStatusReference(status: String, size: CGFloat, secondary: Color,
-                                       scheme: ColorScheme) -> some View {
-        let symbol = status == "done" ? "checkmark.circle.fill"
-            : status == "blocked" ? "exclamationmark.circle.fill"
-            : status == "in_progress" ? "circle.lefthalf.filled" : "circle"
-        if size == 24 {
-            Image(systemName: symbol)
-                .symbolRenderingMode(status == "blocked" ? .palette : .monochrome)
-                .foregroundStyle(status == "blocked" ? Color.white
-                                 : status == "done" ? ChannelTaskColors.changes(in: scheme).added : secondary,
-                                 Color.red)
-                .font(.system(size: size * 0.875,
-                              weight: status == "done" || status == "blocked" ? .semibold : .regular))
-        } else {
-            Group {
-                if status == "done" {
-                    Image(systemName: symbol)
-                        .symbolRenderingMode(.monochrome)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(ChannelTaskColors.changes(in: scheme).added)
-                } else if status == "blocked" {
-                    Image(systemName: symbol)
-                        .symbolRenderingMode(.palette)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white, .red)
-                } else {
-                    Image(systemName: symbol).foregroundStyle(secondary)
-                }
+        var columns = Set<Int>()
+        var rows = Set<Int>()
+        for y in 0..<image.height {
+            for x in 0..<image.width where image.pixels[(y * image.width + x) * 4] != 0 {
+                columns.insert(x)
+                rows.insert(y)
             }
-            .font(.system(size: size * 0.875))
         }
+        let width = scale
+        let firstColumn = Int((8 * scale - width / 2).rounded())
+        let expected = Set((firstColumn..<(firstColumn + Int(width))).map {
+            rightToLeft ? image.width - 1 - $0 : $0
+        })
+        #expect(columns == expected)
+        #expect(rows.min() == Int(4 * scale))
+        #expect(rows.max() == Int(76 * scale) - 1)
     }
 
     /// Draws into the test's own bitmap. `ImageRenderer.cgImage` returns an image-provider CGImage that

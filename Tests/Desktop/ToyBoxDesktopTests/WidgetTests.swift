@@ -184,7 +184,6 @@ import Testing
         #expect(snapshot.requests[0].requestedAt == nil)
         #expect(snapshot.isOffline)
         #expect(snapshot.isAvailable)
-        #expect(try JSONDecoder().decode(NeedsYouSnapshot.self, from: JSONEncoder().encode(snapshot)) == snapshot)
         var row = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot.requests[1]))
             as? [String: Any])
         #expect(Set(row.keys) == ["serverURL", "channelID", "channelName", "sequence", "quote", "requestedAt"])

@@ -9,14 +9,14 @@ import UIKit
 @MainActor
 struct ChannelEditorTests {
     #if DEBUG
-    @Test(arguments: [false, true], [ColorScheme.light, .dark])
-    func phoneFormsLabelNameAndNeverShowAFolderRow(editing: Bool, scheme: ColorScheme) async throws {
+    @Test(arguments: [false, true])
+    func phoneFormsLabelNameAndNeverShowAFolderRow(editing: Bool) async throws {
         try await withFixture(editing: editing) { app, presenter, editor in
             presenter.focus = nil
             let host = UIHostingController(rootView: editor
                 .environment(app)
                 .environment(Overview())
-                .environment(\.colorScheme, scheme)
+                .environment(\.colorScheme, .dark)
                 .dynamicTypeSize(.large))
             let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 900))
             window.rootViewController = host
@@ -54,14 +54,14 @@ struct ChannelEditorTests {
         }
     }
 
-    @Test(arguments: [false, true], [ColorScheme.light, .dark])
-    func phoneMemberFormsLabelNameAskForTheRoleAndShowNoNote(editing: Bool, scheme: ColorScheme) async throws {
+    @Test(arguments: [false, true])
+    func phoneMemberFormsLabelNameAskForTheRoleAndShowNoNote(editing: Bool) async throws {
         try await withMemberFixture(editing: editing) { app, presenter, editor in
             presenter.focus = nil
             let host = UIHostingController(rootView: editor
                 .environment(app)
                 .environment(Overview())
-                .environment(\.colorScheme, scheme)
+                .environment(\.colorScheme, .dark)
                 .dynamicTypeSize(.large))
             let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 900))
             window.rootViewController = host

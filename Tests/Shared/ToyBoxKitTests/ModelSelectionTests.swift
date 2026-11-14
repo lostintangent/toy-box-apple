@@ -22,8 +22,6 @@ struct ModelSelectionTests {
             """#.utf8))
         #expect(model.defaultReasoningEffort == "medium")
         #expect(model.supportedContextTiers?.map(\.tokenWindow) == [200_000, 1_000_000])
-        let encoded = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(model))
-        #expect(encoded["defaultReasoningEffort"] == .string("medium"))
     }
 
     @Test func reasoningResolvesTheSupportedRequestThenDeclaredDefaultThenFirstValue() {

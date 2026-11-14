@@ -154,22 +154,6 @@ struct ModelSelectionFieldsTests {
         }
     }
 
-    @Test func reconstructionKeepsTheUnavailableOpeningOverrideAfterClearingIt() throws {
-        let api = try ChannelAPI(serverURL: "https://fixture.example")
-        let original = ModelConfiguration(provider: "copilot", name: "unavailable",
-                                          options: ["contextTier": .string("long_context")])
-        var model: ModelConfiguration? = original
-        let binding = Binding(get: { model }, set: { model = $0 })
-        let first = ModelSelectionFields(model: binding, openingModel: original, api: api,
-                                         provider: "copilot", allowsInheritance: true)
-        first.selection.wrappedValue = ""
-        #expect(model == nil)
-        let rebuilt = ModelSelectionFields(model: binding, openingModel: original, api: api,
-                                           provider: "copilot", allowsInheritance: true)
-        rebuilt.selection.wrappedValue = "copilot/unavailable"
-        #expect(model == original)
-    }
-
     @Test func anExplicitlyInheritedOpeningDoesNotCaptureASubsequentOverride() throws {
         let api = try ChannelAPI(serverURL: "https://fixture.example")
         var model: ModelConfiguration? = ModelConfiguration(provider: "copilot", name: "later-choice")

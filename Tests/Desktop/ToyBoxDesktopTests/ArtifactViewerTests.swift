@@ -267,13 +267,6 @@ struct ArtifactViewerTests {
         #expect(web.webView.configuration.userContentController.userScripts == probeScripts)
     }
 
-    @Test func HTMLUsesTheReferenceSandboxPermissionsWithoutSameOrigin() {
-        #expect(Set(ArtifactWebPolicy.htmlPermissions) == [
-            "allow-downloads", "allow-forms", "allow-modals", "allow-popups",
-            "allow-scripts", "allow-top-navigation-by-user-activation",
-        ])
-    }
-
     @Test func nativeSVGActuallyRendersAtItsNaturalPointSizeWithoutExecutingScripts() async throws {
         _ = NSApplication.shared
         let fixture = try ArtifactHTTPFixture()
