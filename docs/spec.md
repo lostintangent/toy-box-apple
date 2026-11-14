@@ -1535,12 +1535,13 @@ A channel becomes a waiting row only once its request's message is known, so a c
 with its words. Until then it stays an ordinary row with its waiting mark. Tapping a waiting row
 opens its card rather than the channel. Unfolded, the channel the detail column shows stays an ordinary row.
 
-**One open card.** The newest waiting request's row is open as a card, and only one is open at a
-time. Tapping another waiting row opens its card as the other closes, in one
-`.spring(duration: 0.4, bounce: 0.12)`. A card the user opened stays open while its request
-waits. The list scrolls only for a card the user opened, by tapping its row or by answering the
-card before it, and brings it fully into view as it opens and grows. A card that opens because a
-request arrived leaves the list where it is. The list never scrolls while a finger is on it or a
+**One open card.** A card opens only when the user taps its row, since the push already told them
+a request arrived, and only one is open at a time. A request arriving, or answering another card,
+never opens one. Tapping another waiting row opens its card as the other closes, and tapping the
+request's words, outside a link or mention, folds the card back into its row, each in one
+`.spring(duration: 0.4, bounce: 0.12)`. An open card stays open while its request waits, and
+opening a channel, Search, Settings or a management sheet closes it. Opening a card brings it
+fully into view as it opens and grows. The list never scrolls while a finger is on it or a
 fling is still slowing, and once the user scrolls it, a card that grows later stays put.
 
 **The card.** It's the talk card's surface in Needs You orange: 20-point continuous corners, the
@@ -1564,11 +1565,11 @@ Talk swipe.
 **Choices.** A choice goes at once as written to the outbox with its own UUID, answering the
 card's request, as in the transcript. The card holds as it was only while the outbox saves it,
 its choices still and ignoring taps, then runs the talk card's beats while the reply may still be
-sending. In one `.smooth(duration: 0.35)` transaction the card shrinks straight back into its row
-as the next waiting request's card opens, and the row's avatar becomes the talk card's done check
+sending. In one `.smooth(duration: 0.35)` transaction the card shrinks straight back into its row,
+and no other card opens, and the row's avatar becomes the talk card's done check
 the way its Mark row describes, with `.sensoryFeedback(.success)`. Two seconds after the card
 lands, the check fades back into the avatar. No word says Sent and the reply's
-words don't show, because the check does. Answering the next card before then leaves the first
+words don't show, because the check does. Answering another card before then leaves the first
 check in place, and each row settles on its own. The waiting rule counts a request answered from
 the moment its reply is sending, so it never reopens while the reply sends or the catalog catches
 up.
@@ -1581,12 +1582,12 @@ keyboard, so its controls always stay visible. The reply leads with the requeste
 unless it starts with a mention. While the server is unavailable Send disables, as the choices
 do, and the words stay. Send holds the lifted card only while the outbox saves the reply, then it
 shrinks from above the list straight into its row, its words fading with its base
-and shadow, in the choices' one transaction as the next card opens, and its row wears the check,
+and shadow, in the choices' one transaction, and its row wears the check,
 as a choice's does.
 
 **Not sent.** The card never waits on the server or reports a failure. A reply the outbox can't
-deliver waits in its channel as Not sent, with Retry, and its request comes back where it was in
-the list, without scrolling it.
+deliver waits in its channel as Not sent, with Retry, and its request comes back as a waiting row
+where it was in the list, without opening or scrolling.
 
 **Leaving.** Cancel discards a typed reply. Opening a channel, Search, Settings or a management
 sheet, backgrounding, or the channel going away ends it, and saves its words as that channel's
@@ -1594,8 +1595,8 @@ draft, after any draft already there.
 
 **Reduce Motion and VoiceOver.** Under Reduce Motion each beat is a 0.2-second ease without
 bounce, and the check keeps its 2-second hold. A waiting row's hint is "Shows the request", and the card's heading reads the channel's
-name with the hint "Opens the channel at this request". The lifted card is modal, and the escape
-gesture cancels. A sent reply announces "Reply sent in [channel]", so the check is hidden from
+name with the hint "Opens the channel at this request". The escape gesture folds an open card, and
+the lifted card is modal, where the escape gesture cancels. A sent reply announces "Reply sent in [channel]", so the check is hidden from
 VoiceOver.
 
 ### Transcript
