@@ -965,11 +965,12 @@ separate window for that channel and leaves the current window's channel and sel
 visible conversation actively acknowledges reading. Restoring a window must not send a message or
 silently mark its unseen content as read.
 
-**Phone folds.** Folding, unfolding and rotating the Duo keep whether the list and Overview are
-open, so the user carries on where they were. A channel open folded unfolds without the list,
-which the sidebar toggle brings back, and the list folded unfolds with the list showing. Rotating
-keeps the list as it was. Folding with a channel open shows the channel. Overview keeps its own
-presence the same way, as Overview describes.
+**Phone folds.** Folding and unfolding the Duo keep whether the list is open, so the user carries
+on where they were. A channel open folded unfolds without the list, which the sidebar toggle brings
+back, and the list folded unfolds with the list showing. Folding with a channel open shows the
+channel. Rotating unfolded follows the system's split view, as on iPad: turning to portrait tucks
+away a list that sat beside the conversation, and the sidebar toggle brings it back floating over
+it. Overview keeps its presence through folding, unfolding and rotating, as Overview describes.
 
 Unfolded, where the list floats over the conversation, as in portrait, opening a channel closes
 the list so the channel shows. That's tapping a row, Open Channel in its menu, a Needs You card's
