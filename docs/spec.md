@@ -248,7 +248,7 @@ and are there again when it comes back.
 - **Connecting.** The user connects once, by entering the address of any one of their Toy Box
   Macs, and the app shows that server and every peer that answers (see Peer servers). Connect is
   only there while the app has no server: the phone's Welcome, and on the Mac the sidebar's
-  welcome, whose Connect… opens Settings' Connect sheet over the window. There's no Add Server, and
+  welcome, which holds the address field and Connect itself. There's no Add Server, and
   no way to remove one server. The app saves only the address the user entered and reaches the
   rest as its peers, so there's no list for the user to curate.
 - **Disconnecting** forgets every server at once. It's Disconnect… at the bottom of the Mac's
@@ -258,8 +258,8 @@ and are there again when it comes back.
   a destructive Disconnect,
   then disconnects every server and removes their channels from Spotlight, notifications, widgets
   and Live Activities. Both apps return to their first run, which has no servers and stays that
-  way after a relaunch: the phone shows Welcome, and the Mac an empty sidebar that offers
-  Connect… (see [Loading, empty, error and stale states](#loading-empty-error-and-stale-states)).
+  way after a relaunch: the phone shows Welcome, and the Mac an empty sidebar with the address
+  field and Connect (see [Loading, empty, error and stale states](#loading-empty-error-and-stale-states)).
 - **Naming a server.** Name renames the server itself, for every device and every lead, through
   `PATCH /api/v1/server {name}`, which answers the server. The field has no caption. It saves on
   Return or when the field loses focus, if the name changed, and clearing it gives the server back
@@ -1072,7 +1072,7 @@ navigation keeps list focus until explicitly moving into the conversation.
 | --- | --- |
 | First catalog load | Three static placeholder rows shaped like a channel row: the avatar's rounded square, the name with its time trailing, and the folder line, with no fabricated channel names. On the Mac, after 300 ms the server's header shows a mini spinner (see Several servers). Nothing overlays the list |
 | No channels | Source-list empty state: "Your channels live here" and New Channel. The connection footer already names the server, so the empty state doesn't repeat it |
-| No servers (Mac) | The sidebar's empty state welcomes the user: "Welcome to Toy Box" over "Connect to one of your Macs to see its channels.", and Connect…, which opens Settings' Connect sheet over the window. The channels fill in once the server connects. The sidebar has no connection footer, New Channel and Open Screen are disabled, and the detail keeps "Choose a channel". The phone shows Welcome instead |
+| No servers (Mac) | The sidebar's empty state welcomes the user: "Welcome to Toy Box" over "Connect to one of your Macs to see its channels.", then the address field and a prominent Connect under it, which connect as Settings describes, with an error shown under the field. There's no sheet, and the Servers tab in Settings reads No Servers until the user connects. The channels fill in once the server connects. The sidebar has no connection footer, New Channel and Open Screen are disabled, and the detail keeps "Choose a channel". The phone shows Welcome instead |
 | Search has no matches | "No channels match [query]", Clear Search. Do not show the no-channels creation state |
 | Nothing selected | Centered `bubble.left.and.bubble.right` symbol, "Choose a channel", concise navigation hint |
 | First channel snapshot | Static message placeholders and "Connecting", whose spinner appears after 300 ms. On the Mac the label waits with it. Composer shell remains present, Send unavailable |
@@ -1278,7 +1278,7 @@ rather than keep animating.
 **Connection footer.** The bottom of the sidebar sums up the servers this window talks to. Each
 server's header carries its own status, and the footer's status line counts the servers and sums
 up their health (see [Several servers](#several-servers)). With no servers there is no footer,
-since the sidebar's welcome offers Connect… (see [Loading, empty, error and stale
+since the sidebar's welcome holds Connect (see [Loading, empty, error and stale
 states](#loading-empty-error-and-stale-states)). Attach it with `.safeAreaBar(edge: .bottom)` on
 the sidebar list so rows scroll beneath it under the system scroll edge effect. Give it no
 background, divider or material of its own. The status line is a 7-point dot (the unread dot's
@@ -2981,9 +2981,11 @@ Server URL and status. General includes the selected appearance (System by defau
 validates HTTP(S), preserves path prefixes and displays actionable failures. An address
 without a scheme, like `machine.tail1234.ts.net`, gets `https://`, so a server needs `http://`
 typed to use HTTP. Both apps' Server URL placeholder is `machine.tail1234.ts.net`, and its
-caption starts "Use your server's address, including its port and any path prefix." Only another
+phone's caption starts "Use your server's address, including its port and any path prefix.",
+while the Mac's welcome line says it already. Only another
 scheme, like `ftp://`, is refused, with "Use HTTP or HTTPS for your Toy Box server." On iPhone,
-Welcome is the Server URL card, with no separate test or confirmation. Return or Connect
+Welcome is the Server URL card, and on the Mac the sidebar's welcome holds the field, each with
+no separate test or confirmation. Return or Connect
 tries the address once: while it runs, the field is disabled and the button reads Connecting…,
 then a server that answers is saved and shown, and a failure shows its error in the card and
 saves nothing. A server's page shows its address as a plain value, with the
@@ -3724,7 +3726,7 @@ There is no generic heading. Keep every line, including timestamp descenders, in
 native 157 x 73.5-point rectangular host.
 Both surfaces render waiting, empty, out-of-date and not-connected states from the phone's
 App Group `NeedsYouSnapshot`. On timeline refresh, the phone widget extension fetches current
-waiting requests from every server in the app's list when it last published, through the app publisher's HTTP and snapshot path,
+waiting requests from every server the app had open when it last published, through the app publisher's HTTP and snapshot path,
 within a ten-second total network deadline, then writes the shared snapshot. After a request or completion alert, the notification service
 extension asks WidgetKit to reload this widget's timelines. WidgetKit schedules the refresh,
 so this is not an immediate-delivery guarantee. A failed fetch keeps the saved snapshot and the
