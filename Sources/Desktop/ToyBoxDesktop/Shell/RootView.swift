@@ -212,9 +212,9 @@ struct RootView: View {
             if !model.launchOptions.isSnapshot { restoredSelection = selection?.identifier }
             model.updateWindow(windowID, channel: selection, isKey: isKeyWindow)
         }
-        // A peer joining keeps the window where it is, and Disconnect starts it over.
-        .onChange(of: model.catalogs.map(ObjectIdentifier.init)) { _, _ in
-            guard selection != nil, selectedCatalog == nil else { return }
+        // A window restored on a peer waits for that peer to open, so only Disconnect starts it over.
+        .onChange(of: model.catalogs.isEmpty) { _, isEmpty in
+            guard isEmpty, selection != nil else { return }
             handoff.cancel()
             mountsSurroundings = false
             imageViewer.close(animated: false)
