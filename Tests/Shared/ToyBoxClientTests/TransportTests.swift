@@ -381,6 +381,25 @@ struct TransportTests {
         #expect(mock.requests.count == 1)
     }
 
+    /// Closing the bookmarks list cancels its reveal, which must not fail the page under it and stop
+    /// the transcript paging.
+    @Test @MainActor func cancellingARevealLeavesItsPageLoading() async throws {
+        let mock = MockTransport { _, _ in
+            var page = try MockResponse.json(ChannelHistoryPage(revision: 10, messages: [testMessage(99)]))
+            page.keepOpen = true
+            return page
+        }
+        let store = ChannelStore(id: "test", api: try mock.api())
+        _ = try store.apply(.init(type: "snapshot", state: testState(revision: 10, messages: [testMessage(100)])))
+        let reveal = Task { await store.loadHistory(through: 99) }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
+        reveal.cancel()
+        #expect(mock.finishPendingResponses() == 1)
+        #expect(await reveal.value == nil)
+        #expect(store.state?.messages.map(\.sequence) == [99, 100])
+        #expect(store.historyError == nil && !store.isLoadingOlder)
+    }
+
     @Test @MainActor func unreadBoundaryRemainsStableWhileReadAdvances() async throws {
         var initial = testState(revision: 10, messages: [testMessage(1), testMessage(2)])
         initial.channel.seenThrough = 1
