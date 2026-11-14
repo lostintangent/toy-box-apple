@@ -58,13 +58,18 @@ struct ConversationTranscript: View {
     var viewport: TranscriptViewport { geometry.viewport }
     var frames: [String: TranscriptMessageFrame] { geometry.frames }
 
-    private var benchmarkGeometry: (@MainActor () -> BenchmarkScrollGeometry?)? {
-        guard BenchmarkScrollGeometry.isEnabled else { return nil }
-        return { [geometry, weak store, weak window] in
-            BenchmarkScrollGeometry(messageFrames: geometry.frames, viewport: geometry.viewport,
-                                    nativeTop: window?.viewportTop,
-                                    historyStart: store?.messages.first?.sequence)
+    private var windowProbe: TranscriptWindowProbe {
+        var probe = TranscriptWindowProbe(observer: window)
+        #if TOY_BOX_BENCHMARK
+        if BenchmarkScrollGeometry.isEnabled {
+            probe.benchmarkGeometry = { [geometry, weak store, weak window] in
+                BenchmarkScrollGeometry(messageFrames: geometry.frames, viewport: geometry.viewport,
+                                        nativeTop: window?.viewportTop,
+                                        historyStart: store?.messages.first?.sequence)
+            }
         }
+        #endif
+        return probe
     }
 
     var pagingFrames: [String: TranscriptMessageFrame] {
@@ -224,9 +229,7 @@ struct ConversationTranscript: View {
         ScrollView {
             conversationRows(proxy: proxy)
                 .environment(\.transcriptPointer, pointer)
-                .background(TranscriptWindowProbe(observer: window, benchmarkGeometry: benchmarkGeometry)
-                    .frame(width: 0, height: 0),
-                            alignment: .topLeading)
+                .background(windowProbe.frame(width: 0, height: 0), alignment: .topLeading)
                 .padding(.top, TranscriptCoordinates.contentTopPadding)
                 .modifier(ConversationRail())
                 .opacity(hidesOpening ? 0 : 1)

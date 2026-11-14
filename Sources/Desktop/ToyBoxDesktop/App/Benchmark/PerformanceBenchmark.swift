@@ -1,3 +1,4 @@
+#if TOY_BOX_BENCHMARK
 import AppKit
 import ToyBoxClient
 import Darwin
@@ -1303,3 +1304,4 @@ private final class MainRunLoopMeter {
         for callback in pending { callback(now) }
     }
 }
+#endif

@@ -5,6 +5,11 @@ builds the release `dev.toybox.desktop.benchmark` app, runs each scenario on a f
 `bun run demo:perf`, prints each result against its budget and exits 1 if any is over. The spec's
 Performance budgets define busy time, saturated spans and frame gaps.
 
+The benchmark compiles under `TOY_BOX_BENCHMARK`, which debug builds define and the benchmark's
+release build adds, so CI keeps building and testing it. The shipped release build leaves it out,
+so any reference to it goes inside `#if TOY_BOX_BENCHMARK`. Prove a change that touches it with
+`swift build -c release` too.
+
 - Leave the window uncovered, and leave the pointer still, away from the edges of its screen. The
   window opens away from the pointer, and `messages` and `scroll` also measure with the transcript
   moved under it, where a person reading or scrolling rests it. Their results say which case each

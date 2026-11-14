@@ -10,9 +10,20 @@ struct LaunchOptions: Equatable, Sendable {
     var height = 840
     var snapshotURL: URL?
     var snapshotState: String?
+    #if TOY_BOX_BENCHMARK
     var benchmark: PerformanceBenchmark.Scenario?
+    #endif
 
     var isSnapshot: Bool { snapshotURL != nil }
+
+    /// A snapshot or benchmark launch, which keeps the menu bar, Quick Send and test digests out of
+    /// what it captures or measures.
+    var isAutomated: Bool {
+        #if TOY_BOX_BENCHMARK
+        if benchmark != nil { return true }
+        #endif
+        return isSnapshot
+    }
 
     /// The server a launch override keeps to the session: `--server`, or else `TOY_BOX_SERVER_URL`.
     func sessionServer(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
@@ -21,8 +32,7 @@ struct LaunchOptions: Equatable, Sendable {
 
     /// Isolated launches never change the user's integrations with the saved server.
     func allowsUserIntegrations(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
-        !isSnapshot && benchmark == nil
-            && server == nil && environment["TOY_BOX_SERVER_URL"] == nil
+        !isAutomated && server == nil && environment["TOY_BOX_SERVER_URL"] == nil
     }
 
     static func parse(_ arguments: [String]) throws -> LaunchOptions {
@@ -72,11 +82,16 @@ struct LaunchOptions: Equatable, Sendable {
             case "--state":
                 guard !value.isEmpty else { throw LaunchArgumentError("--state must not be empty") }
                 options.snapshotState = value
+            #if TOY_BOX_BENCHMARK
             case "--benchmark":
                 guard let scenario = PerformanceBenchmark.Scenario(rawValue: value) else {
                     throw LaunchArgumentError("--benchmark must be switch, messages, paging, scroll or key")
                 }
                 options.benchmark = scenario
+            #else
+            case "--benchmark":
+                throw LaunchArgumentError("Only the app that bun run benchmark builds takes --benchmark")
+            #endif
             default: break
             }
             index += 2
@@ -87,9 +102,11 @@ struct LaunchOptions: Equatable, Sendable {
         if options.snapshotState != nil, !options.isSnapshot {
             throw LaunchArgumentError("--state requires --snapshot")
         }
+        #if TOY_BOX_BENCHMARK
         if options.benchmark != nil, options.isSnapshot || options.channelID == nil {
             throw LaunchArgumentError("--benchmark requires --channel and can't take a snapshot")
         }
+        #endif
         return options
     }
 }

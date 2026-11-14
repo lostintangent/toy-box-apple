@@ -19,7 +19,7 @@ Script tests are omitted, so check a script change with `bun check` and
 | `bun run validate` | `desktop/dogfood/validate.ts` | Build and launch an optimized, isolated Toy Box Test app on the demo | Agents |
 | `bun run development` | `desktop/dogfood/development.ts` | Build, development-sign and open Toy Box Dev beside the installed app, for Siri's developer preview | User, contributors |
 | `bun run snapshot` | `desktop/dogfood/snapshot.ts` | Render a window state to a PNG without taking focus | Agents |
-| `bun run benchmark` | `desktop/dogfood/benchmark.ts` | Check performance budgets against an isolated performance demo | Contributors, agents |
+| `bun run benchmark` | `desktop/dogfood/benchmark.ts` | Check performance budgets against an isolated performance demo, in the only release build that includes the benchmark | Contributors, agents |
 | `bun run release vX.Y.Z` | `desktop/release/index.ts` | Sign, notarize, staple and zip the Mac app | Release owner, CI |
 | `bun run setup-secrets:mobile SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]` | `mobile/setup-secrets.ts` | Configure App Store signing secrets once per certificate or Mac | Certificate owner only |
 | `bun run test:mobile` | `mobile/test.ts` | Run iOS Simulator tests | Contributors, agents, CI |

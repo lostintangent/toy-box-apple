@@ -61,7 +61,7 @@ if (import.meta.main) await main(async () => {
             try {
                 console.log(`Building a release bundle in ${build}`);
                 const result = await command([process.execPath, join(root, "scripts/desktop/bundle/index.ts"), "--no-open"],
-                    { env: { CONFIGURATION: "release", SCRATCH_PATH: build }, quiet: true, allowFailure: true });
+                    { env: { CONFIGURATION: "release", SCRATCH_PATH: build, TOY_BOX_BENCHMARK: "1" }, quiet: true, allowFailure: true });
                 await Bun.write(join(logs, "build.log"), Buffer.concat([result.stdout, result.stderr]));
                 if (result.exitCode) {
                     throw new Error((result.stdout.toString() + result.stderr.toString()).split("\n").slice(-40).join("\n"));
