@@ -4,7 +4,7 @@ import Testing
 
 struct WaitingRequestTests {
     @Test func identityNormalizesTheServerWithoutChangingItsPath() throws {
-        func identity(_ server: String, sequence: Int = 8) throws -> ChannelWaitingRequest.Identity {
+        func identity(_ server: String, sequence: Int = 8) throws -> ChannelWaitingRequest.ID {
             try #require(.init(serverURL: server, channelID: "studio", sequence: sequence))
         }
         let canonical = try identity("https://server.test")
@@ -13,15 +13,15 @@ struct WaitingRequestTests {
         #expect(try identity("https://other.test") != canonical)
         #expect(try identity("https://server.test", sequence: 9) != canonical)
         #expect(try identity("https://server.test/a%2Fb") != identity("https://server.test/a/b"))
-        #expect(ChannelWaitingRequest.normalizedServer("HTTP://SERVER.TEST:80/base///") == "http://server.test/base")
-        #expect(ChannelWaitingRequest.normalizedServer("http://server.test:3210/") == "http://server.test:3210")
-        #expect(ChannelWaitingRequest.normalizedServer("server.test:3210") == "https://server.test:3210",
+        #expect(ChannelTarget.normalizedServer("HTTP://SERVER.TEST:80/base///") == "http://server.test/base")
+        #expect(ChannelTarget.normalizedServer("http://server.test:3210/") == "http://server.test:3210")
+        #expect(ChannelTarget.normalizedServer("server.test:3210") == "https://server.test:3210",
                 "An address without a scheme is HTTPS")
         for server in ["ftp://server.test", "https://", " ", "https://user@server.test",
                        "https://user:password@server.test", "https://server.test?query", "https://server.test#fragment"] {
-            #expect(ChannelWaitingRequest.normalizedServer(server) == nil)
+            #expect(ChannelTarget.normalizedServer(server) == nil)
         }
-        #expect(ChannelWaitingRequest.Identity(serverURL: "https://server.test", channelID: "", sequence: 8) == nil)
+        #expect(ChannelWaitingRequest.ID(serverURL: "https://server.test", channelID: "", sequence: 8) == nil)
     }
 
     @Test func requestLinksKeepTheirRawValuesAndRejectMalformedRoutes() throws {
@@ -34,7 +34,7 @@ struct WaitingRequestTests {
         #expect(NeedsYouRequestLink(url: reply) == nil)
         #expect(NeedsYouRequestLink(replyURL: open) == nil)
         #expect(NeedsYouRequestLink(url: NeedsYouSnapshot.mainURL) == nil)
-        #expect(ChannelWaitingRequest.Identity(serverURL: server, channelID: link.channelID, sequence: link.sequence)?.serverURL
+        #expect(ChannelWaitingRequest.ID(serverURL: server, channelID: link.channelID, sequence: link.sequence)?.target.serverURL
                 == "http://127.0.0.1:3210")
         for value in [
             "https://request?server=http://localhost/&channel=studio&sequence=1",
@@ -54,29 +54,29 @@ struct WaitingRequestTests {
         }
     }
 
-    @Test func unresolvedQuestionsNeverBecomePlaceholderEntries() throws {
-        let agent = ChannelAgent(id: "lead", name: "Lead", role: "Coordinates", deleted: false)
-        func entry(sequence: Int? = 8, question: String? = "Should we ship the caf\u{00e9} layout?",
-                   requester: ChannelAgent? = agent) -> ChannelWaitingRequest? {
-            .init(serverURL: "HTTPS://SERVER.TEST:443/", channelID: "studio", sequence: sequence,
-                  question: question, agent: requester, channelName: "Studio", requestedAt: nil)
+    @Test func aWaitingRequestNeedsASequenceAndReadsAsItsWordsUntilItsMessageIsKnown() throws {
+        let channel = Channel(id: "studio", name: "Studio", model: .init(provider: "test", name: "test"),
+                              updatedAt: "2026-10-24T08:00:00Z")
+        func entry(sequence: Int = 8, text: String? = "**Ship** it?") -> ChannelWaitingRequest? {
+            let message = text.map { ChannelMessage(id: "8", sequence: sequence, timestamp: "2026-10-24T08:00:00Z",
+                                                    sender: .agent("lead"), content: .text($0), request: true) }
+            return .init(serverURL: "HTTPS://SERVER.TEST:443/", channel: channel, sequence: sequence,
+                         request: message.map { .init(message: $0, agents: [.init(id: "lead", name: "Lead")]) })
         }
         let request = try #require(entry())
-        #expect(request.question == "Should we ship the caf\u{00e9} layout?")
-        #expect(request.agent == .init(id: "lead", name: "Lead", deleted: false))
-        #expect(entry(question: nil) == nil)
-        #expect(entry(question: " \n ") == nil)
-        #expect(entry(requester: nil) == nil)
-        #expect(entry(sequence: nil) == nil)
+        #expect(request.target == ChannelTarget(serverURL: "https://server.test", channelID: "studio"))
+        #expect(request.markdown == "**Ship** it?" && request.question == "Ship it?" && request.requester?.name == "Lead")
+        let unknown = try #require(entry(text: nil))
+        #expect(unknown.markdown == ChannelNotification.Content.needsReply && unknown.requester == nil)
         #expect(entry(sequence: 0) == nil)
         #expect(entry(sequence: -1) == nil)
     }
 
     @Test func onlyLaterUserMessagesAnswerARequest() {
         let messages = [message(24), message(25, sender: .user), message(26), message(27, sender: .system)]
-        #expect(ChannelWaitingRequest.isReplied(24, in: messages))
-        #expect(!ChannelWaitingRequest.isReplied(25, in: messages))
-        #expect(!ChannelWaitingRequest.isReplied(0, in: []))
+        #expect(messages.answers(24))
+        #expect(!messages.answers(25))
+        #expect(![ChannelMessage]().answers(0))
     }
 
     @Test func requestLookupPrefersTheDedicatedMessageAndPreservesDeletedRequesterRules() {
@@ -88,19 +88,19 @@ struct WaitingRequestTests {
                                                 updatedAt: historical.timestamp),
                                  lead: .init(id: "lead", name: "Renamed Lead"),
                                  messages: [historical, message(9, sender: .user)], request: dedicated)
-        #expect(ChannelWaitingRequest.message(at: 8, in: state) == dedicated)
-        #expect(ChannelWaitingRequest.recipient(of: 8, in: state) == "Renamed Lead")
-        #expect(ChannelWaitingRequest.recipient(of: 9, in: state) == nil)
-        #expect(ChannelWaitingRequest.message(at: 10, in: state) == nil)
+        #expect(state.message(at: 8) == dedicated)
+        #expect(state.recipient(of: 8) == "Renamed Lead")
+        #expect(state.recipient(of: 9) == nil)
+        #expect(state.message(at: 10) == nil)
         #expect(ChannelRequestMessage(message: dedicated, agents: state.agents).requester == state.lead)
 
         state.lead.deleted = true
-        #expect(ChannelWaitingRequest.recipient(of: 8, in: state) == nil)
+        #expect(state.recipient(of: 8) == nil)
         #expect(ChannelRequestMessage(message: dedicated, agents: state.agents).requester?.deleted == true)
         state.request = nil
-        #expect(ChannelWaitingRequest.message(at: 8, in: state) == historical)
+        #expect(state.message(at: 8) == historical)
         state.messages[0].sender = .agent("missing")
-        #expect(ChannelWaitingRequest.recipient(of: 8, in: state) == nil)
+        #expect(state.recipient(of: 8) == nil)
         #expect(ChannelRequestMessage(message: state.messages[0], agents: state.agents).requester == nil)
     }
 

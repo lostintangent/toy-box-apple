@@ -42,7 +42,7 @@ public final class MobilePushRegistrationStore {
         let saved = try (try? decoder.decode([MobilePushRegistration].self, from: data))
             ?? [decoder.decode(MobilePushRegistration.self, from: data)]
         guard saved.allSatisfy({ registration in
-            ChannelWaitingRequest.normalizedServer(registration.serverURL) != nil
+            ChannelTarget.normalizedServer(registration.serverURL) != nil
                 && UUID(uuidString: registration.registrationID) != nil
         }) else { throw Failure.invalidRegistration }
         registrations = saved
@@ -50,8 +50,8 @@ public final class MobilePushRegistrationStore {
 
     /// A server's registration, however its address is spelled.
     public func registration(for serverURL: String) -> MobilePushRegistration? {
-        guard let server = ChannelWaitingRequest.normalizedServer(serverURL) else { return nil }
-        return registrations.first { ChannelWaitingRequest.normalizedServer($0.serverURL) == server }
+        guard let server = ChannelTarget.normalizedServer(serverURL) else { return nil }
+        return registrations.first { ChannelTarget.normalizedServer($0.serverURL) == server }
     }
 
     public func registration(id: String) -> MobilePushRegistration? {
@@ -62,7 +62,7 @@ public final class MobilePushRegistrationStore {
     /// without one gets a new ID, even one it had before.
     @discardableResult
     public func register(serverURL: String) throws -> MobilePushRegistration {
-        guard ChannelWaitingRequest.normalizedServer(serverURL) != nil else { throw Failure.invalidServer }
+        guard ChannelTarget.normalizedServer(serverURL) != nil else { throw Failure.invalidServer }
         var next = registrations
         let registration: MobilePushRegistration
         if let existing = self.registration(for: serverURL),

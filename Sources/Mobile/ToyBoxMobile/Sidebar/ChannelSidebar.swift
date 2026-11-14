@@ -28,7 +28,7 @@ struct ChannelSidebar: View {
     /// still finds the list's edge.
     @ViewState private var cardRow: CGRect?
     /// The open card, when the person caused it to open, which may scroll the list as it grows.
-    @ViewState private var revealing: ChannelCatalogStore.WaitingRequest.ID?
+    @ViewState private var revealing: ChannelWaitingRequest.ID?
     /// The open card in global space while a typed reply lifts it above the list.
     @ViewState private var liftedCard: CGRect?
     /// The servers whose sections are collapsed, by address.
@@ -93,7 +93,7 @@ struct ChannelSidebar: View {
 
     /// Waiting requests in the expanded sections, newest first, except the one the unfolded detail
     /// column already shows.
-    private var waiting: [ChannelCatalogStore.WaitingRequest] {
+    private var waiting: [ChannelWaitingRequest] {
         let shown = isCollapsed ? nil : model.selection
         return model.servers.shown.filter(isExpanded).waitingRequests(open: model.openChannels).filter { $0.target != shown }
     }
@@ -174,7 +174,7 @@ struct ChannelSidebar: View {
     /// What every row reads from the list as a whole.
     private struct Rows {
         var waiting: [ChannelTarget: NeedsYouCards.Row]
-        var open: ChannelCatalogStore.WaitingRequest?
+        var open: ChannelWaitingRequest?
         var hiddenLines: Set<ChannelTarget>
         var now: Date
     }
@@ -272,12 +272,12 @@ struct ChannelSidebar: View {
         }
     }
 
-    private func reveal(_ open: ChannelCatalogStore.WaitingRequest?, in proxy: ScrollViewProxy) {
+    private func reveal(_ open: ChannelWaitingRequest?, in proxy: ScrollViewProxy) {
         guard let open, open.id == revealing, !cards.isLifted, !isScrolling else { return }
         withAnimation { proxy.scrollTo(open.target) }
     }
 
-    private func card(_ entry: ChannelCatalogStore.WaitingRequest, in item: Listed, now: Date,
+    private func card(_ entry: ChannelWaitingRequest, in item: Listed, now: Date,
                       isLifted: Bool = false, maxHeight: CGFloat) -> NeedsYouCard {
         NeedsYouCard(channel: item.presentation.channel(item.channel), entry: entry, cards: cards, choices: choices(entry),
                      now: now, isCollapsed: isCollapsed, isLifted: isLifted, maxHeight: maxHeight,
@@ -350,21 +350,21 @@ struct ChannelSidebar: View {
         )
     }
 
-    private func choices(_ entry: ChannelCatalogStore.WaitingRequest) -> TranscriptRequestChoices? {
-        entry.choices(isConnected: model.catalogs.first(at: entry.serverURL)?.phase.failure == nil)
+    private func choices(_ entry: ChannelWaitingRequest) -> TranscriptRequestChoices? {
+        entry.choices(isConnected: model.catalogs.first(at: entry.target.serverURL)?.phase.failure == nil)
     }
 
-    private func openChannel(_ entry: ChannelCatalogStore.WaitingRequest) {
-        Task { await model.openChannel(id: entry.channel.id, sequence: entry.sequence, on: entry.serverURL) }
+    private func openChannel(_ entry: ChannelWaitingRequest) {
+        Task { await model.openChannel(id: entry.channel.id, sequence: entry.sequence, on: entry.target.serverURL) }
     }
 
-    private func choose(_ choice: String, for entry: ChannelCatalogStore.WaitingRequest) {
-        guard let catalog = model.catalogs.first(at: entry.serverURL) else { return }
+    private func choose(_ choice: String, for entry: ChannelWaitingRequest) {
+        guard let catalog = model.catalogs.first(at: entry.target.serverURL) else { return }
         Task { await cards.send(choice, to: entry, on: catalog.channel(id: entry.channel.id)) }
     }
 
-    private func reply(to entry: ChannelCatalogStore.WaitingRequest) {
-        guard let catalog = model.catalogs.first(at: entry.serverURL) else { return }
+    private func reply(to entry: ChannelWaitingRequest) {
+        guard let catalog = model.catalogs.first(at: entry.target.serverURL) else { return }
         cards.reply(to: entry, on: catalog.channel(id: entry.channel.id))
     }
 

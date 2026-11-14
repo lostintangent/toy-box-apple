@@ -1283,9 +1283,8 @@ struct MenuBarExtraTests {
 
     private func waiting(
         _ channel: Channel, _ request: ChannelRequestMessage? = nil, on server: String = server
-    ) -> ChannelCatalogStore.WaitingRequest {
-        .init(serverURL: target(channel.id, on: server).serverURL, channel: channel,
-              sequence: channel.requestSequence ?? 0, request: request)
+    ) -> ChannelWaitingRequest {
+        .init(serverURL: server, channel: channel, sequence: channel.requestSequence!, request: request)!
     }
 
     @Test func theIconFollowsTheMostUrgentState() {

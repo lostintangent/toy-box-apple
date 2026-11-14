@@ -20,14 +20,14 @@ package final class NeedsYouCards {
     /// What a waiting channel's row shows.
     package enum Row: Equatable {
         /// The open card, with its whole question, choices and Reply.
-        case card(ChannelCatalogStore.WaitingRequest)
+        case card(ChannelWaitingRequest)
         /// A waiting row, with its question in one line.
-        case question(ChannelCatalogStore.WaitingRequest)
+        case question(ChannelWaitingRequest)
     }
 
     /// An answer from the open card, from its start until it's sent, cancelled or left.
     private struct Answer {
-        let entry: ChannelCatalogStore.WaitingRequest
+        let entry: ChannelWaitingRequest
         let isLifted: Bool
         let store: ChannelStore
         /// Leads a typed reply, so it goes to the requester.
@@ -39,9 +39,9 @@ package final class NeedsYouCards {
     /// The typed reply, kept while its card lands, or the chosen reply once it's sending.
     package var words = ""
     /// The card the person opened, which stays open while its request waits.
-    package private(set) var opened: ChannelCatalogStore.WaitingRequest.ID?
+    package private(set) var opened: ChannelWaitingRequest.ID?
     /// A sent typed reply's card while it shrinks from above the list back into its row.
-    package private(set) var landing: ChannelCatalogStore.WaitingRequest?
+    package private(set) var landing: ChannelWaitingRequest?
     @ObservationIgnored private let checks: CardChecks
     @ObservationIgnored private let draft: @MainActor (ChannelStore) -> ComposerDraft
     @ObservationIgnored private let announce: @MainActor (String) -> Void
@@ -67,38 +67,36 @@ package final class NeedsYouCards {
 
     /// The request being answered, as it was when the answer began, since the waiting requests drop
     /// it once the outbox has the answer.
-    package var replying: ChannelCatalogStore.WaitingRequest? { answer?.entry }
+    package var replying: ChannelWaitingRequest? { answer?.entry }
     package var phase: Phase? { answer?.phase }
     /// True while a typed reply holds the list, with its card lifted and every other row dimmed.
     package var isLifted: Bool { answer?.isLifted == true }
 
     /// The open card among every server's waiting requests: the one being answered, otherwise the
     /// one the person opened while it waits. A request opens only once its words are known.
-    package func open(in waiting: [ChannelCatalogStore.WaitingRequest]) -> ChannelCatalogStore.WaitingRequest? {
+    package func open(in waiting: [ChannelWaitingRequest]) -> ChannelWaitingRequest? {
         if let replying { return waiting.first { $0.id == replying.id } ?? replying }
         return waiting.first { $0.id == opened && $0.request != nil }
     }
 
     /// What each waiting row shows, by channel on its server. A request whose words aren't known yet
     /// leaves its channel an ordinary row.
-    package func rows(in waiting: [ChannelCatalogStore.WaitingRequest]) -> [ChannelTarget: Row] {
+    package func rows(in waiting: [ChannelWaitingRequest]) -> [ChannelTarget: Row] {
         var rows: [ChannelTarget: Row] = [:]
-        for entry in waiting where entry.request != nil {
-            if let target = entry.target { rows[target] = .question(entry) }
-        }
-        if let open = open(in: waiting), let target = open.target { rows[target] = .card(open) }
+        for entry in waiting where entry.request != nil { rows[entry.target] = .question(entry) }
+        if let open = open(in: waiting) { rows[open.target] = .card(open) }
         return rows
     }
 
     /// The rows whose bottom line the open card covers: its own, and the one above, whose line is the
     /// card's top. `order` is the list's channels, top to bottom.
-    package func hiddenLines(in waiting: [ChannelCatalogStore.WaitingRequest], order: [ChannelTarget]) -> Set<ChannelTarget> {
+    package func hiddenLines(in waiting: [ChannelWaitingRequest], order: [ChannelTarget]) -> Set<ChannelTarget> {
         guard let open = open(in: waiting)?.target, let index = order.firstIndex(of: open) else { return [] }
         return Set([open] + order[..<index].suffix(1))
     }
 
     /// Opens a waiting row's card, closing any other.
-    package func open(_ request: ChannelCatalogStore.WaitingRequest.ID) {
+    package func open(_ request: ChannelWaitingRequest.ID) {
         guard answer == nil, opened != request else { return }
         animate(.open) { opened = request }
     }
@@ -110,7 +108,7 @@ package final class NeedsYouCards {
     }
 
     /// Sends a choice at once as written.
-    package func send(_ choice: String, to entry: ChannelCatalogStore.WaitingRequest, on store: ChannelStore) async {
+    package func send(_ choice: String, to entry: ChannelWaitingRequest, on store: ChannelStore) async {
         guard answer == nil, store.outbox != nil else { return }
         opened = entry.id
         answer = Answer(entry: entry, isLifted: false, store: store, handle: nil, phase: .sending)
@@ -120,7 +118,7 @@ package final class NeedsYouCards {
 
     /// Lifts the card above the list with an empty field for a typed reply, which goes to the
     /// requester by leading with their handle.
-    package func reply(to entry: ChannelCatalogStore.WaitingRequest, on store: ChannelStore) {
+    package func reply(to entry: ChannelWaitingRequest, on store: ChannelStore) {
         guard answer == nil else { return }
         animate(.open) {
             landing = nil
@@ -157,7 +155,7 @@ package final class NeedsYouCards {
             // The card ends with its answer, so if the reply ends Not sent, its request comes back
             // as a waiting row without opening or moving the list.
             opened = nil
-            if let target = entry.target { checks.sent(target) }
+            checks.sent(entry.target)
             if answer.isLifted {
                 landing = entry
                 self.answer = nil

@@ -111,7 +111,7 @@ public final class MobileWidgetSnapshotPublisher {
         guard catalog.state != nil else { throw ChannelAPIError.invalidResponse }
         let waiting = catalog.waitingRequests()
         for entry in waiting {
-            guard entry.sequence < Int.max, ChannelWaitingRequest.Identity(
+            guard entry.sequence < Int.max, ChannelWaitingRequest.ID(
                 serverURL: serverURL, channelID: entry.channel.id, sequence: entry.sequence
             ) != nil else { throw ChannelAPIError.invalidMessage("A waiting request has an invalid sequence.") }
         }

@@ -203,7 +203,7 @@ enum CatchUpAnswer {
             subtitle = count.map(capitalized) ?? (request != nil ? nil : "All tasks completed")
         }
 
-        let reply = asked.map { CatchUpCard.Reply(recipient: ChannelWaitingRequest.recipient(of: $0, in: state), request: $0) }
+        let reply = asked.map { CatchUpCard.Reply(recipient: state.recipient(of: $0), request: $0) }
         let card = CatchUpCard(channel: target, title: info.name, subtitle: subtitle, isSummary: summary != nil,
                                lines: lines, footnote: footnote, reply: reply)
         return Answer(spoken: spoken, headline: headline, card: card)

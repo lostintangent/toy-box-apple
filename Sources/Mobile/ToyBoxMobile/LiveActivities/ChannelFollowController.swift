@@ -20,13 +20,13 @@ final class ChannelFollowController {
         }
 
         @MainActor fileprivate var address: String? {
-            ChannelWaitingRequest.normalizedServer(catalog.api.baseURL.absoluteString)
+            ChannelTarget.normalizedServer(catalog.api.baseURL.absoluteString)
         }
 
         /// The registration, once it's this server's.
         @MainActor fileprivate var current: MobilePushRegistration? {
             guard let registration, let address,
-                  ChannelWaitingRequest.normalizedServer(registration.serverURL) == address else { return nil }
+                  ChannelTarget.normalizedServer(registration.serverURL) == address else { return nil }
             return registration
         }
 
@@ -264,7 +264,7 @@ final class ChannelFollowController {
     }
 
     private func registerCurrentTokens(for registration: MobilePushRegistration, force: Bool = false) async {
-        guard let address = ChannelWaitingRequest.normalizedServer(registration.serverURL),
+        guard let address = ChannelTarget.normalizedServer(registration.serverURL),
               let server = servers[address], server.isReady, server.current == registration else { return }
         for entry in Array(entries.values)
             where entry.registration == registration && !starting.contains(entry.target) {

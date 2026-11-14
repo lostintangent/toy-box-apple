@@ -91,7 +91,7 @@ public final class MobileShareHistory {
     public func select(servers: [Server]) -> Task<Void, Never> {
         let current = load()
         guard current?.servers != servers, current != nil || !servers.isEmpty else { return enqueue {} }
-        let addresses = Set(servers.compactMap { ChannelWaitingRequest.normalizedServer($0.url) })
+        let addresses = Set(servers.compactMap { ChannelTarget.normalizedServer($0.url) })
         let recents = current?.recents ?? []
         let removed = recents.filter { !addresses.contains($0.serverURL) }.map(\.identifier)
         write(Saved(servers: servers, recents: recents.filter { addresses.contains($0.serverURL) }))
@@ -104,7 +104,7 @@ public final class MobileShareHistory {
     public func recordSend(serverURL: String, channelID: String, name: String,
                            avatar: ChannelAvatar? = nil) -> Task<Void, Never> {
         guard var next = load(), let target = ChannelTarget(serverURL: serverURL, channelID: channelID),
-              next.servers.contains(where: { ChannelWaitingRequest.normalizedServer($0.url) == target.serverURL })
+              next.servers.contains(where: { ChannelTarget.normalizedServer($0.url) == target.serverURL })
         else { return enqueue {} }
         next.recents.removeAll { $0 == target }
         next.recents.insert(target, at: 0)
@@ -121,7 +121,7 @@ public final class MobileShareHistory {
     /// Forgets channels the server no longer lists, along with their suggestions.
     @discardableResult
     public func prune(serverURL: String, keeping channelIDs: Set<String>) -> Task<Void, Never> {
-        guard var next = load(), let server = ChannelWaitingRequest.normalizedServer(serverURL) else { return enqueue {} }
+        guard var next = load(), let server = ChannelTarget.normalizedServer(serverURL) else { return enqueue {} }
         let removed = next.recents.filter { $0.serverURL == server && !channelIDs.contains($0.channelID) }
         guard !removed.isEmpty else { return enqueue {} }
         next.recents.removeAll { removed.contains($0) }

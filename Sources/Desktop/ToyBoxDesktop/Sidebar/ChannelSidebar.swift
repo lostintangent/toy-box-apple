@@ -202,7 +202,7 @@ struct ChannelSidebar: View {
     }
 
     private func row(_ listed: Listed, presentation: ChannelSidebarPresentation, catalog: ChannelCatalogStore,
-                     request: ChannelCatalogStore.WaitingRequest?) -> some View {
+                     request: ChannelWaitingRequest?) -> some View {
         let channel = listed.channel
         let current = presentation.channel(channel)
         let agents = presentation.agents(channel)
@@ -252,13 +252,13 @@ struct ChannelSidebar: View {
 
     /// The server's requests its rows answer, by channel: each whose words are known, and the one
     /// being answered, which stops waiting once the outbox has its reply.
-    private func requests(_ catalog: ChannelCatalogStore) -> [ChannelTarget: ChannelCatalogStore.WaitingRequest] {
-        var requests: [ChannelTarget: ChannelCatalogStore.WaitingRequest] = [:]
+    private func requests(_ catalog: ChannelCatalogStore) -> [ChannelTarget: ChannelWaitingRequest] {
+        var requests: [ChannelTarget: ChannelWaitingRequest] = [:]
         for entry in catalog.waitingRequests(openChannelIDs: model.openChannelIDs(on: catalog)) where entry.request != nil {
-            if let target = entry.target { requests[target] = entry }
+            requests[entry.target] = entry
         }
-        if let replying = cards.replying, let target = replying.target, requests[target] == nil {
-            requests[target] = replying
+        if let replying = cards.replying, requests[replying.target] == nil {
+            requests[replying.target] = replying
         }
         return requests
     }

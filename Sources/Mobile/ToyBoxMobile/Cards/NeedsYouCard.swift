@@ -25,7 +25,7 @@ struct NeedsYouCard: View {
     static let margin: CGFloat = 12
 
     let channel: Channel
-    let entry: ChannelCatalogStore.WaitingRequest
+    let entry: ChannelWaitingRequest
     let cards: NeedsYouCards
     let choices: TranscriptRequestChoices?
     let now: Date
@@ -46,7 +46,7 @@ struct NeedsYouCard: View {
 
     private var isReplying: Bool { cards.replying?.id == entry.id }
     /// The request's own server, which its links resolve against and its reply waits for.
-    private var catalog: ChannelCatalogStore? { model.catalogs.first(at: entry.serverURL) }
+    private var catalog: ChannelCatalogStore? { model.catalogs.first(at: entry.target.serverURL) }
 
     var body: some View {
         let lineHeight = UIFont.preferredFont(forTextStyle: .body).lineHeight
@@ -64,7 +64,7 @@ struct NeedsYouCard: View {
                     .padding(.bottom, 8)
                 ScrollView {
                     // The bubble's own body, so the question reads exactly as it does in the transcript.
-                    TranscriptBody(text: markdown, agents: entry.request?.agents ?? [],
+                    TranscriptBody(text: entry.markdown, agents: entry.request?.agents ?? [],
                                    baseURL: catalog?.api.baseURL, surface: .pendingAgent)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { questionHeight = $0 }
@@ -128,14 +128,7 @@ struct NeedsYouCard: View {
         .contentShape(Rectangle())
     }
 
-    private var requester: String { entry.request?.requester?.name ?? "the request" }
-
-    /// The request's Markdown, or the plain question until its message is known or when it has
-    /// no words.
-    private var markdown: String {
-        guard let text = entry.request?.message.text, !text.isEmpty else { return entry.question }
-        return text
-    }
+    private var requester: String { entry.requester?.name ?? "the request" }
 
     @ViewBuilder private var footer: some View {
         if isLifted {
@@ -145,7 +138,7 @@ struct NeedsYouCard: View {
             let isSending = isReplying && cards.phase == .sending
             TranscriptRequestActions(spacing: 8, sequence: entry.sequence, choices: isSending ? entry.heldChoices : choices,
                                      replyHelp: "Reply to \(requester)",
-                                     readAloud: .init(channelID: channel.id, sequence: entry.sequence, text: markdown),
+                                     readAloud: .init(channelID: channel.id, sequence: entry.sequence, text: entry.markdown),
                                      onChoose: choose, onReply: reply)
                 .controlSize(.small)
                 .font(.footnote)
@@ -213,7 +206,7 @@ extension View {
     func needsYouList<Card: View, Row: View>(
         _ cards: NeedsYouCards, card: CGRect?, targets: [ChannelTarget], bounds: Binding<CGRect>,
         endsWhenChanging context: [AnyHashable?],
-        @ViewBuilder lifted: @escaping (_ entry: ChannelCatalogStore.WaitingRequest, _ maxHeight: CGFloat) -> Card,
+        @ViewBuilder lifted: @escaping (_ entry: ChannelWaitingRequest, _ maxHeight: CGFloat) -> Card,
         @ViewBuilder row: @escaping (_ target: ChannelTarget) -> Row
     ) -> some View {
         modifier(NeedsYouList(cards: cards, card: card, targets: targets, bounds: bounds, context: context,
@@ -227,7 +220,7 @@ private struct NeedsYouList<Card: View, Row: View>: ViewModifier {
     let targets: [ChannelTarget]
     @Binding var bounds: CGRect
     let context: [AnyHashable?]
-    let lifted: (ChannelCatalogStore.WaitingRequest, CGFloat) -> Card
+    let lifted: (ChannelWaitingRequest, CGFloat) -> Card
     let row: (ChannelTarget) -> Row
     /// The lifted card's row, kept while the card shrinks back into it.
     @ViewState private var cardRow: CGRect?
@@ -262,12 +255,12 @@ private struct NeedsYouList<Card: View, Row: View>: ViewModifier {
 
     /// The lifted card, or, once it sends, its row with the check, which the card's shape clips as
     /// it shrinks onto the list's own. The base and shadow sit outside the clip and fade as it lands.
-    private func landing(_ entry: ChannelCatalogStore.WaitingRequest, maxHeight: CGFloat) -> some View {
+    private func landing(_ entry: ChannelWaitingRequest, maxHeight: CGFloat) -> some View {
         ZStack(alignment: .top) {
             if cards.isLifted {
                 lifted(entry, maxHeight)
-            } else if let target = entry.target {
-                row(target)
+            } else {
+                row(entry.target)
                     .environment(\.cardMarkTaps, false)
             }
         }

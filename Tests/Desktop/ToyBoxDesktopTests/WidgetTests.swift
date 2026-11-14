@@ -164,15 +164,15 @@ import Testing
         let now = Date(timeIntervalSince1970: 1_000_000)
         let requested = now.addingTimeInterval(-600)
         let stamp = ISO8601DateFormatter().string(from: requested)
-        let waiting: [ChannelCatalogStore.WaitingRequest] = (1...6).map { index in
-            .init(serverURL: "http://localhost",
+        let waiting: [ChannelWaitingRequest] = try (1...6).map { index in
+            try #require(ChannelWaitingRequest(serverURL: "http://localhost",
                   channel: Channel(id: "channel-\(index)", name: "Channel \(index)",
                                    model: .init(provider: "test", name: "test"), requestSequence: index,
                                    updatedAt: stamp),
                   sequence: index, request: index == 1 ? nil : ChannelRequestMessage(
                     message: .init(id: "m\(index)", sequence: index, timestamp: stamp, sender: .agent("lead"),
                                    content: .text("Question \(index)?"), request: true),
-                    agents: [.init(id: "lead", name: "Lead")]))
+                    agents: [.init(id: "lead", name: "Lead")])))
         }
         let snapshot = WidgetSnapshotPublisher.snapshot(
             [.init(serverURL: "http://localhost/", isOffline: true, waiting: waiting)], previous: nil, now: now)
@@ -211,10 +211,10 @@ import Testing
 
     @Test @MainActor func eachServerWritesItsOwnPartAndAnUnloadedOneKeepsItsLastRequests() throws {
         let now = Date(timeIntervalSince1970: 1_000_000)
-        func waiting(_ id: String, sequence: Int) -> ChannelCatalogStore.WaitingRequest {
+        func waiting(_ id: String, sequence: Int) -> ChannelWaitingRequest {
             .init(serverURL: "http://unused", channel: Channel(id: id, name: id, model: .init(provider: "t", name: "t"),
                                                                requestSequence: sequence, updatedAt: ""),
-                  sequence: sequence, request: nil)
+                  sequence: sequence, request: nil)!
         }
         let first = WidgetSnapshotPublisher.snapshot([
             .init(serverURL: "http://one/", isOffline: false, waiting: [waiting("studio", sequence: 4)]),

@@ -108,7 +108,7 @@ struct NeedsYouCardsTests {
         let cards = cards()
         let waiting = [home.catalog, work.catalog].waitingRequests()
         let (workA, homeA) = (waiting[0], waiting[1])
-        #expect(workA.serverURL != homeA.serverURL)
+        #expect(workA.target.serverURL != homeA.target.serverURL)
         #expect(cards.rows(in: waiting) == [work.target("a"): .question(workA), home.target("a"): .question(homeA)],
                 "One channel ID on two servers is two rows")
         cards.open(workA.id)

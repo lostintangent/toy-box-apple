@@ -18,7 +18,7 @@ struct DockMenuTests {
 
     /// Servers whose catalogs are loaded and reachable, as the app normalizes them.
     private func usable(_ servers: String...) -> Set<String> {
-        Set(servers.compactMap(ChannelWaitingRequest.normalizedServer))
+        Set(servers.compactMap(ChannelTarget.normalizedServer))
     }
 
     @Test func theMenuUsesTheSharedOrderAndRetainsActionsForItsLifetime() throws {

@@ -33,7 +33,11 @@ struct RequestSpotlightTests {
         removedRequester.agent = nil
         var unquoted = item(sequence: 11)
         unquoted.quote = nil
-        let entries = [healthy, removedRequester, unquoted].compactMap {
+        var blank = item(sequence: 12)
+        blank.quote = " \n "
+        var unsequenced = item()
+        unsequenced.sequence = nil
+        let entries = [healthy, removedRequester, unquoted, blank, unsequenced].compactMap {
             WaitingRequestEntry(item: $0)
         }
         #expect(entries.map(\.id) == [try entry().id])
@@ -247,7 +251,7 @@ private final class RequestIntentFixture {
     lazy var context: ChannelIntents = {
         let context = ChannelIntents(host: .init(
             api: { server in
-                self.apis.first { ChannelWaitingRequest.normalizedServer($0.baseURL.absoluteString) == server }
+                self.apis.first { ChannelTarget.normalizedServer($0.baseURL.absoluteString) == server }
             },
             channels: { Issue.record("A reply reads the waiting request, not the channel list"); return nil },
             store: { _ in Issue.record("A reply never connects its channel"); return nil },

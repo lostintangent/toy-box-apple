@@ -84,7 +84,7 @@ public final class MobileShareSession {
     /// one server is `choices(matching:recentIDs:)`.
     public func choices(matching query: String) -> (recent: [Choice], others: [[Choice]]) {
         let latest = recents.prefix(3)
-        let addresses = catalogs.map { ChannelWaitingRequest.normalizedServer($0.api.baseURL.absoluteString) }
+        let addresses = catalogs.map { ChannelTarget.normalizedServer($0.api.baseURL.absoluteString) }
         let perServer = zip(catalogs, addresses).map { catalog, address in
             catalog.channels.choices(matching: query,
                                      recentIDs: latest.filter { $0.serverURL == address }.map(\.channelID))

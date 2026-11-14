@@ -61,7 +61,7 @@ struct MenuBarStatus: Equatable {
     static let workingLimit = 3
 
     /// The requests behind `waiting`, which the widget shows.
-    var requests: [ChannelCatalogStore.WaitingRequest] = []
+    var requests: [ChannelWaitingRequest] = []
     var waiting: [Item] = []
     var working: [Item] = []
     var workingAgents = 0
@@ -77,14 +77,13 @@ struct MenuBarStatus: Equatable {
 
     /// Waiting requests in their shared order, then channels with working agents and no request,
     /// most recently updated first.
-    init(requests: [ChannelCatalogStore.WaitingRequest] = [], _ inputs: [Input], unreachableHost: String?) {
+    init(requests: [ChannelWaitingRequest] = [], _ inputs: [Input], unreachableHost: String?) {
         self.requests = requests
         self.unreachableHost = unreachableHost
         workingAgents = inputs.reduce(0) { $0 + $1.working.count }
-        waiting = requests.compactMap { entry in
-            guard let target = entry.target else { return nil }
-            let requester = entry.request?.requester
-            return Item(target: target, name: entry.channel.name,
+        waiting = requests.map { entry in
+            let requester = entry.requester
+            return Item(target: entry.target, name: entry.channel.name,
                         subtitle: requester.map { ChannelNotification.Content.subtitle(requester: $0.name) } ?? ChannelNotification.Content.needsReply,
                         agent: requester, sequence: entry.sequence, quote: entry.request?.quote,
                         requestedAt: entry.requestedAt, replies: entry.request?.message.suggestedReplies ?? [],

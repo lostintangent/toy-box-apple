@@ -114,7 +114,7 @@ struct TranscriptCatchUpCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 if let line = summary.catchUp.needsYou, let source = line.sources.first {
                     TranscriptCatchUpLine(line: line, messages: messages, agents: agents,
-                                          isReplied: ChannelWaitingRequest.isReplied(source, in: messages))
+                                          isReplied: messages.answers(source))
                 }
                 ForEach(Array(summary.catchUp.changes.enumerated()), id: \.offset) { _, line in
                     TranscriptCatchUpLine(line: line, messages: messages, agents: agents, isReplied: nil)

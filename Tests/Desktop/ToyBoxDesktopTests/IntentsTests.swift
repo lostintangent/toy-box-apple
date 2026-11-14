@@ -758,7 +758,7 @@ private final class TestHost {
     /// Another server's API and channels, listed after this one's.
     var elsewhere: (api: ChannelAPI, channels: [Channel])?
     /// The normalized server the channels are on.
-    var server: String { api.flatMap { ChannelWaitingRequest.normalizedServer($0.baseURL.absoluteString) } ?? testServer }
+    var server: String { api.flatMap { ChannelTarget.normalizedServer($0.baseURL.absoluteString) } ?? testServer }
     /// Delivers what the intents save, as the outbox would. Only the demo server sets it.
     var deliver: (@MainActor (ChannelIntents.Outgoing) async throws -> Void)?
     var declines = false
@@ -769,7 +769,7 @@ private final class TestHost {
         let context = ChannelIntents(host: .init(
             api: { server in
                 [self.api, self.elsewhere?.api].compactMap { $0 }
-                    .first { ChannelWaitingRequest.normalizedServer($0.baseURL.absoluteString) == server }
+                    .first { ChannelTarget.normalizedServer($0.baseURL.absoluteString) == server }
             },
             channels: {
                 guard self.api != nil else { throw ChannelIntentError.noServer }
