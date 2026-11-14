@@ -405,6 +405,10 @@ private struct TalkSlot: ViewModifier {
     private static var waveformHeight: CGFloat { 24 }
     #endif
 
+    private static func steadyLevels(_ level: Double) -> [Double] {
+        (0..<TalkRecorder.sampleCount).map { level * (0.45 + 0.55 * abs(sin(Double($0) * 0.9))) }
+    }
+
     @ViewBuilder func body(content: Content) -> some View {
         switch kind {
         case .mark: mark(content)
@@ -520,10 +524,9 @@ private struct TalkSlot: ViewModifier {
             .overlay(alignment: .leading) {
                 if let recorder, shows {
                     let listening = recorder.isListening
-                    let level = listening ? recorder.dictation.level : 0
                     // Under Reduce Motion, the bars stay in place and only their heights follow the level.
                     let levels = reduceMotion
-                        ? (0..<TalkRecorder.sampleCount).map { level * (0.45 + 0.55 * abs(sin(Double($0) * 0.9))) }
+                        ? Self.steadyLevels(listening ? recorder.dictation.level : 0)
                         : recorder.levels
                     TalkBars(levels: levels, amplitude: listening ? 1 : 0)
                         .fill(LinearGradient(colors: [.accentColor, .accentColor.opacity(0.25)],
