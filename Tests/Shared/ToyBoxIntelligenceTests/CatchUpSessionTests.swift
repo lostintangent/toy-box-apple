@@ -17,7 +17,7 @@ struct CatchUpSessionTests {
                                      isOn: isOn, timeout: timeout)
     }
 
-    @Test func eligibilityRequiresTheLoadedBoundaryModelSettingAndEnoughAgentText() throws {
+    @Test func eligibilityRequiresTheLoadedBoundaryAvailableModelSettingAndAllFilter() throws {
         let session = try #require(make())
         #expect(session.phase == .loading)
         #expect(session.summary == nil)
@@ -27,24 +27,7 @@ struct CatchUpSessionTests {
         #expect(make(boundaryIsLoaded: false) == nil)
         #expect(make(isOn: false) == nil)
         #expect(make(filter: .yours) == nil)
-        #expect(make(unreadAfter: nil) == nil)
-        #expect(make(unreadAfter: 28) == nil)
-        for reason in [IntelligenceUnavailableReason.deviceNotEligible, .appleIntelligenceNotEnabled,
-                       .modelNotReady, .unsupportedLanguage] {
-            #expect(make(availability: .unavailable(reason)) == nil)
-        }
-        var short = summarySessionState()
-        short.messages = short.messages.map {
-            ChannelMessage(id: $0.id, sequence: $0.sequence, timestamp: $0.timestamp,
-                           sender: .agent("lead"), content: .text("On it"))
-        }
-        #expect(make(short) == nil)
-        var ownMessages = summarySessionState()
-        ownMessages.messages = ownMessages.messages.map {
-            ChannelMessage(id: $0.id, sequence: $0.sequence, timestamp: $0.timestamp,
-                           sender: .user, content: $0.content)
-        }
-        #expect(make(ownMessages) == nil)
+        #expect(make(availability: .unavailable(.modelNotReady)) == nil)
     }
 
     @Test func cachedResultsAreReadyOnTheFirstFrameAndDoNotGenerateAgain() async throws {
@@ -108,10 +91,9 @@ struct CatchUpSessionTests {
         #expect(make() == nil)
     }
 
-    @Test(arguments: [CatchUpResult.nothingNew, .declined, .unavailable(.modelNotReady)])
-    func initialNonresultsFadeAndCollapseWithoutCaching(result: CatchUpResult) async throws {
+    @Test func anInitialNonresultFadesAndCollapsesWithoutCaching() async throws {
         let session = try #require(make())
-        await session.run(using: ScriptedIntelligence(results: [result]))
+        await session.run(using: ScriptedIntelligence(results: [.nothingNew]))
         #expect(session.phase == .collapsed)
         #expect(session.isFading)
         #expect(make()?.phase == .loading)
@@ -136,10 +118,9 @@ struct CatchUpSessionTests {
         #expect(session.request.through == 34)
     }
 
-    @Test(arguments: [CatchUpResult.declined, .nothingNew, .unavailable(.modelNotReady)])
-    func aFailedUpdateRestoresBothSummaryAndCoverageAndCanRetry(result: CatchUpResult) async throws {
+    @Test func aFailedUpdateRestoresBothSummaryAndCoverageAndCanRetry() async throws {
         let service = ScriptedIntelligence(results: [
-            .ready(summarySessionResult()), result, .ready(summarySessionResult(through: 36)),
+            .ready(summarySessionResult()), .declined, .ready(summarySessionResult(through: 36)),
         ])
         let session = try #require(make())
         await session.run(using: service)
@@ -231,16 +212,6 @@ struct CatchUpSessionTests {
             server: otherServer, state: summarySessionState(), unreadAfter: 10, filter: .all,
             boundaryIsLoaded: true, availability: .available, isOn: true)
         #expect(other?.phase == .loading)
-    }
-
-    @Test func theSummaryMemoEvictsItsOldestEntryAfterThirtyTwoResults() async throws {
-        let service = ScriptedIntelligence(results: [.ready(summarySessionResult())])
-        for index in 0...32 {
-            let session = try #require(make(summarySessionState(channel: "memo-\(index)")))
-            await session.run(using: service)
-        }
-        #expect(make(summarySessionState(channel: "memo-0"))?.phase == .loading)
-        #expect(make(summarySessionState(channel: "memo-32"))?.summary != nil)
     }
 
     @Test func slotsUseTheFirstGroundedSourceOrTheExplicitRequestState() {

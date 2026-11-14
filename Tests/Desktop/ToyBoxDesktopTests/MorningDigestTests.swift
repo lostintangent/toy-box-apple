@@ -153,11 +153,17 @@ struct MorningDigestTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(true, forKey: "notificationsEnabled")
         var continuation: CheckedContinuation<Void, Never>?
+        let (building, started) = AsyncStream.makeStream(of: Void.self)
         var attempts = 0
         let digest = MorningDigest(host: .init(
             servers: { ["server"] }, authorized: { true },
             build: { _, _ in
-                if attempts == 0 { await withCheckedContinuation { continuation = $0 } }
+                if attempts == 0 {
+                    await withCheckedContinuation {
+                        continuation = $0
+                        started.yield()
+                    }
+                }
                 return .init(lines: [studio])
             },
             deliver: { _, _ in
@@ -167,7 +173,7 @@ struct MorningDigestTests {
         ), defaults: defaults, allowed: true,
            now: { date("2026-10-24T08:00:00Z") }, calendar: calendar)
         let work = Task { await digest.check() }
-        while continuation == nil { await Task.yield() }
+        for await _ in building { break }
         await digest.check()
         #expect(attempts == 0)
         continuation?.resume()

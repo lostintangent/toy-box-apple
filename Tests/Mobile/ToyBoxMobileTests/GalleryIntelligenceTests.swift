@@ -20,25 +20,6 @@ struct GalleryIntelligenceTests {
         return presenter
     }
 
-    @Test func onlyLoadedImagesWithVoiceOverTheSettingAndAnAvailableModelAreRequested() throws {
-        let gallery = try gallery()
-        let session = try #require(gallery.session)
-        let file = URL(filePath: "/fixture/chart.png")
-        let service = GalleryDescriptionService()
-        func request(file: URL? = file, voiceOver: Bool = true, isOn: Bool = true,
-                     service: any ChannelIntelligenceService = service) -> AltTextRequest? {
-            gallery.descriptionRequest(for: session, file: file, voiceOver: voiceOver, isOn: isOn, using: service)
-        }
-        #expect(request() != nil)
-        #expect(request(file: nil) == nil)
-        #expect(request(voiceOver: false) == nil)
-        #expect(request(isOn: false) == nil)
-        for reason in [IntelligenceUnavailableReason.deviceNotEligible, .appleIntelligenceNotEnabled,
-                       .modelNotReady, .unsupportedLanguage] {
-            #expect(request(service: GalleryDescriptionService(availability: .unavailable(reason))) == nil)
-        }
-    }
-
     @Test func theGalleryRequestsTheCachedOriginalAtFocusedPriorityAndKeepsItsLabel() throws {
         let gallery = try gallery()
         let session = try #require(gallery.session)
@@ -53,52 +34,18 @@ struct GalleryIntelligenceTests {
         #expect(TranscriptGallery.accessibilityLabel(session) == "Image 1 of 2 from Lead, chart.png")
     }
 
-    @Test func returningToAnImageReusesItsDescriptionWithoutMixingUpPages() async throws {
-        let gallery = try gallery()
-        let descriptions = TranscriptImageDescriptionSession()
-        let service = GalleryDescriptionService(text: "A chart of weekly signups.")
-        func request() throws -> AltTextRequest {
-            let session = try #require(gallery.session)
-            return try #require(gallery.descriptionRequest(
-                for: session, file: URL(filePath: "/fixture/\(session.image.name ?? "image")"),
-                voiceOver: true, isOn: true, using: service))
-        }
-        let first = try request()
-        await descriptions.describe(first, using: service)
-        #expect(TranscriptImageDescriptionSession.value(descriptions.text(for: first))
-                == "Generated description: A chart of weekly signups.")
-        gallery.move(by: 1)
-        let second = try request()
-        #expect(first.digest != second.digest)
-        #expect(descriptions.text(for: second) == nil)
-        gallery.move(by: -1)
-        let returned = try request()
-        await descriptions.describe(returned, using: service)
-        #expect(descriptions.text(for: returned) == "A chart of weekly signups.")
-        #expect(await service.calls == 1)
-    }
-
-    @Test func aMissingDescriptionLeavesTheValueEmptyAndTheOriginalLabelIntact() async throws {
-        let gallery = try gallery()
-        let session = try #require(gallery.session)
-        let service = GalleryDescriptionService()
-        let request = try #require(gallery.descriptionRequest(
-            for: session, file: URL(filePath: "/fixture/chart.png"), voiceOver: true, isOn: true, using: service))
-        let descriptions = TranscriptImageDescriptionSession()
-        await descriptions.describe(request, using: service)
-        #expect(TranscriptImageDescriptionSession.value(descriptions.text(for: request)) == "")
-        #expect(TranscriptGallery.accessibilityLabel(session) == "Image 1 of 2 from Lead, chart.png")
-    }
-
-    @Test func departingAndClosedPagesImmediatelyLoseTheirRequest() throws {
+    /// The shared session's suite covers VoiceOver, the setting and availability. The gallery adds the page.
+    @Test func onlyTheLoadedPresentedPageWithVoiceOverHasARequest() throws {
         let gallery = try gallery()
         let first = try #require(gallery.session)
-        let file = URL(filePath: "/fixture/chart.png")
         let service = GalleryDescriptionService()
-        func request(_ page: TranscriptGallery.Session) -> AltTextRequest? {
-            gallery.descriptionRequest(for: page, file: file, voiceOver: true, isOn: true, using: service)
+        func request(_ page: TranscriptGallery.Session, file: URL? = URL(filePath: "/fixture/chart.png"),
+                     voiceOver: Bool = true) -> AltTextRequest? {
+            gallery.descriptionRequest(for: page, file: file, voiceOver: voiceOver, isOn: true, using: service)
         }
         #expect(request(first) != nil)
+        #expect(request(first, file: nil) == nil)
+        #expect(request(first, voiceOver: false) == nil)
         gallery.move(by: 1)
         let second = try #require(gallery.session)
         #expect(request(first) == nil)

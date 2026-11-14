@@ -80,10 +80,17 @@ struct GroundingTests {
                 == "Kit raised the attachment limit.")
     }
 
-    @Test func modelFormattingIsCleaned() {
-        #expect(Grounding.cleaned("- Ada asked Moss to review. [12, 13]") == "Ada asked Moss to review.")
-        #expect(Grounding.cleaned("• Ada asked Moss to review (#12)") == "Ada asked Moss to review")
-        #expect(Grounding.cleaned("Ada  asked\nMoss") == "Ada asked Moss")
+    @Test(arguments: [
+        ("- Ada asked Moss to review. [12, 13]", "Ada asked Moss to review."),
+        ("• Ada asked Moss to review (#12)", "Ada asked Moss to review"),
+        ("Ada  asked\nMoss", "Ada asked Moss"),
+        ("Designer signed off on the footer spinner in msg 480.", "Designer signed off on the footer spinner."),
+        ("Kit shared the plan (message 12).", "Kit shared the plan."),
+        ("Lead still needs the approval from seq 530.", "Lead still needs the approval."),
+        ("Ada merged PR #12 for version 2.0.", "Ada merged PR #12 for version 2.0."),
+    ])
+    func modelFormattingAndMessageNumbersAreCleaned(line: String, cleaned: String) {
+        #expect(Grounding.cleaned(line) == cleaned)
     }
 
     @Test func overlongLinesAreDropped() {

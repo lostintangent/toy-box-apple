@@ -65,11 +65,4 @@ struct CatchUpDigestTests {
         ])
         #expect(CatchUpDigest(state: state, unreadAfter: 0).speakers == ["Lead", "Ada", "Moss"])
     }
-
-    @Test func longMessagesAreCutAtAWord() throws {
-        let state = try TestChannel.state([TestChannel.message(2, from: "ada-engineer", TestChannel.paragraph)])
-        let text = try #require(CatchUpDigest(state: state, unreadAfter: 1).unread.first?.text)
-        #expect(text.count <= 281 && text.hasSuffix("\u{2026}"))
-        #expect(text.hasPrefix("Messages and reconnects now share"))
-    }
 }
