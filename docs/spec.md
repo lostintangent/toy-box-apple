@@ -1902,8 +1902,8 @@ message's leading or trailing edge, retaining attachment order when it scrolls. 
 focused. Their context menu keeps Quick Look and Open in Browser. Each image tile draws a 1-point inner hairline over its clipped 8-point corners, primary
 at 10% in light and 14% in dark, so screenshots with white or black margins keep an edge. Light
 appearance adds a soft shadow (black 10%, radius 3, y 1). Dark adds none. Increase Contrast
-raises the hairline to 40%. The phone draws the same hairline on its 10-point continuous thumbnails
-and video posters. While an image loads, show a neutral tile at its final size
+raises the hairline to 40%. The phone draws the same hairline on its 10-point continuous thumbnails,
+and both apps draw it on video posters. While an image loads, show a neutral tile at its final size
 (quaternary fill at 30%, the same corners and hairline). Add a small spinner after 300 ms and
 never show the filename. Read inline images' pixel size from the image header before decoding,
 so the first layout is final. A remote image an earlier load cached reads its size from the cached
@@ -1916,7 +1916,7 @@ try again.", and VoiceOver reads the tile's usual label with the value "Couldn't
 Videos have a poster, duration when known, and an explicit Play action. Play opens the system's
 native player, never SwiftUI's `VideoPlayer`, which crashes on the Mac. A format that player can't
 decode, like WebM, still plays, as it does on the web.
-Other files show document icon, name and Open. Resolve resources against the server base URL.
+Other files show a document icon, their name and their kind, and open in Quick Look when chosen. Resolve resources against the server base URL.
 An unavailable file keeps its name and an explicit retryable error, not a blank thumbnail.
 Opening remote URLs must not assume a matching local filesystem path.
 
