@@ -11,6 +11,39 @@ public struct ScreenRefresh {
     @MainActor public func callAsFunction() { load() }
 }
 
+/// The Screens title menu's items: Refresh, then a server picker once there are several. Refresh
+/// is off while there's no list to refresh.
+public struct ScreenTitleMenu: View {
+    private let refresh: ScreenRefresh?
+    private let servers: ChannelServers
+    @Binding private var server: String
+
+    public init(refresh: ScreenRefresh?, servers: ChannelServers, server: Binding<String>) {
+        (self.refresh, self.servers, _server) = (refresh, servers, server)
+    }
+
+    public var body: some View {
+        Button("Refresh", systemImage: "arrow.clockwise") { refresh?() }
+            #if os(macOS)
+            // Shows Command-R, which View > Refresh answers while the menu is closed.
+            .keyboardShortcut("r")
+            #endif
+            .disabled(refresh?.isLoading ?? true)
+        if servers.shown.count > 1 {
+            Divider()
+            Picker("Server", selection: $server) {
+                ForEach(servers.shown, id: \.api.baseURL) { catalog in
+                    Text(catalog.name).tag(catalog.api.baseURL.absoluteString)
+                }
+            }
+            .pickerStyle(.inline)
+            #if os(macOS)
+            .labelsHidden()
+            #endif
+        }
+    }
+}
+
 /// Picks a display or window to watch, by how each looks right now. Each appearance or refresh
 /// fetches the list once, with one thumbnail per screen, and nothing polls. The app's toolbar
 /// holds Refresh, in its title menu.

@@ -6,30 +6,15 @@ import ToyBoxUI
 struct ChannelEditor: View {
     @Environment(AppModel.self) private var app
     let store: ChannelStore?
-    /// The channel's server, or the one New Channel opened on.
-    private let openingCatalog: ChannelCatalogStore
-    let presenter: ManagementPresenter
-    /// The address New Channel creates on, which its Server menu changes.
-    @ViewState private var server: String
-    @ViewState private var form: ChannelForm
-    @ViewState private var isSaving = false
-    @ViewState private var error: String?
+    /// The channel's server, or the one New Channel creates on, which its Server menu changes.
+    let catalog: ChannelCatalogStore
+    @Bindable var presenter: ManagementPresenter
     @FocusState private var nameFocused: Bool
 
-    init(channel: ChannelDetails?, store: ChannelStore?, catalog: ChannelCatalogStore,
-         presenter: ManagementPresenter) {
-        self.store = store
-        openingCatalog = catalog
-        _server = ViewState(initialValue: catalog.api.baseURL.absoluteString)
-        self.presenter = presenter
-        _form = ViewState(initialValue: ChannelForm(channel))
-    }
-
-    /// The server this sheet writes to. A chosen server that Settings removes falls back to the
-    /// one the sheet opened on.
-    private var catalog: ChannelCatalogStore { app.catalogs.first(at: server) ?? openingCatalog }
+    private var form: ChannelForm { presenter.channelForm }
+    private var isSaving: Bool { presenter.isPending }
     private var serverSelection: Binding<String> {
-        Binding { catalog.api.baseURL.absoluteString } set: { server = $0 }
+        Binding { catalog.api.baseURL.absoluteString } set: { presenter.flow = .newChannel(server: $0) }
     }
     private var channel: ChannelDetails? { form.channel }
     private var canSave: Bool {
@@ -55,7 +40,7 @@ struct ChannelEditor: View {
                 }
             }
             Section {
-                TextField("Name", text: $form.name, prompt: Text("Required"))
+                TextField("Name", text: $presenter.channelForm.name, prompt: Text("Required"))
                     .focused($nameFocused)
                     .onSubmit(submit)
                     .accessibilityHint(form.nameViolation ?? "")
@@ -63,7 +48,7 @@ struct ChannelEditor: View {
                 ManagementLongTextField(
                     title: "Purpose",
                     prompt: "What should this team work toward? The lead reads this first.",
-                    text: $form.purpose, lines: 3...6, violation: form.purposeViolation)
+                    text: $presenter.channelForm.purpose, lines: 3...6, violation: form.purposeViolation)
                     .onSubmit(submit)
             } footer: {
                 if let violation = form.nameViolation ?? form.purposeViolation {
@@ -71,7 +56,7 @@ struct ChannelEditor: View {
                 }
             }
             ModelSelectionFields(
-                model: $form.model, openingModel: channel?.model, api: catalog.api,
+                model: $presenter.channelForm.model, openingModel: channel?.model, api: catalog.api,
                 provider: channel?.model.provider, allowsInheritance: false,
                 title: "Lead model",
                 help: [channel == nil
@@ -80,7 +65,7 @@ struct ChannelEditor: View {
                 violation: form.directoryViolation
             ) {
                 if channel == nil {
-                    TextField("Working directory", text: $form.directory, prompt: Text("Optional"))
+                    TextField("Working directory", text: $presenter.channelForm.directory, prompt: Text("Optional"))
                         .onSubmit(submit)
                         .accessibilityHint(form.directoryViolation ?? "")
                 } else {
@@ -98,7 +83,7 @@ struct ChannelEditor: View {
             .id(ObjectIdentifier(catalog))
         } notices: {
             ManagementConnectionNotice(store: store)
-            if let error { ManagementError(message: error) }
+            if let error = presenter.error { ManagementError(message: error) }
         } buttons: {
             Spacer()
             Button("Cancel", role: .cancel) { presenter.flow = nil }
@@ -123,23 +108,6 @@ struct ChannelEditor: View {
 
     private func submit() {
         guard canSave else { return }
-        let catalog = catalog
-        let form = form
-        isSaving = true
-        error = nil
-        Task {
-            defer { isSaving = false }
-            do {
-                let saved = try await form.submit(to: catalog.api)
-                if form.channel == nil {
-                    presenter.didCreate(saved, on: catalog.api.baseURL.absoluteString)
-                } else {
-                    presenter.flow = nil
-                }
-                await catalog.refresh()
-            } catch {
-                self.error = error.localizedDescription
-            }
-        }
+        Task { await presenter.save(on: catalog) }
     }
 }

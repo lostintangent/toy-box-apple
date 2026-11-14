@@ -40,15 +40,8 @@ struct OverviewTaskListRow: Identifiable {
         filtered(task.children ?? [], showsOnlyInProgress: showsOnlyInProgress)
     }
 
-    static func isExpanded(_ task: ChannelTask, disclosure: [String: ChannelOverview.Disclosure]) -> Bool {
-        guard let saved = disclosure[task.id], saved.expandedByDefault == task.isExpandedByDefault else {
-            return task.isExpandedByDefault
-        }
-        return saved.expanded
-    }
-
     static func visibleRows(
-        tasks: [ChannelTask], disclosure: [String: ChannelOverview.Disclosure],
+        tasks: [ChannelTask], disclosure: ChannelTask.Disclosure,
         showsOnlyInProgress: Bool = false,
         layout: (ChannelTask) -> OverviewTaskReadingLayout
     ) -> [Self] {
@@ -56,7 +49,7 @@ struct OverviewTaskListRow: Identifiable {
         func append(_ task: ChannelTask, depth: Int, layout: OverviewTaskReadingLayout) {
             rows.append(.init(task: task, depth: depth, layout: layout))
             let children = visibleChildren(of: task, showsOnlyInProgress: showsOnlyInProgress)
-            guard !children.isEmpty, isExpanded(task, disclosure: disclosure) else { return }
+            guard !children.isEmpty, disclosure.isExpanded(task, key: task.id) else { return }
             guard layout.canInlineChildren(ofDepth: depth, haveOwner: children.contains { $0.ownerId != nil }) else {
                 rows.append(.init(task: task, depth: depth, layout: layout, isSubtasks: true, subtaskCount: children.count))
                 return

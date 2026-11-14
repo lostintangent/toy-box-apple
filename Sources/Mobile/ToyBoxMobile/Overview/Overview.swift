@@ -5,7 +5,7 @@ import SwiftUI
 import ToyBoxUI
 
 enum OverviewPlacement: Equatable {
-    case sheet, inspector
+    case sheet, column
 
     /// The column's fixed width, the narrowest readers kept shrinking it to.
     static let columnWidth: CGFloat = 280
@@ -13,24 +13,15 @@ enum OverviewPlacement: Equatable {
     /// The column takes room only on scenes at least 716 points wide, so the conversation keeps more
     /// than the Mac's 420 points beside it as it opens. On the Duo that's unfolded landscape. Unfolded
     /// portrait also reports a regular size class, so the scene's width decides.
-    static let inspectorSceneWidth: CGFloat = 716
+    static let columnSceneWidth: CGFloat = 716
 
     /// The column covers the detail's trailing corner, so it also needs regular height, where the
     /// channel's Overview button stands in the trailing vertical bar beside it. A compact-height scene
     /// as wide, like a Pro Max in landscape, keeps a horizontal bar whose Overview button the column
     /// would cover.
     init(sceneWidth: CGFloat, sizeClass: UserInterfaceSizeClass?, verticalSizeClass: UserInterfaceSizeClass?) {
-        self = sizeClass == .regular && verticalSizeClass == .regular && sceneWidth >= Self.inspectorSceneWidth
-            ? .inspector : .sheet
-    }
-
-    /// Folded landscape stands the sheet's bar items in a leading vertical bar, which would move the
-    /// close over the list. The sheet keeps its bar horizontal in compact height, so the close stays
-    /// trailing. Folded portrait's trailing bar keeps the close beside the status bar. The size class
-    /// decides, not the reported edge, because a horizontal bar reports no edge, which would bring the
-    /// vertical bar straight back.
-    func keepsHorizontalBar(verticalSizeClass: UserInterfaceSizeClass?) -> Bool {
-        self == .sheet && verticalSizeClass == .compact
+        self = sizeClass == .regular && verticalSizeClass == .regular && sceneWidth >= Self.columnSceneWidth
+            ? .column : .sheet
     }
 }
 
@@ -59,7 +50,7 @@ final class Overview {
     /// The landscape column has no close of its own. Only Overview's presence shows it, which the
     /// Overview button owns, like the sidebar's, so no rotation, fold or unfold opens or closes it.
     func showsColumn(for interaction: ChannelInteraction) -> Bool {
-        placement == .inspector && interaction.isInspectorPresented && !interaction.isArtifactViewerPresented
+        placement == .column && interaction.isInspectorPresented && !interaction.isArtifactViewerPresented
     }
 
     /// A screen over Overview holds it where it is, so a rotation can't hand the screen to another
@@ -87,12 +78,6 @@ final class Overview {
 
 @MainActor @Observable
 final class ChannelOverview {
-    struct Disclosure {
-        /// The default the toggle was made against. A change to the default re-derives the disclosure.
-        let expandedByDefault: Bool
-        var expanded: Bool
-    }
-
     @MainActor @Observable
     final class Routine {
         var expanded = false
@@ -113,7 +98,8 @@ final class ChannelOverview {
     var navigationPath: [OverviewRoute] = []
     var expandedSections: [OverviewSection: Bool] = [:]
     var purposeExpanded = false
-    var taskDisclosure: [String: Disclosure] = [:]
+    /// Keyed by task ID, so a parent's disclosure is the same inline and on its subtasks screen.
+    var taskDisclosure = ChannelTask.Disclosure()
     var showsOnlyInProgressTasks = false
     var showsOnlyWorkingAgents = false
     @ObservationIgnored private var routines: [String: Routine] = [:]
@@ -136,19 +122,7 @@ final class ChannelOverview {
     }
 
     func reconcileTasks(_ tasks: [ChannelTask]) {
-        var ids = Set<String>()
-        @MainActor func visit(_ tasks: [ChannelTask]) {
-            for task in tasks {
-                ids.insert(task.id)
-                if taskDisclosure[task.id]?.expandedByDefault != task.isExpandedByDefault {
-                    taskDisclosure[task.id] = Disclosure(expandedByDefault: task.isExpandedByDefault,
-                                                         expanded: task.isExpandedByDefault)
-                }
-                visit(task.children ?? [])
-            }
-        }
-        visit(tasks)
-        taskDisclosure = taskDisclosure.filter { ids.contains($0.key) }
+        taskDisclosure.reconcile(tasks.map { ($0.id, $0) }) { $1.id }
     }
 
     func routine(_ id: String) -> Routine {

@@ -7,7 +7,6 @@ import UIKit
 struct ChannelSidebar: View {
     @Environment(AppModel.self) private var model
     @Environment(ManagementPresenter.self) private var management
-    @Environment(ManagementSessions.self) private var managementSessions
     var searchFocused: FocusState<Bool>.Binding
     /// The split view shows one column at a time, as on a folded Duo.
     let isCollapsed: Bool
@@ -378,7 +377,7 @@ struct ChannelSidebar: View {
     private func delete(_ item: Listed) {
         let flow = ManagementFlow.deleteChannel(item.target)
         management.present(flow)
-        managementSessions.session(for: flow, catalog: item.catalog).delete(closing: management)
+        Task.immediate { await management.delete(flow, on: item.catalog) }
     }
 
     /// The empty state waits until every server has answered with nothing.

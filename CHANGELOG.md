@@ -14,6 +14,7 @@
 - Windows you leave open now come back where you left them when Toy Box restarts or updates, on the same channel or screens. One showing another of your Macs fills in as soon as that Mac answers.
 - A reply you send from anywhere, like the web, a notification or another device, marks its channel read everywhere at once, once your Macs run Toy Box 0.4.5.
 - Videos in a conversation start playing right away instead of waiting to download, and a file shows what kind it is and opens in Quick Look with a click.
+- Deleting a channel, removing an agent or deleting a routine now asks in a standard Mac alert, so the choice that can't be undone is clearly marked.
 
 ## iPhone 0.1.39
 

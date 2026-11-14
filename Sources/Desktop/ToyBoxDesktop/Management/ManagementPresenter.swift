@@ -17,9 +17,11 @@ private struct ManagementFlowsModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .sheet(item: $presenter.flow) { flow in
+            .sheet(item: Binding(get: { presenter.flow?.isDeletion == true ? nil : presenter.flow },
+                                 set: { presenter.flow = $0 })) { flow in
                 ManagementSheet(flow: flow, presenter: presenter)
             }
+            .managementConfirmation($presenter.flow, presenter: presenter, catalogs: app.catalogs)
             .task(id: snapshot?.requestedState) { prepareSnapshotState() }
     }
 
@@ -29,6 +31,9 @@ private struct ManagementFlowsModifier: ViewModifier {
         switch state {
         case "add-member":
             presenter.present(.addMember(target, name: ""))
+            snapshot.markStateReady(state)
+        case "delete-channel":
+            presenter.present(.deleteChannel(target))
             snapshot.markStateReady(state)
         case "edit-member":
             guard let member = catalog.channel(id: channelId).state?.members.first else {
@@ -54,8 +59,8 @@ private struct ManagementSheet: View {
         Group {
             if let catalog {
                 if flow.isNewChannel {
-                    ChannelEditor(channel: nil, store: nil, catalog: catalog, presenter: presenter)
-                } else if let store, let details = store.details {
+                    ChannelEditor(store: nil, catalog: catalog, presenter: presenter)
+                } else if let store, let details = store.details, presenter.hasLoaded {
                     flowContent(details: details, store: store, catalog: catalog)
                 } else {
                     VStack(spacing: 16) {
@@ -73,6 +78,7 @@ private struct ManagementSheet: View {
                     }
                     .padding(24)
                     .frame(width: 480, height: 200)
+                    .task(id: store?.details != nil) { if let store { presenter.load(from: store) } }
                 }
             } else {
                 VStack(spacing: 16) {
@@ -87,7 +93,7 @@ private struct ManagementSheet: View {
             }
         }
         .task(id: catalog.map(ObjectIdentifier.init)) {
-            guard let id = flow.channelId, let catalog else { return }
+            guard let id = flow.target?.channelID, let catalog else { return }
             if let store { app.release(store) }
             let connection = catalog.channel(id: id)
             store = connection
@@ -104,22 +110,18 @@ private struct ManagementSheet: View {
     private func flowContent(details: ChannelDetails, store: ChannelStore,
                              catalog: ChannelCatalogStore) -> some View {
         switch flow {
-        case .newChannel: EmptyView()
         case .editChannel:
-            ChannelEditor(channel: details, store: store, catalog: catalog, presenter: presenter)
-        case .addMember(_, let name):
-            MemberEditor(channel: details, form: MemberForm(name: name), store: store,
-                         catalog: catalog, presenter: presenter)
+            ChannelEditor(store: store, catalog: catalog, presenter: presenter)
+        case .addMember:
+            MemberEditor(channel: details, store: store, catalog: catalog, presenter: presenter)
         case .editMember(_, let agentId):
-            if let member = store.roster.dropFirst().first(where: { $0.id == agentId }) {
-                MemberEditor(channel: details, form: MemberForm(member), store: store,
-                             catalog: catalog, presenter: presenter)
+            if store.roster.dropFirst().contains(where: { $0.id == agentId }) {
+                MemberEditor(channel: details, store: store, catalog: catalog, presenter: presenter)
             } else {
                 unavailable("This member is no longer in the channel.")
             }
-        case .deleteChannel, .removeMember, .deleteRoutine:
-            ManagementConfirmation(flow: flow, channel: details, store: store,
-                                   catalog: catalog, presenter: presenter)
+        case .newChannel, .deleteChannel, .removeMember, .deleteRoutine:
+            EmptyView() // Deletions ask in the window's alert, never in this sheet.
         }
     }
 
@@ -147,19 +149,5 @@ struct ManagementError: View {
         .font(.callout)
         .textSelection(.enabled)
         .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-struct ManagementConnectionNotice: View {
-    let store: ChannelStore?
-    var body: some View {
-        if let store, store.phase.isUnavailable {
-            Label(store.phase == .deleted
-                  ? "This channel was deleted."
-                  : "Your edits are kept. Save them when the channel connects.",
-                  systemImage: "wifi.exclamationmark")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
     }
 }

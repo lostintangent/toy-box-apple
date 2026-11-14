@@ -145,27 +145,54 @@ struct ManagementTests {
         #expect(OverviewPurpose.requiresExpansion(longer + "\u{2026} Show More", width: CGFloat(width), fontSize: 13))
     }
 
-    @Test func finishingMemberCreationDismissesOnlyTheMatchingSheet() throws {
+    @Test func aSaveClosesOnlyTheFlowThatSentIt() async throws {
+        let fixture = try ManagementFixture(memberStatus: 201)
+        defer { fixture.close() }
+        let catalog = ChannelCatalogStore(api: fixture.api)
         let presenter = ManagementPresenter()
-        let channel = try #require(ChannelTarget(serverURL: "http://127.0.0.1:3210", channelID: "channel"))
-        let another = try #require(ChannelTarget(serverURL: "http://127.0.0.1:3210", channelID: "another"))
-        let elsewhere = try #require(ChannelTarget(serverURL: "http://127.0.0.1:3211", channelID: "channel"))
+        let channel = try #require(catalog.target("channel"))
         presenter.present(.addMember(channel, name: "Moss"))
-        presenter.finishAddingMember(channel)
+        #expect(presenter.memberForm.name == "Moss")
+        await presenter.save(on: catalog)
         #expect(presenter.flow == nil)
 
-        presenter.present(.editChannel(another))
-        presenter.finishAddingMember(channel)
-        #expect(presenter.flow == .editChannel(another))
+        // Presenting the same flow again is a new visit with fresh entries, which the old save leaves open.
+        presenter.present(.addMember(channel, name: "Moss"))
+        let save = Task.immediate { await presenter.save(on: catalog) }
+        presenter.flow = nil
+        presenter.present(.addMember(channel, name: "Moss"))
+        presenter.memberForm.role = "Unsaved"
+        await save.value
+        #expect(presenter.flow == .addMember(channel, name: "Moss"))
+        #expect(presenter.memberForm.role == "Unsaved" && !presenter.isPending)
 
-        presenter.present(.addMember(another, name: "Finch"))
-        presenter.finishAddingMember(channel)
-        #expect(presenter.flow == .addMember(another, name: "Finch"))
+        // New Channel's Server menu keeps its entries.
+        presenter.present(.newChannel(server: "http://127.0.0.1:3210"))
+        presenter.channelForm.name = "Workshop"
+        presenter.flow = .newChannel(server: "http://127.0.0.1:3211")
+        #expect(presenter.channelForm.name == "Workshop")
+    }
 
-        // The same channel ID on another server is another channel.
-        presenter.present(.addMember(elsewhere, name: "Wren"))
-        presenter.finishAddingMember(channel)
-        #expect(presenter.flow == .addMember(elsewhere, name: "Wren"))
+    @Test func aFailedWriteKeepsItsFlowAndEntries() async throws {
+        let fixture = try ManagementFixture()
+        defer { fixture.close() }
+        let catalog = ChannelCatalogStore(api: fixture.api)
+        let presenter = ManagementPresenter()
+        let target = try #require(catalog.target("channel"))
+        let editing = ManagementFlow.editMember(target, agentId: "moss")
+        presenter.present(editing)
+        presenter.memberForm.name = "Unsaved"
+        presenter.focus = .role
+
+        // Removing from Edit Agent asks beside it, and a failure only says so.
+        let removal = ManagementFlow.removeMember(target, agentId: "moss")
+        await presenter.delete(removal, on: catalog)
+        #expect(presenter.deletion?.flow == removal && presenter.deletion?.failed == true)
+        #expect(presenter.flow == editing && presenter.memberForm.name == "Unsaved")
+
+        await presenter.save(on: catalog)
+        #expect(presenter.flow == editing && presenter.error == "Management failed.")
+        #expect(presenter.memberForm.name == "Unsaved" && presenter.focus == .role && !presenter.isPending)
     }
 
     @Test func eachFlowWritesToItsOwnServer() throws {
@@ -395,63 +422,6 @@ struct ManagementTests {
         try await host.waitForDisclosure(expanded: true)
     }
 
-    @Test func aManualDisclosureDropsWhenItsParentsDefaultChanges() {
-        let slots = OverviewSlots()
-        func rows(_ status: String) -> [OverviewSlots.Entry<ChannelTask>] {
-            slots.entries([.init(id: "parent", title: "Parent task", status: status, children: [
-                .init(id: "child", title: "Child task", status: "blocked")
-            ])], in: "tasks")
-        }
-        let disclosure = OverviewTaskDisclosure()
-        let active = rows("in_progress")
-        let key = active[0].key
-        let activeTask = active[0].item
-        #expect(disclosure.isExpanded(key, task: activeTask))
-
-        disclosure.set(false, key, task: activeTask)
-        disclosure.reconcile(active)
-        #expect(!disclosure.isExpanded(key, task: activeTask))
-
-        // The parent finishes while hidden, so its default flips. Reconciling must drop the manual
-        // toggle, or it would apply again when the parent returns to in progress.
-        let done = rows("done")
-        disclosure.reconcile(done)
-        #expect(!disclosure.isExpanded(key, task: done[0].item))
-        disclosure.reconcile(active)
-        #expect(disclosure.isExpanded(key, task: activeTask))
-    }
-
-    @Test func aNestedManualDisclosureSurvivesReconcileWhileItsDefaultHolds() throws {
-        let slots = OverviewSlots()
-        let tree: [ChannelTask] = [.init(id: "parent", title: "Parent task", status: "in_progress", children: [
-            .init(id: "nested", title: "Nested parent", status: "blocked", children: [
-                .init(id: "grandchild", title: "Nested leaf", status: "done")
-            ])
-        ])]
-        let rows = slots.entries(tree, in: "tasks")
-        let nested = try #require(rows[0].item.children?.first)
-        let nestedKey = "\(rows[0].key)/\(nested.id)"
-        let disclosure = OverviewTaskDisclosure()
-        #expect(!disclosure.isExpanded(nestedKey, task: nested))
-
-        disclosure.set(true, nestedKey, task: nested)
-        disclosure.reconcile(rows)
-        #expect(disclosure.isExpanded(nestedKey, task: nested))
-    }
-
-    @Test func resetReturnsEveryDisclosureToItsDefault() {
-        let slots = OverviewSlots()
-        let tree: [ChannelTask] = [.init(id: "parent", title: "Parent task", status: "done", children: [
-            .init(id: "child", title: "Child task", status: "blocked")
-        ])]
-        let rows = slots.entries(tree, in: "tasks")
-        let disclosure = OverviewTaskDisclosure()
-        disclosure.set(true, rows[0].key, task: rows[0].item)
-        #expect(disclosure.isExpanded(rows[0].key, task: rows[0].item))
-        disclosure.reset()
-        #expect(!disclosure.isExpanded(rows[0].key, task: rows[0].item))
-    }
-
     @Test func theInProgressFilterKeepsOnlyTasksHoldingWorkAtEachLevel() {
         let leaf: ChannelTask = .init(id: "leaf", title: "Leaf", status: "done")
         let activeLeaf: ChannelTask = .init(id: "active", title: "Active", status: "in_progress")
@@ -586,29 +556,6 @@ struct ManagementTests {
             #expect(try pixels(directory, availability: availability)
                     == pixels(ChannelFolderName.name(of: directory), availability: availability))
         }
-    }
-
-    @Test func theTeamKeepsTheLeadFirstAndSortsMembersLikeFinder() {
-        let roster = [ChannelAgent(id: "lead", name: "Zed"), ChannelAgent(id: "b", name: "agent 10"),
-                      ChannelAgent(id: "a", name: "Agent 2"), ChannelAgent(id: "c", name: "Ada")]
-        #expect(OverviewTeamList.ordered(roster).map(\.id) == ["lead", "c", "a", "b"])
-        #expect(OverviewTeamList.ordered([]).isEmpty)
-    }
-
-    @Test func theWorkingFilterKeepsOnlyWorkingAgentsWhileConnected() {
-        let lead = ChannelAgent(id: "lead", name: "Zed")
-        let member = ChannelAgent(id: "member", name: "Ada")
-        let idle = ChannelAgent(id: "idle", name: "Bo")
-        let presence: [String: ChannelAgentPresence] = [
-            "lead": .init(state: "working"), "member": .init(state: "waiting"), "idle": .init(state: "idle"),
-        ]
-        for agent in [lead, member, idle] {
-            #expect(OverviewTeamList.keeps(agent, presence: presence, isAvailable: true, showsOnlyWorking: false))
-        }
-        #expect(OverviewTeamList.keeps(lead, presence: presence, isAvailable: true, showsOnlyWorking: true))
-        #expect(!OverviewTeamList.keeps(member, presence: presence, isAvailable: true, showsOnlyWorking: true))
-        #expect(!OverviewTeamList.keeps(idle, presence: presence, isAvailable: true, showsOnlyWorking: true))
-        #expect(!OverviewTeamList.keeps(lead, presence: presence, isAvailable: false, showsOnlyWorking: true))
     }
 
     /// A row creates its pop-up button only while it shows the menu, so revealing it must not move the row.
