@@ -240,29 +240,30 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   in Add Server and Welcome. To use another server, the user adds it and removes the old one.
   Adding an address that's already listed selects that server. Adding a server whose `id` is
   already saved at another address moves that server there instead, as if removed from the old
-  address and added at the new one but keeping its place, name, links, drafts and unsent
+  address and added at the new one but keeping its place, name, drafts and unsent
   messages, and selects it, so a server that moved is simply added again. Removing one asks first,
   then disconnects it and removes its channels from Spotlight, notifications, widgets and Live
   Activities. Removing the last server returns both apps to their first run, which has no
   servers and stays that way after a relaunch: the phone shows Welcome, and the Mac an empty
   sidebar that offers Add Server… (see [Loading, empty, error and stale
-  states](#loading-empty-error-and-stale-states)). Neither app adds a server the user didn't.
+  states](#loading-empty-error-and-stale-states)). Neither app adds a server on its own, other
+  than the peers of one the user saved.
   With none, the Mac's Servers tab reads "No Servers" in secondary ink, Add is the only way in
-  and Remove is disabled, and it hides the details, Linked and Check for Updates.
+  and Remove is disabled, and it hides the details and Check for Updates.
 - **Naming a server.** Name renames the server itself, for every device and every lead, through
   `PATCH /api/v1/server {name}`, which answers the server. The field has no caption. It saves on
   Return or when the field loses focus, if the name changed, and clearing it gives the server back
   its computer's name, like "Mac mini". The server answers a name longer than 64 UTF-16 units after trimming, where an
   emoji counts as 2, with 400 "Invalid request.", so the app checks the length itself and sends
   nothing. A name that's too long or a rename that fails keeps what the user typed and adds a row
-  under the field, like a failed link: a yellow `exclamationmark.triangle.fill` and "Couldn't
+  under the field: a yellow `exclamationmark.triangle.fill` and "Couldn't
   rename Mac mini.", with "Name must be 64 characters or fewer." or the error on a second line in
   secondary ink. While a server isn't connected, Name shows its last name and can't be edited.
 - **Updating a server.** Settings' server list updates each server and restarts it onto the new
   release, the same way on both apps, through `GET /api/v1/server`, `POST /api/v1/server/update`
   and `POST /api/v1/server/restart`. The server answers `id`, an identity it makes once and keeps,
   `name`, `version`, the release it runs, `installedVersion`, the installed release a restart would
-  start, which is null when the server runs from source, `links`, which Linking servers describes, and
+  start, which is null when the server runs from source, `peers`, which Peer servers describes, and
   `accentColor`, the server's accent as `#` and six hex digits, `#facc15` until someone changes
   it from the web, an agent or a `PATCH`. The apps keep it on each server, but nothing shows it
   or changes it yet, so both apps keep the system accent.
@@ -299,87 +300,25 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   `GET /api/v1/server` once each time Settings opens, each time a server
   connects, each time the app comes to the foreground and on each Refresh of the channel list,
   which is how a rename made elsewhere reaches them. A failed read changes nothing and reports
-  nothing, and a read never adds a server, since only adding one follows its links. A check
+  nothing, and one that succeeds follows the server's peers, as Peer servers describes. A check
   shows the update's own answer, and a failed one shows its error. Checking again is harmless,
   since a server installs only what's newer.
-- **Linking servers.** A linked server's channel leads can find and privately message the leads
-  on the user's other linked servers, with every app closed. A link is the other server's origin,
-  like `https://mac-mini.tail1234.ts.net` or `http://studio:3000`. Servers listen on `127.0.0.1`
-  unless started with `--host`, so linked servers usually reach each other through
-  `tailscale serve`. The apps read a server's links from `GET /api/v1/server`, as
-  `links: ["https://mac-mini.tail1234.ts.net", "http://studio:3000"]` in link order, and change
-  them through `POST /api/v1/server/links` with `{address}` and `DELETE ?address=`, which each
-  answer the whole server, sending each address as its origin. Reading links contacts no other
-  server. Linking and unlinking are idempotent, and linking checks once that the other server is
-  reachable, so a 422 `{error}` means it refused and stored nothing, with the reason. A server
-  refuses to link with itself, however it's addressed. A link works both ways: a request that reached a server at a
-  non-loopback address links or unlinks both ends, and one that reached it at a loopback address
-  changes only that server. A request for a pair already in that state answers at once without
-  reaching the other end, so the apps send each pair one request, to the end it changes. When only
-  one end of a pair lists the other, that's the end missing the link when linking, or the end
-  that has it when unlinking. Otherwise it's the end saved at a non-loopback address, or the first
-  one's Tailscale address when both are saved at loopback addresses. The body carries the other
-  end's origin: its saved address, or for a server saved at a loopback address, its Tailscale
-  address.
-  They match a link to a saved server by comparing origins, lowercased and
-  without a default port, using its saved address, or for a server saved at a loopback address
-  only its Tailscale address below, since a loopback address names a different server on every
-  machine. They leave links to servers the app hasn't saved alone, except when adding a server
-  adds the servers it's linked with.
-  - **The list.** A saved server is linked when it and another saved server each list the other.
-    Its row shows `link` in secondary ink after its name, 11 pt on the Mac and 13 pt on the
-    phone, and VoiceOver adds "linked". Nothing else in the row changes, and a server that's
-    linked with only some of the others still shows it.
-  - **The Linked switch.** Each server's details end with a Linked switch in its own card, under
-    the details on the Mac and under Server URL on the phone. Its footer names the saved servers
-    it's linked with, then reads "Linked servers' leads can see each other's channel names and
-    purposes, and ask each other for work." Linked servers are one group in which every pair is
-    linked, so every server showing the symbol can reach every other. Turning the switch on links
-    the server with every linked server, or, when none is linked yet, links every saved server
-    with every other. Turning it off unlinks it from every other saved server. The card shows only
-    when the app has two or more saved servers.
-  - **Add Server.** When a server is already saved, the sheet, and the phone's Add Server page,
-    show the same switch under the address, on by default, with a footer naming the servers it
-    would link with. It links once the server is added, and Settings then selects the new server.
-  - **Failures.** Each change links once, with no retry and nothing in the background, so it can
-    never fight an unlink made elsewhere. Each server that didn't link adds one row under the
-    switch: a yellow `exclamationmark.triangle.fill`, "Couldn't link with Mac mini.", "Couldn't
-    link Mac mini with Build Box." for a pair that doesn't include this server, or "Couldn't
-    unlink from Mac mini.", and Try Again, which repeats only that pair. Every failure has the
-    same fix, checking the address and that the server is running, so the row shows no reason or
-    server text. The one exception asks for something else, so it adds a second line in secondary
-    ink: "Studio needs its Tailscale address."
-    Results stay until Settings closes. After each change the apps read every server's links
-    again, so a pair that ended up as asked shows no failure.
-  - **A server on this Mac.** Other servers can't reach a server saved at a loopback address,
-    like `127.0.0.1:3100` or `localhost`, so it links by its Tailscale address. The Linked card
-    shows a field under the switch for each saved server that linking would need one for,
-    including other servers, so turning a switch on never fails for a missing one. The field for
-    the server the card or Add Server is about reads "Tailscale address", and another server's
-    "Tailscale address for Studio", with the placeholder `machine.tail1234.ts.net`. One caption
-    after the last field names every server asked for: "Other servers reach Studio at this
-    address, through `tailscale serve`.", or "Other servers reach Studio and Build Box at these
-    addresses, …". On the Mac it's one caption row, and on the phone it opens the card's footer.
-    A field takes a host, which gets `https://`, or a full `https://` or `http://` address.
-    Settings saves it as an origin on Return or when the field loses focus, with that server, and
-    the app uses it to link and to recognize that server's links. While the server is linked, its
-    address shows as a plain value in secondary ink, so it never looks like a field, since
-    changing it would strand the others' links, and turning Linked off makes it editable again.
-    A server saved at any other address, as the phone saves them, links by that address and never
-    asks.
-  - **Adding a server adds the servers it's linked with,** so a device joins a group of linked
-    servers by adding any one of them, and their names and links stay in sync from the servers.
-    The first time a server the user just added answers `GET /api/v1/server`, the app reads
-    `GET /api/v1/server` at each of its links that matches no saved server, and saves each one
-    that answers from this device with an `id` that isn't saved, at that link's address, after the
-    added server in link order, without changing any links. A server that doesn't answer is
-    skipped, and the added servers' own links aren't followed. This happens only when the user
-    adds a server, on Welcome or through Add Server, and never on a later read, so a server the
-    user removes stays removed until they add it again. Settings keeps the server the user added
-    selected, and the new rows are the only sign.
-  - **Removing a server doesn't unlink it,** because other devices and the web rely on the link.
-    The apps store nothing else about links, and read them with the rest of `GET /api/v1/server`
-    and after each change.
+- **Peer servers.** Each server finds its own peers, the user's other Macs on Tailscale, and its
+  channel leads can find and privately message the leads on them with every app closed. The apps
+  manage nothing about it, so no row marks a peer and Settings has nothing to turn on.
+  `GET /api/v1/server` answers `peers`, the origins of the other online Macs the server's owner
+  has on their tailnet, sorted, like `["https://mac-mini.tail1234.ts.net"]`, and empty when there
+  are none. A peer is only a candidate, since a Mac may not run Toy Box.
+  - **Following peers.** Adding any one of the user's servers adds the rest, and a Mac that joins
+    later appears by itself. Each time the app reads a server, it reads `GET /api/v1/server` at
+    each peer whose origin matches no saved server's address, compared lowercased and without a
+    default port, and saves each one that answers from this device with an `id` that isn't saved,
+    at the peer's origin, after the server that listed it, in `peers` order. A peer that doesn't
+    answer is skipped until the next read, and a saved peer's own peers are followed when the app
+    reads it in turn. Two reads that find the same server save it once, and a peer that answers
+    with a saved `id`, like this Mac's own server saved at a loopback address, changes nothing.
+    So a server the user removes comes back while it's still a peer of a saved one. Settings
+    keeps the server it had selected, and new rows are the only sign.
 
 ### Sending
 
