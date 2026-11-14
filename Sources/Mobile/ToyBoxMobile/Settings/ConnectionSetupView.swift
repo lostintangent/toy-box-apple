@@ -4,11 +4,11 @@ import ToyBoxUI
 
 struct ConnectionSetupView: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ViewState private var connection = ServerConnectionProbe()
-    @ViewState private var connectFailure: String?
-    /// The Form's card edges and the bar's, measured so Continue lines up with the card at any width.
+    @ViewState private var address = ""
+    @ViewState private var isConnecting = false
+    @ViewState private var failure: (any Error)?
+    /// The Form's card edges and the bar's, measured so Connect lines up with the card at any width.
     @ViewState private var cardSpan: ClosedRange<CGFloat>?
     @ViewState private var barSpan: ClosedRange<CGFloat>?
 
@@ -28,14 +28,12 @@ struct ConnectionSetupView: View {
                 .listRowBackground(Color.clear)
                 .listRowInsets(.horizontal, 0)
             }
-            ServerConnectionSection(
-                connection: connection, placeholder: "machine.tail1234.ts.net",
-                footer: "Use your server's address, including its port and any path prefix. If it runs on another computer, this iPhone needs to reach it, for example over Tailscale.",
-                failure: $connectFailure)
-            // A pinned bar would cover the card at accessibility sizes, so Continue follows it instead.
+            ServerConnectionSection(address: $address, failure: failure, connect: connect)
+                .disabled(isConnecting)
+            // A pinned bar would cover the card at accessibility sizes, so Connect follows it instead.
             if dynamicTypeSize.isAccessibilitySize {
                 Section {
-                    continueButton
+                    connectButton
                         .listRowBackground(Color.clear)
                         .listRowInsets(.horizontal, 0)
                 }
@@ -45,30 +43,27 @@ struct ConnectionSetupView: View {
         .toolbarVisibility(.hidden, for: .navigationBar)
         .safeAreaBar(edge: .bottom) {
             if !dynamicTypeSize.isAccessibilitySize {
-                continueButton
+                connectButton
                     .padding(.leading, continueInsets?.leading)
                     .padding(.trailing, continueInsets?.trailing)
                     .padding(.bottom, 8)
                     .onGeometryChange(for: ClosedRange<CGFloat>.self, of: \.horizontalSpan) { barSpan = $0 }
             }
         }
-        .onAppear { connection.address = model.serverURL }
-        .onDisappear { connection.cancel() }
-        .onChange(of: scenePhase) { _, phase in
-            if phase != .active { connection.cancel() }
-        }
+        .onAppear { address = model.serverURL }
+        .onChange(of: address) { _, _ in failure = nil }
     }
 
-    private var continueButton: some View {
+    private var connectButton: some View {
         Button(action: connect) {
-            Text("Continue")
+            Text(isConnecting ? "Connecting…" : "Connect")
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.glassProminent)
         .controlSize(.extraLarge)
-        .accessibilityIdentifier("server-use")
-        .disabled(!canContinue)
+        .accessibilityIdentifier("server-connect")
+        .disabled(isConnecting || isEmpty)
     }
 
     private var continueInsets: (leading: CGFloat, trailing: CGFloat)? {
@@ -76,17 +71,16 @@ struct ConnectionSetupView: View {
         return (max(0, cardSpan.lowerBound - barSpan.lowerBound), max(0, barSpan.upperBound - cardSpan.upperBound))
     }
 
-    private var canContinue: Bool {
-        guard case .connected? = connection.phase else { return false }
-        return true
-    }
+    private var isEmpty: Bool { address.trimmingCharacters(in: .whitespaces).isEmpty }
 
+    /// One try: a server that answers is saved and replaces Welcome, and a failure shows in the card.
     private func connect() {
-        guard case .connected(let url, _) = connection.phase else { return }
-        do {
-            try model.addServer(url.absoluteString)
-            Task { await model.refreshCatalog() }
-        } catch { connectFailure = error.localizedDescription }
+        guard !isConnecting, !isEmpty else { return }
+        isConnecting = true
+        Task {
+            do { try await model.connect(address) } catch { failure = error }
+            isConnecting = false
+        }
     }
 }
 

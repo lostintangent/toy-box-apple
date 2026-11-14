@@ -299,9 +299,4 @@ struct SettingsView: View {
         }
         .font(.caption).textSelection(.enabled)
     }
-
-    static func connectionSummary(serverURL: String, channelCount: Int) -> String {
-        let noun = channelCount == 1 ? "channel" : "channels"
-        return "Connected to \(serverURL). \(channelCount) \(noun) available."
-    }
 }

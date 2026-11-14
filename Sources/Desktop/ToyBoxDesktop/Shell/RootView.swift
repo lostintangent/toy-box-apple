@@ -212,8 +212,7 @@ struct RootView: View {
             if !model.launchOptions.isSnapshot { restoredSelection = selection?.identifier }
             model.updateWindow(windowID, channel: selection, isKey: isKeyWindow)
         }
-        // Reordering servers keeps the window where it is. Removing the selection's server, or
-        // changing its address, starts it over.
+        // A peer joining keeps the window where it is, and Disconnect starts it over.
         .onChange(of: model.catalogs.map(ObjectIdentifier.init)) { _, _ in
             guard selection != nil, selectedCatalog == nil else { return }
             handoff.cancel()

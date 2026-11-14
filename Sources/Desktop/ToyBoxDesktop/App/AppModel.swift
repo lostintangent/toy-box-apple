@@ -17,7 +17,8 @@ final class AppModel {
     let quickSend: QuickSendController
     let widgetSnapshots: WidgetSnapshotPublisher
     private let dockAttention: DockAttention
-    /// Every server in Settings order, each with its own catalog stream and channel stores.
+    /// Every server opened this run, the one connected through first, each with its own catalog stream
+    /// and channel stores.
     let servers: ChannelServers
     var catalogs: [ChannelCatalogStore] { servers.catalogs }
     /// The first server, which the windows and integrations show until they span every server.

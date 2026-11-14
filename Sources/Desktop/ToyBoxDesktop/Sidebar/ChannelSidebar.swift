@@ -15,7 +15,6 @@ struct ChannelSidebar: View {
     @FocusState private var searchFocused: Bool
     /// The servers whose sections are collapsed, by address.
     @ViewState private var collapsed: Set<URL> = []
-    @ViewState private var addsServer = false
 
     /// A server's channels that match the search.
     private func channels(in catalog: ChannelCatalogStore?) -> [Listed] {
@@ -28,7 +27,7 @@ struct ChannelSidebar: View {
     }
 
     /// The first run, or after removing every server, which welcomes the person instead.
-    private var hasNoServers: Bool { model.catalogs.isEmpty && model.configurationError == nil }
+    private var hasNoServers: Bool { model.servers.shown.isEmpty && model.configurationError == nil }
 
     /// The first load, or a refresh the person asked for.
     private func busy(_ catalog: ChannelCatalogStore) -> Bool {
@@ -36,13 +35,13 @@ struct ChannelSidebar: View {
     }
 
     private var isEmpty: Bool {
-        hasNoServers || (!model.catalogs.isEmpty
-            && model.catalogs.allSatisfy { $0.phase == .connected && channels(in: $0).isEmpty })
+        hasNoServers || (!model.servers.shown.isEmpty
+            && model.servers.shown.allSatisfy { $0.phase == .connected && channels(in: $0).isEmpty })
     }
 
     /// The footer's servers. A launch server the app can't use counts as one that can't connect.
     private var summary: SidebarFooter.Summary {
-        guard let error = model.configurationError else { return .init(catalogs: model.catalogs) }
+        guard let error = model.configurationError else { return .init(catalogs: model.servers.shown) }
         return .init(servers: [(SidebarFooter.server(model.serverURL), SidebarFooter(phase: nil, isLoaded: false), error)])
     }
 
@@ -75,7 +74,7 @@ struct ChannelSidebar: View {
     var body: some View {
         // Every server has its section, even one, so adding a second never reshapes the list.
         List(selection: listSelectionBinding) {
-            ForEach(model.catalogs, id: \.api.baseURL) { catalog in
+            ForEach(model.servers.shown, id: \.api.baseURL) { catalog in
                 let expansion = isExpanded(catalog)
                 Section(isExpanded: expansion) {
                     serverRows(catalog)
@@ -93,7 +92,7 @@ struct ChannelSidebar: View {
             if isEmpty { emptyState }
         }
         .safeAreaBar(edge: .bottom) {
-            // With no servers, the welcome's Add Server… is the way in.
+            // With no servers, the welcome's Connect is the way in.
             if !hasNoServers {
                 SidebarConnectionFooter(
                     summary: summary,
@@ -104,8 +103,6 @@ struct ChannelSidebar: View {
                 )
             }
         }
-        // Add Server… opens over this window, and the server's channels fill the list once it connects.
-        .sheet(isPresented: $addsServer) { AddServerSheet { _ in } }
         .navigationTitle("Channels")
         .searchable(text: $query, placement: .sidebar, prompt: "Search Channels")
         .searchFocused($searchFocused)
@@ -150,28 +147,22 @@ struct ChannelSidebar: View {
         }
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: query.isEmpty || hasNoServers ? "bubble.left.and.bubble.right" : "magnifyingglass")
-                .font(.system(size: 28)).foregroundStyle(.tertiary)
-            if hasNoServers {
-                VStack(spacing: 4) {
-                    Text("Welcome to Toy Box").font(.headline)
-                    Text("Add a server to see its channels.").foregroundStyle(.secondary)
-                }
-                .multilineTextAlignment(.center)
-            } else {
+    @ViewBuilder private var emptyState: some View {
+        if hasNoServers {
+            SidebarWelcome()
+        } else {
+            VStack(spacing: 12) {
+                Image(systemName: query.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass")
+                    .font(.system(size: 28)).foregroundStyle(.tertiary)
                 Text(query.isEmpty ? "Your channels live here" : "No channels match \"\(query)\"")
                     .font(.headline).multilineTextAlignment(.center)
-            }
-            if hasNoServers {
-                Button("Add Server…") { addsServer = true }
-            } else if query.isEmpty {
-                Button("New Channel") { management.present(.newChannel(server: model.serverURL)) }
-            } else {
-                Button("Clear Search") { query = "" }
-            }
-        }.padding(20)
+                if query.isEmpty {
+                    Button("New Channel") { management.present(.newChannel(server: model.serverURL)) }
+                } else {
+                    Button("Clear Search") { query = "" }
+                }
+            }.padding(20)
+        }
     }
 
     private func row(_ listed: Listed, presentation: ChannelSidebarPresentation, api: ChannelAPI) -> some View {

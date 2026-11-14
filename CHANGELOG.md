@@ -5,12 +5,16 @@
 ### Features
 
 - Connect to any one of your Macs and Toy Box finds the rest on its own, so there's nothing to link or add one by one. A Mac that's asleep drops out of the list and comes back when it wakes.
+- The first time you open Toy Box, you can connect right from the sidebar, without a trip to Settings.
+- Disconnect in Settings forgets your servers, so you can start fresh by connecting to any one of your Macs.
 
 ## iPhone 0.1.38
 
 ### Features
 
 - Connect to any one of your Macs and Toy Box finds the rest on its own, so there's nothing to link or add one by one. A Mac that's asleep drops out of the list and comes back when it wakes.
+- Setting up is one step now: enter your Mac's address and tap Connect.
+- Disconnect in Settings forgets your servers, so you can start fresh by connecting to any one of your Macs.
 
 ## iPhone 0.1.37
 

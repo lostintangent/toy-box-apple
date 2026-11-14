@@ -83,8 +83,7 @@ struct RootView: View {
         }
         .environment(management)
         .focusedSceneValue(\.channelCommands, commandActions)
-        // Removing a server or changing its address ends what was open on it. Adding or reordering
-        // servers changes nothing.
+        // Disconnect ends what was open, and a peer joining changes nothing.
         .onChange(of: model.catalogs.map(ObjectIdentifier.init)) { old, new in
             guard !Set(old).isSubset(of: new) else { return }
             handoff.cancel()

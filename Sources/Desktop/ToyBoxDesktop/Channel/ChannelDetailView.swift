@@ -203,8 +203,8 @@ struct ChannelDetailView: View {
     @ViewBuilder private var titleMenu: some View {
         let selected = store.target
         Picker("Channel", selection: Binding(get: { selected }, set: { if let target = $0, target != selected { onSelect(target) } })) {
-            if model.catalogs.count > 1 {
-                ForEach(model.catalogs, id: \.api.baseURL) { catalog in
+            if model.servers.shown.count > 1 {
+                ForEach(model.servers.shown, id: \.api.baseURL) { catalog in
                     Section(catalog.name) { channelItems(in: catalog) }
                 }
             } else if let catalog {
