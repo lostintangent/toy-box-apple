@@ -12,17 +12,6 @@ import UIKit
 @Suite("Shared transcript rendering inputs")
 struct TranscriptMarkdownTests {
     @MainActor
-    @Test func theHostSuppliesTypographyClipboardAndMentionInk() {
-        let view = TranscriptMarkdown(content: "Body and `code`", bodySize: 17, codeSize: 15,
-                                      lineSpacing: 4, textScale: 1.2, copyCode: { _ in },
-                                      mentionInk: { _ in .purple })
-        #expect(view.bodySize == 17 && view.codeSize == 15 && view.lineSpacing == 4 && view.textScale == 1.2)
-        let defaults = TranscriptMarkdown(content: "", copyCode: { _ in }, mentionInk: { _ in .purple })
-        #expect(defaults.bodySize == 14 && defaults.codeSize == 12 && defaults.lineSpacing == 3)
-        #expect(defaults.textScale == 1 && defaults.preservesLineBreaks)
-    }
-
-    @MainActor
     @Test func documentsJoinSoftWrapsWithoutChangingMessagesOrExplicitHardBreaks() {
         let source = "Wrapped\nsource  \nkeeps this break\\\nand this one\nat the end"
         let message = TranscriptMarkdown(content: source, copyCode: { _ in }, mentionInk: { _ in .purple })

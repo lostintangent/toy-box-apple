@@ -9,27 +9,19 @@ import ToyBoxUI
 struct TranscriptRequestChoicesTests {
     private let replies = ["Ship it", "Hold for now", String(repeating: "x", count: 80)]
 
-    @Test func aPendingRequestOffersItsRepliesInTheLeadsOrder() throws {
-        let choices = try #require(TranscriptRequestChoices(request: request(replies: replies), isConnected: true))
+    @Test(arguments: [true, false])
+    func aPendingRequestOffersItsRepliesInTheLeadsOrderOnItsOwnEntry(isConnected: Bool) throws {
+        let choices = try #require(TranscriptRequestChoices(request: request(replies: replies), isConnected: isConnected))
         #expect(choices.labels(for: 15) == replies)
-        #expect(choices.canSend)
-    }
-
-    @Test func choicesWaitForTheConnectionToSend() throws {
-        let choices = try #require(TranscriptRequestChoices(request: request(replies: replies), isConnected: false))
-        #expect(choices.labels(for: 15) == replies)
-        #expect(!choices.canSend)
+        #expect(choices.labels(for: 14).isEmpty)
+        // Choices wait for the connection to send.
+        #expect(choices.canSend == isConnected)
     }
 
     @Test func noRequestOrNoValidRepliesOffersNothing() {
         #expect(TranscriptRequestChoices(request: nil, isConnected: true) == nil)
         #expect(TranscriptRequestChoices(request: request(replies: nil), isConnected: true) == nil)
         #expect(TranscriptRequestChoices(request: request(replies: ["Only one"]), isConnected: true) == nil)
-    }
-
-    @Test func onlyTheRequestsOwnEntryShowsThem() throws {
-        let choices = try #require(TranscriptRequestChoices(request: request(replies: replies), isConnected: true))
-        #expect(choices.labels(for: 14).isEmpty)
     }
 
     private func request(replies: [String]?) -> ChannelMessage {

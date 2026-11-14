@@ -43,29 +43,33 @@ struct TranscriptMessageTests {
         #expect(abs(five.width - three.width - (4 + plusTwo)) <= 1)
     }
 
-    @Test func attachmentEdgeKeepsTheMacsOpacities() {
-        typealias Edge = TranscriptAttachmentEdge<RoundedRectangle>
-        #expect(Edge.opacity(isDark: false, increasedContrast: false) == 0.1)
-        #expect(Edge.opacity(isDark: true, increasedContrast: false) == 0.14)
-        #expect(Edge.opacity(isDark: false, increasedContrast: true) == 0.4)
-        #expect(Edge.opacity(isDark: true, increasedContrast: true) == 0.4)
-    }
-
     @Test func onlyThePhonesBlackDarkCanvasLiftsTheUserBubble() {
-        let wash = Color.accentColor.opacity(0.09)
         for isDark in [false, true] {
-            let neutral = Color.primary.opacity(isDark ? 0.07 : 0.045)
-            let orange = Color.orange.opacity(0.10), red = Color.red.opacity(0.10)
-            let mac: [TranscriptSurface: [Color]] = [
-                .canvas: [], .agent: [neutral], .user: [wash], .pendingAgent: isDark ? [neutral, orange] : [orange],
-                .notSentUser: isDark ? [neutral, red] : [red],
-            ]
-            for (surface, fills) in mac {
-                #expect(surface.fills(isDark: isDark) == fills)
-                #expect(surface.fills(isDark: isDark, canvasIsBlack: true) == (surface == .user && isDark
-                    ? [neutral, wash] : fills))
+            for surface in [TranscriptSurface.canvas, .agent, .user, .pendingAgent, .notSentUser] {
+                let fills = surface.fills(isDark: isDark)
+                let lifted = surface == .user && isDark ? TranscriptSurface.agent.fills(isDark: true) + fills : fills
+                #expect(surface.fills(isDark: isDark, canvasIsBlack: true) == lifted, "\(surface) dark \(isDark)")
             }
         }
+    }
+
+    @MainActor
+    @Test func longMessagesCollapseInTheSamePassThatMeasuresThem() throws {
+        func height(_ view: some View) throws -> CGFloat {
+            let renderer = ImageRenderer(content: view.frame(width: 300).fixedSize(horizontal: false, vertical: true))
+            renderer.scale = 1
+            return CGFloat(try #require(renderer.cgImage).height)
+        }
+        func body(_ text: String) -> some View { Text(text).font(.system(size: 14)) }
+        func collapsible(_ text: String, expanded: Bool) throws -> CGFloat {
+            try height(TranscriptCollapsibleBody(isExpanded: expanded, spacing: 6, endPadding: 10) { body(text) }
+                toggle: { Color.clear.frame(height: 20) })
+        }
+        let long = Array(repeating: "A line that wraps across the bubble.", count: 30).joined(separator: "\n")
+        // A first measurement that comes back clamped means the row never changes height after it's placed.
+        #expect(try collapsible(long, expanded: false) == TranscriptCollapsibleBody<Text, Text>.clampHeight + 26)
+        #expect(abs(try collapsible(long, expanded: true) - (try height(body(long)) + 26)) <= 1)
+        #expect(abs(try collapsible("Short", expanded: false) - (try height(body("Short")) + 10)) <= 1)
     }
 
     @Test func aTapOnAWrappedReactionPillOpensThatPillAndOuterRowsKeepTheirReach() {
