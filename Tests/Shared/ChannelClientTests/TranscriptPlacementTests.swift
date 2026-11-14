@@ -1,6 +1,6 @@
+import ChannelClient
 import Foundation
 import Testing
-import ToyBoxUI
 
 @Suite("Pure transcript placement")
 struct TranscriptPlacementTests {

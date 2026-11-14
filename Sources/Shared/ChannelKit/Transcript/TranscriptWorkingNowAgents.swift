@@ -1,5 +1,3 @@
-import ChannelKit
-
 /// Working Now's rows: the agents working, then those waiting, each in roster order.
 /// Waiting agents are usually waiting on someone, so they sit under the working ones. Idle agents stay out.
 public struct TranscriptWorkingNowAgents: Equatable, Sendable {
@@ -14,6 +12,6 @@ public struct TranscriptWorkingNowAgents: Equatable, Sendable {
 
     /// A row's status line, worded as Overview's team rows word it.
     public static func status(_ presence: ChannelAgentPresence?) -> String {
-        ChannelAgentStatusPresentation(presence: presence, isAvailable: true).text
+        ChannelAgent.StatusLine(presence: presence, isAvailable: true).text
     }
 }

@@ -1,4 +1,3 @@
-import ChannelKit
 import Foundation
 
 /// The message whose images the Mac viewer and the phone gallery page through, and the words both

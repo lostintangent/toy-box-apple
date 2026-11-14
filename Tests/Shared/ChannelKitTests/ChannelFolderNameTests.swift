@@ -1,5 +1,5 @@
+import ChannelKit
 import Testing
-import ToyBoxUI
 
 struct ChannelFolderNameTests {
     @Test func folderNamesUseTheLastComponentAndPreserveRootAndEmptyPaths() {

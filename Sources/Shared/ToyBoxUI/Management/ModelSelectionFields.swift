@@ -229,20 +229,12 @@ private extension ProviderModel {
     var selfKey: String { "\(provider)/\(id)" }
 }
 
-extension ModelConfiguration {
-    /// The requested reasoning effort in Edit Agent's words, such as "Extra High", or nil when unset.
-    public var reasoningLabel: String? {
-        guard let effort = options["reasoningEffort"]?.string, !effort.isEmpty else { return nil }
-        return ModelOptionChoice.reasoningLabel(effort)
-    }
-}
-
 struct ModelOptionChoice: Equatable, Identifiable {
     let id: String
     let label: String
 
     static func reasoning(_ values: [String], current: String?) -> [Self] {
-        retaining(current, in: values.map { .init(id: $0, label: reasoningLabel($0)) })
+        retaining(current, in: values.map { .init(id: $0, label: ModelConfiguration.reasoningLabel($0)) })
     }
 
     static func context(_ tiers: [ProviderModel.ContextTier], current: String?) -> [Self] {
@@ -250,7 +242,7 @@ struct ModelOptionChoice: Equatable, Identifiable {
             let label = tier.tokenWindow.map {
                 $0.formatted(.number.notation(.compactName).precision(.fractionLength(0...2))
                     .locale(Locale(identifier: "en_US")))
-            } ?? reasoningLabel(tier.name)
+            } ?? ModelConfiguration.reasoningLabel(tier.name)
             return .init(id: tier.name, label: label)
         })
     }
@@ -259,50 +251,5 @@ struct ModelOptionChoice: Equatable, Identifiable {
         guard !choices.isEmpty, let current, !current.isEmpty,
               !choices.contains(where: { $0.id == current }) else { return choices }
         return [.init(id: current, label: "\(current) (current)")] + choices
-    }
-
-    static func reasoningLabel(_ value: String) -> String {
-        let value = value.lowercased() == "xhigh" ? "Extra High" : value
-        return value.split { $0.isWhitespace || $0 == "_" || $0 == "-" }
-            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
-            .joined(separator: " ")
-    }
-}
-
-public struct ManagementFooter: View {
-    let help: [String]
-    let violation: String?
-
-    public init(help: [String] = [], violation: String? = nil) {
-        self.help = help
-        self.violation = violation
-    }
-
-    public var body: some View {
-        Group {
-            if let violation {
-                Label {
-                    Text(violation)
-                        #if os(iOS)
-                        .foregroundStyle(Color.primary)
-                        #endif
-                } icon: {
-                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
-                }
-            } else if !help.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(help, id: \.self) { Text($0) }
-                }
-            }
-        }
-        #if os(iOS)
-        .font(.footnote)
-        .foregroundStyle(ChannelInk.secondary)
-        #else
-        .font(.system(size: 11))
-        .foregroundStyle(.secondary)
-        #endif
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

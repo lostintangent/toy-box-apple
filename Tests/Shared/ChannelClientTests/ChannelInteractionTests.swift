@@ -1,6 +1,6 @@
+import ChannelClient
 import ChannelKit
 import Testing
-import ToyBoxUI
 
 @MainActor
 struct ChannelInteractionTests {

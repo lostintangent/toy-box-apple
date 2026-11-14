@@ -1,4 +1,3 @@
-import ChannelClient
 import Foundation
 
 /// The draft a dictation session started from: the caret or selection that dictated words replace.

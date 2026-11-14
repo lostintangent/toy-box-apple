@@ -76,7 +76,7 @@ public final class MobileShareSession {
     /// The lead first, then the channel's members, as the audience pill reads them.
     public var agents: [ChannelAgent] {
         guard let target else { return [] }
-        return ChannelSidebarPresentation(catalog: catalogs.first(at: target.serverURL), openChannelIDs: [])
+        return ChannelListing(catalog: catalogs.first(at: target.serverURL), openChannelIDs: [])
             .catalogAgents(channelID: target.id)
     }
 

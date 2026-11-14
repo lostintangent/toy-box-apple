@@ -29,3 +29,19 @@ public struct ModelConfiguration: Codable, Equatable, Sendable {
         try container.encode(object)
     }
 }
+
+extension ModelConfiguration {
+    /// The requested reasoning effort in Edit Agent's words, such as "Extra High", or nil when unset.
+    public var reasoningLabel: String? {
+        guard let effort = options["reasoningEffort"]?.string, !effort.isEmpty else { return nil }
+        return Self.reasoningLabel(effort)
+    }
+
+    /// A reasoning effort or context tier name in Edit Agent's words.
+    package static func reasoningLabel(_ value: String) -> String {
+        let value = value.lowercased() == "xhigh" ? "Extra High" : value
+        return value.split { $0.isWhitespace || $0 == "_" || $0 == "-" }
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
+}

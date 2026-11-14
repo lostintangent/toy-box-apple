@@ -1,4 +1,3 @@
-import ChannelClient
 import ChannelKit
 import Foundation
 import Observation
@@ -29,7 +28,7 @@ public final class TranscriptFind {
     @ObservationIgnored private var generation = UUID()
 
     public var blocksRead: Bool { isPresented || ownsReadingPosition }
-    var selectedIndex: Int? { matches.firstIndex { $0.sequence == selectedSequence } }
+    package var selectedIndex: Int? { matches.firstIndex { $0.sequence == selectedSequence } }
     public var countLabel: String {
         if let selectedIndex { return "\(selectedIndex + 1) of \(matches.count)" }
         return isSearching || error != nil || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -161,5 +160,31 @@ public final class TranscriptFind {
             return TranscriptMarkdownText(MarkdownBlock.parse(body)).text
         }
         return system.rendered(agents: agents)
+    }
+}
+
+public struct TranscriptFindPattern {
+    public let query: String
+
+    public init(_ query: String) {
+        self.query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    public func ranges(in text: String) -> [Range<Int>] {
+        guard !query.isEmpty else { return [] }
+        var result: [Range<Int>] = []
+        var start = text.startIndex
+        while start < text.endIndex,
+              let range = text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive],
+                                     range: start..<text.endIndex, locale: Locale(identifier: "en_US_POSIX")) {
+            guard !range.isEmpty else {
+                start = text.index(after: start)
+                continue
+            }
+            let utf16 = NSRange(range, in: text)
+            result.append(utf16.location..<(utf16.location + utf16.length))
+            start = range.upperBound
+        }
+        return result
     }
 }

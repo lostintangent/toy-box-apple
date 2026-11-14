@@ -2,7 +2,6 @@ import ChannelClient
 import ChannelKit
 import Foundation
 import Testing
-import ToyBoxUI
 
 @MainActor
 @Suite("Channel message Find model")
@@ -281,6 +280,16 @@ struct TranscriptFindModelTests {
         find.query = "hi"
         #expect(find.revealRequest == nil)
         #expect(find.selectedSequence == 1)
+    }
+
+    @Test func occurrenceRangesKeepUnicodeBoundariesAndMatchEveryVisibleSpelling() {
+        let text = "\u{1f44b} Caf\u{00e9} CAFE Cafe\u{0301} caf\u{00e9}"
+        let ranges = TranscriptFindPattern("  cafe ").ranges(in: text)
+        #expect(ranges.count == 4)
+        #expect(ranges.compactMap {
+            Range(NSRange(location: $0.lowerBound, length: $0.count), in: text).map { String(text[$0]) }
+        } == ["Caf\u{00e9}", "CAFE", "Cafe\u{0301}", "caf\u{00e9}"])
+        #expect(TranscriptFindPattern(" \n ").ranges(in: text).isEmpty)
     }
 }
 

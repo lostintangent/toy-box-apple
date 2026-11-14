@@ -13,3 +13,11 @@ public struct ChannelRoutine: Codable, Equatable, Identifiable, Sendable {
         self.prompt = prompt
     }
 }
+
+extension ChannelRoutine {
+    package static func runLabel(schedule: String, pending: Bool, requestedAt: Date?) -> String {
+        if pending { return "Requesting run…" }
+        if requestedAt != nil { return "Run requested" }
+        return schedule
+    }
+}

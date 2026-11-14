@@ -9,6 +9,31 @@ extension ChannelTask {
             self.elapsedMinutes = elapsedMinutes
             self.checkInMinutes = checkInMinutes
         }
+
+        package var elapsedText: String { Self.duration(elapsedMinutes) }
+        package var checkInText: String? { checkInMinutes.map { Self.duration($0) } }
+        package var elapsedHelp: String { "Elapsed: \(Self.duration(elapsedMinutes, spoken: true))" }
+        package var checkInHelp: String? {
+            checkInMinutes.map {
+                $0 == 0 ? "Check-in due" : "Check-in in \(Self.duration($0, spoken: true))"
+            }
+        }
+
+        package var spoken: String {
+            let elapsed = "\(Self.duration(elapsedMinutes, spoken: true)) elapsed"
+            guard let remaining = checkInMinutes else { return elapsed }
+            return elapsed + (remaining == 0 ? ", check-in due" : ", check-in in \(Self.duration(remaining, spoken: true))")
+        }
+
+        private static func duration(_ minutes: Int, spoken: Bool = false) -> String {
+            let hours = minutes / 60, remainder = minutes % 60
+            var parts: [String] = []
+            if hours > 0 { parts.append(spoken ? "\(hours) \(hours == 1 ? "hour" : "hours")" : "\(hours)h") }
+            if remainder > 0 || hours == 0 {
+                parts.append(spoken ? "\(remainder) \(remainder == 1 ? "minute" : "minutes")" : "\(remainder)m")
+            }
+            return parts.joined(separator: " ")
+        }
     }
 
     public func timing(now: Date) -> Timing? {

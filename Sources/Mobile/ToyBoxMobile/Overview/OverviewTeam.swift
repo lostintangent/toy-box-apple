@@ -69,9 +69,9 @@ struct OverviewTeamRow: View {
     @ViewState private var showsAbout = false
 
     private var wake: Date? {
-        ChannelAgentWakePresentation.wake(for: store.presence[agent.id], isAvailable: !store.phase.isUnavailable)
+        ChannelAgent.Countdown.wake(for: store.presence[agent.id], isAvailable: !store.phase.isUnavailable)
     }
-    private var status: ChannelAgentStatusPresentation {
+    private var status: ChannelAgent.StatusLine {
         .init(presence: store.presence[agent.id], isAvailable: !store.phase.isUnavailable)
     }
     private var canManage: Bool { store.phase.isConnected && agent.deleted != true }
@@ -183,9 +183,9 @@ struct OverviewAgentAbout: View {
     private var facts: [Fact] {
         let available = !store.phase.isUnavailable
         var facts = [Fact(key: "Status", lines: [
-            ChannelAgentStatusPresentation(presence: store.presence[agentID], isAvailable: available).spoken
+            ChannelAgent.StatusLine(presence: store.presence[agentID], isAvailable: available).spoken
         ])]
-        if let wake = ChannelAgentWakePresentation.wake(for: store.presence[agentID], isAvailable: available) {
+        if let wake = ChannelAgent.Countdown.wake(for: store.presence[agentID], isAvailable: available) {
             facts.append(Fact(key: "Checks again", lines: [
                 wake.formatted(date: Calendar.current.isDateInToday(wake) ? .omitted : .abbreviated, time: .shortened)
             ]))
@@ -342,7 +342,7 @@ struct OverviewAgentStatus: View {
     @ScaledMetric(relativeTo: .footnote) private var cueWidth = 12
 
     var body: some View {
-        let status = ChannelAgentStatusPresentation(presence: presence, isAvailable: available)
+        let status = ChannelAgent.StatusLine(presence: presence, isAvailable: available)
         // Scaled metrics do not track the preferred font's point size at accessibility sizes.
         let capHeight = UIFont.preferredFont(
             forTextStyle: .footnote,
@@ -356,7 +356,7 @@ struct OverviewAgentStatus: View {
             } else if status.cue == .waiting {
                 Image(systemName: "pause.fill")
                     .font(.system(size: cueSize, weight: .heavy))
-                    .foregroundStyle(ChannelAgentStatusPresentation.waitingCue(in: colorScheme))
+                    .foregroundStyle(ChannelAgent.StatusLine.waitingCue(in: colorScheme))
                     .frame(width: cueWidth)
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + capHeight / 2 }
                     .accessibilityHidden(true)

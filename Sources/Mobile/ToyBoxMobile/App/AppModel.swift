@@ -142,12 +142,12 @@ final class AppModel {
     var selectedServer: String { selection?.serverURL ?? serverURL }
     var canCreateChannel: Bool { canManageChannels(on: catalogs.first(at: selectedServer)) }
 
-    var sidebarPresentation: ChannelSidebarPresentation { sidebarPresentation(for: catalog) }
+    var sidebarPresentation: ChannelListing { sidebarPresentation(for: catalog) }
 
     /// How the list shows a server's channels, given which of them is on screen.
-    func sidebarPresentation(for catalog: ChannelCatalogStore?) -> ChannelSidebarPresentation {
+    func sidebarPresentation(for catalog: ChannelCatalogStore?) -> ChannelListing {
         let open = openChannels.compactMap { catalog?.target($0.channelID) == $0 ? $0.channelID : nil }
-        return ChannelSidebarPresentation(catalog: catalog, openChannelIDs: Set(open))
+        return ChannelListing(catalog: catalog, openChannelIDs: Set(open))
     }
 
     /// The channel on screen, whose live state the list and its requests read.

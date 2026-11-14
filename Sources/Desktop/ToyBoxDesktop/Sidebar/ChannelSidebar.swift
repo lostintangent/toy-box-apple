@@ -202,7 +202,7 @@ struct ChannelSidebar: View {
         }
     }
 
-    private func row(_ listed: Listed, presentation: ChannelSidebarPresentation, catalog: ChannelCatalogStore,
+    private func row(_ listed: Listed, presentation: ChannelListing, catalog: ChannelCatalogStore,
                      request: ChannelWaitingRequest?) -> some View {
         let channel = listed.channel
         let current = presentation.channel(channel)

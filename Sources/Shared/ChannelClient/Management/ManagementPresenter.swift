@@ -1,4 +1,3 @@
-import ChannelClient
 import ChannelKit
 import Foundation
 import Observation
@@ -90,7 +89,7 @@ public final class ManagementPresenter {
     public private(set) var hasLoaded = true
     /// The deletion in flight, then whether it failed. It sits beside the flow, so removing an agent
     /// from Edit Agent never replaces its entries.
-    public internal(set) var deletion: (flow: ManagementFlow, failed: Bool)?
+    public package(set) var deletion: (flow: ManagementFlow, failed: Bool)?
     @ObservationIgnored private var visit = 0
     @ObservationIgnored private var creatingMentions: Set<String> = []
 

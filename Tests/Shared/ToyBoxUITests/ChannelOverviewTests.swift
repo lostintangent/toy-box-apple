@@ -5,7 +5,7 @@ import SwiftUI
 import Testing
 import ToyBoxUI
 
-struct OverviewPresentationTests {
+struct ChannelOverviewTests {
     @Test func artifactSymbolsKeepTheSameFileTypeMeaningOnBothHosts() {
         let cases: [(String, String)] = [
             ("plan.md", "doc.text"), ("plan.MARKDOWN", "doc.text"), ("data.bin", "doc.text"),
@@ -15,16 +15,8 @@ struct OverviewPresentationTests {
         ]
         for (path, expected) in cases {
             let artifact = ChannelArtifact(file: .init(kind: "machine", path: path), title: path)
-            #expect(ChannelArtifactSymbol.name(for: ArtifactContentKind(artifact)) == expected)
+            #expect(ArtifactContentKind(artifact).symbolName == expected)
         }
-    }
-
-    @MainActor
-    @Test func routineSchedulesUseReadableSummariesAndKeepUnknownSyntax() throws {
-        let weekdays = try RoutineSchedule("0 9 * * 1-5").summary()
-        #expect(RoutineScheduleSummary.text(for: "0 9 * * 1-5") == weekdays)
-        #expect(RoutineScheduleSummary.text(for: "H 9 * * *") == "H 9 * * *")
-        #expect(RoutineScheduleSummary.text(for: "not a schedule") == "not a schedule")
     }
 
     @Test func countsKeepKnownZeroUnavailableAndNaturalSingularPluralDistinct() {
@@ -64,7 +56,7 @@ struct OverviewPresentationTests {
         #expect(ChannelOverviewFilter.noWorkingAgentsText(isAvailable: true) == "No agents working")
         let offline = ChannelOverviewFilter.noWorkingAgentsText(isAvailable: false)
         #expect(offline == "Status unavailable while disconnected")
-        #expect(offline == ChannelAgentStatusPresentation(presence: .init(state: "working"), isAvailable: false).text)
+        #expect(offline == ChannelAgent.StatusLine(presence: .init(state: "working"), isAvailable: false).text)
     }
 
     @Test func filtersNameTheirToggleAndIdentifyItForBothHosts() {
@@ -136,16 +128,41 @@ struct OverviewPresentationTests {
         #expect(result.size.height == 18)
     }
 
-    @Test func routineRunCopyKeepsPendingAheadOfAcknowledgementAndOtherwisePreservesTheSchedule() {
-        let requested = Date(timeIntervalSince1970: 1)
-        #expect(ChannelRoutineRunPresentation.label(
-            schedule: "Every morning", pending: false, requestedAt: nil) == "Every morning")
-        #expect(ChannelRoutineRunPresentation.label(
-            schedule: "Every morning", pending: true, requestedAt: nil) == "Requesting run…")
-        #expect(ChannelRoutineRunPresentation.label(
-            schedule: "Every morning", pending: false, requestedAt: requested) == "Run requested")
-        #expect(ChannelRoutineRunPresentation.label(
-            schedule: "Every morning", pending: true, requestedAt: requested) == "Requesting run…")
+    @MainActor
+    @Test func waitingAmberUsesTheApprovedOpaqueSRGBValues() {
+        let light = ChannelAgent.StatusLine.waitingCue(in: .light).resolve(in: EnvironmentValues())
+        let dark = ChannelAgent.StatusLine.waitingCue(in: .dark).resolve(in: EnvironmentValues())
+        #expect(abs(light.red - 154.0 / 255) < 0.00001)
+        #expect(abs(light.green - 103.0 / 255) < 0.00001 && light.blue == 0 && light.opacity == 1)
+        #expect(abs(dark.red - 244.0 / 255) < 0.00001)
+        #expect(abs(dark.green - 190.0 / 255) < 0.00001)
+        #expect(abs(dark.blue - 102.0 / 255) < 0.00001 && dark.opacity == 1)
+    }
+
+    @MainActor
+    @Test func onlyLiveWorkingStatusUsesTheStrongerForegroundInk() {
+        let working = ChannelAgent.StatusLine(presence: .init(state: "working"), isAvailable: true)
+        #expect(working.textColor == Color.primary.opacity(0.85))
+        for presence: ChannelAgentPresence? in [nil, .init(state: "waiting"), .init(state: "idle")] {
+            #expect(ChannelAgent.StatusLine(presence: presence, isAvailable: true).textColor == ChannelInk.secondary)
+        }
+        #expect(ChannelAgent.StatusLine(presence: .init(state: "working"), isAvailable: false).textColor == ChannelInk.secondary)
+    }
+
+    @Test(arguments: [11.0, 13, 36], [1.0, 2, 3])
+    @MainActor
+    func wakeCountdownLeavesFourPointsBetweenItsBellAndDuration(fontSize: Double, scale: Double) throws {
+        func width<Content: View>(_ content: Content) throws -> Int {
+            let renderer = ImageRenderer(content: content.font(.system(size: fontSize)).fixedSize())
+            renderer.scale = scale
+            return try #require(renderer.cgImage).width
+        }
+        let countdown = try width(ChannelAgentWakeCountdown(wake: .distantPast, isActive: false))
+        let withoutGap = try width(HStack(spacing: 0) {
+            Image(systemName: "bell")
+            Text("Due").monospacedDigit()
+        })
+        #expect(countdown - withoutGap == Int(4 * scale))
     }
 
     @Test(arguments: [1.0, 2.0, 3.0], [false, true])

@@ -1,7 +1,6 @@
-@testable import ChannelClient
 import ChannelKit
 import Testing
-import ToyBoxUI
+@testable import ChannelClient
 
 /// Both apps' reveals wait here, so this covers the phone's notification path, which no drive can open.
 @MainActor

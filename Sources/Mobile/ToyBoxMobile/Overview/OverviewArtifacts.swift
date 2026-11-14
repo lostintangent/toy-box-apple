@@ -63,7 +63,7 @@ struct OverviewArtifactSymbol: View {
     let size: CGFloat
 
     var body: some View {
-        OverviewRowSymbol(systemName: ChannelArtifactSymbol.name(for: ArtifactContentKind(artifact)), size: size)
+        OverviewRowSymbol(systemName: ArtifactContentKind(artifact).symbolName, size: size)
     }
 }
 

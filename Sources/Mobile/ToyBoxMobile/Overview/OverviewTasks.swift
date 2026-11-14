@@ -239,7 +239,7 @@ struct OverviewTaskNode: View {
             let progress = children.progress
             parts.append("\(progress.done) of \(progress.total) subtasks done")
         }
-        if let timing { parts.append(ChannelTaskTimingPresentation(timing: timing).spoken) }
+        if let timing { parts.append(timing.spoken) }
         if let diff { parts.append(ChannelOverviewTaskDiff.spoken(diff)) }
         if let owner { parts.append("owner \(owner.name)") }
         return parts.joined(separator: ", ")

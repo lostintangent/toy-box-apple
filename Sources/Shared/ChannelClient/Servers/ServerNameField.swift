@@ -1,4 +1,3 @@
-import ChannelClient
 import Foundation
 import Observation
 

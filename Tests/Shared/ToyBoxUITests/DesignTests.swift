@@ -6,7 +6,7 @@ import ToyBoxUI
 import UIKit
 #endif
 
-struct PresentationTests {
+struct DesignTests {
     @Test(arguments: [
         (-1, [Int]()), (0, []), (1, [1]), (2, [2]), (3, [3, 1]), (4, [3, 2, 1]), (8, [3, 2, 1]),
     ])
@@ -59,32 +59,21 @@ struct PresentationTests {
         #expect(["", "#12", "#12345", "#1234567", "#12ggff"].allSatisfy { Color(hex: $0) == nil })
     }
 
-    @Test func lastActivityFollowsMailDayBuckets() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = try #require(TimeZone(identifier: "America/Los_Angeles"))
-        let now = try #require(calendar.date(from: DateComponents(year: 2026, month: 10, day: 22, hour: 0, minute: 30)))
-        func ago(days: Int, hour: Int) throws -> Date {
-            let day = try #require(calendar.date(byAdding: .day, value: -days, to: calendar.startOfDay(for: now)))
-            return try #require(calendar.date(byAdding: .hour, value: hour, to: day))
+    @Test func systemEventsLeadWithTheirOwnSymbolAndUnknownOnesWithInfo() {
+        #expect(ChannelSystemEventStyle.symbol(for: "tasks_completed") == "checkmark.circle.fill")
+        for scheme in [ColorScheme.light, .dark] {
+            #expect(ChannelSystemEventStyle.symbolColor(for: "tasks_completed", in: scheme)
+                    == ChannelTaskColors.changes(in: scheme).added)
         }
-        let cases: [(Date, ChannelActivityTime.Day)] = [
-            (try ago(days: 0, hour: 0), .today),
-            (now.addingTimeInterval(3600), .today),
-            (try ago(days: 1, hour: 23), .yesterday),
-            (try ago(days: 1, hour: 0), .yesterday),
-            (try ago(days: 2, hour: 12), .weekday),
-            (try ago(days: 6, hour: 0), .weekday),
-            (try ago(days: 7, hour: 23), .older),
-            (try ago(days: 400, hour: 9), .older),
-        ]
-        for (date, expected) in cases {
-            #expect(ChannelActivityTime.day(of: date, now: now, calendar: calendar) == expected, "\(date)")
-        }
-        let yesterday = try ago(days: 1, hour: 9)
-        #expect(ChannelActivityTime.label(for: yesterday, now: now, calendar: calendar) == "Yesterday")
-        #expect(ChannelActivityTime.accessibilityLabel(for: now, now: now, calendar: calendar)
-                .hasPrefix("Last activity today at "))
-        #expect(ChannelActivityTime.spokenLabel(for: yesterday, now: now, calendar: calendar)
-                .hasPrefix("yesterday at "))
+        #expect(ChannelSystemEventStyle.symbol(for: "a_future_event") == "info.circle")
+    }
+
+    @Test func disabledScheduleHasNoRepeatingEntriesAndVisibleTicksUseMinuteBoundaries() {
+        let start = Date(timeIntervalSince1970: 125)
+        #expect(Array(ChannelTaskMinuteSchedule(isVisible: false).entries(from: start, mode: .normal)) == [start])
+        let ticks = Array(ChannelTaskMinuteSchedule(isVisible: true).entries(from: start, mode: .normal).prefix(3))
+        #expect(ticks.count == 3)
+        #expect(ticks.allSatisfy { $0.timeIntervalSince1970.truncatingRemainder(dividingBy: 60) == 0 })
+        #expect(ticks[1].timeIntervalSince(ticks[0]) == 60 && ticks[2].timeIntervalSince(ticks[1]) == 60)
     }
 }

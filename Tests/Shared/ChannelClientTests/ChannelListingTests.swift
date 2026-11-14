@@ -6,7 +6,7 @@ import Testing
 @testable import ChannelClient
 
 @MainActor
-struct ChannelSidebarPresentationTests {
+struct ChannelListingTests {
     @Test func visibleChannelsUseLiveSlicesAndEveryChannelUsesTheCatalogsWorking() async throws {
         var listed = testState().channel
         listed.requestSequence = 12
@@ -23,8 +23,8 @@ struct ChannelSidebarPresentationTests {
         live.lead.name = "Live lead"
         _ = try store.apply(.init(type: "snapshot", state: live))
 
-        let open = ChannelSidebarPresentation(catalog: catalog, openChannelIDs: ["test"])
-        let closed = ChannelSidebarPresentation(catalog: catalog, openChannelIDs: [])
+        let open = ChannelListing(catalog: catalog, openChannelIDs: ["test"])
+        let closed = ChannelListing(catalog: catalog, openChannelIDs: [])
         #expect(open.channel(listed).name == "Live name")
         #expect(open.channel(listed).updatedAt == listed.updatedAt)
         #expect(closed.channel(listed) == listed)
@@ -53,7 +53,7 @@ struct ChannelSidebarPresentationTests {
         #expect(open.working(listed, agents: open.agents(listed)).isEmpty)
         #expect(closed.working(listed, agents: closed.agents(listed)).count == 1)
 
-        let absent = ChannelSidebarPresentation(catalog: nil, openChannelIDs: ["test"])
+        let absent = ChannelListing(catalog: nil, openChannelIDs: ["test"])
         #expect(absent.channel(listed) == listed)
         #expect(absent.agents(listed).isEmpty)
         #expect(absent.working(listed, agents: []).isEmpty)
@@ -69,7 +69,7 @@ struct ChannelSidebarPresentationTests {
         await catalog.refresh()
         let store = catalog.channel(id: "test")
         _ = try store.apply(.init(type: "snapshot", state: state))
-        let projection = ChannelSidebarPresentation(catalog: catalog, openChannelIDs: ["test"])
+        let projection = ChannelListing(catalog: catalog, openChannelIDs: ["test"])
         let changed = Mutex(false)
         withObservationTracking {
             _ = projection.channel(state.channel)

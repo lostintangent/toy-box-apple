@@ -1,7 +1,8 @@
 import ChannelKit
 
+/// The channel list as both apps show it: live from a channel's store while it's open, else from the catalog.
 @MainActor
-public struct ChannelSidebarPresentation {
+public struct ChannelListing {
     private let catalog: ChannelCatalogStore?
     private let openChannelIDs: Set<String>
 

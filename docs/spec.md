@@ -1821,7 +1821,7 @@ show Load Older Messages when more history is available, a small loading row whi
 "Beginning of conversation" label and reserve no empty header space. A filtered view must
 continue paging even when a page contains no visible rows.
 
-`ToyBoxUI.TranscriptPlacement` defines container-independent placement from ordered row frames
+`ChannelClient.TranscriptPlacement` defines container-independent placement from ordered row frames
 and the viewport's width, height and glass insets. Its adapter sends `layoutChanged` only when
 `layoutEvent` detects changed geometry, never just because another native layout pass ran.
 The pure `placement(for:rows:viewport:)` function projects an existing intent against current
@@ -2576,7 +2576,7 @@ Both apps share status copy and spoken state. Missing live presence reads "Statu
 A stale or deleted channel reads "Status unavailable while disconnected". Neither keeps an
 activity cue. A channel that is connecting or reconnecting keeps its last presence, so coming
 back to the app doesn't blink every status.
-Both also read the status-text ink rule from `ChannelAgentStatusPresentation`: working uses
+Both also read the status-text ink rule from `ChannelAgent.StatusLine`: working uses
 primary foreground ink at 85%, while waiting, idle and unavailable remain muted. The phone
 must not render working text in the same secondary ink as waiting. Keep cue colors separate
 from this text rule. Muted status and countdown use `ChannelInk.secondary`: opaque `#636366`
@@ -2586,8 +2586,8 @@ Both apps show the waiting check-in in the member's row, never a separate metada
 Mac it sits trailing and the hover menu replaces it. Phone places the bell and duration at the
 row's trailing edge, in muted footnote text. Show this only for waiting presence
 with a valid `wakeAt` on a channel that isn't stale or deleted; omit it for working, idle,
-unavailable or absent/invalid wake times. A single ToyBoxUI view owns both the countdown and its
-localized text, rounding the remaining duration up and showing Due once it passes. Phone updates
+unavailable or absent/invalid wake times. `ChannelAgent.Countdown` owns the localized text,
+rounding the remaining duration up and showing Due once it passes, and one ToyBoxUI view draws it. Phone updates
 only at minute boundaries while its row is visible. Keep the bell/value group together and trailing
 even when phone name/status wrap at accessibility sizes. Add no row height at default text. Both
 rows speak "checks again in 8 minutes" or "check-in due". About's Checks again and Mac help show the
@@ -2780,7 +2780,7 @@ adds a `bell` before its remaining time. At zero keep "0m", without warning
 color. Hover spells out "Elapsed: 1 hour 26 minutes", "Check-in in 31 minutes" or "Check-in
 due". Elapsed time rounds down and remaining time rounds up, both clamped at zero. The
 measured lane reflow above never drops the diff or the separate artifact line. Shared
-`ChannelTaskTimingPresentation` owns this arithmetic, and agent wake times follow the Team
+`ChannelTask.Timing` owns this arithmetic, and agent wake times follow the Team
 Members rules. Update once a minute only while the timed row
 is visible. VoiceOver uses expanded units, with no live announcements. These rules apply
 to the shared tray rows too.

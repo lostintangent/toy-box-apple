@@ -387,7 +387,7 @@ final class AppModel {
     }
 
     /// How the sidebar shows a server's channels, given which of them windows have open.
-    func sidebarPresentation(for catalog: ChannelCatalogStore?) -> ChannelSidebarPresentation {
+    func sidebarPresentation(for catalog: ChannelCatalogStore?) -> ChannelListing {
         .init(catalog: catalog, openChannelIDs: openChannelIDs(on: catalog))
     }
 

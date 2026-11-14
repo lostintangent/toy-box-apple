@@ -36,7 +36,7 @@ struct OverviewRoutineRow: View {
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
     private var scheduleSummary: String { RoutineScheduleSummary.text(for: routine.schedule) }
     private var scheduleLine: String {
-        ChannelRoutineRunPresentation.label(schedule: scheduleSummary, pending: isRunning, requestedAt: runRequestedAt)
+        ChannelRoutine.runLabel(schedule: scheduleSummary, pending: isRunning, requestedAt: runRequestedAt)
     }
 
     var body: some View {

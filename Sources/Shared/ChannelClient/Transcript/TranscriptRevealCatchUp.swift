@@ -1,4 +1,3 @@
-import ChannelClient
 import Observation
 
 extension ChannelStore {

@@ -7,7 +7,7 @@ extension ChannelCatalogStore {
     /// activity. A request the outbox answers isn't waiting. Each channel is from its own store when
     /// it's open and the channel list otherwise.
     public func waitingRequests(openChannelIDs: Set<String> = []) -> [ChannelWaitingRequest] {
-        let sidebar = ChannelSidebarPresentation(catalog: self, openChannelIDs: openChannelIDs)
+        let sidebar = ChannelListing(catalog: self, openChannelIDs: openChannelIDs)
         let server = ChannelTarget.normalizedServer(api.baseURL)
         return channels.compactMap { listed -> ChannelWaitingRequest? in
             let channel = sidebar.channel(listed)

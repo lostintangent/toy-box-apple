@@ -1,9 +1,7 @@
 import AVFoundation
-import ChannelClient
 import ChannelKit
 import Observation
 import OSLog
-import SwiftUI
 
 /// Reads a pending request aloud, one at a time across the app, so a new request replaces the one
 /// being read. The card and the transcript show Stop for the same request, since both ask this one
@@ -150,27 +148,5 @@ import SwiftUI
             nonisolated(unsafe) let utterance = utterance
             Task { @MainActor in ended(utterance) }
         }
-    }
-}
-
-/// Read Aloud beside Reply, which shows Stop Reading while its request is read.
-struct TranscriptReadAloudButton: View {
-    let request: TranscriptReadAloud.Request
-    private var reader: TranscriptReadAloud { .shared }
-
-    var body: some View {
-        let isReading = reader.isReading(request)
-        Button { reader.toggle(request) } label: {
-            Label {
-                Text(isReading ? "Stop Reading" : "Read Aloud")
-            } icon: {
-                // A symbol in text takes the line's height, so the pill matches Reply's.
-                Text(Image(systemName: isReading ? "stop.fill" : "speaker.wave.2"))
-            }
-        }
-        .labelStyle(.iconOnly)
-        .disabled(reader.isMicrophoneOpen)
-        .help(isReading ? "Stop Reading" : "Read Aloud")
-        .accessibilityIdentifier("read-aloud-\(request.sequence)")
     }
 }

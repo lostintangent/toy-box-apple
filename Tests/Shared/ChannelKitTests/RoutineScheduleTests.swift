@@ -105,4 +105,16 @@ struct RoutineScheduleTests {
             #expect(throws: CronScheduleError.self) { try RoutineSchedule(expression) }
         }
     }
+
+    @Test func routineRunCopyKeepsPendingAheadOfAcknowledgementAndOtherwisePreservesTheSchedule() {
+        let requested = Date(timeIntervalSince1970: 1)
+        #expect(ChannelRoutine.runLabel(
+            schedule: "Every morning", pending: false, requestedAt: nil) == "Every morning")
+        #expect(ChannelRoutine.runLabel(
+            schedule: "Every morning", pending: true, requestedAt: nil) == "Requesting run…")
+        #expect(ChannelRoutine.runLabel(
+            schedule: "Every morning", pending: false, requestedAt: requested) == "Run requested")
+        #expect(ChannelRoutine.runLabel(
+            schedule: "Every morning", pending: true, requestedAt: requested) == "Requesting run…")
+    }
 }
