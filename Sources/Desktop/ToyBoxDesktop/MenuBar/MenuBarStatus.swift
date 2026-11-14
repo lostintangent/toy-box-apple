@@ -33,13 +33,9 @@ struct MenuBarStatus: Equatable {
         var subtitle: String
         /// The requester for a waiting channel, the first working agent for a working one.
         var agent: ChannelAgent?
-        /// The request a waiting item reveals.
-        var sequence: Int?
-        var quote: String? = nil
-        var requestedAt: Date? = nil
+        /// What a waiting item asks.
+        var request: ChannelWaitingRequest? = nil
         var agents: [ChannelAgent] = []
-        /// The request's suggested replies, in the lead's order.
-        var replies: [String] = []
         var avatar: ChannelAvatar? = nil
 
         var id: ChannelTarget { target }
@@ -60,8 +56,6 @@ struct MenuBarStatus: Equatable {
 
     static let workingLimit = 3
 
-    /// The requests behind `waiting`, which the widget shows.
-    var requests: [ChannelWaitingRequest] = []
     var waiting: [Item] = []
     var working: [Item] = []
     var workingAgents = 0
@@ -78,16 +72,13 @@ struct MenuBarStatus: Equatable {
     /// Waiting requests in their shared order, then channels with working agents and no request,
     /// most recently updated first.
     init(requests: [ChannelWaitingRequest] = [], _ inputs: [Input], unreachableHost: String?) {
-        self.requests = requests
         self.unreachableHost = unreachableHost
         workingAgents = inputs.reduce(0) { $0 + $1.working.count }
         waiting = requests.map { entry in
             let requester = entry.requester
             return Item(target: entry.target, name: entry.channel.name,
                         subtitle: requester.map { ChannelNotification.Content.subtitle(requester: $0.name) } ?? ChannelNotification.Content.needsReply,
-                        agent: requester, sequence: entry.sequence, quote: entry.request?.quote,
-                        requestedAt: entry.requestedAt, replies: entry.request?.message.suggestedReplies ?? [],
-                        avatar: entry.channel.avatar)
+                        agent: requester, request: entry, avatar: entry.channel.avatar)
         }
         let waitingTargets = Set(waiting.map(\.target))
         working = inputs.filter { !waitingTargets.contains($0.target) && !$0.working.isEmpty }

@@ -124,9 +124,9 @@ struct QuickSendView: View {
 
     private var requestContextNotice: String? {
         guard let target = model.quickSend.replyTarget, session?.requestChanged == false,
-              let item = replyItem, item.sequence == target.sequence else { return nil }
+              let item = replyItem, item.request?.sequence == target.sequence else { return nil }
         let title = item.agent.map { "Reply to \($0.name)" } ?? "Reply to request"
-        return item.quote.map { "\(title): \($0)" } ?? title
+        return item.request?.request.map { "\(title): \($0.quote)" } ?? title
     }
 
     private var incomingContentNotice: String? {
@@ -157,7 +157,7 @@ struct QuickSendView: View {
                 }
             } else if let target = model.quickSend.replyTarget {
                 let failure = replyChannel.flatMap(catalog)?.phase.message
-                let unavailable = failure != nil || replyItem?.quote != nil
+                let unavailable = failure != nil || replyItem?.request?.request != nil
                 Text(unavailable ? "Request preview unavailable" : "Loading request...")
                     .font(.system(size: 15, weight: .semibold))
                 Text(failure ?? (unavailable
@@ -288,7 +288,7 @@ struct QuickSendView: View {
 
     private func installReplySession() {
         guard let target = model.quickSend.replyTarget, let catalog = replyChannel.flatMap(catalog) else { return }
-        let requester = replyItem.flatMap { $0.sequence == target.sequence ? $0.agent : nil }
+        let requester = replyItem.flatMap { $0.request?.sequence == target.sequence ? $0.agent : nil }
         if replySession?.store.target != replyChannel || replySession?.requestSequence != target.sequence {
             let draft = ComposerDraft.shared(serverURL: catalog.api.baseURL, channelID: target.channelID,
                                              scope: .inboxReply(sequence: target.sequence))

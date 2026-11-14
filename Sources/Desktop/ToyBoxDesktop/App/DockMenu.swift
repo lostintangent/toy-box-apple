@@ -19,9 +19,8 @@ enum DockMenu {
                 menu.addItem(disabled(status.unreachableHost == nil ? "Nothing needs you" : "Connect to Toy Box"))
             }
             for request in status.waiting {
-                let question = request.quote?.split(whereSeparator: \.isWhitespace).joined(separator: " ") ?? ""
-                let name = request.name.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-                let fullTitle = "\(name): \(question.isEmpty ? ChannelNotification.Content.needsReply : question)"
+                let fullTitle = [request.name, request.request?.question ?? ChannelNotification.Content.needsReply]
+                    .map { $0.split(whereSeparator: \.isWhitespace).joined(separator: " ") }.joined(separator: ": ")
                 let item = item(ChannelNotification.Content.truncated(fullTitle, limit: titleLimit)) { open(request) }
                 item.toolTip = request.agent.map { "\(fullTitle)\n\($0.name) needs your reply" } ?? fullTitle
                 menu.addItem(item)
@@ -90,7 +89,7 @@ final class DockAttention {
         baselined.formIntersection(usable)
         var hasNewRequest = false
         for item in status.waiting where usable.contains(item.target.serverURL) {
-            guard let sequence = item.sequence, sequence > 0, sequence > (seen[item.target] ?? 0) else { continue }
+            guard let sequence = item.request?.sequence, sequence > (seen[item.target] ?? 0) else { continue }
             seen[item.target] = sequence
             if baselined.contains(item.target.serverURL) { hasNewRequest = true }
         }
@@ -104,7 +103,7 @@ extension AppModel {
         DockMenu.make(status: menuBarStatus, hasCatalog: catalogs.contains(where: \.isLoaded),
                       quickSendEnabled: quickSend.isEnabled,
                       canCreateChannel: api != nil, open: { [weak self] item in
-            self?.activate(item.target, sequence: item.sequence)
+            self?.activate(item.target, sequence: item.request?.sequence)
         }, quickSend: { [weak self] in
             self?.quickSend.present()
         }, newChannel: { [weak self] in

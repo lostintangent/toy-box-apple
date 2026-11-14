@@ -12,8 +12,15 @@ struct DockMenuTests {
 
     private func waiting(_ id: String = "core", sequence: Int = 10, quote: String? = "Should I tag v0.1.4?",
                          on server: String = server) -> MenuBarStatus.Item {
-        .init(target: ChannelTarget(serverURL: server, channelID: id)!, name: id == "core" ? "Core" : id,
-              subtitle: ChannelNotification.Content.needsReply, agent: nil, sequence: sequence, quote: quote)
+        let channel = Channel(id: id, name: id == "core" ? "Core" : id, model: .init(provider: "test", name: "test"),
+                              requestSequence: sequence, updatedAt: "2026-11-14T08:00:00Z")
+        let request = quote.map {
+            ChannelRequestMessage(message: .init(id: "m\(sequence)", sequence: sequence, timestamp: "2026-11-14T08:00:00Z",
+                                                 sender: .init(type: "agent", agentId: "lead"), content: .text($0),
+                                                 request: true), agents: [])
+        }
+        let entry = ChannelWaitingRequest(serverURL: server, channel: channel, sequence: sequence, request: request)!
+        return MenuBarStatus(requests: [entry], [], unreachableHost: nil).waiting[0]
     }
 
     /// Servers whose catalogs are loaded and reachable, as the app normalizes them.

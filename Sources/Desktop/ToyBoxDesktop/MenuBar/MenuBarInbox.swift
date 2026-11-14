@@ -51,7 +51,7 @@ struct MenuBarInbox: View {
             if let session = replySession,
                let request = inbox.requests.first(where: { $0.id == session.store.target }),
                request.state == .answered || request.state == .newerRequest {
-                session.invalidateRequest(replacementSequence: status.waiting.first { $0.id == request.id }?.sequence)
+                session.invalidateRequest(replacementSequence: status.waiting.first { $0.id == request.id }?.request?.sequence)
             }
         }
         .onChange(of: model.catalogs.map(\.api.baseURL)) { _, _ in
@@ -155,7 +155,7 @@ struct MenuBarInbox: View {
                 .help("Open \(item.name)")
             }
             VStack(alignment: .leading, spacing: 8) {
-                if let quote = item.quote {
+                if let quote = item.request?.request?.quote {
                     MenuBarInboxRequestText(quote: quote, presentationID: presentationID)
                 } else {
                     Text("Request preview unavailable")
@@ -313,7 +313,7 @@ struct MenuBarInbox: View {
     }
 
     private func expandReply(to item: MenuBarStatus.Item) {
-        guard let sequence = item.sequence, let requester = item.agent else {
+        guard let sequence = item.request?.sequence, let requester = item.agent else {
             replyError = "Request preview unavailable. Open the channel to review it."
             return
         }
@@ -365,11 +365,11 @@ struct MenuBarInbox: View {
         }
         inbox.record(item.target, .replied)
         let outbox = model.outbox, server = catalog.api.baseURL, channelID = item.target.channelID
-        Task { await outbox.send(content, to: channelID, on: server, answering: item.sequence) }
+        Task { await outbox.send(content, to: channelID, on: server, answering: item.request?.sequence) }
     }
 
     private func open(_ item: MenuBarStatus.Item) {
-        closeThen { model.activate(item.target, sequence: item.sequence) }
+        closeThen { model.activate(item.target, sequence: item.request?.sequence) }
     }
 
     private func openSettingsWindow() {

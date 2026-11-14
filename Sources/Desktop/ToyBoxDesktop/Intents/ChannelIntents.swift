@@ -394,10 +394,10 @@ extension ChannelIntents {
             open: { model.activate($0) },
             requests: {
                 guard try channels() != nil else { return nil }
-                return model.menuBarStatus.waiting.compactMap(WaitingRequestEntry.init)
+                return model.menuBarStatus.waiting.compactMap { $0.request.flatMap(WaitingRequestEntry.init) }
             },
             isWaiting: { channel, request in
-                model.menuBarStatus.waiting.contains { $0.target == channel && $0.sequence == request }
+                model.menuBarStatus.waiting.contains { $0.target == channel && $0.request?.sequence == request }
             },
             revealRequest: { model.activate($0, sequence: $1) },
             onScreen: { model.onScreen }
