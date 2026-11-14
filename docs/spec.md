@@ -181,11 +181,20 @@ read, so a server that can't connect keeps its name, and a server that hasn't an
 its host, plus its port when it isn't the default. Every server runs Toy Box 0.4.0 or later, so
 nothing in the apps makes room for an older one. Each server has its own `ChannelAPI`, catalog stream and channel stores, and every rule in
 this spec holds within each server unchanged. Nothing else is new. Where this spec says a server
-change, it means moving or removing one server, which touches only that server's channels.
-Drafts stay keyed to the address, so adding it back finds them, and move with a server that moves.
+change, it means a server leaving or rejoining the list, which touches only that server's channels.
+Drafts and unsent messages stay on the device, keyed to the address, while their server is away,
+and are there again when it comes back.
 
-- **Both apps group by server even with one.** Every server always has its header, so the list
-  always says whose channels it shows and adding a second never reshapes it.
+- **The list shows the servers that answer.** A server joins the list once its channel list
+  loads, and leaves when it's been unavailable for the catalog's grace, as a Mac does when it
+  sleeps, coming back by itself once it connects again. A server that's away is never shown as
+  one that can't connect. The one exception is when none answers, since then it's this device
+  that's offline, or every Mac is asleep: the list keeps every server it showed last, each with
+  its failure, as below, until one answers. Settings, the Screens list, New Channel's server menu
+  and the footer's count follow the same list. A channel that's open when its server leaves stays
+  open with its own reconnecting notice, and only the list drops it.
+- **Both apps group by server even with one.** Every server in the list has its header, so the list
+  always says whose channels it shows and a second never reshapes it.
 - **Grouped list.** The Mac sidebar and the phone list show one collapsible section per server, in
   Settings' order. Its header is the server's name, with the status line's help and VoiceOver
   value. A connected or connecting server shows no dot, since the list is shaped for success. Only
@@ -196,8 +205,8 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   inset, which puts its leading edge 4 points inside the search field's edge, and every header has the same room above it, whether it follows the
   search field or another server's last row, matching the gap between two servers. On the phone, the name is followed by how many channels the server has, in
   the header's font and secondary color, once its catalog has loaded. A failing server shows only
-  its header's orange or red dot, never a notice in the list, so the list always shows every
-  server and its channels. On the Mac the header's help adds the readable failure, and on the
+  its header's orange or red dot, never a notice in the list, so a server in the list always
+  shows its channels. On the Mac the header's help adds the readable failure, and on the
   phone tapping the dot shows it in a popover (see Phone channel search).
   While a section is collapsed and any of its channels waits for the user's response, its header
   also shows the waiting attention symbol, trailing in its color and without a count, so
@@ -235,12 +244,11 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   as a plain value in secondary ink that can be selected and copied.
 - **Connecting.** The user connects once, by entering the address of any one of their Toy Box
   Macs, and the app shows that server and every peer that answers (see Peer servers). Connect is
-  only there while the app has no servers: the phone's Welcome, and on the Mac the sidebar's
+  only there while the app remembers no servers: the phone's Welcome, and on the Mac the sidebar's
   welcome, whose Connect… opens Settings' Connect sheet over the window. There's no Add Server, and
-  no way to remove one server, so the servers are whatever the app has seen, never a list the user
-  curates. Each stays whether or not it answers, and one that's asleep reads like any server that
-  can't connect, so its channels, drafts and unsent messages wait for it. Any saved server can lead
-  the app to the rest, so it still finds the user's Macs while the one they entered is asleep.
+  no way to remove one server. The app remembers every server it has seen only as a way back in,
+  never as a list the user curates, so it still reaches the user's Macs while the one they entered
+  is asleep, and shows only those that answer.
 - **Disconnecting** forgets every server at once. It's Disconnect… at the bottom of the Mac's
   Servers tab, and a destructive Disconnect row in its own section after the phone's servers.
   It asks first, "Disconnect from your servers?" with "Toy Box forgets every server on this Mac.
@@ -250,7 +258,6 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   and Live Activities. Both apps return to their first run, which has no servers and stays that
   way after a relaunch: the phone shows Welcome, and the Mac an empty sidebar that offers
   Connect… (see [Loading, empty, error and stale states](#loading-empty-error-and-stale-states)).
-  Disconnecting and connecting again is also how a Mac that's gone for good leaves the list.
 - **Naming a server.** Name renames the server itself, for every device and every lead, through
   `PATCH /api/v1/server {name}`, which answers the server. The field has no caption. It saves on
   Return or when the field loses focus, if the name changed, and clearing it gives the server back
@@ -280,8 +287,8 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   Mac shows its first line with the rest in its help tag, and the phone shows up to three lines.
   VoiceOver reads all of it. Results stay until the next check or until Settings closes. While a server isn't connected, its
   row shows a spinner in its version's place as the app reconnects, for any reason, until it
-  connects or has failed for the catalog's grace, when the row shows its failure as it does for any
-  server that can't connect. A restart is pending exactly when `installedVersion` isn't null and
+  connects or has failed for the catalog's grace, when it leaves the list like any server that's
+  away. A restart is pending exactly when `installedVersion` isn't null and
   differs from `version`, whichever device ran the update, and then a connected row shows a
   prominent Restart, after "0.3.10 installed" on the Mac. A connected server with an installed
   release can also restart when nothing newer is installed, which relaunches the same release and
@@ -297,7 +304,7 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   connection at once, without accepting new ones, so the apps see an ordinary disconnect: the row
   spins while they reconnect with the usual backoff and grace, then reads the new server and shows
   its version. A rejected restart shows its error the same way, with the old server still running,
-  and a server that doesn't come back reads like any other that can't connect. The apps read
+  and a server that doesn't come back leaves the list like any other that's away. The apps read
   `GET /api/v1/server` once each time Settings opens, each time a server
   connects, each time the app comes to the foreground and on each Refresh of the channel list,
   which is how a rename made elsewhere reaches them. A failed read changes nothing and reports
