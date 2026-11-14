@@ -185,17 +185,19 @@ change, it means a server leaving or rejoining the list, which touches only that
 Drafts and unsent messages stay on the device, keyed to the address, while their server is away,
 and are there again when it comes back.
 
-- **The list is the server you connected through, then its peers that answer.** The app saves one
-  address, the server the user connected through, and nothing else about servers. That server is
-  always first in the list, with its failure while it can't connect, so the list never empties
-  and always says why. Its peers follow in `peers` order (see Peer servers). A peer joins the list
-  once its channel list loads, and leaves when it's been unavailable for the catalog's grace, as a
-  Mac does when it sleeps, coming back by itself once it connects again, so a peer that's away is
-  never shown as one that can't connect. While the server the user connected through is asleep,
-  a relaunched app shows only it, with its failure, until it wakes or the user disconnects and
-  connects through another Mac. Settings, the Screens list, New Channel's server menu and the
-  footer's count follow the same list. A channel that's open when its server leaves stays open
-  with its own reconnecting notice, and only the list drops it.
+- **The list is the server you connected through, then its peers.** The app saves one address,
+  the server the user connected through, and nothing else about servers. That server is always
+  first in the list, with its failure while it can't connect, so the list never empties and
+  always says why. Its peers follow exactly as its latest read lists them, in `peers` order (see
+  Peer servers). The server decides which of the user's Macs are live and lists only those, so
+  the apps check none themselves: a Mac that sleeps leaves the list with the first read that no
+  longer lists it, and one that wakes joins with the first that does. Between reads, a server in
+  the list that can't connect shows its failure like any other. Until the first read after a
+  launch, and while the server the user connected through is asleep, the list is only that server,
+  until it wakes or the user disconnects and connects through another Mac. Settings, the Screens
+  list, New Channel's server menu and the footer's count follow the same list. A channel that's
+  open when its server leaves stays open with its own reconnecting notice, and only the list
+  drops it.
 - **Both apps group by server even with one.** Every server in the list has its header, so the list
   always says whose channels it shows and a second never reshapes it.
 - **Grouped list.** The Mac sidebar and the phone list show one collapsible section per server, in
@@ -289,8 +291,8 @@ and are there again when it comes back.
   Mac shows its first line with the rest in its help tag, and the phone shows up to three lines.
   VoiceOver reads all of it. Results stay until the next check or until Settings closes. While a server isn't connected, its
   row shows a spinner in its version's place as the app reconnects, for any reason, until it
-  connects or has failed for the catalog's grace, and then it's away like any other server, as the
-  list describes. A restart is pending exactly when `installedVersion` isn't null and
+  connects or has failed for the catalog's grace, when the row shows its failure as it does for any
+  server that can't connect. A restart is pending exactly when `installedVersion` isn't null and
   differs from `version`, whichever device ran the update, and then a connected row shows a
   prominent Restart, after "0.3.10 installed" on the Mac. A connected server with an installed
   release can also restart when nothing newer is installed, which relaunches the same release and
@@ -306,7 +308,7 @@ and are there again when it comes back.
   connection at once, without accepting new ones, so the apps see an ordinary disconnect: the row
   spins while they reconnect with the usual backoff and grace, then reads the new server and shows
   its version. A rejected restart shows its error the same way, with the old server still running,
-  and a server that doesn't come back is away like any other. The apps read
+  and a server that doesn't come back reads like any other that can't connect. The apps read
   `GET /api/v1/server` once each time Settings opens, each time a server
   connects, each time the app comes to the foreground and on each Refresh of the channel list,
   which is how a rename made elsewhere reaches them. A failed read changes nothing and reports
@@ -319,15 +321,15 @@ and are there again when it comes back.
   manage nothing about it, so no row marks a peer and Settings has nothing to turn on.
   `GET /api/v1/server` answers `peers`, the origins of the other online Macs the server's owner
   has on their tailnet, sorted, like `["https://mac-mini.tail1234.ts.net"]`, and empty when there
-  are none. A peer is only a candidate, since a Mac may not run Toy Box.
+  are none.
   - **Following peers.** Connecting to any one of the user's servers shows the rest, and a Mac
-    that joins later appears by itself. The app follows only the peers of the server the user
-    connected through, since each of the user's Macs lists all the others. Each time it reads
-    that server, it reads `GET /api/v1/server` at each listed peer it hasn't opened yet and opens
-    each one that answers, at the peer's origin. A peer that doesn't answer is skipped until the
-    next read. The app saves no peer, so after a relaunch they come back with that server's first
-    read, and a peer it has opened stays open until the app quits or disconnects. Settings keeps
-    the server it had selected, and new rows are the only sign.
+    that comes online later appears by itself. The app follows only the peers of the server the
+    user connected through, since each of the user's Macs lists all the others. Each successful
+    read of that server makes its `peers` the list's peers, each at its origin, opening any the
+    app hasn't opened this run. The app saves no peer, so after a relaunch they come back with
+    that server's first read, and one that leaves the list stays connected until the app quits or
+    disconnects, so a channel open on it, its Live Activities and its requests in the widget carry
+    on. Settings keeps the server it had selected, and new rows are the only sign.
 
 ### Sending
 
