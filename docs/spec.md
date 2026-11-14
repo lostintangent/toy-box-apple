@@ -190,9 +190,10 @@ and are there again when it comes back.
   first in the list, with its failure while it can't connect, so the list never empties and
   always says why. Its peers follow, in `peers` order, the ones that answered the latest read (see
   Peer servers): a Mac that sleeps, or doesn't run Toy Box, leaves the list with the first read
-  it doesn't answer, and one that wakes joins with the first it does. A restart never takes a
-  server off the list, even a peer that comes back after the server the user connected through:
-  its row spins and its channels stay until it answers again. Between reads, a server in
+  it doesn't answer, and one that wakes joins with the first it does. So restarting every server
+  never empties the list: a peer still restarting when the server the user connected through
+  reads it leaves the list for that moment, and rejoins with its own first answer (see Following
+  peers). Between reads, a server in
   the list that can't connect shows its failure like any other. Until the first read after a
   launch, and while the server the user connected through is asleep, the list is only that server,
   until it wakes or the user disconnects and connects through another Mac. Settings, the Screens
@@ -338,7 +339,10 @@ and are there again when it comes back.
     user connected through, since each of the user's Macs lists all the others. Each successful
     read of that server also reads `GET /api/v1/server` at each of its `peers`, which is how the
     app learns their names and versions, and the list's peers become the ones whose answer
-    decodes, each at its origin, opening any the app hasn't opened this run. The app saves no peer, so after a relaunch they come back with
+    decodes, each at its origin, opening any the app hasn't opened this run. A peer that the
+    latest read listed also joins the list with any answer of its own, like the read its catalog
+    stream makes when it reconnects, so one that comes back from a restart after that server
+    doesn't wait for its next read. The app saves no peer, so after a relaunch they come back with
     that server's first read, and one that leaves the list stays connected until the app quits or
     disconnects, so a channel open on it, its Live Activities and its requests in the widget carry
     on. Settings keeps the server it had selected, and new rows are the only sign.
