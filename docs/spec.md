@@ -295,7 +295,8 @@ and are there again when it comes back.
   connects or has failed for the catalog's grace, when the row shows its failure as it does for any
   server that can't connect. A restart is pending exactly when `installedVersion` isn't null and
   differs from `version`, whichever device ran the update, and then a connected row reads
-  "0.3.10 installed" in secondary ink in its version's place. One Restart serves the whole list
+  "0.3.9 → 0.3.10", the release it runs and the one a restart starts, in secondary ink in its
+  version's place. VoiceOver reads it as "0.3.9, 0.3.10 after restart". One Restart serves the whole list
   too, like the web's: a prominent button before Check for Updates in the Mac's bar, and a row
   after Check for Updates with `arrow.clockwise` on the phone. It's there while any connected
   server's restart is pending, and it restarts each of those servers together and no other, so a
