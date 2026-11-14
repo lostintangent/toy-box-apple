@@ -1296,7 +1296,8 @@ click elsewhere does. It answers exactly as Needs You in the list does on the ph
 same `NeedsYouCards`: a choice goes at once and holds the popover only while the outbox saves it,
 Reply puts a field focused with "Reply to [requester]" in the actions' place, closing with a typed
 reply saves its words as the channel's draft, and once a reply is sending the popover closes and
-the row's avatar wears the done check for 2 s. VoiceOver gets an Answer Request action on the row
+the row's avatar becomes the talk card's done check,
+as its Mark row describes, for 2 s. VoiceOver gets an Answer Request action on the row
 that opens it.
 
 Context menu, in groups:
