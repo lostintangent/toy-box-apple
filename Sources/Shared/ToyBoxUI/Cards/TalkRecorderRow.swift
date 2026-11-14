@@ -11,24 +11,24 @@ import SwiftUI
 extension View {
     /// The row's mark, which becomes the recorder's mic and then the done check.
     package func talkMark(_ recorder: TalkRecorder?) -> some View {
-        modifier(TalkMarkSlot(recorder: recorder))
+        modifier(TalkSlot(kind: .mark, recorder: recorder))
     }
 
     /// The row's last-activity time, which becomes the counter on the same baseline and trailing
     /// edge, and marks where the row's text ends.
     package func talkTime(_ recorder: TalkRecorder?) -> some View {
-        modifier(TalkTimeSlot(recorder: recorder))
+        modifier(TalkSlot(kind: .time, recorder: recorder))
     }
 
     /// The row's trailing column, the chevron and attention mark, which leaves its space empty
     /// until the card lands.
     package func talkFades(_ recorder: TalkRecorder?) -> some View {
-        modifier(TalkFades(recorder: recorder))
+        modifier(TalkSlot(kind: .trailing, recorder: recorder))
     }
 
     /// The row's second line, which gives way to the waveform while the card is lifted.
     package func talkLine(_ recorder: TalkRecorder?) -> some View {
-        modifier(TalkLineSlot(recorder: recorder))
+        modifier(TalkSlot(kind: .line, recorder: recorder))
     }
 
     /// The row's accessibility value, its `details`, which the note's state replaces while the
@@ -135,7 +135,8 @@ private struct TalkEndsKey: PreferenceKey {
 }
 
 /// The recorder: a card over the list that opens on the held row's cell, draws the row's own
-/// content in the same places, then grows over the dimmed rows.
+/// content in the same places, then grows over the dimmed rows to reveal the note below the row's
+/// first two lines, its words, any notice and the controls.
 private struct TalkCard<Row: View>: View {
     let recorder: TalkRecorder
     let hold: TalkHold
@@ -152,7 +153,12 @@ private struct TalkCard<Row: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AccessibilityFocusState private var headingFocused: Bool
-    @ViewState private var note = TalkNote.Size()
+    @AccessibilityFocusState private var wordsFocused: Bool
+    /// The note's height besides its words, once it has measured, which tells the card its room
+    /// for five lines.
+    @ViewState private var chrome: CGFloat?
+    /// The words' height as laid out, which runs past what they show once they pass the limit.
+    @ViewState private var wordsHeight: CGFloat?
     /// The height of five lines of the words' own text, as laid out.
     @ViewState private var fiveLines: CGFloat?
     #if os(macOS)
@@ -161,6 +167,13 @@ private struct TalkCard<Row: View>: View {
 
     /// The room the card keeps from the visible area's ends.
     private static var inset: CGFloat { 8 }
+
+    /// Where the channel's name starts in its row.
+    #if os(macOS)
+    private static var nameInset: CGFloat { 48 }
+    #else
+    private static var nameInset: CGFloat { 40 }
+    #endif
 
     var body: some View {
         let grown = hold.isGrown(recorder.target)
@@ -175,8 +188,8 @@ private struct TalkCard<Row: View>: View {
         // Cancel's trailing column returns as the card lands, past the card's edge, where the card
         // is already invisible.
         let overflow = recorder.hidesTrailingColumn ? 0 : max(cell.maxX - right, 0) + margin
-        let lines = fiveLines ?? 5 * TalkNote.lineHeight(dynamicTypeSize)
-        let chrome = note.height - note.words
+        let lines = fiveLines ?? 5 * Self.lineHeight(dynamicTypeSize)
+        let chrome = self.chrome ?? 0
         let placement = CardPlacement(row: cell, room: room)
         // The highest the card rises, at its tallest, with five lines of words.
         let highest = placement.top(height: cell.height + chrome + lines)
@@ -189,7 +202,7 @@ private struct TalkCard<Row: View>: View {
                     if recorder.canResume { Button("Resume", action: recorder.resume) }
                 }
                 .accessibilityFocused($headingFocused)
-            TalkNote(recorder: recorder, wordsLimit: wordsLimit, size: $note)
+            note(grown: grown, wordsLimit: wordsLimit)
                 .frame(width: max(contentEnd - cell.minX, 0))
                 .fixedSize(horizontal: false, vertical: true)
                 .opacity(lifted ? 1 : 0)
@@ -214,7 +227,7 @@ private struct TalkCard<Row: View>: View {
                 .accessibilityHidden(true)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fiveLines = $0 }
         }
-        .background { TalkSurface(recorder: recorder, lifted: lifted, onGlass: onGlass) }
+        .background { surface(grown: grown, lifted: lifted) }
         .environment(\.talkGrown, grown)
         .environment(\.talkTrailingInset, cell.maxX - lineInset - contentEnd)
         .allowsHitTesting(recorder.isLifted)
@@ -224,7 +237,7 @@ private struct TalkCard<Row: View>: View {
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(recorder.isLifted ? .isModal : [])
         // Grows once the note has measured, in one transaction with every slot's swap.
-        .onChange(of: note.height > 0) { _, measured in
+        .onChange(of: self.chrome != nil) { _, measured in
             if measured, !grown {
                 withAnimation(CardMotion.open.animation(reduceMotion: reduceMotion)) { hold.grown = recorder.target }
             }
@@ -232,305 +245,23 @@ private struct TalkCard<Row: View>: View {
         .onChange(of: recorder.phase == .sent) { _, sent in
             if sent { headingFocused = true }
         }
+        // Talking again from the check reuses the card, so focus follows each opening.
+        .onChange(of: recorder.isLifted, initial: true) { _, lifted in
+            if lifted { wordsFocused = true }
+            #if os(macOS)
+            focused = lifted
+            #endif
+        }
         #if os(macOS)
         // Takes key focus, so the list's arrows and typing wait while Return sends and Escape cancels.
         .focusable(recorder.isLifted)
         .focusEffectDisabled()
         .focused($focused)
-        .onChange(of: recorder.isLifted, initial: true) { _, lifted in focused = lifted }
         #endif
         CardLayout(placement: placement, x: left, isLifted: lifted) { card }
     }
-}
 
-private struct TalkFades: ViewModifier {
-    let recorder: TalkRecorder?
-    @Environment(\.talkGrown) private var grown
-
-    func body(content: Content) -> some View {
-        let fades = grown && recorder?.hidesTrailingColumn == true
-        // Fades out with the time, and back as the wash fades.
-        content
-            .opacity(fades ? 0 : 1)
-            .animation(fades ? .easeIn(duration: 0.15) : .easeOut(duration: 0.4), value: fades)
-    }
-}
-
-private struct TalkMarkSlot: ViewModifier {
-    let recorder: TalkRecorder?
-
-    func body(content: Content) -> some View {
-        // The recorder's mark starts with the channel's own avatar, so the swap itself is invisible
-        // and the avatar can morph into the mic.
-        ZStack {
-            if let recorder {
-                TalkMark(recorder: recorder, avatar: content).transition(.identity)
-            } else {
-                content.transition(.identity)
-            }
-        }
-    }
-}
-
-/// The mic while recording, the done check once sent, then the channel's own avatar as the row
-/// settles.
-private struct TalkMark<Avatar: View>: View {
-    let recorder: TalkRecorder
-    let avatar: Avatar
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.talkGrown) private var grown
-
-    private var glyph: CardMark.Glyph {
-        guard grown else { return .channel }
-        return switch recorder.phase {
-        case .recording, .sending: .mic
-        case .sent, .landed, .cancelled, nil: recorder.isChecked ? .check : .channel
-        }
-    }
-
-    var body: some View {
-        let level = recorder.isListening ? recorder.dictation.level : 0
-        Button(action: recorder.resume) { avatar.cardMark(glyph) }
-            .buttonStyle(TalkMarkButtonStyle())
-            // A disabled button grays its accent, so the mic only stops taking taps.
-            .allowsHitTesting(recorder.canResume)
-            .background {
-                if glyph == .mic {
-                    // The glow is wider than the mark, so the halo keeps the mark's own frame.
-                    ZStack {
-                        Circle()
-                            .fill(RadialGradient(colors: [.accentColor, .accentColor.opacity(0)],
-                                                 center: .center, startRadius: 0, endRadius: 32))
-                            .frame(width: 64, height: 64)
-                            .opacity(0.3 * level)
-                        TalkHalo(scale: reduceMotion ? 1.4 : 1 + 0.4 * level)
-                            .fill(Color.accentColor.opacity(0.25), style: FillStyle(eoFill: true))
-                            .opacity(reduceMotion ? level : 1)
-                            .frame(width: CardMetrics.mark, height: CardMetrics.mark)
-                    }
-                }
-            }
-            .animation(.linear(duration: 0.08), value: level)
-    }
-}
-
-/// Undimmed while disabled, since the mic is only a button once listening stops.
-private struct TalkMarkButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .frame(width: CardMetrics.hitTarget, height: CardMetrics.hitTarget)
-            .contentShape(Circle())
-            .frame(width: CardMetrics.mark, height: CardMetrics.mark)
-            .opacity(configuration.isPressed ? 0.6 : 1)
-    }
-}
-
-/// The voice's halo: a ring around the mark's rounded square that widens with the level and
-/// vanishes at silence.
-private struct TalkHalo: Shape {
-    var scale: Double
-
-    var animatableData: Double {
-        get { scale }
-        set { scale = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        let grow = rect.width * (scale - 1) / 2
-        let outer = rect.insetBy(dx: -grow, dy: -grow)
-        var path = Path(roundedRect: outer, cornerRadius: outer.width * CardMark.corners, style: .continuous)
-        path.addPath(Path(roundedRect: rect, cornerRadius: rect.width * CardMark.corners, style: .continuous))
-        return path
-    }
-}
-
-private struct TalkTimeSlot: ViewModifier {
-    let recorder: TalkRecorder?
-    @Environment(\.talkGrown) private var grown
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    func body(content: Content) -> some View {
-        let face = grown ? recorder?.timeSlot : nil
-        let replaced = face != nil
-        // The time trails the title, or leads its own line below it at accessibility sizes.
-        let edge: HorizontalAlignment = dynamicTypeSize.isAccessibilitySize ? .leading : .trailing
-        // Each face leaves with a blur and fade, then the next fades in, so two never show together.
-        ZStack(alignment: Alignment(horizontal: edge, vertical: .firstTextBaseline)) {
-            content
-                .modifier(TalkFaceExit(gone: replaced))
-                .animation(replaced ? TalkTime.exit : TalkTime.entry, value: replaced)
-            if let recorder, let face {
-                TalkTime(recorder: recorder, face: face)
-                    .id(face)
-                    .transition(.asymmetric(
-                        insertion: .opacity.animation(TalkTime.entry),
-                        removal: .modifier(active: TalkFaceExit(gone: true), identity: TalkFaceExit(gone: false))
-                            .animation(TalkTime.exit)))
-            }
-        }
-        .transformAnchorPreference(key: TalkEndsKey.self, value: .trailing) { ends, anchor in
-            if recorder != nil, !dynamicTypeSize.isAccessibilitySize { ends.text = anchor }
-        }
-    }
-}
-
-/// A slot's old face leaving: a 2-point blur and fade. It comes back with only the fade.
-private struct TalkFaceExit: ViewModifier {
-    let gone: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .blur(radius: gone ? 2 : 0)
-            .opacity(gone ? 0 : 1)
-    }
-}
-
-private struct TalkTime: View {
-    let recorder: TalkRecorder
-    let face: TalkRecorder.TimeSlot
-    @Environment(\.backgroundProminence) private var prominence
-
-    static let exit = Animation.easeIn(duration: 0.15)
-    static let entry = Animation.easeOut(duration: 0.15).delay(0.15)
-
-    var body: some View {
-        Group {
-            switch face {
-            case .counter: counter
-            case .offline: Text("Offline")
-            case .noteTime:
-                // The note is the channel's new last activity, in the row's own format.
-                Text(ChannelActivityTime.label(for: recorder.sentAt ?? .now, now: .now))
-            }
-        }
-        #if os(iOS)
-        .font(.caption)
-        #endif
-        // The Mac's counter takes the font its row gives the time.
-        .foregroundStyle(ChannelInk.secondary(for: prominence))
-        .lineLimit(1)
-        .fixedSize()
-    }
-
-    private var counter: some View {
-        TimelineView(.periodic(from: recorder.listeningSince ?? .now, by: 1)) { context in
-            let seconds = Int(recorder.elapsed(at: context.date))
-            Text(Duration.seconds(seconds).formatted(.time(pattern: .minuteSecond)))
-                .monospacedDigit()
-        }
-    }
-}
-
-private struct TalkLineSlot: ViewModifier {
-    let recorder: TalkRecorder?
-    @Environment(\.talkGrown) private var grown
-    @Environment(\.talkTrailingInset) private var trailingInset
-
-    func body(content: Content) -> some View {
-        let shows = grown && recorder?.isLifted == true
-        content
-            .modifier(TalkFaceExit(gone: shows))
-            // Line 2 leaves quickly, and returns over the second half of Sent's collapse.
-            .animation(shows ? .easeOut(duration: 0.15) : .easeIn(duration: 0.175).delay(0.175), value: shows)
-            .frame(minHeight: shows ? 18 : nil)
-            .transformAnchorPreference(key: TalkEndsKey.self, value: .trailing) { ends, anchor in
-                if recorder != nil { ends.line = anchor }
-            }
-            // The waveform overflows line 2's slot instead of resizing it, so the mark stays put. It
-            // ends where Send's circle does.
-            .overlay(alignment: .leading) {
-                if let recorder, shows {
-                    TalkWaveform(recorder: recorder)
-                        .padding(.trailing, trailingInset)
-                        .transition(.asymmetric(
-                            insertion: .modifier(active: TalkRise(scale: 0.2), identity: TalkRise(scale: 1))
-                                .combined(with: .opacity),
-                            removal: .opacity.animation(.easeOut(duration: 0.15))))
-                }
-            }
-    }
-}
-
-private struct TalkRise: ViewModifier {
-    let scale: CGFloat
-
-    func body(content: Content) -> some View {
-        content.scaleEffect(x: 1, y: scale)
-    }
-}
-
-/// Bars that flow out of the mic down the row, newest at the leading edge.
-private struct TalkWaveform: View {
-    let recorder: TalkRecorder
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        let listening = recorder.isListening
-        TalkBars(levels: reduceMotion ? steadyLevels : recorder.levels, amplitude: listening ? 1 : 0)
-            .fill(LinearGradient(colors: [.accentColor, .accentColor.opacity(0.25)],
-                                 startPoint: .leading, endPoint: .trailing))
-            .animation(.easeOut(duration: 0.2), value: listening)
-            .frame(height: Self.height)
-    }
-
-    #if os(macOS)
-    private static var height: CGFloat { 18 }
-    #else
-    private static var height: CGFloat { 24 }
-    #endif
-
-    /// Under Reduce Motion, the bars stay in place and only their heights follow the level.
-    private var steadyLevels: [Double] {
-        let level = recorder.isListening ? recorder.dictation.level : 0
-        return (0..<TalkRecorder.sampleCount).map { index in
-            level * (0.45 + 0.55 * abs(sin(Double(index) * 0.9)))
-        }
-    }
-}
-
-/// 3-point bars with 3-point gaps, from 3 points tall to 2 short of the waveform's height.
-private struct TalkBars: Shape {
-    var levels: [Double]
-    var amplitude: Double
-
-    var animatableData: Double {
-        get { amplitude }
-        set { amplitude = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let pitch: CGFloat = 6
-        let count = min(Int((rect.width + 3) / pitch), levels.count)
-        for index in 0..<max(count, 0) {
-            let level = min(max(levels[index] * amplitude, 0), 1)
-            let height = 3 + (rect.height - 5) * level
-            let bar = CGRect(x: rect.minX + CGFloat(index) * pitch, y: rect.midY - height / 2, width: 3, height: height)
-            path.addRoundedRect(in: bar, cornerSize: CGSize(width: 1.5, height: 1.5))
-        }
-        return path
-    }
-}
-
-/// The words, any notice and the controls, which the card reveals below the row's first two lines.
-private struct TalkNote: View {
-    let recorder: TalkRecorder
-    /// The most the words show before the oldest line slides under the fade.
-    let wordsLimit: CGFloat
-    @Binding var size: Size
-    @Environment(\.talkGrown) private var grown
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AccessibilityFocusState private var wordsFocused: Bool
-    @ViewState private var wordsHeight: CGFloat?
-
-    /// The note's height, and the part of it the words take, which tell the card its room for
-    /// five lines.
-    struct Size: Equatable {
-        var height: CGFloat = 0
-        var words: CGFloat = 0
-    }
-
-    static func lineHeight(_ size: DynamicTypeSize) -> CGFloat {
+    private static func lineHeight(_ size: DynamicTypeSize) -> CGFloat {
         #if os(macOS)
         NSLayoutManager().defaultLineHeight(for: .preferredFont(forTextStyle: .body))
         #else
@@ -539,24 +270,22 @@ private struct TalkNote: View {
         #endif
     }
 
-    /// Where the channel's name starts in its row.
-    #if os(macOS)
-    private static var nameInset: CGFloat { 48 }
-    #else
-    private static var nameInset: CGFloat { 40 }
-    #endif
-
-    var body: some View {
-        let shownWords = shownWordsHeight
-        VStack(alignment: .trailing, spacing: 4) {
-            words
+    /// The words, any notice and the controls, where the words show at most `wordsLimit` before
+    /// the oldest line slides under the fade.
+    private func note(grown: Bool, wordsLimit: CGFloat) -> some View {
+        let shownWords = wordsHeight.map { min($0, wordsLimit) }
+        let notice = self.notice
+        return VStack(alignment: .trailing, spacing: 4) {
+            words(grown: grown, notice: notice, shownHeight: shownWords)
             if let notice, hasWords {
                 Text(notice)
                     .font(.footnote)
                     .foregroundStyle(ChannelInk.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            controls
+            CardControls(canCancel: recorder.phase != .sending, canSend: recorder.canSend,
+                         isSending: recorder.phase == .sending, sendLabel: "Send to Lead",
+                         cancel: recorder.cancel, send: send)
                 // Send's circle, not its hit target, ends on the card's content.
                 .padding([.trailing, .bottom], -(CardMetrics.hitTarget - CardMetrics.control) / 2)
                 .opacity(grown ? 1 : 0)
@@ -568,24 +297,18 @@ private struct TalkNote: View {
         .padding(.bottom, 12)
         // The words' share is their shown height, so the room for everything else holds still as
         // lines arrive.
-        .onGeometryChange(for: Size?.self) { proxy in
-            shownWords.map { Size(height: proxy.size.height, words: $0) }
+        .onGeometryChange(for: CGFloat?.self) { proxy in
+            shownWords.map { proxy.size.height - $0 }
         } action: { measured in
             guard let measured else { return }
-            withAnimation(grown ? .smooth(duration: 0.25) : nil) { size = measured }
+            withAnimation(grown ? .smooth(duration: 0.25) : nil) { chrome = measured }
         }
         .accessibilityElement(children: .contain)
         #if os(iOS)
         .accessibilityAction(.magicTap) { send() }
         #endif
         .accessibilityAction(.escape) { recorder.cancel() }
-        // Talking again from the check reuses the card, so focus follows each opening.
-        .onChange(of: recorder.isLifted, initial: true) { _, lifted in
-            if lifted { wordsFocused = true }
-        }
     }
-
-    private var shownWordsHeight: CGFloat? { wordsHeight.map { min($0, wordsLimit) } }
 
     private var hasWords: Bool { !recorder.finalizedWords.isEmpty || !recorder.tentativeWords.isEmpty }
 
@@ -596,15 +319,10 @@ private struct TalkNote: View {
         return recorder.dictation.notice?.text
     }
 
-    private var placeholder: String {
-        if let notice { return notice }
-        return recorder.canResume ? "Paused" : "Listening…"
-    }
-
-    private var words: some View {
+    private func words(grown: Bool, notice: String?, shownHeight: CGFloat?) -> some View {
         let finalized = recorder.finalizedWords
         let tentative = recorder.tentativeWords
-        let shownHeight = shownWordsHeight
+        let placeholder = notice ?? (recorder.canResume ? "Paused" : "Listening…")
         let scrolled = max((wordsHeight ?? 0) - (shownHeight ?? 0), 0)
         return Group {
             if hasWords {
@@ -638,27 +356,14 @@ private struct TalkNote: View {
         .accessibilityFocused($wordsFocused)
     }
 
-    private var controls: some View {
-        CardControls(canCancel: recorder.phase != .sending, canSend: recorder.canSend,
-                     isSending: recorder.phase == .sending, sendLabel: "Send to Lead",
-                     cancel: recorder.cancel, send: send)
-    }
-
     private func send() {
         Task { await recorder.send() }
     }
-}
 
-/// The card's surface: opaque, so the dimmed rows never show through, under the phone's own-message
-/// fill. The edge and shadow show only while the card is lifted, and the fill stays through Sent
-/// until the card hands its row back.
-private struct TalkSurface: View {
-    let recorder: TalkRecorder
-    let lifted: Bool
-    let onGlass: Bool
-    @Environment(\.talkGrown) private var grown
-
-    var body: some View {
+    /// The card's surface: opaque, so the dimmed rows never show through, under the phone's
+    /// own-message fill. The edge and shadow show only while the card is lifted, and the fill stays
+    /// through Sent until the card hands its row back.
+    private func surface(grown: Bool, lifted: Bool) -> some View {
         // Once Cancel's card is back on the row, the cell's own background, separator or selection
         // shows through it again.
         let based = recorder.phase != .cancelled
@@ -670,10 +375,250 @@ private struct TalkSurface: View {
         let lift: Animation = lifted ? .easeInOut(duration: 0.2) : lands
         // Folded, the base matches the list's own background, so it's solid from the first frame
         // and the dimmed rows never show through. Only the wash fades in.
-        CardSurface(surface: .user, tint: .accentColor, base: based, wash: filled, edge: lifted, shadow: lifted,
-                    animations: .init(base: based ? nil : lands,
-                                      wash: filled ? (onGlass ? nil : .easeInOut(duration: 0.2)) : lands,
-                                      edge: lift, shadow: lift))
+        return CardSurface(surface: .user, tint: .accentColor, base: based, wash: filled, edge: lifted, shadow: lifted,
+                           animations: .init(base: based ? nil : lands,
+                                             wash: filled ? (onGlass ? nil : .easeInOut(duration: 0.2)) : lands,
+                                             edge: lift, shadow: lift))
+    }
+}
+
+/// One of the row's own slots, which the card swaps once it grows from the row: the mark, the time,
+/// the second line or the trailing column.
+private struct TalkSlot: ViewModifier {
+    enum Kind { case mark, time, line, trailing }
+
+    let kind: Kind
+    let recorder: TalkRecorder?
+    @Environment(\.talkGrown) private var grown
+    @Environment(\.talkTrailingInset) private var trailingInset
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.backgroundProminence) private var prominence
+
+    /// A slot's old face leaves first, then the new one fades in.
+    private static let exit = Animation.easeIn(duration: 0.15)
+    private static let entry = Animation.easeOut(duration: 0.15).delay(0.15)
+
+    #if os(macOS)
+    private static var waveformHeight: CGFloat { 18 }
+    #else
+    private static var waveformHeight: CGFloat { 24 }
+    #endif
+
+    @ViewBuilder func body(content: Content) -> some View {
+        switch kind {
+        case .mark: mark(content)
+        case .time: time(content)
+        case .line: line(content)
+        case .trailing: trailing(content)
+        }
+    }
+
+    /// The mic while recording, the done check once sent, then the channel's own avatar as the row
+    /// settles. The recorder's mark starts with the avatar, so the swap itself is invisible and the
+    /// avatar can morph into the mic.
+    private func mark(_ avatar: Content) -> some View {
+        ZStack {
+            if let recorder {
+                let glyph = self.glyph(recorder)
+                let level = recorder.isListening ? recorder.dictation.level : 0
+                Button(action: recorder.resume) { avatar.cardMark(glyph) }
+                    .buttonStyle(TalkMarkButtonStyle())
+                    // A disabled button grays its accent, so the mic only stops taking taps.
+                    .allowsHitTesting(recorder.canResume)
+                    .background {
+                        if glyph == .mic {
+                            // The glow is wider than the mark, so the halo keeps the mark's own frame.
+                            ZStack {
+                                Circle()
+                                    .fill(RadialGradient(colors: [.accentColor, .accentColor.opacity(0)],
+                                                         center: .center, startRadius: 0, endRadius: 32))
+                                    .frame(width: 64, height: 64)
+                                    .opacity(0.3 * level)
+                                TalkHalo(scale: reduceMotion ? 1.4 : 1 + 0.4 * level)
+                                    .fill(Color.accentColor.opacity(0.25), style: FillStyle(eoFill: true))
+                                    .opacity(reduceMotion ? level : 1)
+                                    .frame(width: CardMetrics.mark, height: CardMetrics.mark)
+                            }
+                        }
+                    }
+                    .animation(.linear(duration: 0.08), value: level)
+                    .transition(.identity)
+            } else {
+                avatar.transition(.identity)
+            }
+        }
+    }
+
+    private func glyph(_ recorder: TalkRecorder) -> CardMark.Glyph {
+        guard grown else { return .channel }
+        return switch recorder.phase {
+        case .recording, .sending: .mic
+        case .sent, .landed, .cancelled, nil: recorder.isChecked ? .check : .channel
+        }
+    }
+
+    /// The counter, Offline, or the note's time, in place of the row's time. Each face leaves with a
+    /// blur and fade, then the next fades in, so two never show together.
+    private func time(_ content: Content) -> some View {
+        let face = grown ? recorder?.timeSlot : nil
+        let replaced = face != nil
+        // The time trails the title, or leads its own line below it at accessibility sizes.
+        let edge: HorizontalAlignment = dynamicTypeSize.isAccessibilitySize ? .leading : .trailing
+        return ZStack(alignment: Alignment(horizontal: edge, vertical: .firstTextBaseline)) {
+            content
+                .modifier(TalkFaceExit(gone: replaced))
+                .animation(replaced ? Self.exit : Self.entry, value: replaced)
+            if let recorder, let face {
+                Group {
+                    switch face {
+                    case .counter:
+                        TimelineView(.periodic(from: recorder.listeningSince ?? .now, by: 1)) { context in
+                            let seconds = Int(recorder.elapsed(at: context.date))
+                            Text(Duration.seconds(seconds).formatted(.time(pattern: .minuteSecond)))
+                                .monospacedDigit()
+                        }
+                    case .offline: Text("Offline")
+                    case .noteTime:
+                        // The note is the channel's new last activity, in the row's own format.
+                        Text(ChannelActivityTime.label(for: recorder.sentAt ?? .now, now: .now))
+                    }
+                }
+                #if os(iOS)
+                .font(.caption)
+                #endif
+                // The Mac's counter takes the font its row gives the time.
+                .foregroundStyle(ChannelInk.secondary(for: prominence))
+                .lineLimit(1)
+                .fixedSize()
+                .id(face)
+                .transition(.asymmetric(
+                    insertion: .opacity.animation(Self.entry),
+                    removal: .modifier(active: TalkFaceExit(gone: true), identity: TalkFaceExit(gone: false))
+                        .animation(Self.exit)))
+            }
+        }
+        .transformAnchorPreference(key: TalkEndsKey.self, value: .trailing) { ends, anchor in
+            if recorder != nil, !dynamicTypeSize.isAccessibilitySize { ends.text = anchor }
+        }
+    }
+
+    /// The waveform in place of the row's second line, as bars that flow out of the mic down the
+    /// row, newest at the leading edge.
+    private func line(_ content: Content) -> some View {
+        let shows = grown && recorder?.isLifted == true
+        return content
+            .modifier(TalkFaceExit(gone: shows))
+            // Line 2 leaves quickly, and returns over the second half of Sent's collapse.
+            .animation(shows ? .easeOut(duration: 0.15) : .easeIn(duration: 0.175).delay(0.175), value: shows)
+            .frame(minHeight: shows ? 18 : nil)
+            .transformAnchorPreference(key: TalkEndsKey.self, value: .trailing) { ends, anchor in
+                if recorder != nil { ends.line = anchor }
+            }
+            // The waveform overflows line 2's slot instead of resizing it, so the mark stays put. It
+            // ends where Send's circle does.
+            .overlay(alignment: .leading) {
+                if let recorder, shows {
+                    let listening = recorder.isListening
+                    let level = listening ? recorder.dictation.level : 0
+                    // Under Reduce Motion, the bars stay in place and only their heights follow the level.
+                    let levels = reduceMotion
+                        ? (0..<TalkRecorder.sampleCount).map { level * (0.45 + 0.55 * abs(sin(Double($0) * 0.9))) }
+                        : recorder.levels
+                    TalkBars(levels: levels, amplitude: listening ? 1 : 0)
+                        .fill(LinearGradient(colors: [.accentColor, .accentColor.opacity(0.25)],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .animation(.easeOut(duration: 0.2), value: listening)
+                        .frame(height: Self.waveformHeight)
+                        .padding(.trailing, trailingInset)
+                        .transition(.asymmetric(
+                            insertion: .modifier(active: TalkRise(scale: 0.2), identity: TalkRise(scale: 1))
+                                .combined(with: .opacity),
+                            removal: .opacity.animation(.easeOut(duration: 0.15))))
+                }
+            }
+    }
+
+    /// The chevron and attention mark, which fade out with the time, and back as the wash fades.
+    private func trailing(_ content: Content) -> some View {
+        let fades = grown && recorder?.hidesTrailingColumn == true
+        return content
+            .opacity(fades ? 0 : 1)
+            .animation(fades ? .easeIn(duration: 0.15) : .easeOut(duration: 0.4), value: fades)
+    }
+}
+
+/// Undimmed while disabled, since the mic is only a button once listening stops.
+private struct TalkMarkButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(width: CardMetrics.hitTarget, height: CardMetrics.hitTarget)
+            .contentShape(Circle())
+            .frame(width: CardMetrics.mark, height: CardMetrics.mark)
+            .opacity(configuration.isPressed ? 0.6 : 1)
+    }
+}
+
+/// The voice's halo: a ring around the mark's rounded square that widens with the level and
+/// vanishes at silence.
+private struct TalkHalo: Shape {
+    var scale: Double
+
+    var animatableData: Double {
+        get { scale }
+        set { scale = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let grow = rect.width * (scale - 1) / 2
+        let outer = rect.insetBy(dx: -grow, dy: -grow)
+        var path = Path(roundedRect: outer, cornerRadius: outer.width * CardMark.corners, style: .continuous)
+        path.addPath(Path(roundedRect: rect, cornerRadius: rect.width * CardMark.corners, style: .continuous))
+        return path
+    }
+}
+
+/// A slot's old face leaving: a 2-point blur and fade. It comes back with only the fade.
+private struct TalkFaceExit: ViewModifier {
+    let gone: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .blur(radius: gone ? 2 : 0)
+            .opacity(gone ? 0 : 1)
+    }
+}
+
+/// The waveform rising out of line 2's slot.
+private struct TalkRise: ViewModifier {
+    let scale: CGFloat
+
+    func body(content: Content) -> some View {
+        content.scaleEffect(x: 1, y: scale)
+    }
+}
+
+/// 3-point bars with 3-point gaps, from 3 points tall to 2 short of the waveform's height.
+private struct TalkBars: Shape {
+    var levels: [Double]
+    var amplitude: Double
+
+    var animatableData: Double {
+        get { amplitude }
+        set { amplitude = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let pitch: CGFloat = 6
+        let count = min(Int((rect.width + 3) / pitch), levels.count)
+        for index in 0..<max(count, 0) {
+            let level = min(max(levels[index] * amplitude, 0), 1)
+            let height = 3 + (rect.height - 5) * level
+            let bar = CGRect(x: rect.minX + CGFloat(index) * pitch, y: rect.midY - height / 2, width: 3, height: height)
+            path.addRoundedRect(in: bar, cornerSize: CGSize(width: 1.5, height: 1.5))
+        }
+        return path
     }
 }
 
