@@ -377,9 +377,9 @@ don't go through it.
   message never leaves a channel unread: the server reads the channel through every user message
   it stores, as Toy Box 0.4.5 and later do, and the reducer does the same in the event that
   applies it, wherever it was sent from, so a reply from the web or another device reads the
-  channel everywhere. The outbox sends no mark read of its own. Every list treats a channel the
-  outbox is sending to as read, without waiting for the server's echo, so a row never flashes
-  unread for the user's own message. The first of
+  channel everywhere. The outbox sends no mark read of its own. The catalog's update for the
+  message carries its new read too, so a row never flashes unread for the user's own message. The
+  first of
   these to bring the message back also files each image its row already loaded under the link the
   server gave it, pairing them in the order sent, so the server's row draws at once without a
   download. Filing it again changes nothing.
