@@ -821,6 +821,13 @@ landing, Reveal, follow-at-bottom (within 48 points of the end) and paging ancho
 against the unobscured viewport between the toolbar and the floating controls. A message hidden
 under the composer or toolbar is not visible and must not be marked read.
 
+A message is seen when at least 24 points of it, or half of a shorter one, show in that viewport,
+so a message taller than the window still reads. Both apps mark read through the newest seen
+message once the conversation has held still for a quarter second while the reader is looking at
+it (the key window on the Mac, the active scene showing the channel on the phone), nothing covers
+it, it has landed and nothing is moving it, Find isn't holding the position, and the channel is
+connected. Any change starts the quarter second over, so flicking past a message never reads it.
+
 **Floating composer.** Shell attaches the composer with `safeAreaBar(edge: .bottom, spacing: 0)`
 instead of `safeAreaInset`, including in the offline placeholder state. The bar has no
 background. The composer is one glass surface.
