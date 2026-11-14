@@ -13,7 +13,6 @@ struct SettingsView: View {
     @AppStorage(IntelligenceSettings.describesImages) private var describesImages = true
     @ViewState private var availability: IntelligenceAvailability?
     @ViewState private var addsServer = false
-    @ViewState private var removal: ChannelCatalogStore?
 
     var body: some View {
         Form {
@@ -41,9 +40,6 @@ struct SettingsView: View {
         .navigationDestination(for: ServerRoute.self) { ServerSettingsView(catalog: $0.catalog) }
         .navigationDestination(isPresented: $addsServer) { ServerSettingsView(catalog: nil) }
         .toolbar {
-            if model.catalogs.count > 1 {
-                ToolbarItem(placement: .topBarLeading) { EditButton() }
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button(role: .close) { model.cover = nil }
                     .accessibilityLabel("Close Settings")
@@ -60,7 +56,7 @@ struct SettingsView: View {
         }
     }
 
-    /// Each server with its dot and name, in the order the list shows them. Removing one asks first.
+    /// Each server with its dot and name.
     private var servers: some View {
         Section {
             ForEach(model.catalogs, id: \.api.baseURL) { catalog in
@@ -74,8 +70,6 @@ struct SettingsView: View {
                         }
                     }
             }
-            .onMove { model.servers.move(fromOffsets: $0, toOffset: $1) }
-            .onDelete { removal = $0.first.map { model.catalogs[$0] } }
             Button("Add Server", systemImage: "plus") { addsServer = true }
             if model.catalogs.offersUpdateCheck {
                 let isChecking = model.catalogs.isCheckingForUpdates
@@ -88,13 +82,6 @@ struct SettingsView: View {
             }
         } header: {
             Text("Servers")
-        }
-        .confirmationDialog("Remove \(removal?.name ?? "this server")?", isPresented: Binding(
-            get: { removal != nil }, set: { if !$0 { removal = nil } }
-        ), titleVisibility: .visible, presenting: removal) { catalog in
-            Button("Remove Server", role: .destructive) { model.servers.remove(catalog) }
-        } message: { _ in
-            Text("Toy Box disconnects from it and removes its channels from this iPhone. Drafts stay saved, so adding it back finds them.")
         }
     }
 
@@ -133,18 +120,16 @@ struct SettingsView: View {
     }
 }
 
-/// A server's dot and name, `link` when it's linked, then that it can't connect, or its release. A
-/// failed check or restart reads under the name, up to three lines, and VoiceOver reads all of it. See
-/// Updating a server and Linking servers in docs/spec.md.
+/// A server's dot and name, then that it can't connect, or its release. A failed check or restart
+/// reads under the name, up to three lines, and VoiceOver reads all of it. See Updating a server in
+/// docs/spec.md.
 private struct ServerRow: View {
     let catalog: ChannelCatalogStore
-    @Environment(AppModel.self) private var model
 
     var body: some View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
         let update = catalog.update
         let isConnected = catalog.phase.failure == nil
-        let isLinked = !model.catalogs.linkedServers(of: catalog).isEmpty
         let failure: String? = if case .failed(let words)? = update.outcome { words } else { nil }
         // The dot already says it can't connect, so the row says so only when it shows nothing else.
         let cantConnect = !isConnected && failure == nil && update.phase != .checking && update.phase != .reconnecting
@@ -153,16 +138,9 @@ private struct ServerRow: View {
                 HStack(spacing: Self.dotSpacing) {
                     Circle().fill(footer.dot).frame(width: Self.dotSize, height: Self.dotSize)
                         .accessibilityHidden(true)
-                    HStack(spacing: 6) {
-                        Text(catalog.name).lineLimit(1)
-                        if isLinked {
-                            Image(systemName: "link").font(.system(size: 13)).foregroundStyle(.secondary)
-                        }
-                    }
-                    // The dot's meaning, read once for the row.
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(catalog.name)
-                    .accessibilityValue(isLinked ? "\(footer.accessibilityValue), linked" : footer.accessibilityValue)
+                    Text(catalog.name).lineLimit(1)
+                        // The dot's meaning, read once for the row.
+                        .accessibilityValue(footer.accessibilityValue)
                 }
                 if let failure {
                     Text("\(Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)) \(failure)")

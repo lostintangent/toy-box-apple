@@ -227,7 +227,7 @@ struct MorningDigestTests {
         #expect(!MorningDigest.isAllowed(options, bundleID: "dev.toybox.desktop.test", environment: [:]))
         #expect(!MorningDigest.isAllowed(options, bundleID: "dev.toybox.desktop",
                                         environment: ["TOY_BOX_SERVER_URL": "http://localhost:3210"]))
-        options.servers = ["http://localhost:3210"]
+        options.server = "http://localhost:3210"
         #expect(!MorningDigest.isAllowed(options, bundleID: "dev.toybox.desktop", environment: [:]))
         options = LaunchOptions()
         options.snapshotURL = URL(filePath: "/tmp/digest-snapshot.png")

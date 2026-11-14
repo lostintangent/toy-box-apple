@@ -79,7 +79,7 @@ final class AppModel {
         let launchServer = flag.map { arguments.dropFirst($0 + 1).first ?? "" } ?? environment["TOY_BOX_SERVER_URL"]
         outbox = .mobile()
         // A launch server stays in the session, so Settings never saves over the user's servers.
-        servers = ChannelServers(launchServer.map { [.init(url: $0)] } ?? ChannelCatalogStore.Saved.load(from: defaults),
+        servers = ChannelServers(launchServer ?? ChannelServers.saved(in: defaults),
                                  savingTo: launchServer == nil ? defaults : nil, session: session, outbox: outbox,
                                  connections: connections, isActive: false, streamsInBackground: false)
         self.notifications.onRegistrationCreated = { [weak self] registration in
@@ -105,7 +105,7 @@ final class AppModel {
         servers.onChange = { [weak self] in self?.serversDidChange() }
         servers.onRemove = { [weak self] in self?.close($0) }
         serversDidChange()
-        restoring = defaults.string(forKey: "lastServer").flatMap { catalogs.first(at: $0) } ?? catalog
+        restoring = catalog
     }
 
     /// The first server in Settings order.
@@ -165,8 +165,7 @@ final class AppModel {
 
     // MARK: Servers
 
-    /// Adds a server, or finds the one already at that address. The first one, from Welcome, opens
-    /// the channel last opened there once it loads.
+    /// Adds a server. The first one, from Welcome, opens the channel last opened there once it loads.
     @discardableResult
     func addServer(_ address: String) throws -> ChannelCatalogStore {
         let wasEmpty = catalogs.isEmpty
@@ -200,8 +199,8 @@ final class AppModel {
     }
 
     /// Push and Share reach every server. The first server stands in for a launch address the app
-    /// couldn't use, so a new one clears that error and any navigation in flight. Removing the last
-    /// one takes the app back to its first run, so Settings closes onto Welcome.
+    /// couldn't use, so a new one clears that error and any navigation in flight. Disconnecting takes
+    /// the app back to its first run, so Settings closes onto Welcome.
     private func serversDidChange() {
         if catalog !== first {
             first = catalog
@@ -296,7 +295,7 @@ final class AppModel {
     /// confirmed send went to.
     private func configureShareHistory() {
         guard let shareHistory else { return }
-        shareHistory.select(servers: catalogs.map(\.saved))
+        shareHistory.select(servers: catalogs.map { .init(url: $0.api.baseURL.absoluteString, name: $0.name) })
         for catalog in catalogs {
             let serverURL = catalog.api.baseURL.absoluteString
             catalog.onSendConfirmed = { [weak shareHistory, weak catalog] id in
@@ -347,7 +346,7 @@ final class AppModel {
                                              withdrawing: context.withdrawing)
         }
         // A refresh on any server, or a loaded one leaving, writes every server's waiting count.
-        if !context.refreshes.isEmpty, context.refreshes != badgeRefreshes {
+        if context.refreshes != badgeRefreshes {
             badgeRefreshes = context.refreshes
             notifications.updateBadge(catalogs.reduce(0) { $0 + $1.channels.count { $0.attention == .waiting } })
             for catalog in catalogs where catalog.lastRefreshedAt != nil {
@@ -494,13 +493,12 @@ final class AppModel {
         defaults.dictionary(forKey: "lastChannelByServer") as? [String: String] ?? [:]
     }
 
-    /// Each server's last opened channel, and the server last opened, which launch restores.
+    /// Each server's last opened channel, which launch restores on the saved server.
     private func rememberSelection() {
         guard let selection else { return }
         var selections = rememberedSelections
         selections[selection.serverURL] = selection.channelID
         defaults.set(selections, forKey: "lastChannelByServer")
-        defaults.set(selection.serverURL, forKey: "lastServer")
     }
 }
 

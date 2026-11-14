@@ -287,10 +287,9 @@ struct RootView: View {
             columnVisibility = .detailOnly
             snapshot.markStateReady(state)
         case "sidebar-no-servers":
-            // The first run, as removing every server in Settings leaves it, with nothing for
-            // Overview to describe.
+            // The first run, as Disconnect leaves it, with nothing for Overview to describe.
             setOverviewVisible(false)
-            for catalog in model.catalogs { model.servers.remove(catalog) }
+            model.servers.disconnect()
             snapshot.markStateReady(state)
         case "handoff-unavailable":
             if handoff.phase == .missing { snapshot.markStateReady(state) }

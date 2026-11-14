@@ -37,14 +37,8 @@ struct SettingsView: View {
             intelligenceAvailability = intelligence.availability
             model.openAtLogin.refresh()
         }
-        // Each server's last check or restart, and what its last link couldn't do, is forgotten once
-        // Settings closes.
-        .onDisappear {
-            for catalog in model.catalogs {
-                catalog.update.clearOutcome()
-                catalog.links.clearFailures()
-            }
-        }
+        // Each server's last check or restart is forgotten once Settings closes.
+        .onDisappear { for catalog in model.catalogs { catalog.update.clearOutcome() } }
         .task {
             for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
                 intelligenceAvailability = intelligence.availability

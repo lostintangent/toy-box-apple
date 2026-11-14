@@ -3,10 +3,9 @@ import ChannelKit
 import SwiftUI
 import ToyBoxUI
 
-/// One server in Settings: its name, then its address and status, then its release, then its Linked
-/// switch. The address is only how this iPhone reaches the server, so it can be copied but not
-/// edited. Without a server, this is Add Server: Welcome's Server URL card, whose test adds the
-/// server, linked when Add Server's switch is on, and then shows it.
+/// One server in Settings: its name, then its address and status, then its release. The address is
+/// only how this iPhone reaches the server, so it can be copied but not edited. Without a server,
+/// this is Add Server: Welcome's Server URL card, whose test adds the server and then shows it.
 struct ServerSettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
@@ -15,8 +14,6 @@ struct ServerSettingsView: View {
     @ViewState private var connection: ServerConnectionProbe
     @ViewState private var failure: String?
     @ViewState private var isAdding = false
-    @ViewState private var links = true
-    @ViewState private var linkAddresses = LinkAddresses()
 
     init(catalog: ChannelCatalogStore?, connection: ServerConnectionProbe = ServerConnectionProbe()) {
         _catalog = ViewState(initialValue: catalog)
@@ -30,9 +27,6 @@ struct ServerSettingsView: View {
                     ServerNameSection(catalog: catalog)
                     ServerAddressSection(catalog: catalog)
                     ServerVersionSection(update: catalog.update)
-                    if LinkedSwitch.isShown(in: model.catalogs) {
-                        LinkedSection(catalog: catalog)
-                    }
                 }
                 .id(ObjectIdentifier(catalog))
             } else {
@@ -41,10 +35,6 @@ struct ServerSettingsView: View {
                     footer: "Use your server's address, including its port and any path prefix. Toy Box adds it once the test connects.",
                     isSwitching: isAdding, failure: $failure)
                     .disabled(isAdding)
-                if !model.catalogs.isEmpty {
-                    AddServerLinkedSection(address: connection.address, isOn: $links, addresses: linkAddresses)
-                        .disabled(isAdding)
-                }
             }
         }
         .navigationTitle(catalog?.name ?? "Add Server")
@@ -67,20 +57,12 @@ struct ServerSettingsView: View {
     /// A successful test is the add, and the page then shows the server it added.
     private func add(_ server: URL) {
         guard !isAdding else { return }
-        let links = links && !model.catalogs.isEmpty && model.catalogs.first(at: server.absoluteString) == nil
-        let needed = links ? model.catalogs.serversNeedingAddress(toLink: server.absoluteString) : []
-        guard linkAddresses.validate(needed, in: model.catalogs) else { return }
         isAdding = true
         failure = nil
         Task {
             defer { isAdding = false }
             do {
                 let added = try model.addServer(server.absoluteString)
-                if links {
-                    linkAddresses.save(needed, in: model.catalogs, with: model.servers.setTailscaleAddress)
-                    let catalogs = model.catalogs
-                    Task { await catalogs.setLinked(added, true) }
-                }
                 await added.refresh()
                 catalog = added
             } catch { failure = error.localizedDescription }
@@ -154,4 +136,23 @@ struct ServerRoute: Hashable {
 
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.catalog === rhs.catalog }
     func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(catalog)) }
+}
+
+/// What a change in Settings couldn't do, like rename a server, after a yellow triangle on its first
+/// line, with any reason under it.
+struct FailureLabel: View {
+    let words: String
+    let reason: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(words)
+                if let reason { Text(reason).font(.subheadline).foregroundStyle(.secondary) }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
 }

@@ -196,23 +196,6 @@ public final class ChannelOutbox {
         changed()
     }
 
-    /// A server moved to a new address, so its messages, and the requests they answered, go with it.
-    /// Each keeps its ID, so the server never posts one twice, even one the old address already took.
-    func move(from old: URL, to new: URL) {
-        let from = Self.key(old), to = Self.key(new)
-        guard from != to else { return }
-        restart(lines.keys.filter { $0.server == from })
-        for (destination, requests) in answered where destination.server == from {
-            answered[destination] = nil
-            answered[Destination(server: to, channelID: destination.channelID), default: []].formUnion(requests)
-        }
-        for index in queue.indices where queue[index].server == from {
-            queue[index].server = to
-            save(queue[index])
-        }
-        changed()
-    }
-
     /// Each catalog prunes answers the catalog no longer lists as waiting, and drops the messages of
     /// channels it no longer lists. One that follows a failure means the server is back.
     func catalogChanged(_ store: ChannelCatalogStore, recovered: Bool) {

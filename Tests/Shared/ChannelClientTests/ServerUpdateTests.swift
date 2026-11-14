@@ -13,7 +13,7 @@ struct ServerUpdateTests {
     /// What `/api/v1/server` answers while the server runs `running`, with `installed` on disk.
     nonisolated private static func info(_ running: String, _ installed: String?) -> ServerInfo {
         ServerInfo(id: "studio-id", name: "Studio", accentColor: "#facc15",
-                   release: .init(version: running, installedVersion: installed), links: [])
+                   release: .init(version: running, installedVersion: installed), peers: [])
     }
 
     /// What the server answers on each route. Tests change it as the server would.

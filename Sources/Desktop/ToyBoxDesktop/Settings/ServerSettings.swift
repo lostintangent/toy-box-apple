@@ -2,14 +2,12 @@ import ChannelClient
 import SwiftUI
 import ToyBoxUI
 
-/// The Servers tab: the list in Settings order, then the selected server's name, address, status and
-/// release.
+/// The Servers tab: the list, then the selected server's name, address, status and release.
 struct ServerSettings: View {
     @Environment(AppModel.self) private var model
     /// The selected server's address.
     @ViewState private var selection: String?
     @ViewState private var addsServer = false
-    @ViewState private var confirmsRemoval = false
 
     /// The form insets its rows by this much, and a list's rows inset their content by the same.
     private static let formInset: CGFloat = 10
@@ -23,9 +21,6 @@ struct ServerSettings: View {
                 Divider()
                 HStack(spacing: 2) {
                     Button("Add Server", systemImage: "plus") { addsServer = true }
-                    Divider().frame(height: 14)
-                    Button("Remove Server", systemImage: "minus") { confirmsRemoval = true }
-                        .disabled(!canRemove)
                     Spacer()
                     if model.catalogs.offersUpdateCheck {
                         Button("Check for Updates") { Task { await model.catalogs.checkForUpdates() } }
@@ -44,12 +39,6 @@ struct ServerSettings: View {
         // A first server added from the sidebar while this is open shows its details too.
         .onChange(of: model.catalogs.isEmpty) { _, isEmpty in if !isEmpty, selected == nil { select(model.catalogs.first) } }
         .sheet(isPresented: $addsServer) { AddServerSheet(added: select) }
-        .confirmationDialog("Remove \(selected?.name ?? "this server")?", isPresented: $confirmsRemoval) {
-            Button("Remove Server", role: .destructive, action: remove)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Toy Box disconnects from it and removes its channels from this Mac. Drafts stay saved, so adding it back finds them.")
-        }
         // Every server again as one connects, so one that was down when Settings opened shows.
         .task(id: model.catalogs.filter { $0.phase == .connected }.map(\.api.baseURL)) {
             await model.catalogs.refreshServers()
@@ -64,14 +53,11 @@ struct ServerSettings: View {
         model.catalogs.first { Self.address($0) == selection }
     }
 
-    private var canRemove: Bool { selected != nil }
-
     private var list: some View {
         List(selection: $selection) {
             ForEach(model.catalogs, id: \.api.baseURL) { catalog in
                 row(catalog).tag(Self.address(catalog))
             }
-            .onMove { model.servers.move(fromOffsets: $0, toOffset: $1) }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -80,25 +66,18 @@ struct ServerSettings: View {
         .overlay {
             if model.catalogs.isEmpty { Text("No Servers").foregroundStyle(.secondary) }
         }
-        .onDeleteCommand { if canRemove { confirmsRemoval = true } }
     }
 
     private func row(_ catalog: ChannelCatalogStore) -> some View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
-        let isLinked = !model.catalogs.linkedServers(of: catalog).isEmpty
         return HStack(spacing: 8) {
             HStack(spacing: 8) {
                 Circle().fill(footer.dot).frame(width: 7, height: 7)
-                HStack(spacing: 4) {
-                    Text(catalog.name).lineLimit(1)
-                    if isLinked {
-                        Image(systemName: "link").font(.system(size: 11)).foregroundStyle(.secondary)
-                    }
-                }
+                Text(catalog.name).lineLimit(1)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(catalog.name)
-            .accessibilityValue(isLinked ? "\(footer.accessibilityValue), linked" : footer.accessibilityValue)
+            .accessibilityValue(footer.accessibilityValue)
             Spacer(minLength: 0)
             ServerUpdateStatus(update: catalog.update)
         }
@@ -113,12 +92,6 @@ struct ServerSettings: View {
 
     private func select(_ catalog: ChannelCatalogStore?) {
         selection = catalog.map(Self.address)
-    }
-
-    private func remove() {
-        guard let selected, let index = model.catalogs.firstIndex(where: { $0 === selected }) else { return }
-        model.servers.remove(selected)
-        select(model.catalogs.indices.contains(index) ? model.catalogs[index] : model.catalogs.last)
     }
 
     static func address(_ catalog: ChannelCatalogStore) -> String { catalog.api.baseURL.absoluteString }
@@ -175,7 +148,6 @@ private struct ServerUpdateStatus: View {
 /// can be copied but not edited, and adding the server at another address moves it there.
 private struct ServerDetails: View {
     let catalog: ChannelCatalogStore
-    @Environment(AppModel.self) private var model
 
     var body: some View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
@@ -204,9 +176,6 @@ private struct ServerDetails: View {
                     }
                 }
             }
-        }
-        if LinkedSwitch.isShown(in: model.catalogs) {
-            LinkedSection(catalog: catalog)
         }
     }
 
@@ -250,25 +219,20 @@ private struct ServerNameRows: View {
     }
 }
 
-/// Add Server: an address, tested if you like, then added, linked when its switch is on, and
-/// selected. An address already listed selects that server.
+/// Add Server: an address, tested if you like, then added and selected. An address already listed
+/// selects that server.
 struct AddServerSheet: View {
     let added: (ChannelCatalogStore) -> Void
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @ViewState private var connection = ServerConnectionProbe()
     @ViewState private var failure: String?
-    @ViewState private var links = true
-    @ViewState private var addresses = LinkAddresses()
 
     var body: some View {
         Form {
             Section("Add a Toy Box Server") {
                 ServerAddressFields(connection: connection, failure: failure, prompt: "machine.tail1234.ts.net")
                     .onSubmit(add)
-            }
-            if !model.catalogs.isEmpty {
-                AddServerLinkedSection(address: connection.address, isOn: $links, addresses: addresses)
             }
         }
         .formStyle(.grouped)
@@ -287,17 +251,8 @@ struct AddServerSheet: View {
 
     private func add() {
         guard connection.validationError == nil else { return }
-        let links = links && !model.catalogs.isEmpty && model.catalogs.first(at: connection.address) == nil
-        let needed = links ? model.catalogs.serversNeedingAddress(toLink: connection.address) : []
-        guard addresses.validate(needed, in: model.catalogs) else { return }
         do {
-            let catalog = try model.servers.add(connection.address)
-            if links {
-                addresses.save(needed, in: model.catalogs, with: model.servers.setTailscaleAddress)
-                let catalogs = model.catalogs
-                Task { await catalogs.setLinked(catalog, true) }
-            }
-            added(catalog)
+            added(try model.servers.add(connection.address))
             dismiss()
         } catch {
             failure = error.localizedDescription
@@ -347,5 +302,24 @@ private struct ServerAddressFields: View {
             Image(systemName: "exclamationmark.circle").foregroundStyle(.red)
         }
         .font(.caption).textSelection(.enabled)
+    }
+}
+
+/// What a change in Settings couldn't do, like rename a server, after a yellow triangle on its first
+/// line, with any reason under it.
+struct FailureLabel: View {
+    let words: String
+    let reason: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(words)
+                if let reason { Text(reason).font(.caption).foregroundStyle(.secondary) }
+            }
+            .textSelection(.enabled)
+        }
+        .accessibilityElement(children: .combine)
     }
 }

@@ -1290,20 +1290,19 @@ struct OverviewTests {
 
     @Test func managementSessionsBelongToTheirOwnServer() throws {
         try withModel { app in
-            let first = try #require(app.catalog)
             let second = try app.addServer("https://second.example")
             let sessions = ManagementSessions()
             let presenter = ManagementPresenter()
             let editing = try ManagementFlow.editChannel(#require(second.target("channel")))
             presenter.present(editing)
             let editor = sessions.session(for: editing, catalog: second)
-            try app.addServer("https://moved.example")
-            app.servers.remove(first)
+            try app.addServer("https://joined.example")
             #expect(sessions.isCurrent(editor, app: app, presenter: presenter))
-            app.servers.remove(second)
+            app.servers.disconnect()
             #expect(!sessions.isCurrent(editor, app: app, presenter: presenter))
 
             // New Channel's Server menu moves its session, so the entries stay.
+            try app.addServer("https://first.example")
             let third = try app.addServer("https://third.example")
             let creating = ManagementFlow.newChannel(server: app.serverURL)
             presenter.present(creating)

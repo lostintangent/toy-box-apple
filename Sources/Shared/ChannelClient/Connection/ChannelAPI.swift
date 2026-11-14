@@ -136,12 +136,6 @@ public struct ChannelAPI: Sendable {
         host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host.hasPrefix("127.")
     }
 
-    /// Whether this server is on this Mac or phone itself, so another machine can't reach it at
-    /// this address.
-    public var isLoopback: Bool {
-        Self.isLoopback(host: (baseURL.host ?? "").lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[].")))
-    }
-
     private static let unreserved = CharacterSet(
         charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
 
@@ -319,7 +313,7 @@ public struct ChannelAPI: Sendable {
         try await noContent("DELETE", channelPath(channelId) + ["artifacts", artifactId])
     }
 
-    /// The server: its identity, name, accent, releases and links.
+    /// The server: its identity, name, accent, releases and peers.
     public func server() async throws -> ServerInfo {
         try await get(Self.serverPath)
     }
@@ -346,26 +340,7 @@ public struct ChannelAPI: Sendable {
 
     static let updateTimeout: TimeInterval = 300
 
-    /// Links another server by its origin, and answers the server. A request that reaches this
-    /// server at a non-loopback address links both ends, and one at a loopback address only this
-    /// one. Linking a linked server changes nothing. A 422 is a refusal, with nothing stored.
-    public func link(_ address: String) async throws -> ServerInfo {
-        try await command("POST", Self.linksPath, body: LinkInput(address: address))
-    }
-
-    /// Unlinks another server by its origin, and answers the server, from both ends or only this one
-    /// as `link(_:)` does. Unlinking a server that isn't linked changes nothing. The address is in the
-    /// query, so no intermediary drops a DELETE's body.
-    public func unlink(_ address: String) async throws -> ServerInfo {
-        var parts = URLComponents(url: endpoint(Self.linksPath), resolvingAgainstBaseURL: false)!
-        parts.percentEncodedQuery = "address=" + address.addingPercentEncoding(withAllowedCharacters: Self.unreserved)!
-        var request = URLRequest(url: parts.url!)
-        request.httpMethod = "DELETE"
-        return try await JSONDecoder().decode(ServerInfo.self, from: data(for: request))
-    }
-
     private static let serverPath = ["api", "v1", "server"]
-    private static let linksPath = serverPath + ["links"]
 
     public func streamRequest(channelId: String, after: Int?, timeout: TimeInterval = 35) -> URLRequest {
         let query = after.map { [URLQueryItem(name: "after", value: String($0))] } ?? []
@@ -423,7 +398,6 @@ public struct ChannelAPI: Sendable {
 }
 
 private struct RenameInput: Encodable { var name: String }
-private struct LinkInput: Encodable { var address: String }
 private struct PostInput: Encodable { var id: String; var content: String; var attachments: [ChannelAttachment]? }
 private struct ReadInput: Encodable { var sequence: Int }
 private struct ErrorResponse: Decodable { var error: String }

@@ -139,7 +139,7 @@ struct DockMenuTests {
         var benchmark = LaunchOptions()
         benchmark.benchmark = .scroll
         var server = LaunchOptions()
-        server.servers = ["http://127.0.0.1:3210"]
+        server.server = "http://127.0.0.1:3210"
         for options in [snapshot, benchmark, server] {
             #expect(!DockAttention.isAllowed(options, bundleID: "dev.toybox.desktop", environment: [:]))
         }

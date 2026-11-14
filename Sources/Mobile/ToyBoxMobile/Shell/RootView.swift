@@ -326,14 +326,8 @@ private struct AppCoverPresentation: ViewModifier {
         )) { cover in
             if cover == .settings {
                 NavigationStack { SettingsView() }
-                    // Each server's last check or restart, and what its last link couldn't do, is
-                    // forgotten once Settings closes.
-                    .onDisappear {
-                        for catalog in model.catalogs {
-                            catalog.update.clearOutcome()
-                            catalog.links.clearFailures()
-                        }
-                    }
+                    // Each server's last check or restart is forgotten once Settings closes.
+                    .onDisappear { for catalog in model.catalogs { catalog.update.clearOutcome() } }
             } else {
                 ScreenSheet(server: model.selectedServer)
             }

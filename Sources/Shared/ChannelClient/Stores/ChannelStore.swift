@@ -532,16 +532,13 @@ public final class ChannelStore {
 @MainActor @Observable
 public final class ChannelCatalogStore {
     public let api: ChannelAPI
-    /// The server's name in Settings and its section header: the last name the server answered, or
-    /// its host before it answers. Settings saves it, so it shows while the server can't connect.
+    /// The server's name in Settings and its section header: the last name the server answered this
+    /// run, or its host before it answers.
     public internal(set) var name: String
-    /// The identity the server makes once and keeps, from its last answer, so adding the same server
-    /// at another address moves it there. Settings saves it.
-    public internal(set) var serverID: String?
     /// The server's accent from its last answer, `#` and six hex digits, or nil before it answers.
     /// Nothing shows it yet, and it isn't saved.
     public internal(set) var accentColor: String?
-    /// The list this server is saved in, which each answer reaches, so a new name or identity saves.
+    /// The list this server is in, which each answer reaches, so a new name or peers show.
     @ObservationIgnored weak var servers: ChannelServers?
     public private(set) var state: ChannelCatalog?
     /// A channel the outbox is sending to reads as read through its latest, since the server marks it
@@ -558,8 +555,6 @@ public final class ChannelCatalogStore {
     public var members: [ChannelAgent] { state?.members ?? [] }
     /// The server's release, and checking for a newer one and restarting onto it.
     public let update: ServerUpdate
-    /// The user's other servers this one links, and its Linked switch.
-    public let links: ServerLinks
     /// The IDs of the agents running now on this server, the one source of who's working in every
     /// channel. It's empty while the catalog is unavailable, so activity clears instead of going stale.
     public private(set) var working: Set<String> = []
@@ -627,14 +622,11 @@ public final class ChannelCatalogStore {
 
     /// `now` measures the grace and the keepalive interval. Tests pass a clock they move instead of
     /// waiting, and a network path they change.
-    public init(api: ChannelAPI, name: String? = nil, id: String? = nil, tailscaleAddress: String? = nil,
-                reconnectPolicy: ReconnectPolicy = .init(),
+    public init(api: ChannelAPI, name: String? = nil, reconnectPolicy: ReconnectPolicy = .init(),
                 now: @escaping () -> Date = { .now }, networkPath: NetworkPathSource = .system) {
         self.api = api
-        self.name = name ?? Saved.name(of: api.baseURL.absoluteString)
-        self.serverID = id
+        self.name = name ?? Self.name(of: api.baseURL.absoluteString)
         self.update = ServerUpdate(api: api)
-        self.links = ServerLinks(api: api, tailscaleAddress: tailscaleAddress)
         self.reconnectPolicy = reconnectPolicy
         self.now = now
         self.networkPath = networkPath

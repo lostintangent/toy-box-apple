@@ -1,6 +1,5 @@
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { body, createDemoLinks, describe, Refusal } from "./link-routes.ts";
 
 const updateDelay = 2000, restartDelay = 3000;
 const nameLimit = 64;
@@ -16,26 +15,37 @@ function demoServerMode() {
     throw new Error(`TOY_BOX_DEMO_SERVER must be ${modes.join(", ")}, not "${mode}"`);
 }
 
+// TOY_BOX_DEMO_PEERS lists the origins the server answers as its peers, separated by commas, like
+// `http://127.0.0.1:3211`, and none by default.
+function demoPeers() {
+    return (process.env.TOY_BOX_DEMO_PEERS ?? "").split(",").map(peer => peer.trim()).filter(Boolean).sort();
+}
+
+async function body(request: IncomingMessage): Promise<unknown> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { return undefined; }
+}
+
 function reply(response: ServerResponse, status: number, body?: unknown) {
     response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     response.end(body === undefined ? undefined : JSON.stringify(body));
 }
 
-/** `/api/v1/server`, its rename, links, update and restart, as a server that a package manager
- *  installed unless `mode` says otherwise. `id` is the identity it keeps, and `computer` the name it
- *  starts with and returns to when a rename clears it. */
-export function createDemoServerRoutes(server: Server, { id, computer, mode = demoServerMode() }:
-    { id: string, computer: string, mode?: Mode }) {
+/** `/api/v1/server`, its rename, update and restart, as a server that a package manager installed
+ *  unless `mode` says otherwise. `id` is the identity it keeps, `computer` the name it starts with
+ *  and returns to when a rename clears it, and `peers` the origins it answers as its peers. */
+export function createDemoServerRoutes(server: Server, { id, computer, mode = demoServerMode(), peers = demoPeers() }:
+    { id: string, computer: string, mode?: Mode, peers?: string[] }) {
     const running = "0.4.0", newer = "0.4.1";
     let version = running;
     let installedVersion: string | null =
         mode === "unmanaged" ? null : mode === "pending" || mode === "gone" ? newer : running;
     let name = computer;
     const accentColor = "#facc15";
-    const links = createDemoLinks(id);
     let updating: Promise<void> | undefined;
     let returning: ReturnType<typeof setTimeout> | undefined;
-    const current = () => ({ id, name, accentColor, version, installedVersion, links: links.list });
+    const current = () => ({ id, name, accentColor, version, installedVersion, peers });
     const unmanaged = "No package manager installed this server, so it can't update itself.";
 
     // Like the real server, the update answers once its package manager finishes, and concurrent
@@ -80,15 +90,6 @@ export function createDemoServerRoutes(server: Server, { id, computer, mode = de
         return true;
     }
 
-    function answer(response: ServerResponse, change: Promise<unknown>) {
-        change.then(
-            () => reply(response, 200, current()),
-            error => error instanceof Refusal
-                ? reply(response, 422, { error: error.message })
-                : reply(response, 500, { error: describe(error) }),
-        );
-    }
-
     return {
         /** Whether the server is listening, rather than down for a restart. */
         get isUp() { return server.listening; },
@@ -116,10 +117,8 @@ export function createDemoServerRoutes(server: Server, { id, computer, mode = de
                 rename(request).then(renamed => renamed
                     ? reply(response, 200, current())
                     : reply(response, 400, { error: "Invalid request." }));
-            } else if (url.pathname === "/api/v1/server/links" && ["POST", "DELETE"].includes(request.method ?? "")) {
-                answer(response, links.change(request, url));
-            } else if (url.pathname === "/api/v1/server" || url.pathname === "/api/v1/server/links") {
-                response.setHeader("Allow", url.pathname === "/api/v1/server" ? "GET, PATCH" : "POST, DELETE");
+            } else if (url.pathname === "/api/v1/server") {
+                response.setHeader("Allow", "GET, PATCH");
                 reply(response, 405, { error: "Method not allowed" });
             } else {
                 reply(response, 404, { error: "Not found" });

@@ -38,7 +38,7 @@ public struct SidebarFooter: Equatable {
     }
 
     /// The server as the footer and menu bar name it: its host, and a port that isn't the default.
-    public static func server(_ url: String) -> String { ChannelCatalogStore.Saved.name(of: url) }
+    public static func server(_ url: String) -> String { ChannelCatalogStore.name(of: url) }
 
     /// Red, then orange, then the first load's gray, then green.
     fileprivate var severity: Int {

@@ -31,11 +31,22 @@ public final class MobileShareHistory {
         }
     }
 
+    /// A server the app has, with the name it last answered, or its host before it answers.
+    public struct Server: Codable, Equatable, Sendable {
+        public var url: String
+        public var name: String
+
+        public init(url: String, name: String? = nil) {
+            self.url = url
+            self.name = name ?? ChannelCatalogStore.name(of: url)
+        }
+    }
+
     private struct Saved: Codable, Equatable {
-        var servers: [ChannelCatalogStore.Saved]
+        var servers: [Server]
         var recents: [ChannelTarget]
 
-        init(servers: [ChannelCatalogStore.Saved], recents: [ChannelTarget]) {
+        init(servers: [Server], recents: [ChannelTarget]) {
             self.servers = servers
             self.recents = recents
         }
@@ -47,7 +58,7 @@ public final class MobileShareHistory {
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             if container.contains(.servers) {
-                servers = try container.decode([ChannelCatalogStore.Saved].self, forKey: .servers)
+                servers = try container.decode([Server].self, forKey: .servers)
                 recents = try container.decode([ChannelTarget].self, forKey: .recents)
                 return
             }
@@ -70,14 +81,14 @@ public final class MobileShareHistory {
         self.donor = donor
     }
 
-    /// The app's servers in Settings order, exactly as it saved them.
-    public var servers: [ChannelCatalogStore.Saved] { load()?.servers ?? [] }
+    /// The app's servers in its order, exactly as it handed them over.
+    public var servers: [Server] { load()?.servers ?? [] }
     /// The most recent first, across every server.
     public var recents: [ChannelTarget] { load()?.recents ?? [] }
 
     /// Saves the app's servers. One the app no longer has loses its recents and their suggestions.
     @discardableResult
-    public func select(servers: [ChannelCatalogStore.Saved]) -> Task<Void, Never> {
+    public func select(servers: [Server]) -> Task<Void, Never> {
         let current = load()
         guard current?.servers != servers, current != nil || !servers.isEmpty else { return enqueue {} }
         let addresses = Set(servers.compactMap { ChannelWaitingRequest.normalizedServer($0.url) })
