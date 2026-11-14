@@ -61,12 +61,16 @@ their module names, and Swift imports by module.
 
 | Module | Owns |
 | --- | --- |
-| `ChannelKit` | The domain: Codable models, the reducer, transcript grouping, attention, tasks and cron |
-| `ChannelClient` | Transport: HTTP commands, SSE, reconnect and observable stores |
+| `ChannelKit` | The domain: Toy Box's nouns as values, with their rules as members, like channels, messages, requests, tasks and routines. Pure and synchronous, with no I/O |
+| `ChannelClient` | The live subsystems both apps run, like each server's connection and catalog, a channel's store, the outbox, the composer and cards. Each holds state over time and draws nothing |
 | `ChannelIntelligence` | On-device Foundation Models |
-| `ToyBoxUI` | Shared SwiftUI presentation, without AppKit or UIKit |
+| `ToyBoxUI` | Shared SwiftUI, without AppKit or UIKit, in two tiers: `Design`, the identity and primitives any surface uses, and a folder per surface that composes them. Code that draws nothing belongs in ChannelClient or ChannelKit |
 | `ToyBoxDesktop`, `ToyBoxMobile` | Each app and its native platform integration, with AppKit or UIKit where SwiftUI falls short |
 | `ToyBoxControlIntents`, `ToyBoxMobileIntegrations` | What each app shares with its extensions, which live under `Extensions` |
+
+Each module is organized by subsystem, never by layer. A folder is named for the noun it owns and
+a file for its main type, so there's no grab-bag folder like `Stores`, `Sending` or `Shared`, no
+file at a module's root, and no `Presentation` suffix on a type.
 
 Both apps share one implementation of every rule. Views never reimplement reducer, audience,
 task, attention or transcript-grouping rules, and the sidebar's rows and footer, channel search,
