@@ -62,6 +62,18 @@ public struct ChannelAgent: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+extension Array where Element == ChannelAgent {
+    /// A roster as its team lists it: the lead the roster starts with, then members by name as Finder
+    /// sorts them. Positions never follow presence, so the list stays scannable.
+    public var teamOrder: [ChannelAgent] {
+        guard let lead = first else { return [] }
+        return [lead] + dropFirst().sorted {
+            let order = $0.name.localizedStandardCompare($1.name)
+            return order == .orderedSame ? $0.id < $1.id : order == .orderedAscending
+        }
+    }
+}
+
 extension ChannelAgent {
     /// The name people type after `@` to mention this agent.
     public var handle: String { Self.handle(forName: name) }

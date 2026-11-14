@@ -96,4 +96,46 @@ struct ChannelTaskTests {
         #expect(roots[2].showsChildProgress)
         #expect([tasks[1]].holdingWorkInProgress.isEmpty)
     }
+
+    @Test func aDisclosureToggleHoldsUntilItsTasksDefaultChanges() throws {
+        func tree(_ status: String) -> ChannelTask {
+            .init(id: "parent", title: "Parent", status: status, children: [
+                .init(id: "nested", title: "Nested", status: "blocked", children: [.init(id: "leaf", title: "Leaf")]),
+            ])
+        }
+        let active = tree("in_progress")
+        let nested = try #require(active.children?.first)
+        func reconcile(_ disclosure: inout ChannelTask.Disclosure, _ roots: [ChannelTask]) {
+            disclosure.reconcile(roots.map { ("v:\($0.id)", $0) }) { "\($0)/\($1.id)" }
+        }
+        var disclosure = ChannelTask.Disclosure()
+        #expect(disclosure.isExpanded(active, key: "v:parent"))
+        #expect(!disclosure.isExpanded(nested, key: "v:parent/nested"))
+
+        disclosure.set(false, active, key: "v:parent")
+        disclosure.set(true, nested, key: "v:parent/nested")
+        reconcile(&disclosure, [active])
+        #expect(!disclosure.isExpanded(active, key: "v:parent"))
+        #expect(disclosure.isExpanded(nested, key: "v:parent/nested"))
+
+        // The parent finishes while hidden, so its default flips. Reconciling drops its toggle, or the
+        // toggle would apply again once the parent is back in progress. The nested default holds.
+        let done = tree("done")
+        reconcile(&disclosure, [done])
+        #expect(!disclosure.isExpanded(done, key: "v:parent"))
+        reconcile(&disclosure, [active])
+        #expect(disclosure.isExpanded(active, key: "v:parent"))
+        #expect(disclosure.isExpanded(nested, key: "v:parent/nested"))
+
+        reconcile(&disclosure, [])
+        #expect(!disclosure.isExpanded(nested, key: "v:parent/nested"))
+    }
+
+    @Test func theTeamKeepsTheLeadFirstAndSortsMembersLikeFinder() {
+        let roster = [ChannelAgent(id: "lead", name: "Zed"), ChannelAgent(id: "b", name: "agent 10"),
+                      ChannelAgent(id: "a", name: "Agent 2"), ChannelAgent(id: "c", name: "Ada"),
+                      ChannelAgent(id: "d", name: "Ada")]
+        #expect(roster.teamOrder.map(\.id) == ["lead", "c", "d", "a", "b"])
+        #expect([ChannelAgent]().teamOrder.isEmpty)
+    }
 }

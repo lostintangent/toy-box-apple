@@ -4,27 +4,12 @@ import ChannelKit
 import SwiftUI
 import ToyBoxUI
 
-/// The lead, then members alphabetically. Positions never follow presence, so the list stays scannable.
+/// The team in `teamOrder`.
 struct OverviewTeamList: View {
     @Environment(ManagementPresenter.self) private var management
     let store: ChannelStore
     var showsOnlyWorking = false
     @ViewState private var slots = OverviewSlots()
-
-    /// `roster` starts with the lead.
-    static func ordered(_ roster: [ChannelAgent]) -> [ChannelAgent] {
-        guard let lead = roster.first else { return [] }
-        return [lead] + roster.dropFirst().sorted {
-            let order = $0.name.localizedStandardCompare($1.name)
-            return order == .orderedSame ? $0.id < $1.id : order == .orderedAscending
-        }
-    }
-
-    static func keeps(_ agent: ChannelAgent, presence: [String: ChannelAgentPresence], isAvailable: Bool,
-                      showsOnlyWorking: Bool) -> Bool {
-        !showsOnlyWorking
-            || ChannelOverviewFilter.keepsWorkingAgent(presence: presence[agent.id], isAvailable: isAvailable)
-    }
 
     var body: some View {
         let roster = store.roster
@@ -32,9 +17,10 @@ struct OverviewTeamList: View {
         let isConnected = store.phase.isConnected
         let isAvailable = !store.phase.isUnavailable
         // Slots come from the whole roster, so turning the filter on or off never moves a row's slot.
-        let entries = slots.entries(Self.ordered(roster), in: store.id)
+        let entries = slots.entries(roster.teamOrder, in: store.id)
         let shown = entries.filter {
-            Self.keeps($0.item, presence: presence, isAvailable: isAvailable, showsOnlyWorking: showsOnlyWorking)
+            !showsOnlyWorking
+                || ChannelOverviewFilter.keepsWorkingAgent(presence: presence[$0.item.id], isAvailable: isAvailable)
         }
         VStack(alignment: .leading, spacing: 0) {
             ForEach(shown) { entry in

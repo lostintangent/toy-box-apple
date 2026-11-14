@@ -23,15 +23,6 @@ enum OverviewPlacement: Equatable {
         self = sizeClass == .regular && verticalSizeClass == .regular && sceneWidth >= Self.inspectorSceneWidth
             ? .inspector : .sheet
     }
-
-    /// Folded landscape stands the sheet's bar items in a leading vertical bar, which would move the
-    /// close over the list. The sheet keeps its bar horizontal in compact height, so the close stays
-    /// trailing. Folded portrait's trailing bar keeps the close beside the status bar. The size class
-    /// decides, not the reported edge, because a horizontal bar reports no edge, which would bring the
-    /// vertical bar straight back.
-    func keepsHorizontalBar(verticalSizeClass: UserInterfaceSizeClass?) -> Bool {
-        self == .sheet && verticalSizeClass == .compact
-    }
 }
 
 enum OverviewRoute: Hashable {
@@ -87,12 +78,6 @@ final class Overview {
 
 @MainActor @Observable
 final class ChannelOverview {
-    struct Disclosure {
-        /// The default the toggle was made against. A change to the default re-derives the disclosure.
-        let expandedByDefault: Bool
-        var expanded: Bool
-    }
-
     @MainActor @Observable
     final class Routine {
         var expanded = false
@@ -113,7 +98,8 @@ final class ChannelOverview {
     var navigationPath: [OverviewRoute] = []
     var expandedSections: [OverviewSection: Bool] = [:]
     var purposeExpanded = false
-    var taskDisclosure: [String: Disclosure] = [:]
+    /// Keyed by task ID, so a parent's disclosure is the same inline and on its subtasks screen.
+    var taskDisclosure = ChannelTask.Disclosure()
     var showsOnlyInProgressTasks = false
     var showsOnlyWorkingAgents = false
     @ObservationIgnored private var routines: [String: Routine] = [:]
@@ -136,19 +122,7 @@ final class ChannelOverview {
     }
 
     func reconcileTasks(_ tasks: [ChannelTask]) {
-        var ids = Set<String>()
-        @MainActor func visit(_ tasks: [ChannelTask]) {
-            for task in tasks {
-                ids.insert(task.id)
-                if taskDisclosure[task.id]?.expandedByDefault != task.isExpandedByDefault {
-                    taskDisclosure[task.id] = Disclosure(expandedByDefault: task.isExpandedByDefault,
-                                                         expanded: task.isExpandedByDefault)
-                }
-                visit(task.children ?? [])
-            }
-        }
-        visit(tasks)
-        taskDisclosure = taskDisclosure.filter { ids.contains($0.key) }
+        taskDisclosure.reconcile(tasks.map { ($0.id, $0) }) { $1.id }
     }
 
     func routine(_ id: String) -> Routine {

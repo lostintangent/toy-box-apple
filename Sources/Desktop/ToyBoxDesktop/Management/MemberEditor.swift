@@ -8,21 +8,13 @@ struct MemberEditor: View {
     let store: ChannelStore
     /// The channel's server.
     let catalog: ChannelCatalogStore
-    let presenter: ManagementPresenter
-    @ViewState private var form: MemberForm
-    @ViewState private var isSaving = false
-    @ViewState private var error: String?
+    @Bindable var presenter: ManagementPresenter
     @FocusState private var nameFocused: Bool
+    /// Removing asks over this editor, so Cancel returns to it unchanged.
+    @ViewState private var removal: ManagementFlow?
 
-    init(channel: ChannelDetails, form: MemberForm, store: ChannelStore,
-         catalog: ChannelCatalogStore, presenter: ManagementPresenter) {
-        self.channel = channel
-        self.store = store
-        self.catalog = catalog
-        self.presenter = presenter
-        _form = ViewState(initialValue: form)
-    }
-
+    private var form: MemberForm { presenter.memberForm }
+    private var isSaving: Bool { presenter.isPending }
     private var member: ChannelAgent? { form.member }
     private var nameViolation: String? { form.nameViolation(in: store.roster) }
     private var canSave: Bool {
@@ -43,7 +35,7 @@ struct MemberEditor: View {
             }
         } fields: {
             Section {
-                TextField("Name", text: $form.name, prompt: Text("Required"))
+                TextField("Name", text: $presenter.memberForm.name, prompt: Text("Required"))
                     .focused($nameFocused)
                     .onSubmit(submit)
                     .accessibilityHint(nameViolation ?? form.identityHelp)
@@ -51,22 +43,22 @@ struct MemberEditor: View {
                 ManagementLongTextField(
                     title: "Role",
                     prompt: "What this agent owns and how it works, including any persona.",
-                    text: $form.role, lines: 5...10, violation: form.roleViolation)
+                    text: $presenter.memberForm.role, lines: 5...10, violation: form.roleViolation)
                     .onSubmit(submit)
             } footer: {
                 ManagementFooter(help: [form.identityHelp], violation: nameViolation ?? form.roleViolation)
             }
             ModelSelectionFields(
-                model: $form.model, openingModel: member?.model, api: catalog.api, provider: member?.model?.provider, allowsInheritance: true,
+                model: $presenter.memberForm.model, openingModel: member?.model, api: catalog.api, provider: member?.model?.provider, allowsInheritance: true,
                 memberScope: member.map { (channel.id, $0.id) },
                 help: member.map { ["Model changes apply the next time \($0.name) works. Its history is kept."] } ?? [])
         } notices: {
             ManagementConnectionNotice(store: store)
-            if let error { ManagementError(message: error) }
+            if let error = presenter.error { ManagementError(message: error) }
         } buttons: {
             if let member {
                 Button("Remove from Channel\u{2026}", role: .destructive) {
-                    if let target = store.target { presenter.present(.removeMember(target, agentId: member.id)) }
+                    if let target = store.target { removal = .removeMember(target, agentId: member.id) }
                 }
                 .disabled(!store.phase.isConnected)
             }
@@ -88,26 +80,11 @@ struct MemberEditor: View {
                 .hidden()
                 .disabled(!canSave)
         }
+        .managementConfirmation($removal, presenter: presenter, catalogs: [catalog])
     }
 
     private func submit() {
         guard canSave else { return }
-        let form = form
-        isSaving = true
-        error = nil
-        Task {
-            defer { isSaving = false }
-            do {
-                _ = try await form.submit(to: catalog.api, channelId: channel.id)
-                if form.member != nil {
-                    presenter.flow = nil
-                } else if let target = store.target {
-                    presenter.finishAddingMember(target)
-                }
-                await catalog.refresh()
-            } catch {
-                self.error = error.localizedDescription
-            }
-        }
+        Task { await presenter.save(on: catalog) }
     }
 }

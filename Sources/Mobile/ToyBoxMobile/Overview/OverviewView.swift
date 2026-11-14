@@ -109,27 +109,21 @@ struct OverviewList<Content: View>: View {
     }
 }
 
-/// iOS 27.0 has no vertical-bar API, so the sheet's bar only needs the override where it exists.
+/// Folded landscape stands the sheet's bar items in a leading vertical bar, which would move the
+/// close over the list. The sheet keeps its bar horizontal in compact height, so the close stays
+/// trailing. Folded portrait's trailing bar keeps the close beside the status bar. The size class
+/// decides, not the reported edge, because a horizontal bar reports no edge, which would bring the
+/// vertical bar straight back. iOS 27.0 has no vertical-bar API, so it needs no override.
 private struct SheetBarBehavior: ViewModifier {
-    let placement: OverviewPlacement
-
-    func body(content: Content) -> some View {
-        if #available(iOS 27.1, *) {
-            content.modifier(LeadingVerticalBarBehavior(placement: placement))
-        } else {
-            content
-        }
-    }
-}
-
-@available(iOS 27.1, *)
-private struct LeadingVerticalBarBehavior: ViewModifier {
     let placement: OverviewPlacement
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     func body(content: Content) -> some View {
-        content.toolbarVerticalBehavior(placement.keepsHorizontalBar(verticalSizeClass: verticalSizeClass)
-                                        ? .disabled : .automatic)
+        if #available(iOS 27.1, *) {
+            content.toolbarVerticalBehavior(placement == .sheet && verticalSizeClass == .compact ? .disabled : .automatic)
+        } else {
+            content
+        }
     }
 }
 

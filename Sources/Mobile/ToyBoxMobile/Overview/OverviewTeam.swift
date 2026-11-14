@@ -11,14 +11,6 @@ struct OverviewTeamSection: View {
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.dynamicTypeSize) private var typeSize
 
-    private var ordered: [ChannelAgent] {
-        guard let lead = store.roster.first else { return [] }
-        return [lead] + store.roster.dropFirst().sorted {
-            let order = $0.name.localizedStandardCompare($1.name)
-            return order == .orderedSame ? $0.id < $1.id : order == .orderedAscending
-        }
-    }
-
     var body: some View {
         // Four points shorter than the measured 15-point native insets at accessibility sizes,
         // and six shorter at ordinary sizes.
@@ -26,11 +18,10 @@ struct OverviewTeamSection: View {
         let isAvailable = !store.phase.isUnavailable
         let filter: ChannelOverviewFilter? = store.roster.isEmpty
             ? nil : ChannelOverviewFilter.workingAgents(Bindable(session).showsOnlyWorkingAgents)
-        let shown = session.showsOnlyWorkingAgents
-            ? ordered.filter {
-                ChannelOverviewFilter.keepsWorkingAgent(presence: store.presence[$0.id], isAvailable: isAvailable)
-            }
-            : ordered
+        let shown = store.roster.teamOrder.filter {
+            !session.showsOnlyWorkingAgents
+                || ChannelOverviewFilter.keepsWorkingAgent(presence: store.presence[$0.id], isAvailable: isAvailable)
+        }
         OverviewSectionRows(summary: .team(store.roster.count), section: .team, session: session,
                             filter: filter, isFirstSection: !OverviewAboutSection.hasContent(store.details)) {
             if session.showsOnlyWorkingAgents, shown.isEmpty, !store.roster.isEmpty {

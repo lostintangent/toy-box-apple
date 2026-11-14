@@ -69,20 +69,7 @@ struct ScreenWindow: View {
     private func titleMenu(refresh: ScreenRefresh?) -> some View {
         ViewerTitleMenu(title: "Screens", subtitle: serverName,
                         help: "Screens on \(value?.serverURL ?? "")") {
-            // Shows Command-R, which View > Refresh answers while the menu is closed.
-            Button("Refresh", systemImage: "arrow.clockwise") { refresh?() }
-                .keyboardShortcut("r")
-                .disabled(refresh?.isLoading ?? true)
-            if model.servers.shown.count > 1 {
-                Divider()
-                Picker("Server", selection: server) {
-                    ForEach(model.servers.shown, id: \.api.baseURL) { catalog in
-                        Text(catalog.name).tag(catalog.api.baseURL.absoluteString)
-                    }
-                }
-                .pickerStyle(.inline)
-                .labelsHidden()
-            }
+            ScreenTitleMenu(refresh: refresh, servers: model.servers, server: server)
         }
     }
 

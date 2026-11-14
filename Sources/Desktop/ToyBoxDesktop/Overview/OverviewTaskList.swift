@@ -16,52 +16,6 @@ extension EnvironmentValues {
     }
 }
 
-/// Every parent task's disclosure for one visit to a channel. The list owns it, so a parent keeps its
-/// disclosure while the filter hides and reveals it.
-@MainActor
-@Observable
-final class OverviewTaskDisclosure {
-    private struct Entry {
-        let expandedByDefault: Bool
-        let expanded: Bool
-    }
-
-    private var entries: [String: Entry] = [:]
-
-    /// A manual toggle holds until the task's default changes, which re-derives the disclosure.
-    func isExpanded(_ key: String, task: ChannelTask) -> Bool {
-        guard let entry = entries[key], entry.expandedByDefault == task.isExpandedByDefault else {
-            return task.isExpandedByDefault
-        }
-        return entry.expanded
-    }
-
-    func set(_ expanded: Bool, _ key: String, task: ChannelTask) {
-        entries[key] = Entry(expandedByDefault: task.isExpandedByDefault, expanded: expanded)
-    }
-
-    func reset() {
-        entries = [:]
-    }
-
-    /// Re-derives every task whose default changed while its row was hidden or unmounted, and drops
-    /// tasks the list no longer holds. Walks the whole tree, so a hidden parent's disclosure still
-    /// follows its in-progress work.
-    func reconcile(_ rows: [OverviewSlots.Entry<ChannelTask>]) {
-        var kept: [String: Entry] = [:]
-        func visit(_ key: String, _ task: ChannelTask) {
-            if let entry = entries[key], entry.expandedByDefault == task.isExpandedByDefault {
-                kept[key] = entry
-            }
-            for child in task.children ?? [] {
-                visit("\(key)/\(child.id)", child)
-            }
-        }
-        for row in rows { visit(row.key, row.item) }
-        entries = kept
-    }
-}
-
 /// The read-only task tree, shared by the inspector and the composer's Tasks popover. Root status
 /// icons sit on the host's leading edge, so they align with its heading.
 struct OverviewTaskList: View {
@@ -78,7 +32,8 @@ struct OverviewTaskList: View {
     /// Hides each level's tasks without in-progress work. Kept tasks keep their full counts.
     let showsOnlyInProgress: Bool
     @ViewState private var slots = OverviewSlots()
-    @ViewState private var disclosure = OverviewTaskDisclosure()
+    /// Owned by the list, so a parent keeps its disclosure while the filter hides and reveals it.
+    @ViewState private var disclosure = ChannelTask.Disclosure()
 
     init(tasks: [ChannelTask], agents: [ChannelAgent], artifacts: [ChannelArtifact], channelId: String = "",
          showsOnlyInProgress: Bool = false, onArtifactOpen: @escaping (ChannelArtifact) -> Void) {
@@ -114,14 +69,16 @@ struct OverviewTaskList: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(shown) { entry in
                         OverviewTaskRow(task: entry.item, key: entry.key, agents: agents, artifacts: artifacts,
-                                        showsOnlyInProgress: showsOnlyInProgress, disclosure: disclosure,
+                                        showsOnlyInProgress: showsOnlyInProgress, disclosure: $disclosure,
                                         onArtifactOpen: onArtifactOpen)
                     }
                 }
             }
         }
-        .onChange(of: channelId) { disclosure.reset() }
-        .onChange(of: tasks) { disclosure.reconcile(slots.entries(tasks, in: channelId)) }
+        .onChange(of: channelId) { disclosure = .init() }
+        .onChange(of: tasks) {
+            disclosure.reconcile(slots.entries(tasks, in: channelId).map { ($0.key, $0.item) }) { "\($0)/\($1.id)" }
+        }
     }
 }
 
@@ -139,23 +96,23 @@ struct OverviewTaskRow: View {
     let artifacts: [ChannelArtifact]
     /// Hides children without in-progress work. Progress and the diff still describe every child.
     let showsOnlyInProgress: Bool
-    let disclosure: OverviewTaskDisclosure
+    @Binding var disclosure: ChannelTask.Disclosure
     let onArtifactOpen: (ChannelArtifact) -> Void
     @ViewState private var isTimingVisible = false
 
     init(task: ChannelTask, key: String, agents: [ChannelAgent], artifacts: [ChannelArtifact],
-         showsOnlyInProgress: Bool = false, disclosure: OverviewTaskDisclosure,
+         showsOnlyInProgress: Bool = false, disclosure: Binding<ChannelTask.Disclosure>,
          onArtifactOpen: @escaping (ChannelArtifact) -> Void) {
         self.task = task
         self.key = key
         self.agents = agents
         self.artifacts = artifacts
         self.showsOnlyInProgress = showsOnlyInProgress
-        self.disclosure = disclosure
+        _disclosure = disclosure
         self.onArtifactOpen = onArtifactOpen
     }
 
-    private var isExpanded: Bool { disclosure.isExpanded(key, task: task) }
+    private var isExpanded: Bool { disclosure.isExpanded(task, key: key) }
 
     private var children: [ChannelTask] { task.children ?? [] }
     /// The children this row shows. Progress and the diff still count every child.
@@ -188,7 +145,7 @@ struct OverviewTaskRow: View {
                     ForEach(visibleChildren) { child in
                         OverviewTaskRow(task: child, key: "\(key)/\(child.id)", agents: agents,
                                         artifacts: artifacts, showsOnlyInProgress: showsOnlyInProgress,
-                                        disclosure: disclosure, onArtifactOpen: onArtifactOpen)
+                                        disclosure: $disclosure, onArtifactOpen: onArtifactOpen)
                     }
                 }
                 .padding(.leading, OverviewTaskList.depthIndent)
@@ -287,7 +244,7 @@ struct OverviewTaskRow: View {
     }
 
     private func toggle() {
-        disclosure.set(!isExpanded, key, task: task)
+        disclosure.set(!isExpanded, task, key: key)
     }
 
     private func setExpanded(_ expanded: Bool) -> KeyPress.Result {

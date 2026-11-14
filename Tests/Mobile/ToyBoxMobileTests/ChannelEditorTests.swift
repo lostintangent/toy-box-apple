@@ -11,11 +11,10 @@ struct ChannelEditorTests {
     #if DEBUG
     @Test(arguments: [false, true], [ColorScheme.light, .dark])
     func phoneFormsLabelNameAndNeverShowAFolderRow(editing: Bool, scheme: ColorScheme) async throws {
-        try await withFixture(editing: editing) { app, session, sessions, editor in
-                        session.focus = nil
+        try await withFixture(editing: editing) { app, presenter, editor in
+            presenter.focus = nil
             let host = UIHostingController(rootView: editor
                 .environment(app)
-                .environment(sessions)
                 .environment(Overview())
                 .environment(\.colorScheme, scheme)
                 .dynamicTypeSize(.large))
@@ -40,10 +39,10 @@ struct ChannelEditorTests {
             let purpose = try #require(purposes.first)
             #expect(name.window === window && !name.isHidden && name.bounds.width > 0)
             #expect(purpose.window === window && !purpose.isHidden && purpose.bounds.height > 0)
-            #expect(name.text == session.channelForm.name)
+            #expect(name.text == presenter.channelForm.name)
             #expect(name.placeholder == "Required")
             #expect(name.isEnabled)
-            #expect(purpose.text == session.channelForm.purpose)
+            #expect(purpose.text == presenter.channelForm.purpose)
             #expect(purpose.isEditable)
             #expect(!tree.elements.contains { $0.identifier == "channel-directory" })
             for removed in ["Working directory", "Folder on Mac", "Optional",
@@ -57,11 +56,10 @@ struct ChannelEditorTests {
 
     @Test(arguments: [false, true], [ColorScheme.light, .dark])
     func phoneMemberFormsLabelNameAskForTheRoleAndShowNoNote(editing: Bool, scheme: ColorScheme) async throws {
-        try await withMemberFixture(editing: editing) { app, session, sessions, editor in
-            session.focus = nil
+        try await withMemberFixture(editing: editing) { app, presenter, editor in
+            presenter.focus = nil
             let host = UIHostingController(rootView: editor
                 .environment(app)
-                .environment(sessions)
                 .environment(Overview())
                 .environment(\.colorScheme, scheme)
                 .dynamicTypeSize(.large))
@@ -86,9 +84,9 @@ struct ChannelEditorTests {
             let field = name.convert(name.bounds, to: window)
             #expect(abs(field.midY - label.frame.midY) <= 2 && field.minX >= label.frame.maxX,
                     "Name's field should trail its label on one row: label \(label.frame), field \(field)")
-            #expect(name.text == session.memberForm.name)
+            #expect(name.text == presenter.memberForm.name)
             #expect(name.placeholder == "Required")
-            #expect(role.text == session.memberForm.role && role.isEditable)
+            #expect(role.text == presenter.memberForm.role && role.isEditable)
             let placeholder = try #require(descendants(in: role).compactMap { $0 as? UILabel }.first,
                                            "SwiftUI's vertical field keeps its prompt in a UILabel")
             #expect(placeholder.text == "What is this agent's role in the channel?")
@@ -108,31 +106,27 @@ struct ChannelEditorTests {
 
     private func withMemberFixture<Result>(
         editing: Bool,
-        _ body: (AppModel, ManagementSession, ManagementSessions, MemberEditor) async throws -> Result
+        _ body: (AppModel, ManagementPresenter, MemberEditor) async throws -> Result
     ) async throws -> Result {
-        try await withFixture(editing: false) { app, _, sessions, _ in
+        try await withFixture(editing: false) { app, presenter, _ in
             let api = try #require(app.api)
             let store = ChannelStore(id: "channel", api: api)
-            let presenter = ManagementPresenter()
             let target = try #require(store.target)
             let flow: ManagementFlow = editing
                 ? .editMember(target, agentId: "ada")
                 : .addMember(target, name: "")
             presenter.present(flow)
-            let session = sessions.session(for: flow, catalog: try #require(app.catalog))
             let channel = ChannelDetails(Channel(
                 id: "channel", name: "Discussion", model: .init(provider: "test", name: "test"),
                 updatedAt: "2026-10-26T12:00:00Z"))
-            let member = editing ? ChannelAgent(id: "ada", name: "Ada", role: "Builds the phone Overview.") : nil
-            session.load(channel: channel, member: member)
-            return try await body(app, session, sessions,
-                                  MemberEditor(channel: channel, store: store, presenter: presenter,
-                                               session: session, host: nil))
+            if editing { presenter.memberForm = MemberForm(ChannelAgent(id: "ada", name: "Ada", role: "Builds the phone Overview.")) }
+            return try await body(app, presenter,
+                                  MemberEditor(flow: flow, channel: channel, store: store, presenter: presenter, host: nil))
         }
     }
     private func withFixture<Result>(
         editing: Bool,
-        _ body: (AppModel, ManagementSession, ManagementSessions, ChannelEditor) async throws -> Result
+        _ body: (AppModel, ManagementPresenter, ChannelEditor) async throws -> Result
     ) async throws -> Result {
         let suite = "phone-channel-editor-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -143,21 +137,18 @@ struct ChannelEditorTests {
         defer { transport.invalidateAndCancel() }
         let app = AppModel(arguments: ["--server", "https://channel-editor.invalid"],
                            environment: [:], defaults: defaults, session: transport)
-        let sessions = ManagementSessions()
         let presenter = ManagementPresenter()
         let catalog = try #require(app.catalog)
         let flow: ManagementFlow = try editing
             ? .editChannel(#require(catalog.target("channel"))) : .newChannel(server: app.serverURL)
         presenter.present(flow)
-        let session = sessions.session(for: flow, catalog: catalog)
         if editing {
-            session.load(channel: ChannelDetails(Channel(
+            presenter.channelForm = ChannelForm(ChannelDetails(Channel(
                 id: "channel", name: "Discussion", purpose: "Keep purpose unchanged",
                 directory: "/Existing/server/folder", model: .init(provider: "test", name: "test"),
-                updatedAt: "2026-10-26T12:00:00Z")), member: nil)
+                updatedAt: "2026-10-26T12:00:00Z")))
         }
-        return try await body(app, session, sessions,
-                              ChannelEditor(store: nil, presenter: presenter, session: session, host: nil))
+        return try await body(app, presenter, ChannelEditor(flow: flow, store: nil, presenter: presenter, host: nil))
     }
 }
 

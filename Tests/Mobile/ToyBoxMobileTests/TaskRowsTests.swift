@@ -20,16 +20,15 @@ struct TaskRowsTests {
         #expect(rows.map(\.task) == [tree[0], children[0], grandchild, children[1], tree[1]])
     }
 
-    @Test func closingAParentRetainsDescendantChoicesAndOnlyDefaultChangesReDerive() {
-        let disclosure: [String: ChannelOverview.Disclosure] = [
-            "root": .init(expandedByDefault: true, expanded: false),
-            "child": .init(expandedByDefault: true, expanded: false),
-        ]
+    @Test func closingAParentRetainsDescendantChoicesAndOnlyDefaultChangesReDerive() throws {
+        var disclosure = ChannelTask.Disclosure()
+        disclosure.set(false, tree[0], key: "root")
+        disclosure.set(false, try #require(tree[0].children?.first), key: "child")
         let closed = project(tree, disclosure: disclosure)
         #expect(closed.map(\.id) == [.task("root"), .task("other")])
         #expect(closed.allSatisfy { $0.guides.isEmpty })
         var reopened = disclosure
-        reopened["root"]?.expanded = true
+        reopened.set(true, tree[0], key: "root")
         #expect(project(tree, disclosure: reopened).map(\.id)
                 == [.task("root"), .task("child"), .task("sibling"), .task("other")])
         var blocked = tree
@@ -42,7 +41,6 @@ struct TaskRowsTests {
         done[0].children?[0].status = "done"
         #expect(!done[0].isExpandedByDefault)
         #expect(project(done, disclosure: reopened).map(\.id) == [.task("root"), .task("other")])
-        #expect(disclosure["child"]?.expanded == false)
     }
 
     @Test(arguments: [263.99, 264, 264.01])
@@ -88,7 +86,8 @@ struct TaskRowsTests {
     }
 
     @Test func inProgressFilterLeavesDisclosureAloneAndKeepsCollapsedParentsCollapsed() {
-        let collapsed: [String: ChannelOverview.Disclosure] = ["root": .init(expandedByDefault: true, expanded: false)]
+        var collapsed = ChannelTask.Disclosure()
+        collapsed.set(false, tree[0], key: "root")
         #expect(project(tree, disclosure: collapsed, showsOnlyInProgress: true).map(\.id) == [.task("root")])
         #expect(project(tree, disclosure: collapsed).map(\.id) == [.task("root"), .task("other")])
     }
@@ -420,8 +419,8 @@ struct TaskRowsTests {
             try await Task.sleep(for: .milliseconds(5))
         }
         let transaction = try #require(record.entries.first { !$0.expanded })
-        #expect(session.taskDisclosure["root"]?.expanded == false)
-        #expect(session.taskDisclosure["root"]?.expandedByDefault == !change.isStatusDriven)
+        let root = try #require(session.task("root"))
+        #expect(!session.taskDisclosure.isExpanded(root, key: "root"))
         #expect(transaction.animation == nil)
     }
 
@@ -478,11 +477,11 @@ struct TaskRowsTests {
         let leaf = try #require(elements.first { $0.identifier == "overview-task-other" })
         #expect(parent.traits.contains(.button) && parent.value == "Expanded")
         #expect(leaf.traits.contains(.staticText) && !leaf.traits.contains(.button))
-        session.taskDisclosure["root"] = .init(expandedByDefault: true, expanded: false)
+        session.taskDisclosure.set(false, tree[0], key: "root")
         await Task.yield()
         host.view.layoutIfNeeded()
         #expect(list.numberOfItems(inSection: 0) == 2)
-        session.taskDisclosure["root"] = .init(expandedByDefault: true, expanded: true)
+        session.taskDisclosure.set(true, tree[0], key: "root")
         await Task.yield()
         host.view.layoutIfNeeded()
         #expect(list.numberOfItems(inSection: 0) == visibleCount)
@@ -501,7 +500,7 @@ struct TaskRowsTests {
     }
 
     private func project(
-        _ tasks: [ChannelTask], disclosure: [String: ChannelOverview.Disclosure] = [:],
+        _ tasks: [ChannelTask], disclosure: ChannelTask.Disclosure = .init(),
         width: CGFloat = 600, accessibility: Bool = false, showsOnlyInProgress: Bool = false
     ) -> [OverviewTaskListRow] {
         OverviewTaskListRow.visibleRows(tasks: tasks, disclosure: disclosure,
@@ -565,7 +564,7 @@ struct TaskRowsTests {
                                                    accessibility: accessibility, rootHasOwner: false))
                 }
                 DisclosureTransactionProbe(
-                    expanded: session.taskDisclosure[task.id]?.expanded ?? task.isExpandedByDefault,
+                    expanded: session.task(task.id).map { session.taskDisclosure.isExpanded($0, key: $0.id) } ?? false,
                     record: record)
                     .frame(height: 0)
             }

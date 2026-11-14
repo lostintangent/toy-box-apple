@@ -11,7 +11,6 @@ struct RootView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @ViewState private var management = ManagementPresenter()
     @ViewState private var overview = Overview()
-    @ViewState private var managementSessions = ManagementSessions()
     /// Never `.automatic`, which would let the split view pick the list for each posture.
     @ViewState private var columnVisibility = NavigationSplitViewVisibility.all
     @ViewState private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
@@ -47,7 +46,6 @@ struct RootView: View {
         .managementConfirmation(presenter: management, hosting: selectedInteraction?.isInspectorPresented != true)
         .environment(management)
         .environment(overview)
-        .environment(managementSessions)
         .accessibilityHidden(overview.isCompactSheetPresented
                              || (overview.placement == .sheet && selectedInteraction?.isInspectorPresented == true))
         .sheet(isPresented: Binding(
@@ -88,11 +86,7 @@ struct RootView: View {
             guard !Set(old).isSubset(of: new) else { return }
             handoff.cancel()
             management.flow = nil
-            managementSessions.reset()
             overview.reset()
-        }
-        .onChange(of: management.flow) { _, flow in
-            if flow == nil { managementSessions.reset() }
         }
         .onChange(of: management.createdChannel?.token) { _, token in
             if token != nil, let created = management.createdChannel {
@@ -138,7 +132,6 @@ struct RootView: View {
         )) { flow in
             ManagementSheet(flow: flow, presenter: management, host: nil)
                 .environment(overview)
-                .environment(managementSessions)
         }
         .alert("Channel unavailable", isPresented: Binding(
             get: { model.navigationNotice != nil },
@@ -218,7 +211,6 @@ struct RootView: View {
 
     private func continueHandoff(_ activity: NSUserActivity) {
         management.flow = nil
-        managementSessions.reset()
         overview.reset()
         let generation = model.beginHandoffNavigation()
         Task {
@@ -240,7 +232,6 @@ struct RootView: View {
                 .environment(model.artifactSession(for: store))
                 .environment(management)
                 .environment(overview)
-                .environment(managementSessions)
                 .environment(\.overviewWindowSizeClass, sizeClass)
                 .accessibilityHidden(false)
         }

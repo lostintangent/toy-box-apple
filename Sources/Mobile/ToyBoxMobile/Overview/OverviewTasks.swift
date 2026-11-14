@@ -100,7 +100,7 @@ struct OverviewTaskNode: View {
         OverviewTaskListRow.visibleChildren(of: task, showsOnlyInProgress: session.showsOnlyInProgressTasks)
     }
     private var expanded: Bool {
-        OverviewTaskListRow.isExpanded(task, disclosure: session.taskDisclosure)
+        session.taskDisclosure.isExpanded(task, key: task.id)
     }
     private var owner: ChannelAgent? { task.ownerId.map { ChannelAgent(id: $0, in: store.roster) } }
     private var diff: DiffStats? { task.status == "pending" ? nil : [task].diff }
@@ -230,7 +230,7 @@ struct OverviewTaskNode: View {
     }
 
     private func toggle() {
-        session.taskDisclosure[task.id] = .init(expandedByDefault: task.isExpandedByDefault, expanded: !expanded)
+        session.taskDisclosure.set(!expanded, task, key: task.id)
     }
 
     private func spoken(timing: ChannelTask.Timing?) -> String {

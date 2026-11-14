@@ -8,7 +8,6 @@ struct ManagementSheet: View {
     let presenter: ManagementPresenter
     let host: OverviewPlacement?
     @Environment(AppModel.self) private var app
-    @Environment(ManagementSessions.self) private var sessions
     @ViewState private var store: ChannelStore?
 
     private var catalog: ChannelCatalogStore? { flow.catalog(in: app.catalogs) }
@@ -16,22 +15,15 @@ struct ManagementSheet: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let catalog {
-                    let session = sessions.session(for: flow, catalog: catalog)
+                if catalog != nil {
                     if flow.isNewChannel {
-                        ChannelEditor(store: nil, presenter: presenter, session: session, host: host)
+                        ChannelEditor(flow: flow, store: nil, presenter: presenter, host: host)
                     } else if let store, let channel = store.details {
-                        if session.hasLoaded {
-                            content(channel: channel, store: store, session: session)
+                        if presenter.hasLoaded {
+                            content(channel: channel, store: store)
                         } else {
                             ProgressView("Loading current values")
-                                .task {
-                                    let member: ChannelAgent?
-                                    if case .editMember(_, let id) = flow {
-                                        member = store.roster.dropFirst().first { $0.id == id }
-                                    } else { member = nil }
-                                    session.load(channel: channel, member: member)
-                                }
+                                .task { presenter.load(from: store) }
                         }
                     } else {
                         VStack(spacing: 16) {
@@ -56,7 +48,7 @@ struct ManagementSheet: View {
             .navigationBarTitleDisplayMode(.inline)
         }
         .task(id: catalog.map(ObjectIdentifier.init)) {
-            guard let channelId = flow.channelId, let catalog else { return }
+            guard let channelId = flow.target?.channelID, let catalog else { return }
             if let store { app.release(store) }
             let connection = catalog.channel(id: channelId)
             store = connection
@@ -66,29 +58,22 @@ struct ManagementSheet: View {
             if let store { app.release(store) }
             store = nil
         }
-        // The sheet closes when Settings removes its server or gives it a new address.
-        .onChange(of: app.catalogs.map(ObjectIdentifier.init)) { _, servers in
-            guard let session = sessions.current, session.flow == flow else { return }
-            if !servers.contains(ObjectIdentifier(session.catalog)) { presenter.flow = nil }
-        }
     }
 
     @ViewBuilder
-    private func content(channel: ChannelDetails, store: ChannelStore, session: ManagementSession) -> some View {
+    private func content(channel: ChannelDetails, store: ChannelStore) -> some View {
         switch flow {
-        case .newChannel:
-            ChannelEditor(store: nil, presenter: presenter, session: session, host: host)
         case .editChannel:
-            ChannelEditor(store: store, presenter: presenter, session: session, host: host)
+            ChannelEditor(flow: flow, store: store, presenter: presenter, host: host)
         case .addMember:
-            MemberEditor(channel: channel, store: store, presenter: presenter, session: session, host: host)
+            MemberEditor(flow: flow, channel: channel, store: store, presenter: presenter, host: host)
         case .editMember(_, let id):
             if store.roster.dropFirst().contains(where: { $0.id == id }) {
-                MemberEditor(channel: channel, store: store, presenter: presenter, session: session, host: host)
+                MemberEditor(flow: flow, channel: channel, store: store, presenter: presenter, host: host)
             } else {
                 unavailable("This agent is no longer in the channel.")
             }
-        case .deleteChannel, .removeMember, .deleteRoutine:
+        case .newChannel, .deleteChannel, .removeMember, .deleteRoutine:
             EmptyView() // Deletions ask in ManagementConfirmation's alert, never in this sheet.
         }
     }
@@ -123,5 +108,21 @@ struct ManagementConfirmButton: View {
                 .accessibilityLabel(label)
                 .accessibilityIdentifier(identifier)
         }
+    }
+}
+
+struct ManagementError: View {
+    let message: String
+    var systemImage = "exclamationmark.triangle"
+
+    var body: some View {
+        Label {
+            Text(message).foregroundStyle(.primary)
+        } icon: {
+            Image(systemName: systemImage).foregroundStyle(.red)
+        }
+        .font(.footnote)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityAddTraits(.updatesFrequently)
     }
 }

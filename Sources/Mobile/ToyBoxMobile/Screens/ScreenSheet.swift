@@ -53,17 +53,7 @@ struct ScreenSheet: View {
 
     private func title(_ refresh: ScreenRefresh) -> some View {
         Menu {
-            Button("Refresh", systemImage: "arrow.clockwise") { refresh() }
-                .disabled(refresh.isLoading)
-            if model.servers.shown.count > 1 {
-                Divider()
-                Picker("Server", selection: serverSelection) {
-                    ForEach(model.servers.shown, id: \.api.baseURL) { catalog in
-                        Text(catalog.name).tag(catalog.api.baseURL.absoluteString)
-                    }
-                }
-                .pickerStyle(.inline)
-            }
+            ScreenTitleMenu(refresh: refresh, servers: model.servers, server: serverSelection)
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Screens").font(.headline).foregroundStyle(.primary)

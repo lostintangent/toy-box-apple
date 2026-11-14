@@ -38,7 +38,8 @@ struct OverviewTests {
         let session = presentation.session(for: store)
         session.navigationPath = [.subtasks("task")]
         session.purposeExpanded = true
-        session.taskDisclosure["task"] = .init(expandedByDefault: true, expanded: false)
+        session.taskDisclosure.set(false, ChannelTask(id: "task", title: "Task"), key: "task")
+        let disclosure = session.taskDisclosure
         session.routine("routine").expanded = true
         session.routine("routine").pending = true
         presentation.compactSheetDidAppear()
@@ -48,7 +49,7 @@ struct OverviewTests {
         #expect(presentation.session(for: store) === session)
         #expect(session.navigationPath == [.subtasks("task")])
         #expect(session.purposeExpanded)
-        #expect(session.taskDisclosure["task"]?.expanded == false)
+        #expect(session.taskDisclosure == disclosure)
         #expect(session.routine("routine").expanded)
         #expect(session.routine("routine").pending)
         #expect(presentation.session(for: ChannelStore(id: store.id, api: api)) !== session)
@@ -95,29 +96,6 @@ struct OverviewTests {
         #expect(!presentation.isCompactSheetPresented)
     }
 
-    @Test func managementReconstructionRetainsEntriesPendingAndFocus() async throws {
-        try await withModel { app in
-            let catalog = try #require(app.catalog)
-            let sessions = ManagementSessions()
-            let flow = try ManagementFlow.addMember(#require(catalog.target("channel")), name: "Initial")
-            let draft = sessions.session(for: flow, catalog: catalog)
-            draft.memberForm.name = "Edited"
-            draft.memberForm.role = "First line\nSecond line"
-            draft.pending = true
-            let pendingSince = try #require(draft.pendingSince)
-            draft.pending = true
-            draft.focus = .role
-            let rebuilt = sessions.session(for: flow, catalog: catalog)
-            #expect(rebuilt === draft)
-            #expect(rebuilt.memberForm.name == "Edited")
-            #expect(rebuilt.memberForm.role == "First line\nSecond line")
-            #expect(rebuilt.pending && rebuilt.focus == .role)
-            #expect(rebuilt.pendingSince == pendingSince)
-            rebuilt.pending = false
-            #expect(rebuilt.pendingSince == nil)
-        }
-    }
-
     @Test func taskReadingBudgetScopesBelowTheFloorAndKeepsEqualityInline() {
         func layout(_ width: CGFloat) -> OverviewTaskReadingLayout {
             .init(contentWidth: width, statusWidth: 16, titleGap: 6, ownerWidth: 20,
@@ -141,28 +119,20 @@ struct OverviewTests {
     @Test func closingParentsAndMovingPresentationRetainChildChoicesRoutesAndScopedOffsets() throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let session = ChannelOverview(store: store)
-        var tasks: [ChannelTask] = [
+        let tasks: [ChannelTask] = [
             .init(id: "parent", title: "Parent", status: "in_progress", children: [
                 .init(id: "child", title: "Child", status: "in_progress", children: [
                     .init(id: "leaf", title: "Leaf", status: "pending")
                 ])
             ])
         ]
+        // Tasks are keyed by ID, so a nested choice survives reconciling as it does on its subtasks screen.
+        let child = try #require(tasks[0].children?.first)
+        session.taskDisclosure.set(false, child, key: "child")
+        session.taskDisclosure.set(false, tasks[0], key: "parent")
         session.reconcileTasks(tasks)
-        session.taskDisclosure["child"] = .init(expandedByDefault: true, expanded: false)
-        session.taskDisclosure["parent"] = .init(expandedByDefault: true, expanded: false)
-        session.reconcileTasks(tasks)
-        session.taskDisclosure["parent"] = .init(expandedByDefault: true, expanded: true)
-        #expect(session.taskDisclosure["child"]?.expanded == false)
-        tasks[0].status = "done"
-        tasks[0].children?[0].status = "done"
-        session.reconcileTasks(tasks)
-        #expect(session.taskDisclosure["parent"]?.expanded == false)
-        #expect(session.taskDisclosure["child"]?.expanded == false)
-        tasks[0].status = "in_progress"
-        session.reconcileTasks(tasks)
-        #expect(session.taskDisclosure["parent"]?.expanded == true)
-        #expect(session.taskDisclosure["child"]?.expanded == false)
+        #expect(!session.taskDisclosure.isExpanded(child, key: "child"))
+        #expect(!session.taskDisclosure.isExpanded(tasks[0], key: "parent"))
         session.navigationPath = [.subtasks("parent"), .subtasks("child")]
         session.expandedSections[.team] = false
         #expect(!session.isExpanded(.team))
@@ -1263,69 +1233,6 @@ struct OverviewTests {
         #expect(image.size.height > 44)
     }
 
-    @Test func removingAnAgentKeepsItsEditorAndOldSessionsCannotCompleteANewFlow() async throws {
-        try await withModel { app in
-            let catalog = try #require(app.catalog)
-            let sessions = ManagementSessions()
-            let presenter = ManagementPresenter()
-            let target = try #require(catalog.target("channel"))
-            let editing = ManagementFlow.editMember(target, agentId: "agent")
-            presenter.present(editing)
-            let editor = sessions.session(for: editing, catalog: catalog)
-            editor.memberForm.name = "Unsaved name"
-            let removal = sessions.session(for: .removeMember(target, agentId: "agent"), catalog: catalog)
-            #expect(removal !== editor && removal.deletionStep == .confirm)
-            #expect(sessions.session(for: editing, catalog: catalog) === editor)
-            #expect(sessions.isCurrent(editor, app: app, presenter: presenter) && editor.memberForm.name == "Unsaved name")
-            sessions.reset()
-            let replacement = sessions.session(for: editing, catalog: catalog)
-            #expect(replacement !== editor)
-            #expect(!sessions.isCurrent(editor, app: app, presenter: presenter))
-            #expect(sessions.isCurrent(replacement, app: app, presenter: presenter))
-            try await app.replaceServer(with: "https://other.example")
-            try await app.replaceServer(with: "https://fixture.example")
-            #expect(!sessions.isCurrent(replacement, app: app, presenter: presenter))
-        }
-    }
-
-    @Test func managementSessionsBelongToTheirOwnServer() async throws {
-        try await withModel(peers: ["https://second.example"]) { app in
-            let second = try await app.peer("https://second.example")
-            let sessions = ManagementSessions()
-            let presenter = ManagementPresenter()
-            let editing = try ManagementFlow.editChannel(#require(second.target("channel")))
-            presenter.present(editing)
-            let editor = sessions.session(for: editing, catalog: second)
-            #expect(sessions.isCurrent(editor, app: app, presenter: presenter))
-            app.servers.disconnect()
-            #expect(!sessions.isCurrent(editor, app: app, presenter: presenter))
-
-            // New Channel's Server menu moves its session, so the entries stay.
-            try await app.connect("https://first.example")
-            let peer = try await app.peer("https://second.example")
-            let creating = ManagementFlow.newChannel(server: app.serverURL)
-            presenter.present(creating)
-            let draft = sessions.session(for: creating, catalog: try #require(app.catalog))
-            draft.channelForm.name = "Workshop"
-            draft.catalog = peer
-            #expect(sessions.session(for: creating, catalog: try #require(app.catalog)) === draft)
-            #expect(sessions.isCurrent(draft, app: app, presenter: presenter) && draft.api.baseURL == peer.api.baseURL)
-        }
-    }
-
-    @Test func aFailedDeleteShowsAGenericAlert() async throws {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FailingDeletionProtocol.self]
-        let api = try ChannelAPI(serverURL: "https://delete.invalid", session: URLSession(configuration: configuration))
-        let catalog = ChannelCatalogStore(api: api)
-        let session = ManagementSession(flow: .deleteRoutine(try #require(catalog.target("channel")),
-                                                             routineId: "routine"),
-                                        catalog: catalog)
-        #expect(session.deletionStep == .confirm)
-        #expect(await !session.delete())
-        #expect(session.deletionStep == .failed)
-    }
-
     @Test func artifactFactoryRetainsTheStoreSessionAndClosesAReplacedStore() throws {
         let suite = "mobile-overview-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -1952,25 +1859,6 @@ struct ChannelFollowTests {
         #expect(activity.endings.isEmpty)
         #expect(activity.attributes.startedAt == fixture.originalDate)
     }
-}
-
-private final class FailingDeletionProtocol: URLProtocol, @unchecked Sendable {
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        guard let url = request.url,
-              let response = HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil,
-                                             headerFields: ["Content-Type": "application/json"]) else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
-            return
-        }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(#"{"error":"Internal error."}"#.utf8))
-        client?.urlProtocolDidFinishLoading(self)
-    }
-
-    override func stopLoading() {}
 }
 
 private final class FollowUnreachableProtocol: URLProtocol, @unchecked Sendable {
