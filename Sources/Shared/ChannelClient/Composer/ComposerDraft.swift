@@ -183,6 +183,11 @@ public final class ComposerDraft {
         return String(existing[...end]) + "\n\n" + incoming
     }
 
+    /// Puts `words`, trimmed, after the text, a blank line apart.
+    public func append(_ words: String) {
+        text = Self.joined(text, words.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
     public func isSendable(hasAdditionalContent: @autoclosure () -> Bool = false,
                            isLoadingAdditionalImages: @autoclosure () -> Bool = false) -> Bool {
         (hasContent || hasAdditionalContent()) && !(isLoadingImages || isLoadingAdditionalImages())

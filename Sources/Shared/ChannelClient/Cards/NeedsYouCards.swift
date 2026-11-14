@@ -180,13 +180,7 @@ package final class NeedsYouCards {
     /// Ends the reply when something takes the person away from the list. A typed reply's words
     /// become the channel's draft, after any draft already there.
     package func leave() {
-        if phase == .composing, let store = answer?.store {
-            let words = words.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !words.isEmpty {
-                let draft = draft(store)
-                draft.text = ComposerDraft.joined(draft.text, words)
-            }
-        }
+        if phase == .composing, let store = answer?.store { draft(store).append(words) }
         if phase != .sending { close() }
     }
 

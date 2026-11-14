@@ -256,11 +256,7 @@ package final class TalkRecorder: DictationTextTarget {
         guard phase != nil else { return }
         if phase == .recording {
             dictation.commitNow()
-            let words = finalizedWords.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let store, !words.isEmpty {
-                let draft = draft(store)
-                draft.text = ComposerDraft.joined(draft.text, words)
-            }
+            if let store { draft(store).append(finalizedWords) }
         }
         close()
     }
