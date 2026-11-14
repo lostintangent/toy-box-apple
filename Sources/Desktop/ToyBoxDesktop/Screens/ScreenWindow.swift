@@ -20,47 +20,59 @@ struct ScreenWindowValue: Codable, Hashable {
 }
 
 /// A Screens window: its server's screens, then the one chosen from them. The list's title menu
-/// refreshes it and chooses another server, and names the current one once there are several.
+/// refreshes it and chooses another server, and names the current one once there are several. A
+/// restored window waits for its server to open, so a peer's fills in once that Mac answers, and
+/// only Disconnect closes it.
 struct ScreenWindow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismissWindow) private var dismissWindow
     @Binding var value: ScreenWindowValue?
 
     private var catalog: ChannelCatalogStore? { value.flatMap { model.catalogs.first(at: $0.serverURL) } }
-    /// The server's name, once there's another to tell it from.
-    private var serverName: String? { model.servers.shown.count > 1 ? catalog?.name : nil }
+    /// The server's name, once there's another to tell it from. One still to open goes by its address.
+    private var serverName: String? {
+        guard let catalog else { return value.map { ChannelCatalogStore.name(of: $0.serverURL) } }
+        return model.servers.shown.count > 1 ? catalog.name : nil
+    }
 
     var body: some View {
-        // A stack, unlike a group, is there without a server, so the window can close itself.
-        ZStack {
-            if let catalog {
-                NavigationStack {
+        NavigationStack {
+            Group {
+                if let catalog {
                     ScreenBrowser(api: catalog.api) { screen in
                         value = ScreenWindowValue(serverURL: catalog.api.baseURL.absoluteString, screenID: screen.id)
                     } toolbar: { refresh in
-                        ToolbarItem(placement: .navigation) { titleMenu(catalog, refresh: refresh) }
+                        ToolbarItem(placement: .navigation) { titleMenu(refresh: refresh) }
                     }
-                    // The title menu stands in for the system title, which the Window menu keeps.
-                    .navigationTitle("Screens")
-                    .navigationSubtitle(serverName ?? "")
-                    .toolbar(removing: .title)
                     .navigationDestination(item: screenID) { ScreenViewer(api: catalog.api, screenID: $0) }
+                } else {
+                    DelayedProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .toolbar { ToolbarItem(placement: .navigation) { titleMenu(refresh: nil) } }
                 }
-                // Another server starts the window over on it.
-                .id(catalog.api.baseURL)
             }
+            // The title menu stands in for the system title, which the Window menu keeps.
+            .navigationTitle("Screens")
+            .navigationSubtitle(serverName ?? "")
+            .toolbar(removing: .title)
         }
-        // A window whose server is gone closes, whether removed, at a new address or never saved.
-        .onChange(of: catalog == nil, initial: true) { _, isGone in if isGone { dismissWindow() } }
+        // Another server, or the one it waited for, starts the window over on it.
+        .id(catalog?.api.baseURL)
+        // Only Disconnect closes the window. A restored window's value is still nil on its first
+        // update, so closing on that would close every restored window.
+        .onChange(of: model.catalogs.isEmpty, initial: true) { _, isEmpty in
+            if isEmpty { dismissWindow() }
+        }
     }
 
-    private func titleMenu(_ catalog: ChannelCatalogStore, refresh: ScreenRefresh) -> some View {
+    /// The title menu. Refresh is off while the window waits for its server.
+    private func titleMenu(refresh: ScreenRefresh?) -> some View {
         ViewerTitleMenu(title: "Screens", subtitle: serverName,
-                        help: "Screens on \(catalog.api.baseURL.absoluteString)") {
+                        help: "Screens on \(value?.serverURL ?? "")") {
             // Shows Command-R, which View > Refresh answers while the menu is closed.
-            Button("Refresh", systemImage: "arrow.clockwise") { refresh() }
+            Button("Refresh", systemImage: "arrow.clockwise") { refresh?() }
                 .keyboardShortcut("r")
-                .disabled(refresh.isLoading)
+                .disabled(refresh?.isLoading ?? true)
             if model.servers.shown.count > 1 {
                 Divider()
                 Picker("Server", selection: server) {

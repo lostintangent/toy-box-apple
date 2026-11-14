@@ -1,5 +1,11 @@
 # Changelog
 
+## Mac 0.1.41
+
+### Bugs/Polish
+
+- Screens windows you leave open now come back when Toy Box restarts or updates. One showing another of your Macs fills in as soon as that Mac answers.
+
 ## Mac 0.1.40
 
 ### Features
