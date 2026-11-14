@@ -178,8 +178,8 @@ Both apps can stay connected to several Toy Box servers at once. A server is its
 normalized URL that drafts and push registrations already key on, and its name, which the server
 keeps for every device and lead, as Updating a server describes. While the app runs it keeps the
 last name it read, so a server that drops keeps its name, and a server that hasn't answered yet
-goes by its host, plus its port when it isn't the default. Every server runs Toy Box 0.4.0 or later, so
-nothing in the apps makes room for an older one. Each server has its own `ChannelAPI`, catalog stream and channel stores, and every rule in
+goes by its host, plus its port when it isn't the default. Every server runs a Toy Box release that
+answers `peers`, so nothing in the apps makes room for an older one. Each server has its own `ChannelAPI`, catalog stream and channel stores, and every rule in
 this spec holds within each server unchanged. Nothing else is new. Where this spec says a server
 change, it means a server leaving or rejoining the list, which touches only that server's channels.
 Drafts and unsent messages stay on the device, keyed to the address, while their server is away,
@@ -188,10 +188,9 @@ and are there again when it comes back.
 - **The list is the server you connected through, then its peers.** The app saves one address,
   the server the user connected through, and nothing else about servers. That server is always
   first in the list, with its failure while it can't connect, so the list never empties and
-  always says why. Its peers follow exactly as its latest read lists them, in `peers` order (see
-  Peer servers). The server decides which of the user's Macs are live and lists only those, so
-  the apps check none themselves: a Mac that sleeps leaves the list with the first read that no
-  longer lists it, and one that wakes joins with the first that does. Between reads, a server in
+  always says why. Its peers follow, in `peers` order, the ones that answered the latest read (see
+  Peer servers): a Mac that sleeps, or doesn't run Toy Box, leaves the list with the first read
+  it doesn't answer, and one that wakes joins with the first it does. Between reads, a server in
   the list that can't connect shows its failure like any other. Until the first read after a
   launch, and while the server the user connected through is asleep, the list is only that server,
   until it wakes or the user disconnects and connects through another Mac. Settings, the Screens
@@ -321,12 +320,15 @@ and are there again when it comes back.
   manage nothing about it, so no row marks a peer and Settings has nothing to turn on.
   `GET /api/v1/server` answers `peers`, the origins of the other online Macs the server's owner
   has on their tailnet, sorted, like `["https://mac-mini.tail1234.ts.net"]`, and empty when there
-  are none.
+  are none. A peer is only a candidate, since a Mac may be asleep, not run Toy Box or run a
+  release that doesn't answer `peers` yet, and the server can't check, since that would have two
+  Macs each waiting on the other's answer.
   - **Following peers.** Connecting to any one of the user's servers shows the rest, and a Mac
     that comes online later appears by itself. The app follows only the peers of the server the
     user connected through, since each of the user's Macs lists all the others. Each successful
-    read of that server makes its `peers` the list's peers, each at its origin, opening any the
-    app hasn't opened this run. The app saves no peer, so after a relaunch they come back with
+    read of that server also reads `GET /api/v1/server` at each of its `peers`, which is how the
+    app learns their names and versions, and the list's peers become the ones whose answer
+    decodes, each at its origin, opening any the app hasn't opened this run. The app saves no peer, so after a relaunch they come back with
     that server's first read, and one that leaves the list stays connected until the app quits or
     disconnects, so a channel open on it, its Live Activities and its requests in the widget carry
     on. Settings keeps the server it had selected, and new rows are the only sign.
