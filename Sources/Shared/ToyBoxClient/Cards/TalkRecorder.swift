@@ -190,7 +190,6 @@ package final class TalkRecorder: DictationTextTarget {
     package func send() async {
         guard canSend, let store, let outbox = store.outbox, let target else { return }
         phase = .sending
-        if !dictation.isSessionActive, dictation.phase != .idle { dictation.leaveDraft() }
         let finalized = await dictation.stop(.send)
         guard phase == .sending, self.store === store else { return }
         guard finalized else {
