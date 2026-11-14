@@ -5,6 +5,7 @@
 ### Features
 
 - When your Macs have an update waiting, one Restart in Settings brings them all onto it. Each one shows the version it's moving to, and none drops out of your list while it restarts.
+- Answer a channel that's waiting on you right from the sidebar, without leaving the channel you're in. Rest on it or click its bubble to see the question, then reply or pick a choice.
 
 ### Bugs/Polish
 
