@@ -14,6 +14,7 @@ and the setting shown.
 | Image-strip wheel | `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1`, `--filter ComposerTests/imageStripOverflowRespondsToWheelInput` | Keep the Mac awake and unlocked. Equal height, hidden scrollers, overflow and synchronous native clip scrolling stay in the default suite |
 | Live Text interaction | `TOY_BOX_TEST_LIVE_TEXT_INTERACTION=1`, `--filter pressesOnTextReachLiveTextAndEverythingElseReachesTheViewer` | Native press and drag routing in an ordered off-screen window. WindowServer events can stop the runner's outer run loop. Geometry and routing-policy checks and VisionKit analysis gating stay in the default suite |
 | HTML origin probe | `TOY_BOX_TEST_ARTIFACT_HTML_ORIGIN_PROBE=1` | Quarantined. See [docs/quarantined-tests.md](../../../../docs/quarantined-tests.md) |
+| Artifact TOC navigation | `TOY_BOX_TEST_ARTIFACT_TOC_NAVIGATION=1` | Quarantined. See [docs/quarantined-tests.md](../../../../docs/quarantined-tests.md) |
 
 ## iPhone tests
 
@@ -27,7 +28,9 @@ in the iOS build.
   finished. A suite's launch waits on the simulator rather than the tests, so the three minutes
   start at its first output, and one that prints nothing for ten minutes after it launches is
   stopped the same way. A sample that fails is noted, and the stall stays the error.
-- Existing opt-ins stay off.
+- Existing opt-ins stay off. Prefix one with `SIMCTL_CHILD_` to pass it to the simulator, like
+  `SIMCTL_CHILD_TOY_BOX_TEST_ARTIFACT_PHONE_EXTERNAL_LINK=1` for the quarantined phone external-link
+  test in [docs/quarantined-tests.md](../../../../docs/quarantined-tests.md).
 - It boots the simulator only once the build finishes, because a CI runner's simulator can shut
   down during the build. It prints how long the simulator took to be ready and each suite took to
   start.

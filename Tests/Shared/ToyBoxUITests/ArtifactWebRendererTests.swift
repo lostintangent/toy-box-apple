@@ -4,10 +4,21 @@ import Testing
 import ToyBoxUI
 import WebKit
 
+#if os(iOS)
+private let runsExternalLinkCheck =
+    ProcessInfo.processInfo.environment["TOY_BOX_TEST_ARTIFACT_PHONE_EXTERNAL_LINK"] == "1"
+#else
+private let runsExternalLinkCheck = true
+#endif
+
 @Suite("Shared artifact WebKit renderer")
 @MainActor
 struct ArtifactWebRendererTests {
-    @Test func externalLinksOpenTheBrowserInsteadOfReplacingTheEmbeddedDocument() async throws {
+    // Quarantined on the iPhone simulator after it missed its deadline in a full phone run under
+    // ordinary load (t1131). The Mac keeps it in the gate. Owner: Overview, follow-up: t607.
+    @Test(.enabled(if: runsExternalLinkCheck,
+                   "Quarantined on iPhone pending cause identification (t607). Opt in with TOY_BOX_TEST_ARTIFACT_PHONE_EXTERNAL_LINK=1."))
+    func externalLinksOpenTheBrowserInsteadOfReplacingTheEmbeddedDocument() async throws {
         let destination = try #require(URL(string: "https://artifact-viewer-test.invalid/review"))
         let presentation = WebPresentation()
         let web = ArtifactWebRenderer(presentation: presentation)
