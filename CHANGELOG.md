@@ -17,6 +17,10 @@
 
 - When your Macs have an update waiting, one Restart in Settings brings them all onto it. Each one shows the version it's moving to, and none drops out of your list while it restarts.
 
+### Bugs/Polish
+
+- A channel waiting on you stays a calm row in your list that shows its question, and opens to answer only when you tap it, so a new request never takes over the screen.
+
 ## Mac 0.1.40
 
 ### Features

@@ -130,8 +130,8 @@ struct ChannelSidebar: View {
             .accessibilityIdentifier("channel-list")
             // A card the person opens comes fully into view as it opens and grows, since its question
             // scrolls only once it would run past the visible list.
-            .onChange(of: open?.id) { previous, card in
-                revealing = cards.reveals(card, after: previous) ? card : nil
+            .onChange(of: open?.id) { _, card in
+                revealing = card
                 reveal(open, in: proxy)
             }
             .onChange(of: cardFrame?.height) { reveal(open, in: proxy) }
