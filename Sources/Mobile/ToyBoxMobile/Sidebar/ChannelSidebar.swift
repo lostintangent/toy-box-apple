@@ -53,7 +53,7 @@ struct ChannelSidebar: View {
         var channel: Channel
         var target: ChannelTarget
         var catalog: ChannelCatalogStore
-        var presentation: ChannelListing
+        var listing: ChannelListing
     }
 
     private func isExpanded(_ catalog: ChannelCatalogStore) -> Bool {
@@ -75,10 +75,10 @@ struct ChannelSidebar: View {
 
     /// A server's channels that match the search.
     private func listed(in catalog: ChannelCatalogStore) -> [Listed] {
-        let presentation = model.sidebarPresentation(for: catalog)
+        let listing = model.listing(for: catalog)
         let channels = talk.ordered(catalog.channels.filter { $0.matches(trimmedQuery) }, on: catalog.api.baseURL)
         return channels.compactMap { channel in
-            catalog.target(channel.id).map { Listed(channel: channel, target: $0, catalog: catalog, presentation: presentation) }
+            catalog.target(channel.id).map { Listed(channel: channel, target: $0, catalog: catalog, listing: listing) }
         }
     }
 
@@ -219,8 +219,8 @@ struct ChannelSidebar: View {
                 // UIKit lifts menus itself, so a dimmed row offers none while a note is open.
                 if !talk.isLifted { contextMenu(item) }
             } preview: {
-                ChannelSidebarPreview(channel: item.presentation.channel(item.channel),
-                                      agents: item.presentation.agents(item.channel))
+                ChannelSidebarPreview(channel: item.listing.channel(item.channel),
+                                      agents: item.listing.agents(item.channel))
             }
             // Revealing Delete is its confirmation, so it deletes with no alert.
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -281,7 +281,7 @@ struct ChannelSidebar: View {
 
     private func card(_ entry: ChannelWaitingRequest, in item: Listed, now: Date,
                       isLifted: Bool = false, maxHeight: CGFloat) -> NeedsYouCard {
-        NeedsYouCard(channel: item.presentation.channel(item.channel), entry: entry, cards: cards, now: now,
+        NeedsYouCard(channel: item.listing.channel(item.channel), entry: entry, cards: cards, now: now,
                      isCollapsed: isCollapsed, isLifted: isLifted, maxHeight: maxHeight)
     }
 
@@ -340,12 +340,12 @@ struct ChannelSidebar: View {
     }
 
     private func row(_ item: Listed, now: Date, question: String? = nil) -> some View {
-        let (channel, presentation) = (item.channel, item.presentation)
-        let agents = presentation.agents(channel)
+        let (channel, listing) = (item.channel, item.listing)
+        let agents = listing.agents(channel)
         return ChannelSidebarRow(
-            channel: presentation.channel(channel), agents: agents,
-            working: presentation.working(channel, agents: agents),
-            attention: presentation.attention(channel), now: now, api: item.catalog.api, isCollapsed: isCollapsed,
+            channel: listing.channel(channel), agents: agents,
+            working: listing.working(channel, agents: agents),
+            attention: listing.attention(channel), now: now, api: item.catalog.api, isCollapsed: isCollapsed,
             talk: talk.target == item.target ? talk : nil, question: question, check: checks[item.target],
             cardInset: NeedsYouCard.margin - reach
         )
@@ -353,7 +353,7 @@ struct ChannelSidebar: View {
 
     private func talk(to item: Listed) {
         talk.start(item.catalog.channel(id: item.channel.id), name: item.channel.name,
-                   contextualNames: item.presentation.agents(item.channel).map(\.name), catalog: item.catalog,
+                   contextualNames: item.listing.agents(item.channel).map(\.name), catalog: item.catalog,
                    order: listed.map(\.target))
     }
 

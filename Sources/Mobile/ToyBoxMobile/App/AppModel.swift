@@ -142,10 +142,8 @@ final class AppModel {
     var selectedServer: String { selection?.serverURL ?? serverURL }
     var canCreateChannel: Bool { canManageChannels(on: catalogs.first(at: selectedServer)) }
 
-    var sidebarPresentation: ChannelListing { sidebarPresentation(for: catalog) }
-
     /// How the list shows a server's channels, given which of them is on screen.
-    func sidebarPresentation(for catalog: ChannelCatalogStore?) -> ChannelListing {
+    func listing(for catalog: ChannelCatalogStore?) -> ChannelListing {
         let open = openChannels.compactMap { catalog?.target($0.channelID) == $0 ? $0.channelID : nil }
         return ChannelListing(catalog: catalog, openChannelIDs: Set(open))
     }
@@ -328,7 +326,7 @@ final class AppModel {
                 && selection.map({ interaction(for: $0).isArtifactViewerPresented != true }) != false
                 ? visibleChannel : nil
             let channels = Dictionary(catalogs.map { catalog in
-                (catalog.api.baseURL.absoluteString, catalog.channels.map(sidebarPresentation(for: catalog).channel))
+                (catalog.api.baseURL.absoluteString, catalog.channels.map(listing(for: catalog).channel))
             }, uniquingKeysWith: { first, _ in first })
             let withdrawing = catalogs.filter { catalog in
                 isActive && catalog.isLoaded && catalog.phase.message == nil

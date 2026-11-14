@@ -253,8 +253,8 @@ struct RootView: View {
             catalog.channels.compactMap { catalog.target($0.id) }
         }
         let attention = Set(model.catalogs.flatMap { catalog in
-            let presentation = model.sidebarPresentation(for: catalog)
-            return catalog.channels.filter { presentation.attention($0) != nil }.compactMap { catalog.target($0.id)?.identifier }
+            let listing = model.listing(for: catalog)
+            return catalog.channels.filter { listing.attention($0) != nil }.compactMap { catalog.target($0.id)?.identifier }
         })
         return WindowCommandActions(
             messageView: interaction?.messageView ?? .all,

@@ -353,11 +353,11 @@ final class AppModel {
         let unreachable = configurationError != nil ? SidebarFooter.server(serverURL)
             : failing.isEmpty ? nil : failing.formatted(.list(type: .and))
         let inputs = catalogs.filter(\.isLoaded).flatMap { catalog in
-            let presentation = sidebarPresentation(for: catalog)
+            let listing = listing(for: catalog)
             return catalog.channels.compactMap { listed -> MenuBarStatus.Input? in
                 guard let target = catalog.target(listed.id) else { return nil }
-                return .init(target: target, channel: presentation.channel(listed),
-                             working: presentation.working(listed, agents: presentation.agents(listed)))
+                return .init(target: target, channel: listing.channel(listed),
+                             working: listing.working(listed, agents: listing.agents(listed)))
             }
         }
         return MenuBarStatus(requests: catalogs.waitingRequests(open: openChannels), inputs,
@@ -387,7 +387,7 @@ final class AppModel {
     }
 
     /// How the sidebar shows a server's channels, given which of them windows have open.
-    func sidebarPresentation(for catalog: ChannelCatalogStore?) -> ChannelListing {
+    func listing(for catalog: ChannelCatalogStore?) -> ChannelListing {
         .init(catalog: catalog, openChannelIDs: openChannelIDs(on: catalog))
     }
 

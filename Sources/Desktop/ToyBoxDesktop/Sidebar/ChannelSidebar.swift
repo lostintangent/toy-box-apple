@@ -112,7 +112,7 @@ struct ChannelSidebar: View {
         .safeAreaPadding(.top, 4)
         .talkList(talk, targets: listed.map(\.target), onGlass: true, endsWhenChanging: [selection, query]) { target in
             if let listed = listed.first(where: { $0.target == target }) {
-                row(listed, presentation: model.sidebarPresentation(for: listed.catalog), catalog: listed.catalog,
+                row(listed, listing: model.listing(for: listed.catalog), catalog: listed.catalog,
                     request: nil)
             }
         }
@@ -171,10 +171,10 @@ struct ChannelSidebar: View {
     }
 
     private func rows(_ catalog: ChannelCatalogStore) -> some View {
-        let presentation = model.sidebarPresentation(for: catalog)
+        let listing = model.listing(for: catalog)
         let requests = requests(catalog)
         return ForEach(channels(in: catalog)) { listed in
-            row(listed, presentation: presentation, catalog: catalog,
+            row(listed, listing: listing, catalog: catalog,
                 request: listed.target == listSelection ? nil : requests[listed.target])
                 .listRowInsets(EdgeInsets())
                 .tag(listed.target)
@@ -202,14 +202,14 @@ struct ChannelSidebar: View {
         }
     }
 
-    private func row(_ listed: Listed, presentation: ChannelListing, catalog: ChannelCatalogStore,
+    private func row(_ listed: Listed, listing: ChannelListing, catalog: ChannelCatalogStore,
                      request: ChannelWaitingRequest?) -> some View {
         let channel = listed.channel
-        let current = presentation.channel(channel)
-        let agents = presentation.agents(channel)
+        let current = listing.channel(channel)
+        let agents = listing.agents(channel)
         return ChannelSidebarRow(
-            channel: current, agents: agents, working: presentation.working(channel, agents: agents),
-            attention: presentation.attention(channel),
+            channel: current, agents: agents, working: listing.working(channel, agents: agents),
+            attention: listing.attention(channel),
             folder: folderAvailability(current, api: catalog.api), api: catalog.api,
             isSelected: listed.target == listSelection, request: request,
             answers: answers(listed.target, catalog: catalog), check: checks[listed.target],
@@ -231,7 +231,7 @@ struct ChannelSidebar: View {
             cards.leave()
         }
         talk.start(listed.catalog.channel(id: listed.channel.id), name: listed.channel.name,
-                   contextualNames: model.sidebarPresentation(for: listed.catalog).agents(listed.channel).map(\.name),
+                   contextualNames: model.listing(for: listed.catalog).agents(listed.channel).map(\.name),
                    catalog: listed.catalog, order: self.listed.map(\.target))
     }
 
