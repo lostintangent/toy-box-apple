@@ -4,6 +4,26 @@ import Foundation
 import Testing
 
 struct ChannelURLTests {
+    @Test(arguments: [
+        ("mac-mini.tail1234.ts.net", "https://mac-mini.tail1234.ts.net"),
+        (" my-server:3100/toy-box ", "https://my-server:3100/toy-box"),
+        ("http://localhost:3100", "http://localhost:3100"),
+    ])
+    func anAddressWithoutASchemeIsHTTPS(typed: String, url: String) throws {
+        #expect(try ChannelAPI(serverURL: typed).baseURL.absoluteString == url)
+    }
+
+    @Test(arguments: [
+        ("ftp://studio.example", "Use HTTP or HTTPS for your Toy Box server."),
+        ("https://", "Include your server's hostname or IP address."),
+        ("https://me:secret@studio.example", "Remove usernames and passwords from the server URL."),
+        ("studio.example/?channel=1", "Use the server's base URL without a query or fragment."),
+        ("studio example", "Enter an HTTP or HTTPS server URL."),
+    ])
+    func aBadAddressSaysWhatToFix(typed: String, message: String) {
+        #expect(throws: ChannelAPIError.invalidServerURL(message)) { try ChannelAPI(serverURL: typed) }
+    }
+
     @Test func browserLinksKeepTheDeploymentPrefixAndJSONChannelSelection() throws {
         let api = try ChannelAPI(serverURL: "https://example.test/deploy%20root/")
         let channelID = "channel/&?%"

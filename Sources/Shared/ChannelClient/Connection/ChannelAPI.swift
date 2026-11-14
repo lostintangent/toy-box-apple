@@ -2,7 +2,8 @@ import ChannelKit
 import Foundation
 
 public enum ChannelAPIError: Error, Equatable, LocalizedError, Sendable {
-    case invalidServerURL
+    /// An address that can't be a Toy Box server, saying what to fix, in both apps' words.
+    case invalidServerURL(String)
     case invalidResponse
     /// A failed response, with the server's own words when it gave them.
     case http(status: Int, message: String?)
@@ -14,7 +15,7 @@ public enum ChannelAPIError: Error, Equatable, LocalizedError, Sendable {
 
     public var errorDescription: String? {
         switch self {
-        case .invalidServerURL: "Enter an HTTP or HTTPS server URL."
+        case .invalidServerURL(let message): message
         case .invalidResponse: "The server returned an invalid response."
         case .http(let status, let message):
             message ?? "\(HTTPURLResponse.localizedString(forStatusCode: status)) (HTTP \(status))"
@@ -114,10 +115,17 @@ public struct ChannelAPI: Sendable {
     }()
 
     public init(baseURL: URL, session: URLSession = .shared) throws {
-        guard ["http", "https"].contains(baseURL.scheme?.lowercased() ?? ""),
-              baseURL.host?.isEmpty == false, baseURL.user == nil, baseURL.password == nil,
-              baseURL.query == nil, baseURL.fragment == nil else {
-            throw ChannelAPIError.invalidServerURL
+        guard ["http", "https"].contains(baseURL.scheme?.lowercased() ?? "") else {
+            throw ChannelAPIError.invalidServerURL("Use HTTP or HTTPS for your Toy Box server.")
+        }
+        guard baseURL.host?.isEmpty == false else {
+            throw ChannelAPIError.invalidServerURL("Include your server's hostname or IP address.")
+        }
+        guard baseURL.user == nil, baseURL.password == nil else {
+            throw ChannelAPIError.invalidServerURL("Remove usernames and passwords from the server URL.")
+        }
+        guard baseURL.query == nil, baseURL.fragment == nil else {
+            throw ChannelAPIError.invalidServerURL("Use the server's base URL without a query or fragment.")
         }
         self.baseURL = baseURL
         self.session = session
@@ -126,7 +134,7 @@ public struct ChannelAPI: Sendable {
     /// A server at an address as someone typed it, where one without a scheme is HTTPS.
     public init(serverURL: String, session: URLSession = .shared) throws {
         guard let url = URLComponents(serverAddress: serverURL)?.url else {
-            throw ChannelAPIError.invalidServerURL
+            throw ChannelAPIError.invalidServerURL("Enter an HTTP or HTTPS server URL.")
         }
         try self.init(baseURL: url, session: session)
     }

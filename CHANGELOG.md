@@ -8,6 +8,10 @@
 - The first time you open Toy Box, you can connect right from the sidebar, without a trip to Settings.
 - Disconnect in Settings forgets your servers, so you can start fresh by connecting to any one of your Macs.
 
+### Bugs/Polish
+
+- When an address can't work, like one with a password in it, Toy Box tells you exactly what to change.
+
 ## iPhone 0.1.38
 
 ### Features

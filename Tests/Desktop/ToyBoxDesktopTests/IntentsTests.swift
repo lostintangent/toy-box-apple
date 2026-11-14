@@ -819,9 +819,7 @@ private final class TestHost {
         configuration.protocolClasses = [RequestRecorder.self] + (configuration.protocolClasses ?? [])
         let api = try ChannelAPI(serverURL: #require(IntentsTests.Demo.demoURL),
                                  session: URLSession(configuration: configuration))
-        guard ["localhost", "127.0.0.1"].contains(api.baseURL.host), api.baseURL.port != 3100 else {
-            throw ChannelAPIError.invalidServerURL
-        }
+        try #require(["localhost", "127.0.0.1"].contains(api.baseURL.host) && api.baseURL.port != 3100)
         let host = TestHost(api: api)
         host.channels = try await api.catalog().channels
         host.deliver = { _ = try await api.post(channelId: $0.channelID, content: $0.text) }

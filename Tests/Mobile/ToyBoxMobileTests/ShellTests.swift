@@ -1716,7 +1716,7 @@ struct ShellTests {
             model.selectedChannelID = "first"
             let catalog = model.catalog
             let store = model.selectedStore
-            #expect(throws: ChannelAPIError.invalidServerURL) {
+            #expect(throws: ChannelAPIError.invalidServerURL("Use HTTP or HTTPS for your Toy Box server.")) {
                 try model.addServer("file:///not-a-server")
             }
             #expect(model.serverURL == "https://first.example")

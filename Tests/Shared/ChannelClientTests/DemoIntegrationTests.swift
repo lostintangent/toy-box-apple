@@ -22,9 +22,7 @@ struct DemoIntegrationTests {
     func catalogSnapshotPostRepeatReadAndResume() async throws {
         let api = try ChannelAPI(serverURL: #require(Self.demoURL))
         // Any loopback demo, including one on its own TOY_BOX_DEMO_PORT, but never the live server.
-        guard api.baseURL.port != 3100, ["localhost", "127.0.0.1"].contains(api.baseURL.host) else {
-            throw ChannelAPIError.invalidServerURL
-        }
+        try #require(api.baseURL.port != 3100 && ["localhost", "127.0.0.1"].contains(api.baseURL.host))
         let catalog = try await api.catalog()
         let channel = try #require(catalog.channels.first)
         #expect(channel.id == "studio-demo")
