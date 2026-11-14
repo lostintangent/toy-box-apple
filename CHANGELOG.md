@@ -2,9 +2,19 @@
 
 ## Mac 0.1.41
 
+### Features
+
+- When your Macs have an update waiting, one Restart in Settings brings them all onto it, and each one shows the version it's moving to.
+
 ### Bugs/Polish
 
 - Windows you leave open now come back where you left them when Toy Box restarts or updates, on the same channel or screens. One showing another of your Macs fills in as soon as that Mac answers.
+
+## iPhone 0.1.39
+
+### Features
+
+- When your Macs have an update waiting, one Restart in Settings brings them all onto it, and each one shows the version it's moving to.
 
 ## Mac 0.1.40
 
