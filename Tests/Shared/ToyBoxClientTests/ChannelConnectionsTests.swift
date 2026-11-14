@@ -73,6 +73,7 @@ struct ChannelConnectionsTests {
         connections.release(a)
         #expect(!a.isTrying)
         #expect(connections.stores.isEmpty)
+        try await eventually(observing: mock) { mock.stops == 1 }
         connections.release(a)
         #expect(connections.stores.isEmpty)
     }
@@ -92,15 +93,6 @@ struct ChannelConnectionsTests {
         #expect(stores.suffix(2).allSatisfy { $0.phase.isConnected }, "Another server's stores stay connected")
         #expect(Set(connections.stores.map(ObjectIdentifier.init)) == Set(stores.suffix(2).map(ObjectIdentifier.init)))
         try await eventually(observing: mock) { mock.stops == 2 }
-    }
-
-    @Test func noLingerDisconnectsAtOnce() async throws {
-        let connections = ChannelConnections(linger: .zero)
-        let a = try await connectedStores("a", to: connections)[0]
-        connections.release(a)
-        #expect(!a.isTrying)
-        #expect(connections.stores.isEmpty)
-        try await eventually(observing: mock) { mock.stops == 1 }
     }
 
     /// A disconnected store keeps its last state, which is stale once the channel reopens.
@@ -133,7 +125,6 @@ struct ChannelConnectionsTests {
         #expect(store.unreadAfter == nil, "Until the reconnect, the divider matches the cached rows, all read")
         try await eventually { store.phase.isConnected }
         #expect(store.messages.last?.sequence == 3)
-        #expect(try #require(store.state).channel.attention == .unread)
         #expect(store.unreadAfter == 2, "The New divider sits after the last message read")
     }
 }

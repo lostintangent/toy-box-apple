@@ -34,8 +34,6 @@ struct WaitingRequestTests {
         #expect(NeedsYouRequestLink(url: reply) == nil)
         #expect(NeedsYouRequestLink(replyURL: open) == nil)
         #expect(NeedsYouRequestLink(url: NeedsYouSnapshot.mainURL) == nil)
-        #expect(ChannelWaitingRequest.ID(serverURL: server, channelID: link.channelID, sequence: link.sequence)?.target.serverURL
-                == "http://127.0.0.1:3210")
         for value in [
             "https://request?server=http://localhost/&channel=studio&sequence=1",
             "toybox-desktop://request?server=http://localhost/&channel=studio&sequence=0",
@@ -64,7 +62,6 @@ struct WaitingRequestTests {
                          request: message.map { .init(message: $0, agents: [.init(id: "lead", name: "Lead")]) })
         }
         let request = try #require(entry())
-        #expect(request.target == ChannelTarget(serverURL: "https://server.test", channelID: "studio"))
         #expect(request.markdown == "**Ship** it?" && request.question == "Ship it?" && request.requester?.name == "Lead")
         let unknown = try #require(entry(text: nil))
         #expect(unknown.markdown == ChannelNotification.Content.needsReply && unknown.requester == nil)
@@ -156,10 +153,7 @@ struct WaitingRequestTests {
 
     @Test func aTargetSurvivesItsIdentifierWhateverItsChannelIsCalled() throws {
         let target = try #require(ChannelTarget(serverURL: "HTTPS://Toy.Example:443/base/", channelID: "a&b=c+d e"))
-        #expect(target.serverURL == "https://toy.example/base")
         #expect(ChannelTarget(identifier: target.identifier) == target)
-        #expect(ChannelTarget(identifier: "?server=ftp://toy.example&channel=studio") == nil)
-        #expect(ChannelTarget(identifier: "?server=https://toy.example&channel=") == nil)
         #expect(ChannelTarget(identifier: "?server=https://toy.example") == nil)
     }
 

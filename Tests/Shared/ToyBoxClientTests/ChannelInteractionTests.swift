@@ -4,10 +4,8 @@ import Testing
 
 @MainActor
 struct ChannelInteractionTests {
-    @Test func hostsChooseInspectorVisibilityAndReplyRequestsAreFresh() {
-        let phone = ChannelInteraction(isInspectorPresented: false)
-        #expect(!phone.isInspectorPresented)
-        #expect(ChannelInteraction().isInspectorPresented)
+    @Test func eachReplyRequestIsFresh() {
+        let phone = ChannelInteraction()
         let agent = ChannelAgent(id: "ada", name: "Ada")
         phone.reply(to: agent)
         let token = phone.replyRequest?.token

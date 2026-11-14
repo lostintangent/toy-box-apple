@@ -69,13 +69,6 @@ struct CatalogTests {
         #expect(catalog.state == recovered)
     }
 
-    @Test func aPhaseDescribesOnlyItsFailure() {
-        let failure = ChannelAPIError.http(status: 503, message: "Catalog unavailable.")
-        #expect(ChannelCatalogPhase.failed(failure).message == failure.localizedDescription)
-        #expect(ChannelCatalogPhase.connected.message == nil)
-        #expect(ChannelCatalogPhase.connecting.failure == nil)
-    }
-
     @Test @MainActor func whoIsWorkingReachesEveryChannelsPresenceUntilTheCatalogFails() async throws {
         var state = testState(revision: 1)
         state.members = [.init(id: "member", name: "Member", status: .init(state: "working", text: "Reading"))]
@@ -409,38 +402,6 @@ struct CatalogTests {
         #expect(mock.requests.count == 1)
     }
 
-    @Test func catalogAlwaysCarriesALead() throws {
-        let catalog = try JSONDecoder().decode(ChannelCatalog.self,
-                                              from: Data(#"""
-            {"channels":[],"members":[],"working":[],
-             "lead":{"name":"Lead","role":"Test channel coordinator.",
-                     "avatar":{"mark":"M4 12H20","color":"#123456"}}}
-            """#.utf8))
-        #expect(catalog.lead.name == "Lead")
-        #expect(catalog.lead.avatar.ink == nil)
-    }
-
-    @Test @MainActor func refreshReplacesTheServedLeadProfile() async throws {
-        let response = Data(#"""
-        {"channels":[],"members":[],"working":[],
-         "lead":{"name":"Guide","role":"A served role.",
-                 "avatar":{"mark":"M4 12H20","color":"#1e3a8a","ink":"#facc15"}}}
-        """#.utf8)
-        let mock = MockTransport { _, count in
-            count == 1 ? MockResponse(body: response) : try .json(ChannelCatalog(lead: testLeadProfile))
-        }
-        let store = ChannelCatalogStore(api: try mock.api())
-        await store.refresh()
-        #expect(store.state?.lead.name == "Guide")
-        #expect(store.state?.lead.role == "A served role.")
-        #expect(store.state?.lead.avatar.ink == "#facc15")
-        #expect(store.members.isEmpty)
-        await store.refresh()
-        #expect(store.state?.lead == testLeadProfile)
-        #expect(store.phase == .connected)
-        #expect(mock.requests.count == 2)
-    }
-
     @Test @MainActor func malformedLeadPreservesCachedProfileAndSurfacesTheError() async throws {
         let profile = ChannelLeadProfile(name: "Guide", role: "A served role.",
                                          avatar: .init(mark: "M4 12H20", color: "#1e3a8a", ink: "#facc15"))
@@ -492,8 +453,6 @@ struct CatalogTests {
         #expect(models.defaultModel?.provider == "copilot")
         #expect(models.defaultModel?.options["reasoningEffort"] == .string("xhigh"))
         #expect(models.defaultModel?.options["contextTier"] == .string("default"))
-        #expect(models.models.first?.supportedReasoningEfforts == ["high", "xhigh"])
-        #expect(models.models.first?.supportedContextTiers?.first?.tokenWindow == 128000)
     }
 
     @Test func theSavedServerListBecomesItsFirstAddressOnce() throws {

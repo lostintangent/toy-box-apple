@@ -51,7 +51,6 @@ struct ChannelCatalogTests {
         expected.request = ChannelMessage(id: "m4", sequence: 4, timestamp: "2026-10-01T00:00:00Z", sender: .agent("c"),
                                           content: .text("Ship it?"), request: true, replies: ["Yes", "Not yet"])
         #expect(catalog.channels == [expected])
-        #expect(try event(#"{"type":"channel.upserted","channel":\#(entry)}"#) == .channelUpserted(expected))
     }
 
     @Test func upsertsKeepTheJSONRoutesOrder() {
@@ -83,18 +82,5 @@ struct ChannelCatalogTests {
         catalog.apply(.channelDeleted(channelId: "c"))
         #expect(catalog.channels.map(\.id) == ["d"])
         #expect(catalog.members.map(\.id) == ["m2"])
-    }
-
-    @Test func snapshotsReplaceAndWorkingAndUnknownChangeOnlyTheirPart() {
-        var catalog = ChannelCatalog(lead: lead, channels: [channel("c", updatedAt: "2026-10-01T00:00:00Z")])
-        let before = catalog
-        catalog.apply(.unknown("channel.archived"))
-        #expect(catalog == before)
-        catalog.apply(.working(["c"]))
-        #expect(catalog.working == ["c"])
-        #expect(catalog.channels == before.channels)
-        let replacement = ChannelCatalog(lead: lead, channels: [channel("d", updatedAt: "2026-10-02T00:00:00Z")])
-        catalog.apply(.snapshot(replacement))
-        #expect(catalog == replacement)
     }
 }

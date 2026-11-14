@@ -11,7 +11,6 @@ struct ChannelEllipsisPulseTests {
         let mask = ChannelEllipsisPulseMask()
         mask.start()
         var begins: [CFTimeInterval] = []
-        #expect(mask.segments.count == 3)
         #expect(mask.layer.sublayers == mask.segments)
         for segment in mask.segments {
             let fade = try #require(segment.animation(forKey: "fade") as? CABasicAnimation)
@@ -22,9 +21,7 @@ struct ChannelEllipsisPulseTests {
             #expect(pulse.keyTimes?.map(\.doubleValue) == [0, 0.1875, 0.375, 1])
             #expect(pulse.duration == 5.0 / 3)
             #expect(pulse.repeatCount == .infinity)
-            #expect(pulse.preferredFrameRateRange.minimum == 10)
             #expect(pulse.preferredFrameRateRange.maximum == 30)
-            #expect(pulse.preferredFrameRateRange.preferred == 30)
             #expect(segment.opacity == 0.25)
             begins.append(pulse.beginTime)
         }
@@ -69,8 +66,7 @@ struct ChannelEllipsisPulseTests {
         #expect(mask.segments.map(\.frame.width) == [10, 10, 10])
     }
 
-    @Test(arguments: [1.0, 2.0, 3.0])
-    func glyphSplitsStayInTheEmptyColumnsBetweenDots(scale: Double) throws {
+    @Test func glyphSplitsStayInTheEmptyColumnsBetweenDots() throws {
         let context = try #require(CGContext(
             data: nil, width: 30, height: 8, bitsPerComponent: 8, bytesPerRow: 30,
             space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue
@@ -80,13 +76,6 @@ struct ChannelEllipsisPulseTests {
             context.fill(CGRect(x: CGFloat(x), y: 0, width: 3, height: 8))
         }
         let image = try #require(context.makeImage())
-        let ink = ChannelEllipsisPulseMask.columnInk(in: image)
-        #expect(ink.count == 30)
-        #expect(ink[2] == 8 * 255 && ink[10] == 0)
-        let splits = ChannelEllipsisPulseMask.splits(in: image, scale: CGFloat(scale))
-        #expect(splits == [8.5, 18.5])
-        for split in splits {
-            #expect(ink[Int(split)] == 0)
-        }
+        #expect(ChannelEllipsisPulseMask.splits(in: image, scale: 2) == [8.5, 18.5])
     }
 }

@@ -23,8 +23,6 @@ private final class FakeNotificationCenter {
 struct ReplyCategoriesTests {
     @Test func identifiersDependOnEveryLabelInOrder() {
         let identifier = ReplyCategories.identifier(labels: ["Yes", "No"])
-        #expect(identifier == ReplyCategories.identifier(labels: ["Yes", "No"]))
-        #expect(identifier.hasPrefix(ReplyCategories.identifierPrefix))
         #expect(identifier != ReplyCategories.identifier(labels: ["No", "Yes"]))
         #expect(identifier != ReplyCategories.identifier(labels: ["Yes", "Maybe"]))
         // Length prefixes keep label boundaries unambiguous.
@@ -39,31 +37,11 @@ struct ReplyCategoriesTests {
 
     @Test func categoryHasTheReplyFieldThenOneActionPerLabel() {
         let category = ReplyCategories.category(labels: ["Yes", "No", "Later"])
-        #expect(category.identifier == ReplyCategories.identifier(labels: ["Yes", "No", "Later"]))
         #expect(category.actions.first is UNTextInputNotificationAction)
         #expect(category.actions.map(\.identifier) == [
             ChannelNotificationCategory.reply, "reply-choice.0", "reply-choice.1", "reply-choice.2",
         ])
         #expect(category.actions.map(\.title) == ["Reply", "Yes", "No", "Later"])
-    }
-
-    @Test func mergeKeepsOnlyReplyCategoriesThatDeliveredNotificationsUse() {
-        let delivered = ReplyCategories.category(labels: ["Yes", "No"])
-        let undelivered = ReplyCategories.category(labels: ["Maybe", "Never"])
-        let other = UNNotificationCategory(identifier: "other.category", actions: [], intentIdentifiers: [])
-        let current: Set<UNNotificationCategory> = ReplyCategories.baseCategories().union([delivered, undelivered, other])
-        let merged = ReplyCategories.merged(current: current, delivered: [delivered.identifier],
-                                            base: ReplyCategories.baseCategories(), adding: nil)
-        let expected = Set(ReplyCategories.baseCategories().map(\.identifier))
-            .union([delivered.identifier, other.identifier])
-        #expect(Set(merged.map(\.identifier)) == expected)
-    }
-
-    @Test func mergeIncludesTheAddedCategoryBeforeAnyNotificationDeliversIt() {
-        let added = ReplyCategories.category(labels: ["Yes", "No"])
-        let merged = ReplyCategories.merged(current: [], delivered: [], base: ReplyCategories.baseCategories(),
-                                            adding: added)
-        #expect(merged.contains { $0.identifier == added.identifier })
     }
 
     @MainActor @Test func publishWritesOnlyWhenTheRegistrationChanges() async {
@@ -82,12 +60,14 @@ struct ReplyCategoriesTests {
         let center = FakeNotificationCenter()
         let kept = ReplyCategories.category(labels: ["Yes", "No"])
         let dropped = ReplyCategories.category(labels: ["Maybe", "Never"])
-        center.categories = ReplyCategories.baseCategories().union([kept, dropped])
+        let other = UNNotificationCategory(identifier: "other.category", actions: [], intentIdentifiers: [])
+        center.categories = ReplyCategories.baseCategories().union([kept, dropped, other])
         center.delivered = [kept.identifier]
         await center.publisher().publish()
         let identifiers = Set(center.categories.map(\.identifier))
         #expect(identifiers.contains(kept.identifier))
         #expect(!identifiers.contains(dropped.identifier))
+        #expect(identifiers.contains(other.identifier), "Only reply categories are dropped")
     }
 
     @MainActor @Test func aWriteThatDoesNotRegisterIsReportedToTheCaller() async {

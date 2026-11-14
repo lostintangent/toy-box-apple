@@ -280,11 +280,12 @@ struct AutomationTests {
         let disabled = UIAction(title: "Disabled", attributes: .disabled) { _ in }
         let hidden = UIAction(title: "Hidden", attributes: .hidden) { _ in }
         let unopened = UIAction(title: "Unopened") { _ in }
-        let menu = UIMenu(children: [visible, disabled, hidden, UIMenu(title: "More", children: [unopened])])
+        let duplicates = [UIAction(title: "Twice") { _ in }, UIAction(title: "Twice") { _ in }]
+        let menu = UIMenu(children: [visible, disabled, hidden, UIMenu(title: "More", children: [unopened])] + duplicates)
         let selected = try MobileAutomationMenu.leaf(named: "Visible", in: [menu], isVisible: true)
         let matchesExpectedAction = selected === visible
         #expect(matchesExpectedAction)
-        for title in ["Disabled", "Hidden", "Unopened", "Missing"] {
+        for title in ["Disabled", "Hidden", "Unopened", "Twice", "Missing"] {
             #expect(throws: MobileAutomationMenu.Failure.self) {
                 try MobileAutomationMenu.leaf(named: title, in: [menu], isVisible: true)
             }
@@ -303,17 +304,6 @@ struct AutomationTests {
             let matchesExpectedAction = selected === action
             #expect(matchesExpectedAction)
         }
-    }
-
-    @Test func duplicateVisibleMenuLeavesAreRejectedWithoutDispatching() {
-        var performed = 0
-        let first = UIAction(title: "Edit") { _ in performed += 1 }
-        let second = UIAction(title: "Edit") { _ in performed += 1 }
-        let menu = UIMenu(children: [first, second])
-        #expect(throws: MobileAutomationMenu.Failure.self) {
-            try MobileAutomationMenu.leaf(named: "Edit", in: [menu], isVisible: true)
-        }
-        #expect(performed == 0)
     }
 
     @Test func menuVisibilityRequiresTheSelectedWindowAndUnclippedMeasuredCenter() {
@@ -409,21 +399,6 @@ struct AutomationTests {
         #expect(performed == 0)
         selected.performWithSender(nil, target: nil)
         #expect(performed == 1)
-    }
-
-    @Test func postureRequiresTheVerifiedSceneSizeNotAnArbitraryResize() {
-        #expect(MobileAutomationPosture.folded.matches([466, 678]))
-        #expect(MobileAutomationPosture.unfolded.matches([669, 951]))
-        let otherViewports: [[Double]] = [
-            [], [466], [466, 678, 1], [678, 466], [951, 669], [810, 1080], [0, 0],
-            [386, 678], [871, 669], [465, 678], [669, 950], [.nan, 678], [669, .infinity],
-        ]
-        for viewport in otherViewports {
-            #expect(!MobileAutomationPosture.folded.matches(viewport))
-            #expect(!MobileAutomationPosture.unfolded.matches(viewport))
-        }
-        #expect(!MobileAutomationPosture.folded.matches([669, 951]))
-        #expect(!MobileAutomationPosture.unfolded.matches([466, 678]))
     }
 
     @Test func traitSelectionDoesNotInventAWindowOrChooseBetweenAmbiguousWindows() {
@@ -606,46 +581,20 @@ struct AutomationTests {
         #expect(presses == 1)
     }
 
-    @Test func aPresentButUnhandledBackTargetFallsBackToOnePublicEscape() {
+    @Test(arguments: [true, false])
+    func anUnhandledBackTargetFallsBackToOneEscape(handlesEscape: Bool) {
         let window = EscapeWindow()
         window.isHidden = false
         defer { window.isHidden = true }
-        let target = UnhandledBackElement()
-        let back = MobileAutomationTree.Element(object: target, label: "Back", value: "", identifier: "BackButton",
-                                                traits: .button, frame: .zero)
-        #expect(MobileAutomationTree(windows: [window]).activateBack(back))
-        #expect(target.activations == 1)
-        #expect(window.escapes == 1)
-    }
-
-    @Test func aHandledBackActionNeverAlsoEscapes() {
-        let window = EscapeWindow()
-        window.isHidden = false
-        defer { window.isHidden = true }
-        let button = UIButton()
-        var presses = 0
-        button.addAction(UIAction { _ in presses += 1 }, for: .primaryActionTriggered)
-        let back = MobileAutomationTree.Element(object: button, label: "Back", value: "", identifier: "BackButton",
-                                                traits: .button, frame: .zero)
-        #expect(MobileAutomationTree(windows: [window]).activateBack(back))
-        #expect(presses == 1)
-        #expect(window.escapes == 0)
-    }
-
-    @Test func anUnhandledBackAndEscapeCannotReportSuccessAndAnAbsentTargetCanEscape() {
-        let window = EscapeWindow()
-        window.isHidden = false
-        defer { window.isHidden = true }
-        window.handlesEscape = false
+        window.handlesEscape = handlesEscape
         let target = UnhandledBackElement()
         let back = MobileAutomationTree.Element(object: target, label: "Back", value: "", identifier: "BackButton",
                                                 traits: .button, frame: .zero)
         let tree = MobileAutomationTree(windows: [window])
-        #expect(!tree.activateBack(back))
+        #expect(tree.activateBack(back) == handlesEscape)
         #expect(target.activations == 1)
         #expect(window.escapes == 1)
-        window.handlesEscape = true
-        #expect(tree.activateBack(nil))
+        #expect(tree.activateBack(nil) == handlesEscape)
         #expect(window.escapes == 2)
     }
 

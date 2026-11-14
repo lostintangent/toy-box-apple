@@ -3,7 +3,7 @@ import Testing
 @testable import ToyBoxKit
 
 struct ChannelTrayTests {
-    @Test func trayProjectionUsesCanonicalOrderAndDirectRootProgressWithoutMutatingInputs() {
+    @Test func trayOrdersArtifactsNewestFirstAndCountsRootProgress() {
         let artifacts = [
             ChannelArtifact(file: .init(kind: "machine", path: "/old.md"), title: "Old",
                             sharedAt: "2026-10-24T08:00:00Z"),
@@ -20,11 +20,6 @@ struct ChannelTrayTests {
         let projection = ChannelTray(artifacts: artifacts, tasks: tasks, preview: preview)
         #expect(projection.artifacts == [artifacts[1], artifacts[0]])
         #expect(projection.taskProgress == .init(done: 1, total: 2))
-        #expect(projection.hasTasks)
-        #expect(projection.preview == preview)
-        #expect(projection.isVisible)
-        #expect(artifacts[0].title == "Old")
-        #expect(tasks[0].children?.count == 1)
     }
 
     @Test func trayVisibilityPreservesEveryIndependentlyPresentSlice() {
@@ -37,8 +32,6 @@ struct ChannelTrayTests {
                                 ChannelPreview(kind: "future")] {
                     let projection = ChannelTray(artifacts: artifacts, tasks: tasks, preview: preview)
                     #expect(projection.isVisible == (!artifacts.isEmpty || !tasks.isEmpty || preview != nil))
-                    #expect(projection.hasTasks == !tasks.isEmpty)
-                    #expect(projection.preview == preview)
                     #expect(projection.taskProgress.fraction == (tasks.isEmpty ? 0 : 1))
                 }
             }

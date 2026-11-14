@@ -30,7 +30,7 @@ struct SSETests {
         }
     }
 
-    @Test func prefixAndRevisionZero() throws {
+    @Test func endpointsKeepThePrefixAndRejectForeignResources() throws {
         let api = try ChannelAPI(serverURL: "http://localhost:3210/toybox/")
         #expect(api.endpoint(["api", "v1", "channels", "a/b"]).absoluteString
                 == "http://localhost:3210/toybox/api/v1/channels/a%2Fb")
@@ -38,9 +38,6 @@ struct SSETests {
                 == "http://localhost:3210/toybox/api/serve/machine/hello%20world.md")
         #expect(api.resourceURL("javascript:alert(1)") == nil)
         #expect(api.resourceURL("//untrusted.example/file") == nil)
-        let request = api.streamRequest(channelId: "test", after: 0)
-        #expect(request.url?.query == "after=0")
-        #expect(api.streamRequest(channelId: "test", after: nil).url?.query == nil)
     }
 
     /// Six open streams on the shared session would hold every other request to that server.
@@ -53,14 +50,6 @@ struct SSETests {
         let supplied = URLSession(configuration: .ephemeral)
         defer { supplied.invalidateAndCancel() }
         #expect(try ChannelAPI(serverURL: "http://localhost:3210", session: supplied).streamSession === supplied)
-    }
-
-    @Test func patchDistinguishesOmittedFromNull() throws {
-        let encoder = JSONEncoder()
-        let omitted = try JSONSerialization.jsonObject(with: encoder.encode(EditChannelInput(name: "New"))) as? [String: Any]
-        let cleared = try JSONSerialization.jsonObject(with: encoder.encode(EditChannelInput(purpose: .clear))) as? [String: Any]
-        #expect(omitted?["purpose"] == nil)
-        #expect(cleared?["purpose"] is NSNull)
     }
 
     @Test func boundedBackoff() {

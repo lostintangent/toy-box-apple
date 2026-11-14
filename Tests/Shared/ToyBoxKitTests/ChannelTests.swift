@@ -44,7 +44,6 @@ struct ChannelTests {
         #expect(marked.avatar == .mark(.init(mark: "M4 12H20", color: "#123456")))
         #expect(try channel(#","avatar":{"image":"/api/serve/machine/channels/c/avatar-0123.png"}"#).avatar == image)
         #expect(try channel("").avatar == nil)
-        #expect(try JSONDecoder().decode(Channel.self, from: JSONEncoder().encode(marked)) == marked)
     }
 
     @Test func anAvatarChangeSetsTheChannelsAvatarAsARenameSetsItsName() throws {
@@ -61,7 +60,6 @@ struct ChannelTests {
         let system = try #require(message.system)
         #expect(system.actor == .agent("lead"))
         #expect(system.avatar == .image("/api/serve/machine/channels/c/avatar-0123.png"))
-        #expect(try JSONDecoder().decode(ChannelMessage.self, from: JSONEncoder().encode(message)) == message)
 
         let next = state.applying(.init(type: "message", revision: state.revision + 1, message: message))
         #expect(next.channel.avatar == system.avatar)

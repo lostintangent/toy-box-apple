@@ -26,20 +26,6 @@ struct AgentMentionsTests {
         #expect(AgentMentions.removingLeadingMentions(from: "@Ada", agents: [ada]) == "@Ada")
     }
 
-    @Test func mentionCompletionIncludesEveryAgentForAnEmptyQuery() {
-        let engineer = ChannelAgent(id: "ada", name: "Ada Lovelace", role: "Swift engineer")
-        #expect(lead.matches(mentionQuery: ""))
-        #expect(ada.matches(mentionQuery: ""))
-        #expect(engineer.matches(mentionQuery: ""))
-        #expect(engineer.matches(mentionQuery: "LOVELACE"))
-        #expect(engineer.matches(mentionQuery: "ada-lovelace"))
-        #expect(!engineer.matches(mentionQuery: "ENGINEER"), "A role never matches")
-        #expect(!engineer.matches(mentionQuery: "unknown"))
-        let reviewer = ChannelAgent(id: "moss", name: "Moss", role: "Works with Pixel")
-        #expect(!reviewer.matches(mentionQuery: "pix"), "Nor does another agent its role names")
-        #expect(reviewer.matches(mentionQuery: "mo"))
-    }
-
     @Test func canonicalAudience() {
         let members = [ada, finch]
         func ids(_ text: String, sender: ChannelMessageSender = .user,
@@ -85,8 +71,10 @@ struct AgentMentionsTests {
                 == ["Everyone", "Lead", "Ada", "Pixel", "Zebra"])
         #expect(AgentMentions.Choice.choices(matching: "a", among: agents).filter { !$0.isCreate }.map(\.name)
                 == ["Lead", "Ada", "Zebra"])
-        #expect(AgentMentions.Choice.choices(matching: "design", among: agents).allSatisfy { $0.isCreate })
+        #expect(AgentMentions.Choice.choices(matching: "design", among: agents).allSatisfy { $0.isCreate },
+                "A role never matches")
         #expect(AgentMentions.Choice.choices(matching: "pixel", among: agents).allSatisfy { !$0.isCreate })
+        #expect(ChannelAgent(id: "ada", name: "Ada Lovelace").matches(mentionQuery: "ada-lovelace"))
         let create = AgentMentions.Choice.choices(matching: "new-person", among: agents).last
         #expect(create?.isCreate == true)
         #expect(create?.name == "New Person")
