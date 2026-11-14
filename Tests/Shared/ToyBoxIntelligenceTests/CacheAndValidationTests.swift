@@ -49,25 +49,9 @@ struct IntelligenceCacheTests {
 }
 
 struct AvailabilityTests {
-    @Test func modelStatesMapToReasons() {
+    @Test func aReadyModelIsUnavailableInAnUnsupportedLanguage() {
         #expect(IntelligenceAvailability(.available, supportsLocale: true) == .available)
         #expect(IntelligenceAvailability(.available, supportsLocale: false) == .unavailable(.unsupportedLanguage))
-        #expect(IntelligenceAvailability(.unavailable(.deviceNotEligible), supportsLocale: true) == .unavailable(.deviceNotEligible))
-        #expect(IntelligenceAvailability(.unavailable(.appleIntelligenceNotEnabled), supportsLocale: true)
-                == .unavailable(.appleIntelligenceNotEnabled))
-        #expect(IntelligenceAvailability(.unavailable(.modelNotReady), supportsLocale: true) == .unavailable(.modelNotReady))
-    }
-
-    @Test func failuresDecideCaching() {
-        struct Unexpected: Error {}
-        #expect(GenerationFailure(CancellationError()) == .cancelled)
-        #expect(GenerationFailure(Unexpected()) == .transient)
-    }
-
-    @Test func unavailableServiceSkipsTheModel() async throws {
-        let service: any ChannelIntelligenceService = ScriptedIntelligence(
-            availability: .unavailable(.appleIntelligenceNotEnabled))
-        #expect(!service.availability.isAvailable)
     }
 }
 

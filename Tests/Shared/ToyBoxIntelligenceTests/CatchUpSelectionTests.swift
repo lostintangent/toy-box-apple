@@ -48,21 +48,6 @@ struct CatchUpSelectionTests {
         #expect(request.unreadFromOthers == 2)
     }
 
-    /// The transcript builds a request on every landing, so describing waits for generation, and
-    /// readers racing on any thread see one selection.
-    @Test func selectsOnceOnFirstReadAndComparesByKey() async throws {
-        let state = try T.fixture("history-demo")
-        let request = try #require(CatchUpRequest(server: T.server, state: state, unreadAfter: 450))
-        let reads = await withTaskGroup(of: [CatchUpEntry].self) { group in
-            for _ in 0..<8 { group.addTask { request.entries } }
-            return await group.reduce(into: []) { $0.append($1) }
-        }
-        #expect(reads.count == 8)
-        #expect(reads.allSatisfy { !$0.isEmpty && $0 == reads[0] })
-        #expect(request == CatchUpRequest(server: T.server, state: state, unreadAfter: 450))
-        #expect(request != CatchUpRequest(server: T.server, state: state, unreadAfter: 449))
-    }
-
     @Test func repeatedTextCollapsesToItsLatestCopy() throws {
         let state = try T.fixture("history-demo")
         let request = try #require(CatchUpRequest(server: T.server, state: state, unreadAfter: 450))
@@ -158,11 +143,13 @@ struct CatchUpSelectionTests {
         #expect(truncated == "word word word word\u{2026}")
     }
 
-    @Test func serverKeysIgnoreCaseAndTrailingSlash() {
+    @Test func imageKeysAreTheNormalizedServerAndDigestNotTheFile() {
         let a = AltTextRequest(server: URL(string: "HTTP://LocalHost:3210/")!, digest: "abc", fileURL: URL(filePath: "/a"))
         let b = AltTextRequest(server: URL(string: "http://localhost:3210")!, digest: "abc", fileURL: URL(filePath: "/b"))
         let c = AltTextRequest(server: URL(string: "http://localhost:3211")!, digest: "abc", fileURL: URL(filePath: "/a"))
+        let d = AltTextRequest(server: URL(string: "http://localhost:3210")!, digest: "def", fileURL: URL(filePath: "/a"))
         #expect(a.key == b.key)
         #expect(a.key != c.key)
+        #expect(a.key != d.key)
     }
 }

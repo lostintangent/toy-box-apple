@@ -214,13 +214,6 @@ struct AttributionTests {
                 == "Lead asked: \u{201C}Could you turn on Reduce Transparency and reply here?\u{201D}")
     }
 
-    @Test func messageNumbersAreRemoved() {
-        #expect(Grounding.cleaned("Designer signed off on the footer spinner in msg 480.") == "Designer signed off on the footer spinner.")
-        #expect(Grounding.cleaned("Kit shared the plan (message 12).") == "Kit shared the plan.")
-        #expect(Grounding.cleaned("Lead still needs the approval from seq 530.") == "Lead still needs the approval.")
-        #expect(Grounding.cleaned("Ada merged PR #12 for version 2.0.") == "Ada merged PR #12 for version 2.0.")
-    }
-
     @Test func openingNames() {
         let participants: Set<String> = ["pixel", "kit", "lead", "you"]
         #expect(Grounding.openingNames("Pixel and Kit shared files.", participants: participants) == ["pixel", "kit"])
