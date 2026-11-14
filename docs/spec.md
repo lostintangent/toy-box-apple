@@ -373,13 +373,13 @@ don't go through it.
 - **The server's answer confirms it.** A 2xx or the message arriving in a snapshot or replay
   takes it out of the outbox. An ID the channel already has answers with the message it stored, so
   a retry after a lost answer confirms like the first. An ID from another channel is a 422, refused
-  like any other 4xx. An open channel merges the message the POST returns, and the outbox then
-  marks the channel read through the message, since the user's own message never leaves a
-  channel unread. Every list treats it as read from the moment the server has it, without waiting
-  for that round trip, so a row never flashes unread for the user's own message. The reducer
-  reads a channel through every user message it applies, wherever it was sent from, as Toy Box
-  0.4.5 and later do, so a reply from the web or another device reads the channel everywhere. The
-  outbox keeps its own mark read for servers before 0.4.5. The first of
+  like any other 4xx. An open channel merges the message the POST returns. The user's own
+  message never leaves a channel unread: the server reads the channel through every user message
+  it stores, as Toy Box 0.4.5 and later do, and the reducer does the same in the event that
+  applies it, wherever it was sent from, so a reply from the web or another device reads the
+  channel everywhere. The outbox sends no mark read of its own. Every list treats a channel the
+  outbox is sending to as read, without waiting for the server's echo, so a row never flashes
+  unread for the user's own message. The first of
   these to bring the message back also files each image its row already loaded under the link the
   server gave it, pairing them in the order sent, so the server's row draws at once without a
   download. Filing it again changes nothing.
@@ -1081,6 +1081,7 @@ disabled whenever the updater's `canCheckForUpdates` is false, including in bund
 | Channel | Next / Previous Channel | `Ctrl-Tab` / `Ctrl-Shift-Tab` |
 | Channel | Next Channel Needing Attention | `Cmd-Shift-U` |
 | Channel | Focus Composer | `Cmd-L` |
+| Channel | Talk to Lead (open channel) | `Cmd-Shift-L` |
 | Channel | Jump to Latest / Input Needed | `Cmd-J` / `Cmd-Shift-J` |
 
 Space opens a focused image in the image viewer and previews other attachments with Quick Look,
@@ -1281,7 +1282,7 @@ folder is openable, the row adds an Open Folder in Finder action.
 **Hover.** Every row but the selected one shows the hover fill in the row's own shape while the
 pointer is over it, and a waiting row's is `systemOrange` at 20% in Dark and 14% in Light, 5% more
 while pressed, with its bubble still orange. The selected row keeps its native highlight and never
-lights.
+lights. A hovered row trades its time for a Talk to Lead mic (see Talk to the Lead).
 
 **Answering from the list.** A waiting row that isn't selected answers its request without
 switching channels. Resting the pointer on it for 0.5 s, or clicking its bubble, opens a popover on
@@ -1299,16 +1300,17 @@ the row's avatar wears the done check for 2 s. VoiceOver gets an Answer Request 
 that opens it.
 
 Context menu, in groups:
-1. Open in New Window, Open in Toy Box.
-2. Open Folder in Finder, Open Folder With, Copy Folder Path.
+1. Talk to Lead.
+2. Open in New Window, Open in Toy Box.
+3. Open Folder in Finder, Open Folder With, Copy Folder Path.
    - The first two appear only when the folder is openable. Open Folder With lists
      `NSWorkspace.urlsForApplications(toOpen:)` for the folder, with the default app first and
      then the rest alphabetically, each with its 16-point icon.
    - Copy Folder Path appears whenever the channel has a directory, including remote and missing
      folders, and copies the full server path.
    - Omit the whole group when there's no directory.
-3. Edit Channel….
-4. Delete Channel…, separated and destructive, never triggered by the unmodified Delete key.
+4. Edit Channel….
+5. Delete Channel…, separated and destructive, never triggered by the unmodified Delete key.
 
 **Catalog activity:** the catalog includes `working`, the IDs of leads and members whose
 sessions are running. This is the same fact the browser reads from workspace session state, and it's the one source of
@@ -1377,8 +1379,9 @@ without a server. It leaves with the sidebar when the sidebar is hidden, and the
 
 #### Talk to the Lead
 
-Phone only. Swiping a channel row right records a spoken note and sends it to that channel's
-Lead without opening the channel. It is always a new message to the Lead. It never answers a
+Both apps. Swiping a channel row right records a spoken note and sends it to that channel's
+Lead without opening the channel. The Mac adds its own ways in and sizes, under On the Mac, and
+shares the phone's recorder card and every other rule here. It is always a new message to the Lead. It never answers a
 request, never changes attention and has nothing to do with Needs You. Every note goes to the
 Lead, so the recorder shows no avatar or recipient.
 
@@ -1524,6 +1527,29 @@ value updates without announcing each word. Send reads "Send to Lead" and Cancel
 The Magic Tap sends and the escape gesture cancels. A send announces "Sent to Lead in
 [channel]", so the check is hidden from VoiceOver. At accessibility text sizes the recorder keeps
 the stacked heading, and its words and controls grow with the text.
+
+**On the Mac.** The sidebar's rows offer the note four ways, and each opens the same card:
+- **Trackpad:** the same leading `.swipeActions` on the sidebar's List, where a full swipe starts
+  listening.
+- **Hover:** a hovered row's time gives way to a `mic.fill` button in the folder token's capsule,
+  ending on the time's trailing edge where the counter will sit, with the help "Talk to Lead". On a
+  waiting row the mic sits on line 1 and the bubble stays on line 2. Clicking the mic closes that
+  row's request popover and starts a new note, which never answers the request, so answers stay
+  with the popover's choices and Reply.
+- **Context menu:** Talk to Lead (`mic`) leads the row's menu in its own group, so it works on
+  any row without hovering.
+- **Keyboard:** Channel > Talk to Lead (`Cmd-Shift-L`) opens the card on the open channel's row,
+  revealing a hidden sidebar first like Find Channel.
+
+The card takes the row highlight's frame and corners, so the hover fill hands off to it in one
+shape, and the Edges and Room rules apply within it. Its Mac sizes: a 30-point mark tile and a
+28-point done check, the name at 13 semibold, the counter at 11, an 18-point waveform on line 2,
+words at 13, and Cancel and Send as the composer's 28-point circles 8 points apart. At the
+sidebar's 220-point minimum the words still get a 132-point column. The card takes key focus, so
+Return sends and Escape cancels, and the dimmed rows ignore clicks and hover and never open a
+request popover. The window resigning key, a click outside the card or opening another channel
+keeps the words as a draft, the way leaving does on the phone. The rest of this section holds as
+written for the phone's glass sidebar, and the card's view is shared by both apps.
 
 #### Needs You in the list
 
@@ -3117,8 +3143,8 @@ sends in the background without activating the app or opening a window. The text
 exactly like the in-app Reply: prepend the requester's `@handle ` unless the reply already starts
 with an @mention. A reply or choice goes to the app's outbox for the server that posted the
 notification, answering that notification's request, and the notification clears. The outbox
-delivers it and marks the channel read, as Sending describes, so the action never waits on the
-network or posts a second notification. Empty or whitespace-only replies send nothing.
+delivers it, and the message reads the channel, as Sending describes, so the action never waits
+on the network or posts a second notification. Empty or whitespace-only replies send nothing.
 
 Notifications withdraw themselves. Remove a channel's delivered request notification as soon as
 its `requestSequence` changes or clears, wherever it was answered. Remove a completion once
@@ -3133,7 +3159,7 @@ extension and routing are under Push and topic subscriptions, and their Lock Scr
 are under Suggested replies. A Lock Screen reply or choice is addressed like the Mac's and goes to
 the app's outbox for the server the alert came from, which the service extension records on the
 alert, answering that alert's request. Only that notification clears. The reply finishes in the
-background and marks the channel read, as Sending describes.
+background, and the message reads the channel, as Sending describes.
 
 ### Menu bar extra
 
