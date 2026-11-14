@@ -64,7 +64,7 @@ their module names, and Swift imports by module.
 | `ChannelKit` | The domain: Toy Box's nouns as values, with their rules as members, like channels, messages, requests, tasks and routines. Pure and synchronous, with no I/O |
 | `ChannelClient` | The live subsystems both apps run, like each server's connection and catalog, a channel's store, the outbox, the composer and cards. Each holds state over time and draws nothing |
 | `ChannelIntelligence` | On-device Foundation Models |
-| `ToyBoxUI` | Shared SwiftUI, without AppKit or UIKit, in two tiers: `Design`, the identity and primitives any surface uses, and a folder per surface that composes them. Code that draws nothing belongs in ChannelClient or ChannelKit |
+| `ToyBoxUI` | Shared SwiftUI, without AppKit or UIKit, in two tiers: `Design`, the identity and primitives any surface uses, and a folder per surface that composes them. Code that needs no SwiftUI belongs in ChannelClient or ChannelKit |
 | `ToyBoxDesktop`, `ToyBoxMobile` | Each app and its native platform integration, with AppKit or UIKit where SwiftUI falls short |
 | `ToyBoxControlIntents`, `ToyBoxMobileIntegrations` | What each app shares with its extensions, which live under `Extensions` |
 
