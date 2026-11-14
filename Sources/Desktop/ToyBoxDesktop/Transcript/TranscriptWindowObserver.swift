@@ -150,6 +150,8 @@ struct TranscriptWindowProbe: NSViewRepresentable {
     let observer: TranscriptWindowObserver
     #if TOY_BOX_BENCHMARK
     var benchmarkGeometry: (@MainActor () -> BenchmarkScrollGeometry?)? = nil
+    var benchmarkPlace: (@MainActor () -> BenchmarkPlace?)? = nil
+    var benchmarkInteraction: ChannelInteraction? = nil
     #endif
 
     func makeNSView(context: Context) -> ProbeView {
@@ -174,6 +176,8 @@ struct TranscriptWindowProbe: NSViewRepresentable {
         view.observer = observer
         #if TOY_BOX_BENCHMARK
         view.benchmarkGeometry = benchmarkGeometry
+        view.benchmarkPlace = benchmarkPlace
+        view.benchmarkInteraction = benchmarkInteraction
         #endif
     }
 
@@ -181,6 +185,8 @@ struct TranscriptWindowProbe: NSViewRepresentable {
         weak var observer: TranscriptWindowObserver?
         #if TOY_BOX_BENCHMARK
         var benchmarkGeometry: (@MainActor () -> BenchmarkScrollGeometry?)?
+        var benchmarkPlace: (@MainActor () -> BenchmarkPlace?)?
+        weak var benchmarkInteraction: ChannelInteraction?
         #endif
 
         override func viewDidMoveToWindow() {
@@ -196,6 +202,22 @@ struct TranscriptWindowProbe: NSViewRepresentable {
 #if TOY_BOX_BENCHMARK
 extension TranscriptWindowProbe.ProbeView: BenchmarkScrollGeometrySource {
     func benchmarkScrollGeometry() -> BenchmarkScrollGeometry? { benchmarkGeometry?() }
+    func benchmarkPlaceSnapshot() -> BenchmarkPlace? { benchmarkPlace?() }
+}
+
+extension BenchmarkPlace {
+    init?(messageFrames: [String: TranscriptMessageFrame], viewport: TranscriptViewport,
+          nativeTop: CGFloat?, historyStart: Int?) {
+        guard viewport.height.isFinite, viewport.height > 0, let nativeTop, nativeTop.isFinite,
+              let historyStart else { return nil }
+        var rows: [String: CGRect] = [:]
+        for (id, frame) in messageFrames where frame.sequence > 0 && frame.historyStart == historyStart {
+            let rect = TranscriptCoordinates.viewportFrame(frame, top: nativeTop).rect
+            if rect.minY.isFinite, rect.height.isFinite, rect.height > 0 { rows[id] = rect }
+        }
+        self.init(rows: rows, viewportHeight: viewport.height,
+                  readThrough: viewport.visibleThrough(messageFrames, nativeViewportTop: nativeTop))
+    }
 }
 
 extension BenchmarkScrollGeometry {

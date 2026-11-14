@@ -67,6 +67,11 @@ struct ConversationTranscript: View {
                                         nativeTop: window?.viewportTop,
                                         historyStart: store?.messages.first?.sequence)
             }
+            probe.benchmarkPlace = { [geometry, weak store, weak window] in
+                BenchmarkPlace(messageFrames: geometry.frames, viewport: geometry.viewport,
+                               nativeTop: window?.viewportTop, historyStart: store?.messages.first?.sequence)
+            }
+            probe.benchmarkInteraction = interaction
         }
         #endif
         return probe
@@ -698,6 +703,9 @@ struct ConversationTranscript: View {
         scrollPosition = nil
         while ContinuousClock.now < deadline {
             guard await turns.settled(), revealIsCurrent(token, findToken: findToken) else { return nil }
+            #if TOY_BOX_BENCHMARK
+            BenchmarkReveal.turned()
+            #endif
             guard let layout = TranscriptReveal.Layout(
                 frame: frames[targetID], historyStart: store.messages.first?.sequence,
                 viewport: viewport, nativeTop: window.viewportTop) else {
@@ -705,10 +713,16 @@ struct ConversationTranscript: View {
                 if !materialized {
                     proxy.scrollTo(rowID, anchor: .center)
                     materialized = true
+                    #if TOY_BOX_BENCHMARK
+                    BenchmarkReveal.wrote()
+                    #endif
                 }
                 continue
             }
             let aligned = window.restoreReadingBottom(layout.bottom, of: layout.frame)
+            #if TOY_BOX_BENCHMARK
+            if !aligned { BenchmarkReveal.wrote() }
+            #endif
             if reveal.receive(layout, isAligned: aligned) { return .revealed }
         }
         guard revealIsCurrent(token, findToken: findToken) else { return nil }

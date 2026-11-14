@@ -1,6 +1,6 @@
 # Benchmarks
 
-`SCRATCH_PATH=/tmp/tbm-<you> bun run benchmark [--summaries] [switch|messages|paging|scroll|key ...]`
+`SCRATCH_PATH=/tmp/tbm-<you> bun run benchmark [--summaries] [switch|messages|paging|scroll|place|key ...]`
 builds the release `dev.toybox.desktop.benchmark` app, runs each scenario on a fresh
 `bun run demo:perf`, prints each result against its budget and exits 1 if any is over. The spec's
 Performance budgets define busy time, saturated spans and frame gaps.
@@ -16,6 +16,9 @@ so any reference to it goes inside `#if TOY_BOX_BENCHMARK`. Prove a change that 
   line is.
 - `key` runs only when named. It takes focus for about 45 seconds and measures key-window CPU with
   4, then 20, working agents to expose continuous animation. Warn the user first.
+- `place` runs only when named. With `paging` and `scroll`, it reports whether the reader's place
+  holds, as information lines without budgets: page inserts, reading up, resizes, a reveal two
+  pages back and the sequence the read rule counts as seen.
 - Catch-up summaries stay off unless you pass `--summaries`.
 - Only one benchmark runs at a time on this Mac. Others wait for it, so never poll for one yourself.
 - Under load, compare main-thread CPU. Scroll's CPU ms per 1,000 native points and paging's CPU ms
