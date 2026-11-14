@@ -265,7 +265,7 @@ private struct ChannelSidebarRowContent: View {
         var parts: [String] = []
         if let updatedAt { parts.append(ChannelActivityTime.accessibilityLabel(for: updatedAt, now: now)) }
         if let directory = channel.directory, !directory.isEmpty {
-            let name = ChannelFolderName.name(of: directory)
+            let name = Channel.folderName(of: directory)
             switch folder {
             case .remote: parts.append("Folder \(name), not on this Mac")
             case .missing: parts.append("Folder \(name), missing")
@@ -300,7 +300,7 @@ struct ChannelFolderToken: View {
         case .openable:
             Button(action: open) { token(symbol: "folder") }
                 .buttonStyle(HoverFillButtonStyle(shape: Capsule()))
-                .help("Open \(ChannelFolderName.name(of: path)) in Finder\n\((path as NSString).abbreviatingWithTildeInPath)")
+                .help("Open \(Channel.folderName(of: path)) in Finder\n\((path as NSString).abbreviatingWithTildeInPath)")
         case .remote(let host):
             token(symbol: "folder").foregroundStyle(.secondary)
                 .help("On \(host): \(path). Folders open only when the server runs on this Mac.")
@@ -326,7 +326,7 @@ struct ChannelFolderToken: View {
         var body: some View {
             HStack(spacing: 4) {
                 Image(systemName: symbol).font(.system(size: 10 * scale, weight: .medium))
-                Text(ChannelFolderName.name(of: path)).font(.system(size: 11 * scale))
+                Text(Channel.folderName(of: path)).font(.system(size: 11 * scale))
                     .lineLimit(1).truncationMode(.middle)
             }
         }

@@ -554,7 +554,7 @@ struct ManagementTests {
         for availability in [ChannelFolderAvailability.openable, .missing, .remote(host: "build.example.com")] {
             let directory = "/srv/a/long/server/path/to/toy-box/"
             #expect(try pixels(directory, availability: availability)
-                    == pixels(ChannelFolderName.name(of: directory), availability: availability))
+                    == pixels(Channel.folderName(of: directory), availability: availability))
         }
     }
 

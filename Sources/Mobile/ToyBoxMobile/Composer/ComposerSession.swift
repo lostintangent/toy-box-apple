@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 @MainActor @Observable
 final class ComposerSession {
     let composer: ChannelComposerSession
-    let dictation: ComposerDictation
+    let dictation: Dictation
     let editor = ComposerEditor()
     private var photoImportCount = 0
     var store: ChannelStore { composer.store }
@@ -21,7 +21,7 @@ final class ComposerSession {
             store: store, draft: draft ?? .shared(serverURL: store.api.baseURL, channelID: store.id,
                                                  imageIsReadable: Self.imageIsReadable)
         )
-        dictation = ComposerDictation(system: dictationSystem ?? .live)
+        dictation = Dictation(system: dictationSystem ?? .live)
         dictation.draftRevision = { [draft = self.draft] in draft.revision }
         editor.selection = NSRange(location: self.draft.text.utf16.count, length: 0)
     }

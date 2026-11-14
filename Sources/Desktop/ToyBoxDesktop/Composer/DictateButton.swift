@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The composer's Dictate button. It is styled like Attach Image and never becomes a second filled control.
 struct DictateButton: View {
-    @Bindable var dictation: ComposerDictation
+    @Bindable var dictation: Dictation
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

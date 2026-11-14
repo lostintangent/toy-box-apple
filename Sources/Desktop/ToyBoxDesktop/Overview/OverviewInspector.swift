@@ -383,7 +383,7 @@ struct OverviewFolderRow: View {
         let revealable = availability == .openable
         OverviewPropertyRow(symbol: availability == .missing ? "questionmark.folder" : "folder") {
             HStack(spacing: 4) {
-                Text(ChannelFolderName.name(of: directory))
+                Text(Channel.folderName(of: directory))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)

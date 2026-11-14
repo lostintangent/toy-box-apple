@@ -106,7 +106,7 @@ struct NativeComposerInput: UIViewRepresentable {
     var onCompletionKey: (ComposerCompletionKey) -> Bool
     var onPasteImages: ([NSItemProvider]) -> Void
     var onEscape: (() -> Void)? = nil
-    var dictation: ComposerDictation? = nil
+    var dictation: Dictation? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 

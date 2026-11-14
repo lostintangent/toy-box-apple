@@ -30,7 +30,7 @@ struct ComposerSurface: View {
     private var draft: ComposerDraft { session.draft }
     private var store: ChannelStore { session.store }
     private var composer: ChannelComposerSession { session.composer }
-    private var dictation: ComposerDictation { session.dictation }
+    private var dictation: Dictation { session.dictation }
     private var editor: ComposerEditor { session.editor }
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
     private var isConnecting: Bool { store.phase == .connecting }

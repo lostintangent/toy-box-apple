@@ -25,7 +25,7 @@ package final class TalkRecorder: DictationTextTarget {
         case counter, offline, noteTime
     }
 
-    package let dictation: ComposerDictation
+    package let dictation: Dictation
     /// The held row's channel, on its server.
     package private(set) var target: ChannelTarget?
     package private(set) var channelName = ""
@@ -60,7 +60,7 @@ package final class TalkRecorder: DictationTextTarget {
     package init(system: DictationSystem, checks: CardChecks,
                  draft: @escaping @MainActor (ChannelStore) -> ComposerDraft,
                  announce: @escaping @MainActor (String) -> Void = CardMotion.announce) {
-        dictation = ComposerDictation(system: system)
+        dictation = Dictation(system: system)
         self.checks = checks
         self.draft = draft
         self.announce = announce
