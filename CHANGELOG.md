@@ -4,7 +4,7 @@
 
 ### Features
 
-- When your Macs have an update waiting, one Restart in Settings brings them all onto it, and each one shows the version it's moving to.
+- When your Macs have an update waiting, one Restart in Settings brings them all onto it. Each one shows the version it's moving to, and none drops out of your list while it restarts.
 
 ### Bugs/Polish
 
@@ -14,7 +14,7 @@
 
 ### Features
 
-- When your Macs have an update waiting, one Restart in Settings brings them all onto it, and each one shows the version it's moving to.
+- When your Macs have an update waiting, one Restart in Settings brings them all onto it. Each one shows the version it's moving to, and none drops out of your list while it restarts.
 
 ## Mac 0.1.40
 

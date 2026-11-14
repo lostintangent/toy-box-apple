@@ -248,27 +248,58 @@ struct ServerUpdateTests {
         #expect(catalogs[0].update.outcome == nil)
     }
 
-    @Test func restartPendingRestartsEveryServerWaitingToTogetherAndNoOther() async throws {
-        // Waiting to restart twice, current, and running from source.
-        let servers = [Server(installed: Self.new), Server(installed: Self.new), Server(), Server(installed: nil)]
+    @Test func restartPendingRestartsPendingPeersTogetherThenTheFirstServerOnceTheyreBack() async throws {
+        // The server the user connected through and two peers waiting to restart, then a current
+        // server and one running from source.
+        let servers = [Server(installed: Self.new), Server(installed: Self.new), Server(installed: Self.new),
+                       Server(), Server(installed: nil)]
         let mocks = servers.map { $0.transport() }
-        let catalogs = try mocks.map { ChannelCatalogStore(api: try $0.api()) }
+        let catalogs = try mocks.map {
+            ChannelCatalogStore(api: try $0.api(), reconnectPolicy: .init(initialDelay: 0.01, grace: 60))
+        }
         for catalog in catalogs { catalog.startPolling() }
         defer { for catalog in catalogs { catalog.stopPolling() } }
         try await eventually { catalogs.allSatisfy { $0.phase == .connected && !$0.update.isReconnecting } }
-        #expect(catalogs.map(\.update.phase) == [.restartPending, .restartPending, .idle, nil])
+        #expect(catalogs.map(\.update.phase) == [.restartPending, .restartPending, .restartPending, .idle, nil])
         #expect(catalogs.isRestartPending)
         #expect(!Array(catalogs.suffix(2)).isRestartPending, "Nothing new is installed on either")
+        let restarts = { mocks.map { $0.requests.filter { $0.url?.path == "/api/v1/server/restart" }.count } }
 
-        for server in servers { server.set { $0.restart = MockResponse(status: 202, keepOpen: true) } }
+        let words = "The installed release doesn't run."
+        var rejected = try MockResponse.json(["error": words], status: 422)
+        rejected.keepOpen = true
+        servers[1].set { $0.restart = MockResponse(status: 202, keepOpen: true) }
+        servers[2].set { [rejected] in $0.restart = rejected }
         let restart = Task { await catalogs.restartPending() }
-        for mock in mocks.prefix(2) {
+        for mock in mocks[1...2] {
             try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/server/restart") == 1 }
         }
-        for mock in mocks.prefix(2) { #expect(mock.finishPendingResponses(path: "/api/v1/server/restart") == 1) }
+        #expect(catalogs.prefix(3).allSatisfy { $0.update.phase == .reconnecting }, "Every row it restarts spins")
+        #expect(!catalogs.isRestartPending, "The one Restart is gone until they're back")
+        #expect(restarts() == [0, 1, 1, 0, 0], "The peers restart first, together")
+
+        #expect(mocks[2].finishPendingResponses(path: "/api/v1/server/restart") == 1)
+        try await eventually { catalogs[2].update.phase == .restartPending }
+        #expect(catalogs[2].update.outcome == .failed(failure(422, words)))
+
+        let back = try JSONEncoder().encode(Self.info(Self.new, Self.new))
+        servers[1].set {
+            $0.running = Self.new
+            $0.read = MockResponse(body: back, keepOpen: true)
+        }
+        #expect(mocks[1].finishPendingResponses(path: "/api/v1/server/restart") == 1)
+        #expect(mocks[1].finishPendingResponses(path: "/api/v1/channels") == 1)
+        try await eventually(observing: mocks[1]) { mocks[1].pendingCount(for: "/api/v1/server") == 1 }
+        #expect(restarts()[0] == 0, "The first server waits until its peer is back")
+        #expect(mocks[1].finishPendingResponses(path: "/api/v1/server") == 1)
+        try await eventually(observing: mocks[0]) { restarts()[0] == 1 }
+        #expect(catalogs[0].update.phase == .reconnecting)
+
+        servers[0].set { $0.running = Self.new }
+        #expect(mocks[0].finishPendingResponses(path: "/api/v1/channels") == 1)
         await restart.value
-        let restarts = mocks.map { $0.requests.filter { $0.url?.path == "/api/v1/server/restart" }.count }
-        #expect(restarts == [1, 1, 0, 0], "A server with nothing new to run keeps its turns going")
+        #expect(catalogs.map(\.update.phase) == [.idle, .idle, .restartPending, .idle, nil])
+        #expect(restarts() == [1, 1, 1, 0, 0], "A server with nothing new to run keeps its turns going")
     }
 
     @Test func aRejectedRestartKeepsRestartWithTheServersWordsAndALostAnswerShowsNothing() async throws {

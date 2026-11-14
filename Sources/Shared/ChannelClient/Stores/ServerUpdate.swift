@@ -68,7 +68,8 @@ public struct ServerInfo: Codable, Equatable, Sendable {
 /// the server's name and peers, as each catalog stream that connects does too. The list's
 /// one Check for Updates checks every server together with `checkForUpdates()`, and its one Restart
 /// restarts every server waiting to with `restartPending()`. A restart is an
-/// ordinary disconnect, so the row shows `.reconnecting` for it as it would for any other.
+/// ordinary disconnect, so the row shows `.reconnecting` for it as it would for any other, and from
+/// the press when the list's one Restart restarts it.
 @MainActor @Observable
 public final class ServerUpdate {
     /// What the server's row offers.
@@ -81,7 +82,8 @@ public final class ServerUpdate {
         case restartPending
         /// A spinner in the version's place while the app reconnects to the server, for any reason,
         /// until it connects and reads the server again, so a stale release can't offer Restart. A
-        /// server that fails for the catalog's grace shows that failure instead.
+        /// server that fails for the catalog's grace shows that failure instead, unless the list's one
+        /// Restart is restarting it.
         case reconnecting
     }
 
@@ -101,6 +103,9 @@ public final class ServerUpdate {
     /// The catalog's stream isn't live and hasn't failed for the grace, or it has just reconnected
     /// and the read that follows hasn't answered. Its catalog keeps it current.
     private(set) var isReconnecting = false
+    /// The release the list's one Restart is restarting the server onto, from the press until the
+    /// server answers running it or the Restart stops waiting.
+    private var restartingOnto: String?
     /// Each change in the catalog's connection, so a read after a reconnect that the stream has since
     /// dropped again doesn't end the reconnect.
     @ObservationIgnored private var connection = UUID()
@@ -116,7 +121,7 @@ public final class ServerUpdate {
     /// answered or has no installed release.
     public var phase: Phase? {
         if isChecking { return .checking }
-        if isReconnecting { return .reconnecting }
+        if isReconnecting || restartingOnto != nil { return .reconnecting }
         guard let version, version.installedVersion != nil else { return nil }
         return version.isRestartPending ? .restartPending : .idle
     }
@@ -157,13 +162,45 @@ public final class ServerUpdate {
     /// server that doesn't come back.
     public func restart() async {
         guard canRestart else { return }
+        await sendRestart()
+    }
+
+    /// The list's one Restart will restart the server, so its row spins from the press.
+    func queueRestart() {
+        restartingOnto = version?.installedVersion
+    }
+
+    /// Restarts the server the list's one Restart queued, and returns once the server answers
+    /// running the release it had installed, or after about 30 s, when the row shows wherever it is.
+    /// A rejection returns at once, with Restart and the server's words.
+    func restartQueued() async {
+        defer { restartingOnto = nil }
+        guard let target = restartingOnto, catalog?.phase == .connected, await sendRestart() else { return }
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.running(target) }
+            group.addTask { try? await Task.sleep(for: .seconds(30)) }
+            await group.next()
+            group.cancelAll()
+        }
+    }
+
+    /// Returns once the server answers running the release, or the wait is cancelled.
+    private func running(_ release: String) async {
+        for await running in Observations({ self.version?.version }) where running == release { return }
+    }
+
+    /// Sends the restart, and returns false when the server rejects it, showing its words. An answer
+    /// that never arrives counts as accepted, since a server that accepts drops every connection.
+    @discardableResult private func sendRestart() async -> Bool {
         outcome = nil
         do {
             try await api.restartServer()
         } catch {
-            guard case .http? = error as? ChannelAPIError else { return }
+            guard case .http? = error as? ChannelAPIError else { return true }
             outcome = .failed(error.localizedDescription)
+            return false
         }
+        return true
     }
 
     /// The catalog's stream is open but not live, and hasn't failed for the grace.
@@ -230,12 +267,19 @@ extension [ChannelCatalogStore] {
     /// Some connected server's restart is pending, so Settings' server list offers one Restart.
     @MainActor public var isRestartPending: Bool { !pendingRestarts.isEmpty }
 
-    /// Restarts every connected server whose restart is pending, all at once, and no other, so a
-    /// server with nothing new to run keeps its turns going. Returns when every server has answered.
+    /// Restarts every connected server whose restart is pending, and no other, so a server with
+    /// nothing new to run keeps its turns going. The list's first server, the one the user connected
+    /// through, lists its peers, so the pending peers restart first, together, and it restarts once
+    /// each is back running its installed release, or about 30 s pass. Every row it restarts spins
+    /// from the press, so the one Restart is gone until they're back.
     @MainActor public func restartPending() async {
         let restarting = pendingRestarts
+        for catalog in restarting { catalog.update.queueRestart() }
         await withTaskGroup(of: Void.self) { group in
-            for catalog in restarting { group.addTask { await catalog.update.restart() } }
+            for catalog in restarting where catalog !== first {
+                group.addTask { await catalog.update.restartQueued() }
+            }
         }
+        if let first, restarting.contains(where: { $0 === first }) { await first.update.restartQueued() }
     }
 }
