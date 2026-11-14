@@ -4,13 +4,10 @@ Native SwiftUI clients for Toy Box Channels: a Mac app and an iPhone companion, 
 shared core in Swift 6.4 and SwiftPM, with no Xcode project. Both target the 27 releases on Apple
 Silicon and talk to Toy Box's public `/api/v1` HTTP and SSE routes.
 
-This file is how we work together, following a change from the user's request to its hand-off. It
-applies our [Coding Agent Culture](https://gist.github.com/lostintangent/fe01cdf38ff1a370fcb08711a698ecfa)
-to this project and wins where they differ. [docs/spec.md](docs/spec.md) is what we build, the
-source of truth for parity, protocol and design.
-
-It holds only what every member needs on every task. Work that one role does, or that comes up only
-sometimes, lives where it loads when you need it:
+This file is how we work together, from the user's request to its hand-off. It applies our
+[Coding Agent Culture](https://gist.github.com/lostintangent/fe01cdf38ff1a370fcb08711a698ecfa) to
+this project and wins where they differ. [docs/spec.md](docs/spec.md) is what we build, the source
+of truth for parity, protocol and design. Everything else loads when you need it:
 
 | Read | Before |
 | --- | --- |
@@ -33,8 +30,8 @@ sometimes, lives where it loads when you need it:
 - **Owners** each own one part of both apps: Core the shared foundation, and Shell, Transcript,
   Composer, Overview and Intelligence a surface each.
 
-Messages lead with the outcome, in plain words. Post before slow work, so nobody waits in silence,
-and after an interruption or restart, read everything before acting.
+Messages lead with the outcome, in plain words. Post before slow work, and after a restart, read
+everything before acting.
 
 ### Ownership
 
@@ -64,18 +61,12 @@ their module names, and Swift imports by module.
 | `ChannelKit` | The domain: Toy Box's nouns as values, with their rules as members, like channels, messages, requests, tasks and routines. Pure and synchronous, with no I/O |
 | `ChannelClient` | The live subsystems both apps run, like each server's connection and catalog, a channel's store, the outbox, the composer and cards. Each holds state over time and draws nothing |
 | `ChannelIntelligence` | On-device Foundation Models |
-| `ToyBoxUI` | Shared SwiftUI, without AppKit or UIKit, in two tiers: `Design`, the identity and primitives any surface uses, and a folder per surface that composes them. Code that needs no SwiftUI belongs in ChannelClient or ChannelKit |
+| `ToyBoxUI` | Shared SwiftUI, without AppKit or UIKit, in two tiers: `Design`, the identity and primitives both apps keep, like the avatars, `ChannelMark` and `ChannelColors`, and a folder per surface that composes them. Typography, navigation and layout stay native to each platform. Code that needs no SwiftUI belongs in ChannelClient or ChannelKit |
 | `ToyBoxDesktop`, `ToyBoxMobile` | Each app and its native platform integration, with AppKit or UIKit where SwiftUI falls short |
 | `ToyBoxControlIntents`, `ToyBoxMobileIntegrations` | What each app shares with its extensions, which live under `Extensions` |
 
-Each module is organized by subsystem, never by layer. A folder is named for the noun it owns and
-a file for its main type, so there's no grab-bag folder like `Stores`, `Sending` or `Shared`, no
-file at a module's root, and no `Presentation` suffix on a type.
-
-Both apps share one implementation of every rule. Views never reimplement reducer, audience,
-task, attention or transcript-grouping rules, and the sidebar's rows and footer, channel search,
-transcript Markdown, composer drafts and browser URLs are already shared, so look in ChannelKit,
-ChannelClient and ToyBoxUI first. If what you need is missing, ask Core to add it there.
+Both apps share one implementation of every rule, so look in ChannelKit, ChannelClient and
+ToyBoxUI before writing one, and ask Core for what's missing.
 
 Surfaces meet at these seams:
 
@@ -86,7 +77,6 @@ Surfaces meet at these seams:
 | `ChannelInteraction` | One per channel window, for what one surface asks of another, like Reply, Reveal or Jump to Latest. Any owner may add a narrow intent and announce it in the channel |
 | `ManagementPresenter` | One per window. Every surface calls `present(_:)`, and Overview implements the flows |
 | `ChannelConnections` | Views change on `phase.isUnavailable`, never a timer, and actions wait for `phase.isConnected` |
-| Identity and color | The avatars, `ChannelMark`, `ChannelColors`, `ChannelTaskColors`, `TranscriptSurface` and `Channel.Attention`'s symbol and color keep the Mac's identity on both apps. Typography, navigation and layout stay platform-native |
 
 ## 1. Frame the change
 
@@ -109,9 +99,8 @@ Surfaces meet at these seams:
 
 ## 3. Build it
 
-- **Work in isolation.** Each task gets its own branch, named `<owner>/<task>-<slug>`, its own
-  worktree and its own scratch path, so parallel builds never share `.build`. Take the simulator
-  and benchmark through their lease, and quit the instances you launch.
+- **Work in isolation.** Each task gets its own branch, named `<owner>/<task>-<slug>`, worktree
+  and scratch path, so parallel builds never share `.build`. Quit the instances you launch.
 - **Never touch real data.** Tests that write use the [demo servers](#commands). Read the live
   server on 3100 freely, but never post or mutate there without the Lead's approval of a specific
   scratch channel, and leave its process running.
@@ -126,15 +115,15 @@ Surfaces meet at these seams:
   `@State` macro, so `@ViewState` aliases `SwiftUI.State` once in `ToyBoxUI/Shared`.
 - **Declare environment values with an `EnvironmentKey`,** not `@Entry`, in code that builds for
   the Mac. Command Line Tools lack the SwiftUIMacros plugin.
-- **Put rules on their nouns.** Write members such as `channel.attention` and
-  `state.applying(event)`, not free functions. Name a type for the thing itself, nesting a part
-  under its owner (`Channel.Attention`), and avoid Manager, Helper, Support, Context and
-  Projection. Keep the vocabulary small: reuse a noun or verb the code already has before adding
-  one, so both apps share the same few words.
-- **Keep a feature's rules out of the app targets.** Put them in a UI-free ChannelClient model
-  with its animation, waits and announcements passed in, like `TalkRecorder`, and prove them with
-  Mac tests. `simulator --build-only` checks the phone compiles, and the simulator is only for
-  what you need to see.
+- **Put rules on their nouns, and keep the vocabulary small.** Write members such as
+  `channel.attention` and `state.applying(event)`, not free functions, and reuse a noun or verb
+  the code already has before adding one. Name a type for the thing itself, nesting a part under
+  its owner (`Channel.Attention`), a file for its main type and a folder for the subsystem it
+  owns. Never a layer or grab-bag like `Stores` or `Shared`, a file at a module's root, or Manager,
+  Helper, Support, Context, Projection or Presentation.
+- **Keep a feature's rules out of the app targets,** in a UI-free ChannelClient model with its
+  animation, waits and announcements passed in, like `TalkRecorder`, proven by Mac tests.
+  `simulator --build-only` checks the phone compiles.
 - **Adapt to the phone's scene** with SwiftUI's safe areas, layout margins, size classes and
   adaptive navigation. Never hard-code a safe-area inset, device size or Duo fold width, and never
   copy a mockup's canvas measurements into code.
@@ -147,18 +136,12 @@ Surfaces meet at these seams:
 - **Every send goes through `ChannelOutbox`,** a deliberate guard for the user's words. It gives
   each message a UUID and reuses it on every attempt and Send Again, so the server never posts one
   twice.
-- **Optimistic writes are idempotent upserts into the store.** A send keeps its UUID, a read only
-  raises its marker and a bookmark sets its state, so repeating a write or receiving its echo
-  changes nothing. Until the server answers, show a write by reading the store through it, like
-  the outbox's sends or a bookmark in flight, so a stale update can't hide it and a failure leaves
-  nothing to undo. Once the server answers, upsert it into the store. Report a failure only when
-  the user would otherwise think it saved, like a bookmark.
-- **Management writes are sent once.** A failure shows its error and keeps what the user entered,
-  and the live store shows whether it landed anyway. Never retry one on its own or add a check
-  step.
+- **Optimistic writes are idempotent upserts.** A send keeps its UUID, a read only raises its
+  marker and a bookmark sets its state, so a repeat or an echo changes nothing. Show a write in
+  flight by reading the store through it, never by editing the store, then upsert the server's
+  answer. Report a failure only when the user would otherwise think it saved.
+- **Management writes are sent once,** never retried or checked, as the spec's Sending says.
 - **Reading never answers a request.**
-- **The catalog's `lead` profile is required.** Treat a missing one as a protocol error, and never
-  substitute client art.
 
 ### Commands
 
@@ -171,15 +154,13 @@ Use Bun 1.4.4: run `bun install --frozen-lockfile`, then the root `package.json`
 | Run the iPhone tests | `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` |
 | Run the phone on the shared simulator | `SCRATCH_PATH=/tmp/tbm-<you> bun run simulator` |
 | Validate the running Mac app | `SCRATCH_PATH=/tmp/tbm-<you> bun run validate` |
-| Serve sample channels for writes and screenshots | `bun run demo` on 3210 |
-| Serve 480 messages for paging and read checks | `bun run demo:history` on 3211 |
-| Check scripts and workflows | `bun check` and `bun run lint:workflows` |
+| Serve sample channels for writes and screenshots | `bun run demo` on 3210, or the validate skill's other servers |
 
-- **SwiftPM builds everything, with no Xcode project.** The Mac builds with Command Line Tools
-  only, and the phone with Xcode's toolchain through SwiftPM. Use the `bun run` commands, never
-  `xcodebuild`, `xcresulttool` or `devicectl`, and never download simulator runtimes.
-- **The simulator and the benchmark run one at a time** on this Mac. Their commands wait for each
-  other, so never boot another simulator, run `simctl` by hand or poll.
+- **Use the `bun run` commands,** never `xcodebuild`, `xcresulttool` or `devicectl`, and never
+  download simulator runtimes. The Mac builds with Command Line Tools only, and the phone with
+  Xcode's toolchain through SwiftPM.
+- **The simulator and the benchmark run one at a time,** under a lease their commands take, so
+  never boot another simulator, run `simctl` by hand or poll.
 
 ## 4. Prove it
 
@@ -192,20 +173,18 @@ Use Bun 1.4.4: run `bun install --frozen-lockfile`, then the root `package.json`
 - **A change made for speed proves it against main** with its benchmark before it merges.
 - **Test each promise once,** at the lowest layer that proves it, so shared code is tested in its
   own module and only native behavior in an app's tests.
-- **Some test machinery is deliberate.** SwiftPM can't host XCUITest, so the phone's DEBUG-only
-  drive scripts and the Mac's snapshot states and benchmarks stand in for UI and performance
-  tests. Add to them only for a check nothing else can make.
+- **Drive scripts, snapshot states and benchmarks stand in for XCUITest,** which SwiftPM can't
+  host. Add to them only for a check nothing else can make.
 
 ### The running app
 
 The validate skill says how to capture and drive either app. These limits always hold:
 
-- **Mac:** use Computer Use only on `dev.toybox.desktop.test` ("Toy Box Test"), from
-  `bun run validate`. The user's `dev.toybox.desktop` permits reads, never clicks. Confirm
-  `studio-demo` before acting, never act in a window listing live channels, and `kill <pid>` your
-  instance when you finish.
-- **iPhone:** use the shared simulator under its lease. Check on a real phone only through
-  TestFlight, never a direct install, so development never replaces the user's app or its data.
+- **Mac:** act with Computer Use only in Toy Box Test (`dev.toybox.desktop.test`) showing
+  `studio-demo`, never in the user's `dev.toybox.desktop` or a window listing live channels, and
+  `kill <pid>` your instance when you finish.
+- **iPhone:** use the shared simulator under its lease, and a real phone only through TestFlight,
+  so development never replaces the user's app or its data.
 
 ### Test reliability
 
@@ -216,11 +195,8 @@ The validate skill says how to capture and drive either app. These limits always
   never come needs its own deadline, because Swift Testing's time limit won't end it.
 - **Test gates and hooks suspend,** never block a cooperative worker. CI enforces it with
   `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`.
-- **Quarantine an unexplained failure the same day,** as
-  [docs/quarantined-tests.md](docs/quarantined-tests.md) describes, instead of rerunning CI until
-  it passes.
-- **Never run synthetic CPU burners on the shared Mac.** They starve every agent's builds and the
-  simulator, so judge load-sensitive failures from CI or ordinary full runs.
+- **Quarantine an unexplained failure the same day** instead of rerunning CI until it passes.
+- **Never run synthetic CPU burners on the shared Mac.** They starve every agent's builds.
 
 ## 5. Hand off
 
@@ -232,8 +208,9 @@ The validate skill says how to capture and drive either app. These limits always
 
 ## Keeping this current
 
-When the user corrects how we work, the rule changes here the same day, at the stage where it
-applies, replacing what it supersedes. A rule belongs here only if every member needs it and we'd
-otherwise relearn it, and anything one role does, or that comes up only sometimes, goes in a skill
-under `.agents/skills/` or a doc in the Read table. The channel purpose and member roles never
-restate these rules.
+Every member loads this file on every task, so it stays under 2,300 words and never grows by
+appending. When the user corrects how we work, Lead changes the rule here the same day, at the
+stage where it applies, and the edit replaces, merges or cuts at least as much as it adds. A rule
+belongs here only if every member needs it and we'd otherwise relearn it. Product rules go in the
+spec, and anything one role does, or that comes up only sometimes, in a skill or a doc in the Read
+table. The channel purpose and member roles never restate these rules.

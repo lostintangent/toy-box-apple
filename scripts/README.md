@@ -8,7 +8,8 @@ The phone's release command is a single `mobile/release.ts` file.
 `demo-server/` serves sample channels so either app can send, edit and delete during development
 without touching real channels. `shared/` contains common commands, with their helpers in `lib/`.
 Mirrored platform filenames are intentional. Names do not collide within a platform.
-Script tests are omitted. Bundle or release changes require both real release dry runs.
+Script tests are omitted, so check a script change with `bun check` and
+`bun run lint:workflows`. Bundle or release changes require both real release dry runs.
 
 | Command | File | What it's for | Who runs it |
 | --- | --- | --- | --- |
