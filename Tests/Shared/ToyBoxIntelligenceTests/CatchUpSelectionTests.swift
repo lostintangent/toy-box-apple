@@ -143,11 +143,13 @@ struct CatchUpSelectionTests {
         #expect(truncated == "word word word word\u{2026}")
     }
 
-    @Test func serverKeysIgnoreCaseAndTrailingSlash() {
+    @Test func imageKeysAreTheNormalizedServerAndDigestNotTheFile() {
         let a = AltTextRequest(server: URL(string: "HTTP://LocalHost:3210/")!, digest: "abc", fileURL: URL(filePath: "/a"))
         let b = AltTextRequest(server: URL(string: "http://localhost:3210")!, digest: "abc", fileURL: URL(filePath: "/b"))
         let c = AltTextRequest(server: URL(string: "http://localhost:3211")!, digest: "abc", fileURL: URL(filePath: "/a"))
+        let d = AltTextRequest(server: URL(string: "http://localhost:3210")!, digest: "def", fileURL: URL(filePath: "/a"))
         #expect(a.key == b.key)
         #expect(a.key != c.key)
+        #expect(a.key != d.key)
     }
 }
