@@ -376,7 +376,10 @@ don't go through it.
   like any other 4xx. An open channel merges the message the POST returns, and the outbox then
   marks the channel read through the message, since the user's own message never leaves a
   channel unread. Every list treats it as read from the moment the server has it, without waiting
-  for that round trip, so a row never flashes unread for the user's own message. The first of
+  for that round trip, so a row never flashes unread for the user's own message. The reducer
+  reads a channel through every user message it applies, wherever it was sent from, as Toy Box
+  0.4.5 and later do, so a reply from the web or another device reads the channel everywhere. The
+  outbox keeps its own mark read for servers before 0.4.5. The first of
   these to bring the message back also files each image its row already loaded under the link the
   server gave it, pairing them in the order sent, so the server's row draws at once without a
   download. Filing it again changes nothing.
