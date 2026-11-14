@@ -66,7 +66,8 @@ public struct ServerInfo: Codable, Equatable, Sendable {
 /// A server's release in Settings' server list: checking for a newer one and restarting.
 /// Each catalog has one, so every window agrees, and the catalog's `refreshServer()` reads it with
 /// the server's name and peers, as each catalog stream that connects does too. The list's
-/// one Check for Updates checks every server together with `checkForUpdates()`. A restart is an
+/// one Check for Updates checks every server together with `checkForUpdates()`, and its one Restart
+/// restarts every server waiting to with `restartPending()`. A restart is an
 /// ordinary disconnect, so the row shows `.reconnecting` for it as it would for any other.
 @MainActor @Observable
 public final class ServerUpdate {
@@ -218,6 +219,23 @@ extension [ChannelCatalogStore] {
         }
         await withTaskGroup(of: Void.self) { group in
             for catalog in checking { group.addTask { await catalog.update.check() } }
+        }
+    }
+
+    /// The connected servers whose restart is pending, which the list's one Restart restarts.
+    @MainActor private var pendingRestarts: [ChannelCatalogStore] {
+        filter { $0.update.canRestart && $0.update.phase == .restartPending }
+    }
+
+    /// Some connected server's restart is pending, so Settings' server list offers one Restart.
+    @MainActor public var isRestartPending: Bool { !pendingRestarts.isEmpty }
+
+    /// Restarts every connected server whose restart is pending, all at once, and no other, so a
+    /// server with nothing new to run keeps its turns going. Returns when every server has answered.
+    @MainActor public func restartPending() async {
+        let restarting = pendingRestarts
+        await withTaskGroup(of: Void.self) { group in
+            for catalog in restarting { group.addTask { await catalog.update.restart() } }
         }
     }
 }

@@ -248,6 +248,29 @@ struct ServerUpdateTests {
         #expect(catalogs[0].update.outcome == nil)
     }
 
+    @Test func restartPendingRestartsEveryServerWaitingToTogetherAndNoOther() async throws {
+        // Waiting to restart twice, current, and running from source.
+        let servers = [Server(installed: Self.new), Server(installed: Self.new), Server(), Server(installed: nil)]
+        let mocks = servers.map { $0.transport() }
+        let catalogs = try mocks.map { ChannelCatalogStore(api: try $0.api()) }
+        for catalog in catalogs { catalog.startPolling() }
+        defer { for catalog in catalogs { catalog.stopPolling() } }
+        try await eventually { catalogs.allSatisfy { $0.phase == .connected && !$0.update.isReconnecting } }
+        #expect(catalogs.map(\.update.phase) == [.restartPending, .restartPending, .idle, nil])
+        #expect(catalogs.isRestartPending)
+        #expect(!Array(catalogs.suffix(2)).isRestartPending, "Nothing new is installed on either")
+
+        for server in servers { server.set { $0.restart = MockResponse(status: 202, keepOpen: true) } }
+        let restart = Task { await catalogs.restartPending() }
+        for mock in mocks.prefix(2) {
+            try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/server/restart") == 1 }
+        }
+        for mock in mocks.prefix(2) { #expect(mock.finishPendingResponses(path: "/api/v1/server/restart") == 1) }
+        await restart.value
+        let restarts = mocks.map { $0.requests.filter { $0.url?.path == "/api/v1/server/restart" }.count }
+        #expect(restarts == [1, 1, 0, 0], "A server with nothing new to run keeps its turns going")
+    }
+
     @Test func aRejectedRestartKeepsRestartWithTheServersWordsAndALostAnswerShowsNothing() async throws {
         let server = Server(installed: Self.new)
         let mock = server.transport()
