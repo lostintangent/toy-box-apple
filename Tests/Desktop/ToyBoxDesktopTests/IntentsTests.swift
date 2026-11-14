@@ -59,18 +59,6 @@ struct IntentsTests {
         #expect(icon.pixelsWide == 128 && icon.pixelsHigh == 128)
     }
 
-    @Test func onlyTheServerSavedInSettingsFillsSpotlight() {
-        #expect(ChannelSpotlight.indexes(LaunchOptions(), bundleID: "dev.toybox.desktop", environment: [:]))
-        var session = LaunchOptions()
-        session.server = "http://127.0.0.1:3210"
-        #expect(!ChannelSpotlight.indexes(session, bundleID: "dev.toybox.desktop", environment: [:]))
-        #expect(!ChannelSpotlight.indexes(LaunchOptions(), bundleID: "dev.toybox.desktop",
-                                         environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"]))
-        var snapshot = LaunchOptions()
-        snapshot.snapshotURL = URL(filePath: "/tmp/snapshot.png")
-        #expect(!ChannelSpotlight.indexes(snapshot, bundleID: "dev.toybox.desktop", environment: [:]))
-    }
-
     @Test func requestQueryAndOpenOnlyResolveTheOriginalWaitingResult() async throws {
         let host = TestHost(api: try ChannelAPI(serverURL: "https://server.test"))
         let request = ChannelRequestMessage(message: message(8, from: "lead", "Ship the layout?", request: true),
@@ -288,18 +276,22 @@ struct IntentsTests {
             """)
     }
 
+    /// Quiet channels are spoken without a card, except a finished one, whose card only says so.
     @Test func quietChannels() {
-        let done = state(channel("c", "Docs", latest: 10, seen: 9, completed: 10), [event(10)])
-        #expect(answer(done) == "Docs finished all its tasks.")
+        let done = answerWithCard(state(channel("c", "Docs", latest: 10, seen: 9, completed: 10), [event(10)]))
+        #expect(done.spoken == "Docs finished all its tasks." && done.headline == done.spoken)
+        #expect(done.card?.caption == "All tasks completed" && done.card?.lines == [])
         let doneWithNote = state(channel("c", "Docs", latest: 11, seen: 9, completed: 10),
                                  [event(10), message(11, from: "ada", "Merged.")])
         #expect(answer(doneWithNote) == """
             There's 1 new message in Docs. Ada wrote: \u{201C}Merged.\u{201D} All tasks are done.
             """)
-        let events = state(channel("c", "Docs", latest: 10, seen: 9), [event(10)])
-        #expect(answer(events) == "There are no new messages in Docs.")
-        let read = state(channel("c", "Docs", latest: 10, seen: 10), [message(10, from: "ada", "Done.")])
-        #expect(answer(read, unreadAfter: nil) == "You're all caught up in Docs.")
+        let events = answerWithCard(state(channel("c", "Docs", latest: 10, seen: 9), [event(10)]))
+        #expect(events.spoken == "There are no new messages in Docs." && events.card == nil)
+        let read = answerWithCard(state(channel("c", "Docs", latest: 10, seen: 10), [message(10, from: "ada", "Done.")]),
+                                  unreadAfter: nil)
+        #expect(read.spoken == "You're all caught up in Docs." && read.card == nil)
+        #expect(CatchUpAnswer.overviewAnswer([], newMessages: [:]) == .init(spoken: "You're all caught up."))
     }
 
     // MARK: Catch Me Up cards
@@ -375,18 +367,6 @@ struct IntentsTests {
         #expect(card.lines.allSatisfy { $0.speaker == nil })
         #expect(card.lines[0].slot == .request && card.lines[2].slot == .info)
         #expect(card.lines[3].slot == .event("tasks_completed"))
-    }
-
-    @Test func quietChannelsHaveNoCard() {
-        let events = state(channel("c", "Docs", latest: 10, seen: 9), [event(10)])
-        #expect(answerWithCard(events).card == nil)
-        let read = state(channel("c", "Docs", latest: 10, seen: 10), [message(10, from: "ada", "Done.")])
-        #expect(answerWithCard(read, unreadAfter: nil).card == nil)
-
-        let done = answerWithCard(state(channel("c", "Docs", latest: 10, seen: 9, completed: 10), [event(10)]))
-        #expect(done.headline == "Docs finished all its tasks.")
-        #expect(done.card?.caption == "All tasks completed" && done.card?.lines == [])
-        #expect(CatchUpAnswer.overviewAnswer([], newMessages: [:]) == .init(spoken: "You're all caught up."))
     }
 
     @Test func overviewCardListsChannelsWithTheSidebarsIndicators() throws {

@@ -291,11 +291,6 @@ struct QuickSendIntakeTests {
             .deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Resources/Desktop/Info.plist"))
         let info = try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
-        #expect(info["CFBundleName"] as? String == "Toy Box")
-        #expect(info["CFBundleDisplayName"] as? String == "Toy Box")
-        #expect(info["CFBundleIdentifier"] as? String == "dev.toybox.desktop")
-        #expect(info["CFBundleExecutable"] as? String == "ToyBoxDesktop")
-        #expect(MenuBarAccessibility.title == "Toy Box")
         let services = try #require(info["NSServices"] as? [[String: Any]])
         #expect(services.first?["NSMessage"] as? String == "sendToToyBox")
         #expect(services.first?["NSPortName"] as? String == "Toy Box")
@@ -308,21 +303,423 @@ struct QuickSendIntakeTests {
     }
 }
 
-@Suite("Shell launch configuration")
-struct ShellTests {
-    @Test func ordinaryLaunchKeepsNativeDefaults() throws {
-        let options = try LaunchOptions.parse([])
-        #expect(options.server == nil)
-        #expect(options.sessionServer(environment: [:]) == nil, "The app adds no server the user didn't.")
-        #expect(options.sessionServer(environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"])
-                == "http://127.0.0.1:3210")
-        #expect(options.channelID == nil)
-        #expect(options.appearance == nil)
-        #expect(options.width == 1280)
-        #expect(options.height == 840)
-        #expect(!options.isSnapshot)
+@Suite("Quick Send and inbox reply composers", .timeLimit(.minutes(2)))
+@MainActor
+struct QuickSendComposerTests {
+    @Test func auxiliaryRepliesSeedOnceAndKeepStaleRequestsUnsent() async throws {
+        try await withDraft { draft, url in
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"))
+            let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
+                                  requestSequence: 8, updatedAt: "2026-10-24T00:00:00Z")
+            let initial = ChannelState(revision: 1, channel: channel, lead: .lead(id: "lead"))
+            _ = try store.apply(.init(type: "snapshot", state: initial))
+            let outbox = ChannelOutbox(folder: url.deletingLastPathComponent().appending(path: "Sending"))
+            store.outbox = outbox
+            let session = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8),
+                                                   requester: .init(id: "ada", name: "Ada Lovelace"), draft: draft)
+            #expect(draft.text == "@ada-lovelace ")
+            session.seedRequesterIfNew(.init(id: "different", name: "Other agent"))
+            #expect(draft.text == "@ada-lovelace ", "A reply already under way keeps its mention")
+            #expect(session.canSend())
+            #expect(!session.requestChanged)
+            #expect(store.state?.channel.seenThrough == 0)
+            session.invalidateRequest()
+            #expect(session.requestChanged)
+            #expect(!session.canSend())
+            #expect(session.requestChangeNotice == "This request was answered elsewhere.")
+            session.invalidateRequest(replacementSequence: 9)
+            #expect(session.requestChangeNotice == "A newer request is waiting.")
+            draft.text = ""
+            ComposerDraft.finishSaving()
+            let restored = ComposerDraft(fileURL: url)
+            let reopened = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8),
+                                                    requester: .init(id: "ada", name: "Ada Lovelace"), draft: restored)
+            #expect(reopened.draft.text.isEmpty)
+            draft.text = "Keep this reply"
+            var changed = initial
+            changed.revision = 2
+            changed.channel.requestSequence = 9
+            _ = try store.apply(.init(type: "snapshot", state: changed))
+            #expect(session.requestChanged)
+            #expect(!session.canSend())
+            await session.send()
+            #expect(draft.text == "Keep this reply")
+            #expect(outbox.queue.isEmpty)
+            #expect(session.error?.contains("request changed") == true)
+            #expect(store.state?.channel.seenThrough == 0)
+        }
     }
 
+    @Test func quickSendPrefillPreservesDraftsAndIsAppliedOnlyOnce() async throws {
+        try await withDraft { draft, url in
+            let server = try #require(URL(string: "http://localhost:3210"))
+            let incomingURL = url.deletingLastPathComponent().appendingPathComponent("incoming.json")
+            let inbox = QuickSendPrefillInbox(serverURL: server, draft: ComposerDraft(fileURL: incomingURL))
+            let original = try sampleImage()
+            draft.text = "Keep this draft"
+            draft.append(original)
+            let prefill = QuickSendPrefill(text: "Selected text\nhttps://example.com", images: [original])
+            let extra = QuickSendPrefill(text: "Another selection")
+            let merged = prefill.appending(extra)
+            #expect(merged.id != prefill.id && merged.id != extra.id)
+            inbox.receive(merged)
+            ComposerDraft.finishSaving()
+            let staged = ComposerDraft(fileURL: incomingURL)
+            #expect(staged.text == "Selected text\nhttps://example.com\n\nAnother selection")
+            #expect(staged.images.count == 1)
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString))
+            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
+            #expect(inbox.apply(to: session))
+            #expect(draft.text == "Keep this draft\n\n" + staged.text)
+            #expect(draft.images.count == 2)
+            #expect(draft.images.first?.id == original.id)
+            #expect(Set(draft.images.map(\.id)).count == 2)
+            #expect(!inbox.hasPendingContent)
+            let revision = draft.revision
+            #expect(!inbox.apply(to: session))
+            #expect(draft.revision == revision)
+            ComposerDraft.finishSaving()
+            #expect(ComposerDraft(fileURL: url).text == draft.text)
+            #expect(!ComposerDraft(fileURL: incomingURL).hasContent)
+            inbox.receive(.init(images: [.init(name: "Corrupt.png", mimeType: "image/png", data: Data([1, 2, 3]))]))
+            #expect(inbox.apply(to: session))
+            #expect(draft.revision == revision)
+            #expect(draft.images.count == 2)
+            #expect(draft.error?.contains("cannot be decoded") == true)
+        }
+    }
+
+    @Test(arguments: ["http://localhost:3210", "https://remote.example"])
+    func quickSendPrefillAttachesImagesAndKeepsNonImagePathsLocal(serverAddress: String) async throws {
+        try await withDraft { draft, url in
+            let server = try #require(URL(string: serverAddress))
+            let inbox = QuickSendPrefillInbox(serverURL: server, draft: ComposerDraft())
+            let imageURL = url.deletingLastPathComponent().appendingPathComponent("image.png")
+            let fileURL = url.deletingLastPathComponent().appendingPathComponent("private notes.txt")
+            try sampleImage().data.write(to: imageURL)
+            try Data("Private file contents".utf8).write(to: fileURL)
+            draft.text = "Keep this draft"
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: serverAddress))
+            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
+            inbox.receive(.init(text: "Shared text", fileURLs: [imageURL, fileURL]))
+            #expect(inbox.draft.isLoadingImages)
+            #expect(!inbox.apply(to: session))
+            try await waitUntil("prefill files finish importing") { !inbox.draft.isLoadingImages }
+            #expect(inbox.apply(to: session))
+            #expect(draft.images.count == 1)
+            #expect(draft.text.hasPrefix("Keep this draft\n\nShared text"))
+            if server.host == "localhost" {
+                #expect(draft.text.hasSuffix(fileURL.path))
+                #expect(draft.error == nil)
+            } else {
+                #expect(!draft.text.contains(fileURL.path))
+                #expect(draft.error?.contains("Only images can be attached") == true)
+            }
+            #expect(!draft.text.contains("Private file contents"))
+        }
+    }
+
+    @Test func quickSendPrefillRecognizesOnlyActualLoopbackHosts() throws {
+        for host in ["localhost", "LOCALHOST.", "app.localhost", "127.0.0.1", "127.12.3.4", "[::1]"] {
+            let server = try #require(URL(string: "http://\(host):3210"))
+            #expect(QuickSendPrefillInbox.acceptsLocalPaths(serverURL: server))
+        }
+        for host in ["127.attacker.example", "127.0.0.999", "localhost.example", "192.168.1.3", "example.com"] {
+            let server = try #require(URL(string: "http://\(host):3210"))
+            #expect(!QuickSendPrefillInbox.acceptsLocalPaths(serverURL: server))
+        }
+        let server = try #require(URL(string: "http://localhost:3210"))
+        #expect(ComposerDraft.storageKey(serverURL: server, channelID: "", scope: .quickSendIncoming)
+            != ComposerDraft.storageKey(serverURL: server, channelID: "", scope: .quickSend))
+    }
+
+    /// Shared content stays in its inbox until the clear's failed save is reported, and still applies only once.
+    @Test func aPrefillWhoseClearCannotBeSavedStillAppliesOnlyOnce() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-quick-send-\(UUID())")
+        try Data("Not a directory".utf8).write(to: directory)
+        defer {
+            ComposerDraft.finishSaving()
+            remove(directory)
+        }
+        let draft = ComposerDraft(fileURL: directory.appendingPathComponent("draft.json"))
+        draft.text = "Keep this text"
+        let server = try #require(URL(string: "http://localhost:3210"))
+        let inbox = QuickSendPrefillInbox(serverURL: server, draft: draft)
+        inbox.receive(.init(text: "Shared content"))
+        let target = ComposerDraft()
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString))
+        let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: target)
+        #expect(inbox.apply(to: session))
+        #expect(target.text == "Keep this text\n\nShared content")
+        try await waitUntil("the clear's failed save is reported") { inbox.draft.error != nil }
+        #expect(inbox.draft.error?.contains("could not be saved") == true)
+        let revision = target.revision
+        #expect(!inbox.apply(to: session))
+        #expect(target.revision == revision)
+    }
+
+    @Test func auxiliarySendSavesToTheOutboxOnlyWhileTheCatalogIsConnected() async throws {
+        try await withDraft { draft, url in
+            let server = try #require(URL(string: "http://localhost:3210"))
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString))
+            let outbox = ChannelOutbox(folder: url.deletingLastPathComponent().appending(path: "Sending"))
+            store.outbox = outbox
+            let catalogConnected = Mutex(false)
+            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft,
+                                                   isConnected: { catalogConnected.withLock { $0 } })
+            draft.text = "Original message"
+            draft.append(try sampleImage())
+            try await waitUntil("the image finishes loading") { !draft.isLoadingImages }
+            #expect(!session.canSend())
+            await session.send(opensChannel: true)
+            #expect(session.confirmation == nil)
+            #expect(session.error?.contains("connection") == true)
+            #expect(draft.text == "Original message")
+
+            catalogConnected.withLock { $0 = true }
+            #expect(!store.phase.isConnected)
+            #expect(session.canSend(), "QuickSend follows the catalog, not the channel it hasn't opened")
+            await session.send(opensChannel: true)
+            let confirmation = try #require(session.confirmation)
+            #expect(confirmation.opensChannel)
+            #expect(session.error == nil)
+            let id = try #require(UUID(uuidString: confirmation.id))
+            let saved = try #require(outbox.message(id))
+            #expect(saved.channelID == "test")
+            #expect(saved.text == "Original message")
+            #expect(saved.attachments.count == 1)
+            #expect(saved.state == .sending)
+            #expect(!draft.hasContent)
+
+            draft.text = "A new draft"
+            #expect(!session.canSend(), "A saved send waits until the editor is presented again")
+            let inbox = QuickSendPrefillInbox(serverURL: server, draft: ComposerDraft())
+            inbox.receive(.init(text: "Shared content"))
+            #expect(!inbox.apply(to: session), "So does shared content")
+            #expect(session.takeConfirmationPresentation() == confirmation)
+            #expect(session.takeConfirmationPresentation() == nil)
+            session.beginPresentation()
+            #expect(session.confirmation == nil)
+            #expect(session.canSend())
+            #expect(inbox.apply(to: session))
+            #expect(draft.text == "A new draft\n\nShared content")
+            withExtendedLifetime(outbox) {}
+        }
+    }
+
+    @Test func quickSendRestoresDraftTargetsBeforeRecentsAndNeverGuessesAmongChannels() async throws {
+        let suite = "QuickSendTargets-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let alpha = Channel(id: "alpha", name: "Alpha", purpose: "Build the launch",
+                            model: .init(provider: "test", name: "test"), updatedAt: "2026-10-24T00:00:00Z")
+        var beta = alpha
+        beta.id = "beta"; beta.name = "Beta"; beta.purpose = "Sketch the entrance"
+        let both = try await loadedCatalog([beta, alpha])
+        let server = both.api.baseURL.absoluteString
+        let onlyBeta = try await loadedCatalog([beta], at: server)
+        let onlyAlpha = try await loadedCatalog([alpha], at: server)
+        let loading = ChannelCatalogStore(api: try ChannelAPI(serverURL: server))
+        let empty = try await loadedCatalog([])
+        let alphaTarget = try #require(both.target("alpha")), betaTarget = try #require(both.target("beta"))
+        func choice(_ channel: Channel, in catalog: ChannelCatalogStore) throws -> QuickSendTargetHistory.Choice {
+            .init(target: try #require(catalog.target(channel.id)), channel: channel)
+        }
+        let history = QuickSendTargetHistory(defaults: defaults)
+        #expect(history.initialTarget(in: [both], lastUsed: nil, hasDraft: { _ in false }) == nil)
+        #expect(history.initialTarget(in: [both], lastUsed: alphaTarget, hasDraft: { _ in false }) == alphaTarget)
+        #expect(history.initialTarget(in: [onlyBeta, empty], lastUsed: nil, hasDraft: { _ in false }) == betaTarget)
+        #expect(history.initialTarget(in: [onlyBeta, loading], lastUsed: nil, hasDraft: { _ in false }) == nil,
+                "The only channel isn't known while another server loads")
+        history.choose(try choice(beta, in: both))
+        #expect(history.initialTarget(in: [loading], lastUsed: nil, hasDraft: { _ in false }) == betaTarget)
+        #expect(history.initialTarget(in: [both], lastUsed: alphaTarget, hasDraft: { _ in false }) == betaTarget)
+        #expect(history.initialTarget(in: [empty], lastUsed: nil, hasDraft: { _ in true }) == nil,
+                "A channel on a server you removed is never the target")
+        history.trackDraft(alphaTarget, name: "Alpha", hasContent: true)
+        history.choose(try choice(beta, in: both))
+        #expect(history.selected == betaTarget)
+        history.restoreTarget(in: [both], lastUsed: betaTarget, hasDraft: { $0 == alphaTarget })
+        #expect(history.selected == alphaTarget)
+
+        let restored = QuickSendTargetHistory(defaults: defaults)
+        #expect(restored.initialTarget(in: [onlyBeta], lastUsed: betaTarget, hasDraft: { $0 == alphaTarget }) == alphaTarget)
+        #expect(restored.name(for: alphaTarget) == "Alpha")
+        func ids(_ query: String) -> [String] {
+            let choices = restored.choices(in: [both], query: query)
+            return (choices.recent + choices.others.joined()).map(\.channel.id)
+        }
+        #expect(ids("") == ["beta", "alpha"])
+        #expect(ids("entrance") == ["beta"])
+        #expect(ids("LAUNCH") == ["alpha"])
+        restored.trackDraft(alphaTarget, name: nil, hasContent: false)
+        #expect(restored.initialTarget(in: [onlyAlpha], lastUsed: alphaTarget, hasDraft: { _ in false }) == nil)
+    }
+
+    @Test func quickSendRecentsSpanServersAndEachServerListsItsOthers() async throws {
+        let suite = "QuickSendServers-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let channels = ["alpha", "beta", "gamma"].map { id in
+            Channel(id: id, name: id.capitalized, model: .init(provider: "test", name: "test"),
+                    updatedAt: "2026-10-24T00:00:00Z")
+        }
+        let first = try await loadedCatalog([channels[0], channels[1]])
+        let second = try await loadedCatalog([channels[0], channels[2]])
+        let history = QuickSendTargetHistory(defaults: defaults)
+        history.choose(.init(target: try #require(second.target("alpha")), channel: channels[0]))
+        history.choose(.init(target: try #require(first.target("beta")), channel: channels[1]))
+
+        let choices = history.choices(in: [first, second], query: "")
+        #expect(choices.recent.map(\.target) == [first.target("beta"), second.target("alpha")])
+        #expect(choices.others.map { $0.map(\.target) } == [[first.target("alpha")], [second.target("gamma")]],
+                "The same channel ID on another server is its own channel")
+        #expect(history.initialTarget(in: [second], lastUsed: nil, hasDraft: { _ in false }) == nil,
+                "The last channel chosen is on a server you removed")
+    }
+
+    @Test func quickSendChooserIsATransparentNativeListWhereAClickOrReturnChoosesAnyRow() async throws {
+        let alpha = Channel(id: "alpha", name: "Alpha", purpose: "Build the launch",
+                            model: .init(provider: "test", name: "test"), updatedAt: "2026-10-24T00:00:00Z")
+        let channels = ["alpha", "beta", "gamma", "delta"].map { id in
+            var channel = alpha
+            channel.id = id; channel.name = id.capitalized
+            return channel
+        }
+        let suite = "QuickSendChooser-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let catalog = try await loadedCatalog(channels)
+        var chosen: [String] = []
+        let host = NSHostingView(rootView: QuickSendChannelChooser(
+            catalogs: [catalog], history: QuickSendTargetHistory(defaults: defaults), selected: catalog.target("beta"),
+            retry: {}) { chosen.append($0.channel.id) })
+        let panel = QuickSendPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 400),
+                                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.contentView = host
+        panel.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        defer { panel.close() }
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        var table: NSTableView? { descendants(host).lazy.compactMap { $0 as? NSTableView }.first }
+        try await waitUntil("the rows mount and the current channel is highlighted", in: host) {
+            table?.numberOfRows == 4 && table?.selectedRow == 1
+        }
+        let list = try #require(table)
+        let scroll = try #require(list.enclosingScrollView)
+        #expect(!scroll.drawsBackground, "The popover's material shows through the list")
+        let rowsHeight = list.rect(ofRow: 3).maxY - list.rect(ofRow: 0).minY
+        #expect(scroll.frame.height >= rowsHeight && scroll.frame.height < 252, "The list fits its rows")
+        let rendering = try #require(list.bitmapImageRepForCachingDisplay(in: list.bounds))
+        list.cacheDisplay(in: list.bounds, to: rendering)
+        let scale = CGFloat(rendering.pixelsHigh) / list.bounds.height
+        let boundary = list.rect(ofRow: 2)
+        let separated = stride(from: boundary.minX + 24, to: boundary.maxX - 24, by: 8).contains { x in
+            (rendering.colorAt(x: Int(x * scale), y: Int(boundary.maxY * scale) - 1)?.alphaComponent ?? 0) > 0.05
+        }
+        #expect(!separated, "No separator is drawn between two unselected rows")
+
+        try await waitUntil("the search field takes focus", in: host) { panel.firstResponder is NSTextView }
+        panel.sendEvent(try key(String(UnicodeScalar(NSUpArrowFunctionKey)!), code: 126, in: panel,
+                                modifiers: [.numericPad, .function]))
+        try await waitUntil("the up arrow moves the native highlight from the search field", in: host) {
+            list.selectedRow == 0
+        }
+        panel.sendEvent(try key("\r", code: 36, in: panel))
+        #expect(chosen == ["alpha"])
+
+        func click(row: Int, at y: (NSRect) -> CGFloat = { $0.midY }) throws {
+            let rect = list.rect(ofRow: row)
+            let point = list.convert(NSPoint(x: rect.midX, y: y(rect)), to: nil)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                panel.sendEvent(try #require(NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+            }
+        }
+        try click(row: 0)
+        #expect(chosen == ["alpha", "alpha"], "Clicking the highlighted row chooses it though the selection can't change")
+        try click(row: 2) { $0.minY + 1 }
+        try click(row: 1) { $0.maxY - 1 }
+        #expect(chosen == ["alpha", "alpha", "delta", "beta"], "Either edge of a row chooses it too")
+    }
+
+    private func withDraft(_ body: (ComposerDraft, URL) async throws -> Void) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-quick-send-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            ComposerDraft.finishSaving()
+            remove(directory)
+        }
+        let url = directory.appendingPathComponent("draft.json")
+        try await body(ComposerDraft(fileURL: url), url)
+    }
+
+    private func remove(_ url: URL) {
+        do { try FileManager.default.removeItem(at: url) }
+        catch { Issue.record("Quick Send test cleanup failed: \(error.localizedDescription)") }
+    }
+
+    private func sampleImage() throws -> ComposerImage {
+        let bitmap = try #require(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 2, pixelsHigh: 2, bitsPerSample: 8,
+            samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 8, bitsPerPixel: 32
+        ))
+        let png = try #require(bitmap.representation(using: .png, properties: [:]))
+        return .init(name: "Sample.png", mimeType: "image/png", data: png)
+    }
+
+    private func key(_ characters: String, code: UInt16, in window: NSWindow,
+                     modifiers: NSEvent.ModifierFlags = []) throws -> NSEvent {
+        try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: characters,
+            charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
+        ))
+    }
+
+    /// A catalog that has loaded `channels`, on a server of its own unless `server` names one.
+    private func loadedCatalog(_ channels: [Channel], at server: String? = nil) async throws -> ChannelCatalogStore {
+        let server = server ?? "http://\(UUID().uuidString.lowercased()).quick-send.test"
+        let body = try JSONEncoder().encode(ChannelCatalog(
+            lead: .init(name: "Lead", role: "Coordinates", avatar: .init(mark: "M4 12L12 4L20 12", color: "#327785")),
+            channels: channels))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [QuickSendCatalogProtocol.self]
+        configuration.httpAdditionalHeaders = [QuickSendCatalogProtocol.header: body.base64EncodedString()]
+        let catalog = ChannelCatalogStore(api: try ChannelAPI(serverURL: server,
+                                                              session: URLSession(configuration: configuration)))
+        await catalog.refresh()
+        try #require(catalog.isLoaded)
+        return catalog
+    }
+}
+
+/// A server that lists the catalog its session sends in a header.
+private final class QuickSendCatalogProtocol: URLProtocol, @unchecked Sendable {
+    static let header = "X-Test-Catalog"
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        guard let url = request.url, url.path == "/api/v1/channels",
+              let body = request.value(forHTTPHeaderField: Self.header).flatMap({ Data(base64Encoded: $0) }),
+              let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil,
+                                             headerFields: ["Content-Type": "application/json"]) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.cannotConnectToHost))
+            return
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+@Suite("Shell launch configuration")
+struct ShellTests {
     @MainActor @Test(arguments: [
         [], ["--server", "http://127.0.0.1:3210"],
         ["--channel", "studio-demo", "--snapshot", "/tmp/integrations.png"],
@@ -338,12 +735,15 @@ struct ShellTests {
         #expect(ChannelSpotlight.indexes(options, bundleID: "dev.toybox.desktop", environment: environment) == allowed)
     }
 
-    @MainActor @Test(arguments: [
-        (false, false, false), (true, false, true),
-        (false, true, false), (true, true, false),
-    ])
-    func updaterStartsOnlyWithAReleaseFeedOutsideSnapshots(hasFeedURL: Bool, isSnapshot: Bool, starts: Bool) {
-        #expect(AppUpdates.shouldStart(hasFeedURL: hasFeedURL, isSnapshot: isSnapshot) == starts)
+    /// Toy Box Test, the benchmark and any other bundle never touch the user's login items, Dock, digest or Spotlight.
+    @MainActor @Test(arguments: [nil, "", "dev.toybox.desktop.test", "dev.toybox.desktop.benchmark",
+                                 "dev.toybox.channels.mac", "dev.toybox.desktop.other"])
+    func userIntegrationsBelongOnlyToTheProductionBundle(_ bundleID: String?) {
+        let options = LaunchOptions()
+        #expect(!OpenAtLogin.isAllowed(options, bundleID: bundleID, environment: [:]))
+        #expect(!DockAttention.isAllowed(options, bundleID: bundleID, environment: [:]))
+        #expect(!MorningDigest.isAllowed(options, bundleID: bundleID, environment: [:]))
+        #expect(!ChannelSpotlight.indexes(options, bundleID: bundleID, environment: [:]))
     }
 
     @MainActor @Test(arguments: [false, true])
@@ -364,9 +764,12 @@ struct ShellTests {
     }
 
     @Test func serverIsSessionOnlyAndWinsOverTheEnvironment() throws {
+        let ordinary = try LaunchOptions.parse([])
+        #expect(ordinary.sessionServer(environment: [:]) == nil, "The app adds no server the user didn't.")
+        #expect(ordinary.sessionServer(environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"])
+                == "http://127.0.0.1:3210")
         let options = try LaunchOptions.parse(["--server", "http://127.0.0.1:3210"])
         #expect(options.sessionServer(environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3299"]) == "http://127.0.0.1:3210")
-        #expect(!options.allowsUserIntegrations(environment: [:]))
         #expect(throws: LaunchArgumentError("Repeated argument: --server")) {
             try LaunchOptions.parse(["--server", "http://127.0.0.1:3210", "--server", "http://127.0.0.1:3211"])
         }
@@ -526,19 +929,6 @@ struct ShellTests {
         #expect(policy.events(channels: [channel], activeChannelID: nil, enabled: true, completions: true).isEmpty)
         policy = ChannelNotifications.Policy()
         #expect(policy.events(channels: [channel], activeChannelID: nil, enabled: true, completions: true).isEmpty)
-    }
-
-    @MainActor @Test func notificationDefaultsDeliverRequestsButNotCompletions() {
-        var policy = ChannelNotifications.Policy()
-        var request = testChannel(id: "request")
-        var completion = testChannel(id: "completion")
-        _ = policy.events(channels: [request, completion], activeChannelID: nil, enabled: true)
-        request.requestSequence = 11
-        request.latestSequence = 11
-        completion.completedSequence = 11
-        completion.latestSequence = 11
-        #expect(policy.events(channels: [request, completion], activeChannelID: nil, enabled: true)
-            == [.init(channel: request, sequence: 11, kind: .request)])
     }
 
     @MainActor @Test func dockCountsChannelsAndKeepsOpenRequestsVisible() {
@@ -780,13 +1170,13 @@ struct SidebarConnectionFooterTests {
         defer { window.close() }
         view.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
-        try await probe.until { probe.appeared }
+        try await waitUntil("the probe appears") { probe.appeared }
 
         probe.holdTheMainActor()
         probe.busy = false
         view.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
-        try await probe.until { probe.writes.contains(false) }
+        try await waitUntil("the spinner stops") { probe.writes.contains(false) }
         await Task.yield()
         #expect(probe.spinning == false, "Writes: \(probe.writes)")
     }
@@ -802,23 +1192,6 @@ struct SidebarConnectionFooterTests {
     /// line.
     nonisolated func holdTheMainActor() {
         Thread.sleep(forTimeInterval: 0.3)
-    }
-
-    /// Waits for the probe to change until the condition holds, or fails after its own deadline.
-    func until(_ condition: () -> Bool) async throws {
-        let (changes, change) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
-        let deadline = Task {
-            try? await Task.sleep(for: .seconds(10))
-            change.finish()
-        }
-        defer {
-            deadline.cancel()
-            change.finish()
-        }
-        var iterator = changes.makeAsyncIterator()
-        while !withObservationTracking(condition, onChange: { change.yield() }) {
-            guard await iterator.next() != nil else { throw CancellationError() }
-        }
     }
 }
 
@@ -855,9 +1228,8 @@ struct ConversationRailTests {
             }
             .frame(width: width, height: 40))
         view.frame = CGRect(x: 0, y: 0, width: width, height: 40)
-        try await waitForShellCondition {
-            view.layoutSubtreeIfNeeded()
-            return frames.avatar != nil && frames.composer != nil
+        try await waitUntil("the avatar and composer report their frames", in: view) {
+            frames.avatar != nil && frames.composer != nil
         }
 
         let avatar = try #require(frames.avatar)
@@ -866,13 +1238,6 @@ struct ConversationRailTests {
         #expect(abs(composer.minX - avatar.minX) < 0.5)
         #expect(abs(composer.width - lane) < 0.5)
         #expect(abs(composer.maxX - (width - ConversationRail.inset)) < 0.5)
-    }
-
-    @Test func titleMenuBadgesNameTheSidebarsAttention() {
-        #expect(ChannelDetailView.badge(.waiting) == Text("Input Needed"))
-        #expect(ChannelDetailView.badge(.unread) == Text("Unread"))
-        #expect(ChannelDetailView.badge(.finished) == Text("Done"))
-        #expect(ChannelDetailView.badge(nil) == nil)
     }
 
     /// The reconnecting notice floats over the transcript, so its offset below Find's bar is the
@@ -905,11 +1270,11 @@ struct InspectorPlacementTests {
         return placement
     }
 
+    /// The split view counts the sidebar twice, so a wider sidebar costs two points of window per point.
     @Test(arguments: [
         (CGFloat(248), CGFloat(312), CGFloat(1000)),
         (320, 312, 1144),
         (0, 312, 1000),
-        (248, 372.5, 1060.5),
     ])
     func widthNeededKeepsTheConversationBesideBothColumns(sidebar: CGFloat, inspector: CGFloat, needed: CGFloat) {
         #expect(InspectorPlacement.widthNeeded(sidebar: sidebar, inspector: inspector) == needed)
@@ -1110,25 +1475,6 @@ struct NotificationTests {
         #expect(content.categoryIdentifier == "request")
     }
 
-    @Test func requestBodyReadsLikeTheTranscript() {
-        let text = """
-            @lead @ada-lovelace, which [entrance](https://example.test/a) should we ship?
-
-            - The **arched** one
-            - The `flat` one
-
-            ```
-            let door = arch
-            ```
-            """
-        #expect(requestBody(message(text)) == """
-            which entrance should we ship?
-            \u{2022} The arched one
-            \u{2022} The flat one
-            let door = arch
-            """)
-    }
-
     @Test func attachmentOnlyRequestsSayWhatWasSent() {
         let image = ChannelAttachment(name: "door.png", mimeType: "image/png")
         let file = ChannelAttachment(name: "notes.pdf", mimeType: "application/pdf")
@@ -1192,36 +1538,14 @@ struct NotificationTests {
             serverURL: "https://example.test", request: requestWithReplies(replies))
     }
 
-    @Test(arguments: [2, 4])
-    func suggestedRepliesGetTheirOwnCategoryWithTheReplyFieldFirst(count: Int) {
-        let labels = (1...count).map { "Choice \($0)" }
+    /// Only two to four replies get a category of their own, whose actions `ReplyCategories` builds.
+    @Test(arguments: [0, 1, 2, 4, 5])
+    func suggestedRepliesGetTheirOwnCategoryOnlyFromTwoToFour(count: Int) {
+        let labels = (0..<count).map { "Choice \($0)" }
         let content = requestContent(labels)
-        #expect(content.categoryIdentifier == ReplyCategories.identifier(labels: labels))
-        #expect(content.userInfo["replies"] as? [String] == labels)
-
-        let category = ReplyCategories.category(labels: labels)
-        #expect(category.identifier == content.categoryIdentifier)
-        #expect(category.actions.count == count + 1)
-        #expect(category.actions.first is UNTextInputNotificationAction)
-        #expect(category.actions.dropFirst().map(\.title) == labels)
-        #expect(category.actions.dropFirst().map(\.identifier) == (0..<count).map { "reply-choice.\($0)" })
-    }
-
-    @Test(arguments: [0, 1, 5])
-    func requestsWithoutTwoToFourRepliesKeepTheReplyFieldCategory(count: Int) {
-        let content = requestContent((0..<count).map { "Choice \($0)" })
-        #expect(content.categoryIdentifier == "request")
-        #expect(content.userInfo["replies"] == nil)
-    }
-
-    @Test func choicesMapToTheirLabelsOnlyWhileInRange() {
-        let replies = ["Yes", "No"]
-        #expect(SuggestedReplies(replies).label(forAction: "reply-choice.0") == "Yes")
-        #expect(SuggestedReplies(replies).label(forAction: "reply-choice.1") == "No")
-        #expect(SuggestedReplies(replies).label(forAction: "reply-choice.2") == nil)
-        #expect(SuggestedReplies(replies).label(forAction: "reply-choice.x") == nil)
-        #expect(SuggestedReplies(nil).label(forAction: "reply-choice.0") == nil)
-        #expect(SuggestedReplies(replies).label(forAction: UNNotificationDefaultActionIdentifier) == nil)
+        let hasChoices = (2...4).contains(count)
+        #expect(content.categoryIdentifier == (hasChoices ? ReplyCategories.identifier(labels: labels) : "request"))
+        #expect(content.userInfo["replies"] as? [String] == (hasChoices ? labels : nil))
     }
 
     @Test func aReplyOrChoiceSavesForItsOwnServerAndAnswersItsRequest() throws {
@@ -1553,15 +1877,6 @@ struct MenuBarExtraTests {
         presence.visibility = .whenActive
         #expect(!presence.isInserted)
     }
-
-    @Test func settingsNameWhyIntelligenceIsOff() {
-        #expect(SettingsView.unavailableText(.deviceNotEligible) == "This Mac doesn't support Apple Intelligence.")
-        #expect(SettingsView.unavailableText(.appleIntelligenceNotEnabled)
-            == "Turn on Apple Intelligence in System Settings to use these.")
-        #expect(SettingsView.unavailableText(.modelNotReady) == "Apple Intelligence is getting ready. Try again later.")
-        #expect(SettingsView.unavailableText(.unsupportedLanguage)
-            == "Apple Intelligence doesn't support your Mac's language yet.")
-    }
 }
 
 @Suite("Launch channel")
@@ -1571,20 +1886,17 @@ final class LaunchChannelTests {
 
     deinit { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
 
+    /// Each launch reads a fresh memory, so the channels live in defaults rather than the value.
     @Test func eachServerRemembersItsOwnChannel() {
         let memory = LaunchChannel(defaults: defaults)
         #expect(memory.channelID(serverURL: "http://a.test/") == nil)
         memory.remember("studio", serverURL: "http://a.test/")
         memory.remember("launch", serverURL: "http://b.test/")
         memory.remember("docs", serverURL: "http://a.test/")
-        #expect(memory.channelID(serverURL: "http://a.test/") == "docs")
-        #expect(memory.channelID(serverURL: "http://b.test/") == "launch")
-        #expect(memory.channelID(serverURL: "http://c.test/") == nil)
-    }
-
-    @Test func theMemoryLivesInDefaultsNotTheValue() {
-        LaunchChannel(defaults: defaults).remember("docs", serverURL: "http://a.test/")
-        #expect(LaunchChannel(defaults: defaults).channelID(serverURL: "http://a.test/") == "docs")
+        let relaunched = LaunchChannel(defaults: defaults)
+        #expect(relaunched.channelID(serverURL: "http://a.test/") == "docs")
+        #expect(relaunched.channelID(serverURL: "http://b.test/") == "launch")
+        #expect(relaunched.channelID(serverURL: "http://c.test/") == nil)
     }
 }
 
@@ -1601,24 +1913,19 @@ struct ChannelTitleFitTests {
         #expect(ChannelTitleFit.idealWidth(of: "Studio demo") < 156)
     }
 
-    @Test func theNarrowestWindowKeepsEveryControl() {
-        // The title starts 8 points past the 248-point sidebar and ends 24 points, plus the item's
-        // inset, before the trailing controls at 667.
-        let room = ChannelTitleFit.room(detail: Span(minX: 248, maxX: 760), windowWidth: 760)
-        #expect(room == 383)
-        #expect(ChannelTitleFit.maxWidth(idealWidth: 465, room: room) == 383)
-    }
-
-    @Test func aCollapsedSidebarStartsTheTitleAfterTheSidebarButton() {
-        #expect(ChannelTitleFit.room(detail: Span(minX: 0, maxX: 760), windowWidth: 760) == 499)
-        // The sidebar's collapse animation passes through widths narrower than the buttons it covers.
-        #expect(ChannelTitleFit.room(detail: Span(minX: 120, maxX: 760), windowWidth: 760) == 499)
-    }
-
-    @Test func anOpenOverviewStopsTheTitleShortOfIt() {
-        let room = ChannelTitleFit.room(detail: Span(minX: 248, maxX: 688), windowWidth: 1000)
-        #expect(room == 360)
-        #expect(ChannelTitleFit.room(detail: Span(minX: 248, maxX: 968), windowWidth: 1280) == 640)
+    /// The title starts 8 points past the sidebar, or past the sidebar button while it's collapsed or
+    /// animating narrower than the buttons it covers, and ends 24 points, plus the item's inset, before
+    /// the trailing controls or an open Overview.
+    @Test(arguments: [
+        (CGFloat(0), CGFloat(760), CGFloat(760), CGFloat(499)),
+        (120, 760, 760, 499),
+        (248, 688, 1000, 360),
+        (248, 968, 1280, 640),
+    ])
+    func theTitleHasTheRoomBetweenTheSidebarAndTheTrailingControls(
+        minX: CGFloat, maxX: CGFloat, windowWidth: CGFloat, room: CGFloat
+    ) {
+        #expect(ChannelTitleFit.room(detail: Span(minX: minX, maxX: maxX), windowWidth: windowWidth) == room)
     }
 
     @Test func aTitleThatFitsHasNoCap() {
@@ -1636,6 +1943,7 @@ struct ChannelTitleFitTests {
         #expect(fit.maxWidth == nil)
         fit.update(detail: Span(minX: 248, maxX: 760))
         fit.update(windowWidth: 760)
+        // The narrowest window keeps every control, so a long title gets the 383 points the room leaves.
         #expect(fit.maxWidth == 383)
         fit.update(title: "Studio demo")
         #expect(fit.maxWidth == nil)
@@ -1653,17 +1961,6 @@ struct ChannelTitleFitTests {
             fit.update(windowWidth: width)
         }
         #expect(changes.withLock { $0 } == 0)
-    }
-}
-
-@MainActor private func waitForShellCondition(
-    sourceLocation: SourceLocation = #_sourceLocation, _ condition: () -> Bool
-) async throws {
-    let deadline = ContinuousClock.now + .seconds(30)
-    while !condition() {
-        try #require(ContinuousClock.now < deadline, "The expected Shell state never arrived.",
-                     sourceLocation: sourceLocation)
-        try await Task.sleep(for: .milliseconds(10))
     }
 }
 

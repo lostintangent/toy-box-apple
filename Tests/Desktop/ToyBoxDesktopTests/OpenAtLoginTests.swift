@@ -109,19 +109,26 @@ struct OpenAtLoginTests {
     @Test func aPendingUnregistrationCannotBeOverlappedByAnotherChange() async {
         let service = LoginItemServiceFake(status: .enabled)
         var continuation: CheckedContinuation<Void, Never>?
+        var began: (() -> Void)?
         service.beforeUnregister = {
-            await withCheckedContinuation { continuation = $0 }
+            await withCheckedContinuation {
+                continuation = $0
+                began?()
+            }
         }
         let controller = OpenAtLogin(isAvailable: true, service: service.service)
-        let pending = Task { await controller.setEnabled(false) }
-        while continuation == nil { await Task.yield() }
+        var pending: Task<Void, Never>?
+        await withCheckedContinuation { unregistering in
+            began = { unregistering.resume() }
+            pending = Task { await controller.setEnabled(false) }
+        }
         #expect(controller.isUpdating)
         #expect(controller.isEnabled)
         await controller.setEnabled(false)
         await controller.setEnabled(true)
         #expect(service.actions.filter { $0 != "status" } == ["unregister"])
         continuation?.resume()
-        await pending.value
+        await pending?.value
         #expect(!controller.isUpdating)
         #expect(!controller.isEnabled)
     }
@@ -137,25 +144,6 @@ struct OpenAtLoginTests {
         #expect(!controller.isEnabled)
         #expect(controller.statusMessage != nil)
         #expect(service.actions.isEmpty)
-    }
-
-    @Test func mutationsAreLimitedToAnOrdinaryProductionLaunch() throws {
-        #expect(OpenAtLogin.isAllowed(.init(), bundleID: "dev.toybox.desktop", environment: [:]))
-        for identifier in [nil, "", "dev.toybox.desktop.test", "dev.toybox.desktop.benchmark",
-                           "dev.toybox.channels.mac", "dev.toybox.desktop.other"] {
-            #expect(!OpenAtLogin.isAllowed(.init(), bundleID: identifier, environment: [:]))
-        }
-        let arguments = [
-            ["--server", "http://127.0.0.1:3210"],
-            ["--channel", "studio-demo", "--snapshot", "/tmp/login-test.png"],
-            ["--channel", "studio-demo", "--benchmark", "scroll"],
-        ]
-        for arguments in arguments {
-            let options = try LaunchOptions.parse(arguments)
-            #expect(!OpenAtLogin.isAllowed(options, bundleID: "dev.toybox.desktop", environment: [:]))
-        }
-        #expect(!OpenAtLogin.isAllowed(.init(), bundleID: "dev.toybox.desktop",
-                                      environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"]))
     }
 
     @Test func loginDetectionRequiresTheExplicitOpenApplicationEventProperty() {
