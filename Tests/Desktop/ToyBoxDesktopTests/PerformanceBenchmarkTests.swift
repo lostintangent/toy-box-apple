@@ -1,4 +1,5 @@
 import AppKit
+import ChannelClient
 import Testing
 import ToyBoxUI
 @testable import ToyBoxDesktop

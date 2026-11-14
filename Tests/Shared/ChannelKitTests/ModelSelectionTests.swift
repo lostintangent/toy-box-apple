@@ -3,6 +3,16 @@ import Testing
 @testable import ChannelKit
 
 struct ModelSelectionTests {
+    @Test func reasoningLabelNamesARequestedEffortAndIgnoresAnEmptyOne() {
+        func label(_ effort: JSONValue?) -> String? {
+            ModelConfiguration(provider: "copilot", name: "model",
+                               options: effort.map { ["reasoningEffort": $0] } ?? [:]).reasoningLabel
+        }
+        #expect(label(.string("xhigh")) == "Extra High")
+        #expect(label(.string("adaptive_reasoning")) == "Adaptive Reasoning")
+        #expect(label(.string("")) == nil && label(nil) == nil && label(.bool(true)) == nil)
+    }
+
     @Test func catalogDecodesDefaultReasoningAndContextWindows() throws {
         let model = try JSONDecoder().decode(ProviderModel.self, from: Data(#"""
             {"id":"model","name":"Model","provider":"copilot",

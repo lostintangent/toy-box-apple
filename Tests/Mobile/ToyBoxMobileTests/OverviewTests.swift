@@ -865,7 +865,7 @@ struct OverviewTests {
             #expect(list.numberOfItems(inSection: 0) == rows)
         }
 
-        let schedule = ChannelRoutineRunPresentation.label(
+        let schedule = ChannelRoutine.runLabel(
             schedule: try RoutineSchedule("0 9 * * 1-5").summary(), pending: false, requestedAt: nil)
         #expect(schedule.hasPrefix("Weekdays at 9:00"))
         var collapsed = try row()

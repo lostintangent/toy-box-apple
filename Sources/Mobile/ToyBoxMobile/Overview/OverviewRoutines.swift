@@ -64,7 +64,7 @@ struct OverviewRoutineRow: View {
     private var canDelete: Bool { store.phase.isConnected && !pending }
     private var schedule: String { RoutineScheduleSummary.text(for: routine.schedule) }
     private var scheduleLine: String {
-        ChannelRoutineRunPresentation.label(schedule: schedule, pending: pending, requestedAt: requestedAt)
+        ChannelRoutine.runLabel(schedule: schedule, pending: pending, requestedAt: requestedAt)
     }
     private var contentEndsSection: Bool { isLast && state.error == nil }
 

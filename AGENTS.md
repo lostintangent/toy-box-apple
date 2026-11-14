@@ -41,7 +41,7 @@ Edit only what you own, and ask the owner in the channel for anything else. App 
 | Owner | Owns |
 | --- | --- |
 | Core | `Sources/Shared/ChannelKit/` and `ChannelClient/`, `Tests/` except the files below, `scripts/`, `Package.swift` and `package.json`. On the Mac, `Sources/Desktop/ToyBoxControlIntents/` and `Sources/Desktop/Extensions/ToyBoxDesktopShare/`. On the phone, `Sources/Mobile/ToyBoxMobileIntegrations/`, the app's `Automation`, `Sources/Mobile/Extensions/ToyBoxMobileNotification/` and `ToyBoxMobileShare/`, and `Resources/Mobile/` |
-| Core, with the originating UI owner | `Sources/Shared/ToyBoxUI/` |
+| Core, with the surface's owner | `Sources/Shared/ToyBoxUI/`, and each surface's folder in `ChannelClient/` |
 | Shell | `App`, `Shell`, `Sidebar`, `Channel`, `Notifications`, `Intents`, `Settings` and `Shared` in both apps, and the Mac's `MenuBar` and `QuickSend` |
 | Transcript | `Transcript` in both apps, and `Tests/Desktop/ToyBoxDesktopTests/TranscriptTests.swift` |
 | Composer | `Composer`, the composer and its tray, in both apps, the phone's `Cards` (the list's talk and Needs You cards), and `Tests/Desktop/ToyBoxDesktopTests/ComposerTests.swift` |
@@ -66,7 +66,7 @@ their module names, and Swift imports by module.
 | `ToyBoxControlIntents`, `ToyBoxMobileIntegrations` | What each app shares with its extensions, which live under `Extensions` |
 
 Both apps share one implementation of every rule, so look in ChannelKit, ChannelClient and
-ToyBoxUI before writing one, and ask Core for what's missing.
+ToyBoxUI before writing one.
 
 Surfaces meet at these seams:
 
@@ -112,7 +112,7 @@ Surfaces meet at these seams:
 ### Swift
 
 - **Use `@ViewState`, never `@State`.** The macOS 27 Command Line Tools SDK exports an unusable
-  `@State` macro, so `@ViewState` aliases `SwiftUI.State` once in `ToyBoxUI/Shared`.
+  `@State` macro, so `@ViewState` aliases `SwiftUI.State` once in `ToyBoxUI/Design`.
 - **Declare environment values with an `EnvironmentKey`,** not `@Entry`, in code that builds for
   the Mac. Command Line Tools lack the SwiftUIMacros plugin.
 - **Put rules on their nouns, and keep the vocabulary small.** Write members such as

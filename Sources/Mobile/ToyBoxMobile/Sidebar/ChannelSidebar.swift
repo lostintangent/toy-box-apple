@@ -53,7 +53,7 @@ struct ChannelSidebar: View {
         var channel: Channel
         var target: ChannelTarget
         var catalog: ChannelCatalogStore
-        var presentation: ChannelSidebarPresentation
+        var presentation: ChannelListing
     }
 
     private func isExpanded(_ catalog: ChannelCatalogStore) -> Bool {

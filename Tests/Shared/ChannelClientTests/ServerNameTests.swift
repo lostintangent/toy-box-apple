@@ -150,4 +150,62 @@ struct ServerNameTests {
         try await eventually { catalog.name == "Renamed again" }
         #expect(reads(mock) == 3, "Refresh reopens the stream, which reads the server as every connection does.")
     }
+
+    @Test func theNameFieldRenamesTheServerAndFollowsItsAnswers() async throws {
+        let server = Server()
+        server.set { $0.name = "Mac mini" }
+        let (catalog, _) = try catalog(server)
+        catalog.startPolling()
+        defer { catalog.stopPolling() }
+        try await eventually { catalog.phase == .connected && catalog.name == "Mac mini" }
+        let field = ServerNameField(catalog)
+        #expect(field.text == "Mac mini" && field.isEditable)
+
+        field.text = "Mac mini "
+        await field.commit()
+        #expect(server.answers.withLock { $0.renames } == [], "A name that only gained spaces didn't change.")
+        field.text = "Studio"
+        await field.commit()
+        #expect(server.answers.withLock { $0.renames } == ["Studio"])
+        #expect(catalog.name == "Studio" && field.text == "Studio" && field.failure == nil)
+        field.text = ""
+        await field.commit()
+        #expect(field.text == "Mac mini", "Clearing it gives the server back its computer's name.")
+
+        server.set { $0.name = "Office" }
+        await catalog.refreshServer()
+        #expect(field.text == "Office", "A rename made elsewhere shows while nothing is typed.")
+    }
+
+    @Test func aRenameTheFieldCantMakeKeepsWhatWasTypedAndSaysWhy() async throws {
+        let server = Server()
+        server.set {
+            $0.name = "Mac mini"
+            $0.rename = try? .json(["error": "That name is taken."], status: 422)
+        }
+        let (catalog, _) = try catalog(server)
+        catalog.startPolling()
+        defer { catalog.stopPolling() }
+        try await eventually { catalog.phase == .connected && catalog.name == "Mac mini" }
+        let field = ServerNameField(catalog)
+
+        let long = String(repeating: "😀", count: 33)
+        field.text = long
+        await field.commit()
+        #expect(server.answers.withLock { $0.renames } == [], "A name that's too long is refused before sending.")
+        #expect(field.text == long)
+        #expect(field.failure?.words == "Couldn't rename Mac mini.")
+        #expect(field.failure?.reason == "Name must be 64 characters or fewer.")
+
+        field.text = "Studio"
+        await field.commit()
+        #expect(server.answers.withLock { $0.renames } == ["Studio"])
+        #expect(field.text == "Studio" && catalog.name == "Mac mini")
+        #expect(field.failure?.reason == "That name is taken.")
+
+        field.text = "Mac mini"
+        await field.commit()
+        #expect(server.answers.withLock { $0.renames } == ["Studio"] && field.failure == nil,
+                "Typing the server's name back sends nothing and clears the failure.")
+    }
 }

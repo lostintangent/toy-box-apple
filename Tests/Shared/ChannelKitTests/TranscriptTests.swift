@@ -222,4 +222,67 @@ struct TranscriptTests {
         calendar.timeZone = timeZone
         return calendar
     }
+
+    @Test func imageSubtitlesReadTheDayTimeAndOnlyCountSeveralImages() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US")
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+        let now = try #require(try? Date("2026-10-22T20:00:00Z", strategy: .iso8601))
+        func subtitle(_ sent: String, _ index: Int, _ count: Int) -> String {
+            TranscriptImageSource(messageID: "m1", sender: "Lead", timestamp: sent)
+                .subtitle(index: index, count: count, now: now, calendar: calendar)
+                .replacingOccurrences(of: "\u{202F}", with: " ")
+        }
+        #expect(subtitle("2026-10-22T17:23:00Z", 1, 4) == "Today at 5:23 PM · 2 of 4")
+        #expect(subtitle("2026-10-22T17:23:00Z", 0, 1) == "Today at 5:23 PM")
+        #expect(subtitle("2026-10-21T09:05:00Z", 0, 1) == "Yesterday at 9:05 AM")
+        #expect(subtitle("", 2, 3) == "3 of 3")
+    }
+
+    /// A pending message gets the day divider its sent row will have, and only that.
+    @Test func pendingMessagesPredictTheDayDividerTheirSentRowsWillHave() {
+        let roster = [ChannelAgent(id: "lead", name: "Lead")]
+        func message(_ id: String, _ timestamp: String, sender: ChannelMessageSender = .user) -> ChannelMessage {
+            ChannelMessage(id: id, sequence: 0, timestamp: timestamp, sender: sender, content: .text(id))
+        }
+        let yesterday = message("old", "2026-10-30T12:00:00Z", sender: .agent("lead"))
+        let pending = [message("first", "2026-10-31T12:00:00Z"), message("second", "2026-10-31T12:00:05Z")]
+        let dividers = TranscriptRowBuilder.pendingDividers(pending, after: yesterday, roster: roster)
+        #expect(dividers["first"]?.day != nil && dividers["first"]?.unread == false)
+        #expect(dividers["second"] == nil)
+        #expect(TranscriptRowBuilder.pendingDividers(pending, after: pending[0], roster: roster)["second"] == nil)
+        #expect(TranscriptRowBuilder.pendingDividers(pending, after: yesterday, roster: []).isEmpty)
+    }
+
+    @Test func messageAccessibilityIncludesIdentityWithoutDependingOnAVisibleHeader() {
+        let message = message(1)
+        let label = message.accessibilityLabel(author: "Moss", addressee: "Lead", request: .pending)
+        #expect(label.hasPrefix("Moss, "))
+        #expect(label.contains("To Lead"))
+        #expect(label.hasSuffix("Needs your reply"))
+        let replied = message.accessibilityLabel(author: "Deleted agent", request: .acknowledged)
+        #expect(replied.hasPrefix("Deleted agent, "))
+        #expect(replied.hasSuffix("Replied"))
+        let attempt = message.accessibilityLabel(author: "You", delivery: "Not sent")
+        #expect(attempt.hasPrefix("You, "))
+        #expect(attempt.hasSuffix("Not sent"))
+    }
+
+    @Test func workingNowListsWorkingAgentsThenWaitingOnesAndLeavesIdleOnesOut() {
+        let roster = ["lead", "ada", "finch", "moss", "wren", "gone"].map { ChannelAgent(id: $0, name: $0.capitalized) }
+        let presence: [String: ChannelAgentPresence] = [
+            "lead": .init(state: "waiting", text: "Moss's review"),
+            "ada": .init(state: "working", text: "Compiling"),
+            "finch": .init(state: "idle"),
+            "moss": .init(state: "waiting"),
+            "wren": .init(state: "working")
+        ]
+        let team = TranscriptWorkingNowAgents(roster: roster, presence: presence)
+        #expect(team.working.map(\.id) == ["ada", "wren"])
+        #expect(team.waiting.map(\.id) == ["lead", "moss"])
+        #expect([team.working, team.waiting].joined().map { TranscriptWorkingNowAgents.status(presence[$0.id]) }
+                == ["Compiling", "Working", "Waiting for Moss's review", "Waiting"])
+        let offline = TranscriptWorkingNowAgents(roster: roster, presence: [:])
+        #expect(offline.working.isEmpty && offline.waiting.isEmpty)
+    }
 }

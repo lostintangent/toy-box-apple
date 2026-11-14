@@ -65,7 +65,7 @@ struct OverviewAgentRow: View {
     @FocusState private var focus: Focus?
 
     private var status: ChannelAgentPresence? { presence }
-    private var wake: Date? { ChannelAgentWakePresentation.wake(for: presence, isAvailable: isAvailable) }
+    private var wake: Date? { ChannelAgent.Countdown.wake(for: presence, isAvailable: isAvailable) }
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
     private var spokenStatus: String {
         let status = OverviewAgentStatusLine.spoken(status, isAvailable: isAvailable)
@@ -150,15 +150,15 @@ struct OverviewAgentStatusLine: View {
     let isAvailable: Bool
 
     static func text(_ status: ChannelAgentPresence?, isAvailable: Bool) -> String {
-        ChannelAgentStatusPresentation(presence: status, isAvailable: isAvailable).text
+        ChannelAgent.StatusLine(presence: status, isAvailable: isAvailable).text
     }
 
     static func spoken(_ status: ChannelAgentPresence?, isAvailable: Bool) -> String {
-        ChannelAgentStatusPresentation(presence: status, isAvailable: isAvailable).spoken
+        ChannelAgent.StatusLine(presence: status, isAvailable: isAvailable).spoken
     }
 
     var body: some View {
-        let presentation = ChannelAgentStatusPresentation(presence: status, isAvailable: isAvailable)
+        let presentation = ChannelAgent.StatusLine(presence: status, isAvailable: isAvailable)
         HStack(alignment: presentation.cue == .waiting ? .firstTextBaseline : .center, spacing: 4) {
             if presentation.cue == .working {
                 OverviewWorkingEllipsis(color: agent.avatar.flatMap { Color(hex: $0.color) } ?? Color.accentColor)
@@ -166,7 +166,7 @@ struct OverviewAgentStatusLine: View {
                 if presentation.cue == .waiting {
                     Image(systemName: "pause.fill")
                         .font(.system(size: 9 * textScale, weight: .heavy))
-                        .foregroundStyle(ChannelAgentStatusPresentation.waitingCue(in: colorScheme))
+                        .foregroundStyle(ChannelAgent.StatusLine.waitingCue(in: colorScheme))
                         .frame(width: 12 * textScale)
                         .alignmentGuide(.firstTextBaseline) {
                             $0[VerticalAlignment.center] + NSFont.systemFont(ofSize: 11 * textScale).capHeight / 2

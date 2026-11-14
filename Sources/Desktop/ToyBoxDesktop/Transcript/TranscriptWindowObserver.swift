@@ -1,4 +1,5 @@
 import AppKit
+import ChannelClient
 import Observation
 import SwiftUI
 import ToyBoxUI

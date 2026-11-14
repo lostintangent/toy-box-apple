@@ -255,7 +255,7 @@ struct OverviewTaskRow: View {
 
     private func accessibilityLabel(timing: ChannelTask.Timing?) -> String {
         var parts = [task.title, task.statusDescription]
-        if let timing { parts.append(ChannelTaskTimingPresentation(timing: timing).spoken) }
+        if let timing { parts.append(timing.spoken) }
         if let progress {
             parts.append("\(progress.done) of \(progress.total) subtasks done")
         }
