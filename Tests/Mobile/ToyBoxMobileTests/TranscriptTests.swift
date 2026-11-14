@@ -3,6 +3,7 @@ import ToyBoxKit
 import CoreGraphics
 import Foundation
 import SwiftUI
+import Synchronization
 import Testing
 @testable import ToyBoxMobile
 import ToyBoxUI
@@ -843,5 +844,130 @@ struct TranscriptTests {
         // The long name truncates at 200 points, so the row is its label plus the icon and padding.
         #expect(fileRow > 200 && fileRow < 260, "file row \(fileRow)")
     }
+
+    /// Unfolded, the split view keeps one channel screen and swaps its store. Message numbers count
+    /// per channel, so a quieter channel opened after reading a busy one still marks itself read.
+    @Test func switchingToAChannelWithLowerSequencesStillMarksItRead() async throws {
+        let suite = "transcript-switch-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let server = "https://switch-\(UUID().uuidString.lowercased()).invalid"
+        let model = AppModel(arguments: ["--server", server], environment: [:], defaults: defaults,
+                             session: fixtureSession())
+        model.setScenePhase(.active)
+        defer { model.setScenePhase(.background) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ReadRecordingProtocol.self]
+        let api = try ChannelAPI(serverURL: server, session: URLSession(configuration: configuration))
+        func store(_ id: String, through latest: Int, seen: Int) throws -> ChannelStore {
+            let store = ChannelStore(id: id, api: api)
+            _ = try store.apply(.init(type: "snapshot", state: ChannelState(
+                revision: 1,
+                channel: Channel(id: id, name: id, model: .init(provider: "test", name: "test"),
+                                 latestSequence: latest, seenThrough: seen, updatedAt: "2026-10-25T12:00:00Z"),
+                lead: .lead(id: "lead", profile: .init(name: "Lead", role: "Coordinator",
+                                                      avatar: .init(mark: "M4 12H20", color: "#123456"))),
+                members: [], messages: (latest - 39...latest).map { message($0, .user) })))
+            return store
+        }
+        let busy = try store("busy", through: 400, seen: 395)
+        let quiet = try store("quiet", through: 40, seen: 35)
+        let shown = ShownChannel(busy)
+        let host = UIHostingController(rootView: SwitchingChannelScreen(shown: shown)
+            .environment(model)
+            .environment(model.following)
+            .environment(ManagementPresenter())
+            .environment(Overview())
+            .environment(\.horizontalSizeClass, .regular)
+            .environment(\.scenePhase, .active))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 669, height: 951))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+
+        func reads(_ expected: [String]) async {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+            repeat {
+                host.view.layoutIfNeeded()
+                await Task.yield()
+            } while ReadRecordingProtocol.reads(on: server) != expected && ContinuousClock.now < deadline
+            #expect(ReadRecordingProtocol.reads(on: server) == expected)
+        }
+        await reads(["busy 400"])
+        shown.store = quiet
+        await reads(["busy 400", "quiet 40"])
+    }
 }
 
+
+@MainActor @Observable
+private final class ShownChannel {
+    var store: ChannelStore
+    init(_ store: ChannelStore) { self.store = store }
+}
+
+/// Like the unfolded split view's detail, one channel screen whose store changes in place.
+private struct SwitchingChannelScreen: View {
+    let shown: ShownChannel
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let store = shown.store
+        NavigationStack {
+            ChannelScreen(store: store)
+        }
+        .environment(model.interaction(for: store.target!))
+        .environment(model.artifactSession(for: store))
+        .environment(model.gallery(for: store))
+    }
+}
+
+/// Answers every read with the sequence it asked for and records it, per server, as "channel sequence".
+private final class ReadRecordingProtocol: URLProtocol, @unchecked Sendable {
+    private static let recorded = Mutex<[String: [String]]>([:])
+
+    static func reads(on server: String) -> [String] {
+        recorded.withLock { $0[URL(string: server)?.host ?? ""] ?? [] }
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url,
+              let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil,
+                                             headerFields: ["Content-Type": "application/json"]) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        let components = url.pathComponents
+        guard request.httpMethod == "POST", components.last == "read", components.count >= 2,
+              let body = Self.body(of: request),
+              let sequence = (try? JSONSerialization.jsonObject(with: body) as? [String: Int])?["sequence"] else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
+            return
+        }
+        let channel = components[components.count - 2]
+        Self.recorded.withLock { $0[url.host ?? "", default: []].append("\(channel) \(sequence)") }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(#"{"seenThrough":\#(sequence)}"#.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+
+    private static func body(of request: URLRequest) -> Data? {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 1024)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count > 0 else { break }
+            data.append(buffer, count: count)
+        }
+        return data
+    }
+}

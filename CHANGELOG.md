@@ -26,6 +26,7 @@
 
 - A channel waiting on you stays a calm row in your list that shows its question, and opens to answer only when you tap it, so a new request never takes over the screen.
 - A reply you send from anywhere, like the web, a notification or another device, marks its channel read everywhere at once, once your Macs run Toy Box 0.4.5.
+- On iPhone Duo unfolded, a channel you've read stays read when you move to another, instead of showing as unread again.
 
 ## Mac 0.1.40
 

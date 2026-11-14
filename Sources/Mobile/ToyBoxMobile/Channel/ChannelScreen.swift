@@ -146,7 +146,10 @@ struct ChannelScreen: View {
                     model.selection = nil
                 }
             } else {
+                // Scroll position, paging and read state belong to one channel, so a split view's
+                // switch builds a new transcript instead of carrying them over.
                 ConversationView(store: store)
+                    .id(ObjectIdentifier(store))
                     // Like the Mac's, rows pass softly under the floating title and bar buttons.
                     .scrollEdgeEffectStyle(.soft, for: .top)
                     .safeAreaBar(edge: .bottom, spacing: 0) {
