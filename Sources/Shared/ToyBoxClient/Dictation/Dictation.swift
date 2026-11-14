@@ -71,6 +71,7 @@ package final class Dictation {
     @ObservationIgnored private var finishing: Task<Bool, Never>?
     @ObservationIgnored private var silenceWatch: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var sentDuringDownload = false
     @ObservationIgnored private var lastWordsAt = ContinuousClock.now
     @ObservationIgnored private var lastLevelAt = ContinuousClock.now
     @ObservationIgnored private var rawLevel: Double = 0
@@ -266,6 +267,7 @@ package final class Dictation {
     }
 
     private func prepareAndListen(locale: Locale, generation: Int) async {
+        sentDuringDownload = false
         if !isTracking {
             await startTracking()
             guard self.generation == generation else { return }
@@ -311,8 +313,9 @@ package final class Dictation {
         guard self.generation == generation else { return }
         let downloaded = notice == .downloading(language: language)
         if downloaded { notice = nil }
-        // After a download, only start listening if this composer is still where the person is typing.
-        guard let target, !downloaded || target.isInKeyWindow, target.beginDictation() else {
+        // After a download, only start listening if this composer is still where the person is typing
+        // and nothing was sent while it downloaded.
+        guard !sentDuringDownload, let target, !downloaded || target.isInKeyWindow, target.beginDictation() else {
             phase = .idle
             return
         }
@@ -401,8 +404,13 @@ package final class Dictation {
         defer { if reason == .send { holdsSend = false } }
         let finalized: Bool
         switch phase {
+        case .downloading where reason == .send:
+            // A first-use download keeps going, then returns to Ready instead of listening in the next draft.
+            sentDuringDownload = true
+            finalized = true
         case .preparing where !isSessionActive, .downloading:
-            if reason != .send { cancelPreparation() }
+            // A mic still starting stops, even for Send, so listening never begins in the next draft.
+            cancelPreparation()
             finalized = true
         case .idle: finalized = true
         case .finishing: finalized = await finishing?.value ?? true

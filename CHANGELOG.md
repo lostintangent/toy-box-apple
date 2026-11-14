@@ -1,5 +1,17 @@
 # Changelog
 
+## Mac 0.1.42
+
+### Bugs/Polish
+
+- Pressing Send while dictation is still getting ready sends what you typed and leaves the microphone off, instead of it starting to listen in your next message.
+
+## iPhone 0.1.40
+
+### Bugs/Polish
+
+- Sending a message while dictation downloads your language for the first time no longer cancels the download, so dictation is ready the next time you tap it.
+
 ## Mac 0.1.41
 
 ### Features

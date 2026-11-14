@@ -37,8 +37,6 @@ final class ComposerSession {
     @discardableResult
     func send() async -> Bool {
         guard canSend else { return false }
-        // A mic still preparing stops, rather than carrying into the fresh draft.
-        if !dictation.isSessionActive, dictation.phase != .idle { dictation.deactivate() }
         guard await dictation.stop(.send) else { return false }
         return await composer.send() != nil
     }

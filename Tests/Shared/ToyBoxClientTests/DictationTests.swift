@@ -74,6 +74,42 @@ struct DictationTests {
         #expect(dictation.notice == nil, "Sending clears the notice")
     }
 
+    @Test func sendingBeforeListeningStopsAStartingMicAndLetsADownloadFinishAtReady() async throws {
+        let installing = AsyncStream<Void>.makeStream()
+        var system = DictationSystem.manual(ManualDictationRecognizer())
+        system.installAssets = { _, _ in
+            installing.continuation.yield()
+            try await Task.sleep(for: .seconds(3_600))
+        }
+        let starting = Dictation(system: system)
+        starting.target = RecordingDictationTarget()
+        await starting.refresh()
+        starting.toggle()
+        var installs = installing.stream.makeAsyncIterator()
+        await installs.next()
+        #expect(await starting.stop(.send))
+        #expect(starting.phase == .idle, "Send stops a mic that's still starting")
+
+        let finishing = AsyncStream<Void>.makeStream()
+        system.installAssets = { _, progress in
+            progress(0.5)
+            for await _ in finishing.stream { break }
+        }
+        let target = RecordingDictationTarget()
+        target.isInKeyWindow = true
+        let downloading = Dictation(system: system)
+        downloading.target = target
+        await downloading.refresh()
+        downloading.toggle()
+        try await eventually { downloading.phase == .downloading(0.5) }
+        #expect(await downloading.stop(.send))
+        #expect(downloading.phase == .downloading(0.5), "Send lets a first-use download keep going")
+        finishing.continuation.yield()
+        try await eventually { downloading.notice == nil }
+        #expect(downloading.phase == .idle, "The finished download returns to Ready")
+        #expect(target.begins == 0, "Listening never begins in the next draft")
+    }
+
     @Test func silenceStopsDictationAndKeepsItsWords() async throws {
         let recognizer = ManualDictationRecognizer()
         var system = DictationSystem.manual(recognizer)
