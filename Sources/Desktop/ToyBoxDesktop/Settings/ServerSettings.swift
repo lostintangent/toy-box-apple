@@ -23,6 +23,11 @@ struct ServerSettings: View {
                     Divider()
                     HStack {
                         Spacer()
+                        if model.servers.shown.isRestartPending {
+                            Button("Restart") { Task { await model.servers.shown.restartPending() } }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                        }
                         Button("Check for Updates") { Task { await model.servers.shown.checkForUpdates() } }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
@@ -106,8 +111,8 @@ struct ServerSettings: View {
 }
 
 /// The end of a server's row: its version, a spinner while it checks or reconnects, how its last
-/// check or restart ended, or Restart once a newer release is installed and while the server can
-/// restart. See Updating a server in docs/spec.md.
+/// check or restart ended, or the installed release once a restart is pending. See Updating a
+/// server in docs/spec.md.
 private struct ServerUpdateStatus: View {
     let update: ServerUpdate
 
@@ -123,11 +128,6 @@ private struct ServerUpdateStatus: View {
                     failure(words)
                 } else if let installed = update.version?.installedVersion {
                     Text("\(installed) installed").foregroundStyle(.secondary)
-                }
-                if update.canRestart {
-                    Button("Restart") { Task { await update.restart() } }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
                 }
             case .idle?, nil:
                 switch update.outcome {

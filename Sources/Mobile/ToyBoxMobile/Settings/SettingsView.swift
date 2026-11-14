@@ -56,7 +56,8 @@ struct SettingsView: View {
         }
     }
 
-    /// Each server with its dot and name, in the order the list shows them, then Check for Updates.
+    /// Each server with its dot and name, in the order the list shows them, then Check for Updates
+    /// and, while a restart is pending, Restart.
     private var servers: some View {
         Section {
             ForEach(model.servers.shown, id: \.api.baseURL) { catalog in
@@ -78,6 +79,11 @@ struct SettingsView: View {
                 .disabled(isChecking)
                 // A disabled Form button keeps its tinted icon, so it dims the whole row itself.
                 .foregroundStyle(isChecking ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
+            }
+            if model.servers.shown.isRestartPending {
+                Button("Restart", systemImage: "arrow.clockwise") {
+                    Task { await model.servers.shown.restartPending() }
+                }
             }
         } header: {
             Text("Servers")
@@ -177,8 +183,7 @@ private struct ServerRow: View {
 }
 
 /// The end of a server's row: its version, a spinner while it checks or reconnects, Up to date after
-/// a check that found nothing newer, or Restart once a newer release is installed and while the
-/// server can restart.
+/// a check that found nothing newer, or the installed release once a restart is pending.
 private struct ServerUpdateStatus: View {
     let update: ServerUpdate
     /// A server that can't connect says so instead.
@@ -191,10 +196,8 @@ private struct ServerUpdateStatus: View {
         case .reconnecting?:
             ProgressView().accessibilityRepresentation { Text("Reconnecting") }
         case .restartPending?:
-            if update.canRestart {
-                Button("Restart") { Task { await update.restart() } }
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.capsule)
+            if showsVersion, let installed = update.version?.installedVersion {
+                Text("\(installed) installed").foregroundStyle(.secondary)
             }
         case .idle?, nil:
             if update.outcome == .upToDate {
