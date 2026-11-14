@@ -58,20 +58,23 @@ git history keeps closed incidents.
   runs with the opt-in passed at load of about 330 to 390, and the probe finished in 0.8 to 1.5
   seconds. No miss occurred, so the test stays quarantined and the cause is still not established.
 - Restoration needs the stalled step identified, with deterministic regression coverage. Restore it
-  without loosening the assertions or adding retries. `arrivalsKeepTheSelectedIdentityAndRemovalDoesNotSubstituteANeighbor`
-  and `HTMLUnderlapsTheBarsAndRestoresItsReadingPosition` use the same 15-second wait and stay in the
+  without loosening the assertions or adding retries. `arrivalsKeepTheSelectedIdentityAndRemovalDoesNotSubstituteANeighbor`,
+  `sameDocumentResourceLinksAndHashChangesStayInsideTheSandbox` and
+  `HTMLUnderlapsTheBarsAndRestoresItsReadingPosition` use the same 15-second wait and stay in the
   default gate. They failed only under the artificial burner load, alongside unrelated suites, which
   isn't evidence of a defect. Quarantine one only if it fails in CI or a full run without artificial
   load.
 
 ## Artifact same-document navigation
 
-- `ArtifactViewerTests.sameDocumentTOCLinksAndHashChangesStayInsideTheSandbox` is quarantined, all
-  three cases, behind `TOY_BOX_TEST_ARTIFACT_TOC_NAVIGATION=1` in t1131. Owner: Overview. Its
-  assertions and its 15-second `wait(until:)` are unchanged, and the default run skips it with its
-  reason.
+- The `"toc"` case of `ArtifactViewerTests.sameDocumentTOCLinksAndHashChangesStayInsideTheSandbox`
+  is quarantined in t1131 as `sameDocumentTOCLinksStayInsideTheSandbox`, behind
+  `TOY_BOX_TEST_ARTIFACT_TOC_NAVIGATION=1`. Owner: Overview. Its assertions and its 15-second
+  `wait(until:)` are unchanged, and the default run skips it with its reason. The `"resource"` and
+  `"hash"` cases never missed, and they stay in the gate as
+  `sameDocumentResourceLinksAndHashChangesStayInsideTheSandbox`, sharing the same body.
 - First seen by Composer on 2026-11-14 in a local full Mac run for t1130 on the shared Mac, under
-  ordinary multi-agent load with no burner. Its `"toc"` case failed at the helper's `#require`
+  ordinary multi-agent load with no burner. The `"toc"` case failed at the helper's `#require`
   (`ArtifactViewerTests.swift:724` on `ef5a561`): "The artifact did not reach its expected settled
   state." It has not failed in CI, so no CI run is cited.
 - The helper takes no source location, so the miss doesn't say whether the page never finished

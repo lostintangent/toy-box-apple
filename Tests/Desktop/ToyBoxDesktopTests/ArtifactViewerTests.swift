@@ -206,12 +206,20 @@ struct ArtifactViewerTests {
         #expect(requests.allSatisfy { !$0.headers.lowercased().contains(fakeCookie.name.lowercased()) })
     }
 
+    @Test(arguments: ["resource", "hash"])
+    func sameDocumentResourceLinksAndHashChangesStayInsideTheSandbox(method: String) async throws {
+        try await expectSameDocumentNavigationStaysInsideTheSandbox(method: method)
+    }
+
     // Quarantined after it missed the settle deadline in a full Mac run under ordinary load (t1131).
     // Owner: Overview, follow-up: t607.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_ARTIFACT_TOC_NAVIGATION"] == "1",
-                   "Quarantined pending cause identification (t607). Opt in with TOY_BOX_TEST_ARTIFACT_TOC_NAVIGATION=1."),
-          arguments: ["toc", "resource", "hash"])
-    func sameDocumentTOCLinksAndHashChangesStayInsideTheSandbox(method: String) async throws {
+                   "Quarantined pending cause identification (t607). Opt in with TOY_BOX_TEST_ARTIFACT_TOC_NAVIGATION=1."))
+    func sameDocumentTOCLinksStayInsideTheSandbox() async throws {
+        try await expectSameDocumentNavigationStaysInsideTheSandbox(method: "toc")
+    }
+
+    private func expectSameDocumentNavigationStaysInsideTheSandbox(method: String) async throws {
         let fixture = try ArtifactHTTPFixture()
         try await fixture.start()
         defer { fixture.stop() }
