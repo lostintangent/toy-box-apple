@@ -101,8 +101,8 @@ struct ToyBoxDesktopApp: App {
 
     private func configureWindowActions() {
         model.openChannelWindow = { openWindow(value: ChannelWindowValue($0)) }
-        model.openMainWindow = { openWindow(id: "channels") }
-        appDelegate.openChannelWindow = { openWindow(id: "channels") }
+        model.openMainWindow = { openMainWindow(on: model.takeLaunchChannel()) }
+        appDelegate.openChannelWindow = { openMainWindow(on: model.takeLaunchChannel()) }
         appDelegate.openStartupWindow = { updateStartupWindow(phase: scenePhase) }
     }
 
@@ -115,14 +115,20 @@ struct ToyBoxDesktopApp: App {
         guard !didCheckStartupWindow || phase == .active else { return }
         didCheckStartupWindow = true
         DispatchQueue.main.async {
+            // Windows restored by now keep their own channels, so the launch's channel is only for a new one.
+            let launchChannel = model.takeLaunchChannel()
             if AppLoginLaunch.shouldOpenStartupWindow(
                 login: appDelegate.launchedAtLogin, backgroundIntent: appDelegate.launchedInBackground,
                 receivedContent: appDelegate.receivedOpenEvent || appDelegate.quickSendIntake?.hasReceivedContent == true,
                 hasMainWindow: NSApp.windows.contains(where: { ($0.isVisible || $0.isMiniaturized) && $0.canBecomeMain })
             ) {
-                openWindow(id: "channels")
+                openMainWindow(on: launchChannel)
             }
         }
+    }
+
+    private func openMainWindow(on channel: ChannelTarget?) {
+        if let channel { openWindow(value: ChannelWindowValue(channel)) } else { openWindow(id: "channels") }
     }
 
     private func root(channel: ChannelTarget?) -> some View {

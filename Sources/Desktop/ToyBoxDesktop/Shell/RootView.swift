@@ -10,9 +10,9 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
-    /// The selection's `identifier`.
-    @SceneStorage("selectedChannelId") private var restoredSelection: String?
-    @ViewState private var selection: ChannelTarget?
+    /// The selection's `identifier`. SwiftUI restores it only after a restored window first
+    /// appears, and writing it before then loses it, so `selection` reads and writes it directly.
+    @SceneStorage("selectedChannelId") private var selectedChannel: String?
     @SceneStorage("sidebarVisible") private var sidebarVisible = true
     @ViewState private var management = ManagementPresenter()
     @ViewState private var artifactOpener = ArtifactOpener()
@@ -53,6 +53,10 @@ struct RootView: View {
     }
     /// Overview is the inspector column in wide windows and a sheet in narrow ones.
     private var isOverviewVisible: Bool { isNarrow ? isOverviewSheetPresented : interaction.isInspectorPresented }
+    private var selection: ChannelTarget? {
+        get { selectedChannel.flatMap(ChannelTarget.init(identifier:)) }
+        nonmutating set { selectedChannel = newValue?.identifier }
+    }
     private var selectedId: String? { selection?.channelID }
     /// The catalog of the selection's server.
     private var selectedCatalog: ChannelCatalogStore? { selection.flatMap { model.catalogs.first(at: $0.serverURL) } }
@@ -183,12 +187,7 @@ struct RootView: View {
             selection = target
         }
         .onAppear {
-            let launchChannelID = model.takeLaunchChannelID()
-            if selection == nil {
-                selection = model.launchOptions.isSnapshot ? initialChannel
-                    : restoredSelection.flatMap(ChannelTarget.init(identifier:)) ?? initialChannel
-                        ?? (model.launchTarget == nil ? launchChannelID.flatMap { model.target($0) } : nil)
-            }
+            if selection == nil, let initialChannel { selection = initialChannel }
             columnVisibility = model.launchOptions.isSnapshot || sidebarVisible ? .all : .detailOnly
             #if DEBUG
             if !didRunHandoffProof, let id = ProcessInfo.processInfo.environment["TOY_BOX_HANDOFF_CHANNEL"] {
@@ -209,7 +208,6 @@ struct RootView: View {
             imageViewer.close(animated: false)
             artifactOpener.close(animated: false)
             isOverviewSheetPresented = false
-            if !model.launchOptions.isSnapshot { restoredSelection = selection?.identifier }
             model.updateWindow(windowID, channel: selection, isKey: isKeyWindow)
         }
         // A window restored on a peer waits for that peer to open, so only Disconnect starts it over.
