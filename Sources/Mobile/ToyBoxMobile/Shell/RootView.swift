@@ -14,6 +14,9 @@ struct RootView: View {
     /// Never `.automatic`, which would let the split view pick the list for each posture.
     @ViewState private var columnVisibility = NavigationSplitViewVisibility.all
     @ViewState private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
+    /// The split view's width and its detail's, as last laid out.
+    @ViewState private var splitWidth: CGFloat = 0
+    @ViewState private var detailWidth: CGFloat = 0
     @ViewState private var isScreenUp = false
     @FocusState private var isSearchFocused: Bool
     @ViewState private var handoff: ChannelHandoffNavigation
@@ -96,7 +99,13 @@ struct RootView: View {
         .onChange(of: model.selection) { _, selection in
             if selection != nil { handoff.cancel() }
             preferredCompactColumn = selection == nil ? .sidebar : .detail
-            if selection == nil { columnVisibility = .all }
+            if selection == nil {
+                columnVisibility = .all
+            } else if listFloats {
+                // A list floating over the conversation gets out of the way of the channel it opens, while
+                // a list beside the conversation stays.
+                columnVisibility = .detailOnly
+            }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             model.setScenePhase(phase)
@@ -171,33 +180,40 @@ struct RootView: View {
             ChannelSidebar(searchFocused: $isSearchFocused, isCollapsed: sizeClass == .compact)
                 .navigationSplitViewColumnWidth(min: 240, ideal: 256, max: 320)
         } detail: {
-            if let store = model.selectedStore, let interaction = selectedInteraction {
-                // The detail keeps a gap for Overview's column, so the split view's own widths, and the
-                // channel's bar over the conversation, stay as they are. The gap's background carries the
-                // column's under the vertical bar.
-                HStack(spacing: 0) {
-                    ChannelScreen(store: store)
-                        .environment(interaction)
-                        .environment(model.artifactSession(for: store))
-                        .environment(model.gallery(for: store))
-                    if overview.showsColumn(for: interaction) {
-                        Color.clear
-                            .frame(width: OverviewPlacement.columnWidth)
-                            .background { OverviewColumnBackground().ignoresSafeArea() }
-                    }
-                }
-                // An animated column narrows the conversation every frame, re-wrapping the transcript each
-                // time. Cutting straight to the final width lays it out once. The sheet keeps its animation.
-                .transaction(value: interaction.isInspectorPresented) { $0.disablesAnimations = true }
-            } else {
-                ContentUnavailableView("Choose a channel", systemImage: "bubble.left.and.bubble.right",
-                                       description: Text("Open a channel from the list to join the conversation."))
-            }
+            detail
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { detailWidth = $0 }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { splitWidth = $0 }
         // Unfolding shows what the folded phone shows, the channel alone or the list. Kept current while
         // folded, the split view expands straight to it.
         .onChange(of: sizeClass == .compact ? preferredCompactColumn : nil) { _, column in
             if let column { columnVisibility = column == .detail ? .detailOnly : .all }
+        }
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        if let store = model.selectedStore, let interaction = selectedInteraction {
+            // The detail keeps a gap for Overview's column, so the split view's own widths, and the
+            // channel's bar over the conversation, stay as they are. The gap's background carries the
+            // column's under the vertical bar.
+            HStack(spacing: 0) {
+                ChannelScreen(store: store)
+                    .environment(interaction)
+                    .environment(model.artifactSession(for: store))
+                    .environment(model.gallery(for: store))
+                if overview.showsColumn(for: interaction) {
+                    Color.clear
+                        .frame(width: OverviewPlacement.columnWidth)
+                        .background { OverviewColumnBackground().ignoresSafeArea() }
+                }
+            }
+            // An animated column narrows the conversation every frame, re-wrapping the transcript each
+            // time. Cutting straight to the final width lays it out once. The sheet keeps its animation.
+            .transaction(value: interaction.isInspectorPresented) { $0.disablesAnimations = true }
+        } else {
+            ContentUnavailableView("Choose a channel", systemImage: "bubble.left.and.bubble.right",
+                                   description: Text("Open a channel from the list to join the conversation."))
         }
     }
 
@@ -219,6 +235,10 @@ struct RootView: View {
             }
         }
     }
+
+    /// Whether the list, when it shows, floats over the conversation rather than sitting beside it, as
+    /// it does wherever the detail fills the split view.
+    private var listFloats: Bool { detailWidth > 0 && detailWidth >= splitWidth }
 
     private var selectedInteraction: ChannelInteraction? {
         model.selection.map(model.interaction)
