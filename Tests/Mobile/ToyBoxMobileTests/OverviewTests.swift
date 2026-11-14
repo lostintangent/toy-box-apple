@@ -43,7 +43,7 @@ struct OverviewTests {
         session.routine("routine").expanded = true
         session.routine("routine").pending = true
         presentation.compactSheetDidAppear()
-        presentation.move(to: .inspector)
+        presentation.move(to: .column)
         #expect(presentation.isCompactSheetPresented)
         presentation.move(to: .sheet)
         #expect(presentation.session(for: store) === session)
@@ -61,7 +61,7 @@ struct OverviewTests {
         #expect(OverviewPlacement(sceneWidth: 678, sizeClass: .regular, verticalSizeClass: .compact) == .sheet)
         #expect(OverviewPlacement(sceneWidth: 669, sizeClass: .regular, verticalSizeClass: .regular) == .sheet)
         #expect(OverviewPlacement(sceneWidth: 951, sizeClass: .compact, verticalSizeClass: .regular) == .sheet)
-        #expect(OverviewPlacement(sceneWidth: 951, sizeClass: .regular, verticalSizeClass: .regular) == .inspector)
+        #expect(OverviewPlacement(sceneWidth: 951, sizeClass: .regular, verticalSizeClass: .regular) == .column)
     }
 
     @Test func aWideCompactHeightSceneKeepsTheSheetSoTheColumnNeverCoversItsBar() {
@@ -72,7 +72,7 @@ struct OverviewTests {
         let presentation = Overview()
         let interaction = ChannelInteraction(isInspectorPresented: true)
         #expect(!presentation.showsColumn(for: interaction))
-        presentation.move(to: .inspector)
+        presentation.move(to: .column)
         #expect(presentation.showsColumn(for: interaction))
         interaction.isArtifactViewerPresented = true
         #expect(!presentation.showsColumn(for: interaction))
@@ -84,7 +84,7 @@ struct OverviewTests {
     @Test func compactCoverageEndsOnDismissalAndObsoleteDismissalKeepsTheRequestedReplacementCovered() {
         let presentation = Overview()
         presentation.compactSheetDidAppear()
-        presentation.move(to: .inspector)
+        presentation.move(to: .column)
         #expect(presentation.isCompactSheetPresented)
         presentation.compactSheetDidDismiss(isRequested: true)
         #expect(!presentation.isCompactSheetPresented)
@@ -562,7 +562,7 @@ struct OverviewTests {
         #expect(tree.elements.contains { $0.label.contains(address) } == (kind == "url"))
     }
 
-    @Test(arguments: [OverviewPlacement.sheet, .inspector])
+    @Test(arguments: [OverviewPlacement.sheet, .column])
     func onlyTheSheetCarriesASystemCloseOnEveryPage(placement: OverviewPlacement) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let session = ChannelOverview(store: store)
@@ -616,7 +616,7 @@ struct OverviewTests {
             #expect(frame.minY >= bar.minY - 0.5 && frame.maxY <= barBottom + 0.5,
                     "Close \(frame), bar \(bar), bar bottom \(barBottom)")
         }
-        #expect(navigation.isNavigationBarHidden == (placement == .inspector))
+        #expect(navigation.isNavigationBarHidden == (placement == .column))
         #expect(!MobileAutomationTree(windows: [window]).elements.contains {
             $0.identifier == "overview-channel-actions"
         })

@@ -108,7 +108,7 @@ struct OverviewTeamRow: View {
         // window adapts it to a sheet sized to its content, whose medium detent is about half of the
         // Overview it rises over.
         .popover(isPresented: $showsAbout, attachmentAnchor: .rect(.bounds),
-                 arrowEdge: placement == .inspector ? .trailing : nil) {
+                 arrowEdge: placement == .column ? .trailing : nil) {
             OverviewAgentAbout(agentID: agent.id, store: store,
                                style: windowSizeClass == .regular ? .popover : .sheet(mediumHeight: overviewHeight / 2))
         }

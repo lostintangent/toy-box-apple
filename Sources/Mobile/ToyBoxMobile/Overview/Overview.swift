@@ -5,7 +5,7 @@ import SwiftUI
 import ToyBoxUI
 
 enum OverviewPlacement: Equatable {
-    case sheet, inspector
+    case sheet, column
 
     /// The column's fixed width, the narrowest readers kept shrinking it to.
     static let columnWidth: CGFloat = 280
@@ -13,15 +13,15 @@ enum OverviewPlacement: Equatable {
     /// The column takes room only on scenes at least 716 points wide, so the conversation keeps more
     /// than the Mac's 420 points beside it as it opens. On the Duo that's unfolded landscape. Unfolded
     /// portrait also reports a regular size class, so the scene's width decides.
-    static let inspectorSceneWidth: CGFloat = 716
+    static let columnSceneWidth: CGFloat = 716
 
     /// The column covers the detail's trailing corner, so it also needs regular height, where the
     /// channel's Overview button stands in the trailing vertical bar beside it. A compact-height scene
     /// as wide, like a Pro Max in landscape, keeps a horizontal bar whose Overview button the column
     /// would cover.
     init(sceneWidth: CGFloat, sizeClass: UserInterfaceSizeClass?, verticalSizeClass: UserInterfaceSizeClass?) {
-        self = sizeClass == .regular && verticalSizeClass == .regular && sceneWidth >= Self.inspectorSceneWidth
-            ? .inspector : .sheet
+        self = sizeClass == .regular && verticalSizeClass == .regular && sceneWidth >= Self.columnSceneWidth
+            ? .column : .sheet
     }
 }
 
@@ -50,7 +50,7 @@ final class Overview {
     /// The landscape column has no close of its own. Only Overview's presence shows it, which the
     /// Overview button owns, like the sidebar's, so no rotation, fold or unfold opens or closes it.
     func showsColumn(for interaction: ChannelInteraction) -> Bool {
-        placement == .inspector && interaction.isInspectorPresented && !interaction.isArtifactViewerPresented
+        placement == .column && interaction.isInspectorPresented && !interaction.isArtifactViewerPresented
     }
 
     /// A screen over Overview holds it where it is, so a rotation can't hand the screen to another

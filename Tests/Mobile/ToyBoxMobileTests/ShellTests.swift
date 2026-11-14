@@ -1301,10 +1301,10 @@ struct ShellTests {
     @Test func aScreenHoldsOverviewInPlaceUntilItCloses() {
         let overview = Overview()
         overview.isHeld = true
-        overview.move(to: .inspector)
+        overview.move(to: .column)
         #expect(overview.placement == .sheet)
         overview.isHeld = false
-        #expect(overview.placement == .inspector)
+        #expect(overview.placement == .column)
     }
 
     @Test func aWidgetRequestOpensOnItsOwnServerAndNeverAnUnlistedOne() async throws {

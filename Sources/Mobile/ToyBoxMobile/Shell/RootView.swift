@@ -34,7 +34,7 @@ struct RootView: View {
         // vertical bar.
         .overlay(alignment: .trailing) {
             if let interaction = selectedInteraction, overview.showsColumn(for: interaction) {
-                OverviewColumn(content: overviewContent(at: .inspector)
+                OverviewColumn(content: overviewContent(at: .column)
                     .environment(model)
                     .environment(model.following))
                     .frame(width: OverviewPlacement.columnWidth)
@@ -336,7 +336,7 @@ private struct ScreenCoverPresentation: ViewModifier {
     let host: Host
     @Binding var isUp: Bool
 
-    private var isHost: Bool { overview.placement == (host == .root ? .inspector : .sheet) }
+    private var isHost: Bool { overview.placement == (host == .root ? .column : .sheet) }
 
     func body(content: Content) -> some View {
         content.fullScreenCover(item: Binding(
