@@ -153,6 +153,7 @@ struct ChannelSidebar: View {
                 row(item, now: now)
             }
         }
+        .dictationAccessSheet(talk.dictation)
         .needsYouList(cards, card: liftedCard, targets: targets, bounds: $listBounds,
                       endsWhenChanging: listContext) { entry, maxHeight in
             if let item = listed.first(where: { $0.target == entry.target }) {
@@ -239,6 +240,7 @@ struct ChannelSidebar: View {
                      line: rows.hiddenLines.contains(target) ? .hidden : isCollapsed ? .visible : .automatic) {
                 talk(to: item)
             }
+            .background { TalkRowLine(isHidden: talk.hiddenLines.contains(target)) }
     }
 
     /// A channel's row: the open card, a waiting row with its question, or an ordinary row.

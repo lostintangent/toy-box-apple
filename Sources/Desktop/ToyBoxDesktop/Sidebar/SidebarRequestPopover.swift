@@ -7,36 +7,6 @@ import ToyBoxUI
 // A waiting row answers its request from a popover beside it, through the phone's Needs You cards.
 // See Answering from the list in docs/spec.md.
 
-extension NeedsYouCards {
-    /// The sidebar's answers, with drafts, VoiceOver announcements and the spec's motion.
-    convenience init(checks: CardChecks) {
-        self.init(checks: checks, draft: { .shared(serverURL: $0.api.baseURL, channelID: $0.id) },
-                  announce: { NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
-                                                   userInfo: [.announcement: $0,
-                                                              .priority: NSAccessibilityPriorityLevel.high.rawValue]) },
-                  animate: { withAnimation($0.animation, $1) })
-    }
-}
-
-extension CardChecks {
-    /// The sidebar's done checks, settling with the spec's motion.
-    convenience init() {
-        self.init(animate: { withAnimation($0.animation, $1) })
-    }
-}
-
-extension CardMotion {
-    /// The beat's motion from the spec, or a short ease without bounce under Reduce Motion.
-    @MainActor var animation: Animation {
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return .easeInOut(duration: 0.2) }
-        return switch self {
-        case .open: .spring(duration: 0.4, bounce: 0.12)
-        case .sent: .smooth(duration: 0.35)
-        case .settle: .easeOut(duration: 0.4)
-        }
-    }
-}
-
 /// What a row needs to answer its request from its popover, which the sidebar opens one at a time.
 struct SidebarAnswers {
     let cards: NeedsYouCards
@@ -182,30 +152,5 @@ private struct SidebarReplyField: View {
     private func send() {
         guard canSend else { return }
         Task { await cards.send() }
-    }
-}
-
-/// The done check a row's avatar wears once its reply sends: a tile in the completion green, 2
-/// points smaller than the avatar, with the check knocked out.
-struct SidebarDoneCheck: View {
-    let isShown: Bool
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        ZStack {
-            ChannelMark.shape(size: 28).fill(ChannelTaskColors.changes(in: colorScheme).added)
-            Image(systemName: "checkmark")
-                .font(.system(size: 15, weight: .semibold))
-                // Only its shape cuts, and a concrete style keeps the sidebar's vibrancy from filling it.
-                .foregroundStyle(.black)
-                .blendMode(.destinationOut)
-                .scaleEffect(isShown || reduceMotion ? 1 : 0.5)
-        }
-        .frame(width: 28, height: 28)
-        // Lets the check knock out only its own tile.
-        .compositingGroup()
-        .opacity(isShown ? 1 : 0)
-        .accessibilityHidden(true)
     }
 }
