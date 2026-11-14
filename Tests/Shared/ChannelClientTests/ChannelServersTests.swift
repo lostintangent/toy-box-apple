@@ -91,7 +91,9 @@ struct ChannelServersTests {
         let servers = servers(savingTo: defaults)
         defer { clean(defaults, suite) }
 
-        await #expect(throws: ChannelAPIError.invalidServerURL) { try await servers.connect("ftp://studio.example") }
+        await #expect(throws: ChannelAPIError.invalidServerURL("Use HTTP or HTTPS for your Toy Box server.")) {
+            try await servers.connect("ftp://studio.example")
+        }
         await #expect(throws: URLError.self) { try await servers.connect(asleep.address) }
         #expect(servers.catalogs.isEmpty && ChannelServers.saved(in: defaults) == nil)
 

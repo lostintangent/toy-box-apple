@@ -14,9 +14,7 @@ struct HistoryFixtureTests {
         let api = try ChannelAPI(serverURL: configured)
         #expect(api.baseURL.host == "127.0.0.1" || api.baseURL.host == "localhost")
         #expect(api.baseURL.port == 3211)
-        guard ["127.0.0.1", "localhost"].contains(api.baseURL.host ?? ""), api.baseURL.port == 3211 else {
-            throw ChannelAPIError.invalidServerURL
-        }
+        try #require(["127.0.0.1", "localhost"].contains(api.baseURL.host ?? "") && api.baseURL.port == 3211)
         let catalog = try await api.catalog()
         #expect(catalog.channels.map(\.id) == ["history-demo"])
         let store = ChannelStore(id: "history-demo", api: api)
@@ -76,9 +74,7 @@ struct HistoryFixtureTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_HISTORY_DEMO_URL"] != nil))
     @MainActor func bookmarksPageBackAndRoundTrip() async throws {
         let api = try ChannelAPI(serverURL: #require(ProcessInfo.processInfo.environment["TOY_BOX_HISTORY_DEMO_URL"]))
-        guard ["127.0.0.1", "localhost"].contains(api.baseURL.host ?? ""), api.baseURL.port == 3211 else {
-            throw ChannelAPIError.invalidServerURL
-        }
+        try #require(["127.0.0.1", "localhost"].contains(api.baseURL.host ?? "") && api.baseURL.port == 3211)
         let store = ChannelStore(id: "history-demo", api: api)
         store.connect()
         defer { store.disconnect() }

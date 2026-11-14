@@ -20,8 +20,8 @@ struct ServerConnectionSection: View {
                 .accessibilityIdentifier("server-address")
                 .onSubmit(connect)
             if let failure {
-                if failure as? ChannelAPIError == .invalidServerURL {
-                    ServerErrorLabel(message: Self.validationMessage(address))
+                if case .invalidServerURL(let message)? = failure as? ChannelAPIError {
+                    ServerErrorLabel(message: message)
                 } else {
                     ServerErrorLabel(message: Self.failureMessage(failure), help: Self.failureHelp)
                 }
@@ -46,17 +46,6 @@ struct ServerConnectionSection: View {
             return nil
         }
         return host
-    }
-
-    /// What's wrong with an address the app can't use.
-    static func validationMessage(_ address: String) -> String {
-        let fallback = ChannelAPIError.invalidServerURL.localizedDescription
-        guard let parts = URLComponents(serverAddress: address) else { return fallback }
-        guard ["http", "https"].contains(parts.scheme?.lowercased()) else { return "Use HTTP or HTTPS for your Toy Box server." }
-        guard let host = parts.host, !host.isEmpty else { return "Include your server's hostname or IP address." }
-        if parts.user != nil || parts.password != nil { return "Remove usernames and passwords from the server URL." }
-        if parts.query != nil || parts.fragment != nil { return "Use the server's base URL without a query or fragment." }
-        return fallback
     }
 
     static func failureMessage(_ error: any Error) -> String {
