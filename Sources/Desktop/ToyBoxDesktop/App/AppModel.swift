@@ -140,9 +140,7 @@ final class AppModel {
                 return notifications.authorization == .authorized || notifications.authorization == .provisional
             },
             build: { [weak self] server, window in
-                guard let api = self?.catalogs.first(at: server)?.api else {
-                    throw ChannelAPIError.invalidServerURL("Enter an HTTP or HTTPS server URL.")
-                }
+                guard let api = self?.catalogs.first(at: server)?.api else { throw ChannelAPIError.disconnected }
                 return try await MorningDigest.build(
                     api: api, window: window,
                     summarizes: IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages),

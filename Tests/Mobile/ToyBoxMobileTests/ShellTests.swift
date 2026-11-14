@@ -690,6 +690,7 @@ struct ShellTests {
         defer {
             session.invalidateAndCancel()
             BadgeFixtureProtocol.responses.withLock { $0[host] = nil; $0[otherHost] = nil }
+            BadgeFixtureProtocol.peers.withLock { $0[host] = nil }
         }
         let channels = (0..<4).map { index in
             Channel(id: "\(index)", name: "Channel \(index)", model: .init(provider: "test", name: "test"),
@@ -750,18 +751,17 @@ struct ShellTests {
             await badges.waitForCalls(3)
             #expect(badges.counts == [2, 2, 0])
 
-            try model.replaceServer(with: "https://other.example")
-            model.cover = nil
-            try model.replaceServer(with: "https://\(host)")
+            model.servers.disconnect()
             await badges.waitForCalls(4)
             #expect(badges.counts == [2, 2, 0, 0], "Disconnect clears the badge.")
             try serve([channels[0]])
-            await model.catalog?.refresh()
+            try await model.connect("https://\(host)")
             await badges.waitForCalls(5)
             #expect(badges.counts == [2, 2, 0, 0, 1])
 
             try serve(channels, on: otherHost)
-            let other = try model.addServer("https://\(otherHost)")
+            BadgeFixtureProtocol.peers.withLock { $0[host] = ["https://\(otherHost)"] }
+            let other = try await model.peer("https://\(otherHost)")
             await other.refresh()
             await badges.waitForCalls(6)
             #expect(badges.counts == [2, 2, 0, 0, 1, 3])
@@ -838,8 +838,9 @@ struct ShellTests {
         try await withNotifications { defaults, registration, notifications in
             let id = try #require(registration.current.first?.registrationID)
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
-                                 defaults: defaults, session: fixtureSession(), notifications: notifications)
-            let second = try model.addServer("https://second.example")
+                                 defaults: defaults, session: fixtureSession(peers: ["https://second.example"]),
+                                 notifications: notifications)
+            let second = try await model.peer("https://second.example")
             try registration.select(apis: model.catalogs.map(\.api))
             let secondID = try #require(registration.current.last?.registrationID)
             @MainActor func open(_ kind: ChannelPushPayload.Kind, _ channel: String, _ sequence: Int,
@@ -1001,7 +1002,7 @@ struct ShellTests {
             await waitFor(.available, for: first)
             #expect(notifications.isReady(notifications.registrations.first))
 
-            try model.replaceServer(with: "https://second.example")
+            try await model.replaceServer(with: "https://second.example")
             let secondAPI = try #require(model.api)
             try registration.select(apis: [secondAPI])
             let second = try #require(model.catalog?.channel(id: "first"))
@@ -1232,7 +1233,7 @@ struct ShellTests {
             model.openHandoffChannel(model.target("first")!, generation: generation)
             #expect(model.selectedChannelID == "second")
             let beforeSwitch = model.beginHandoffNavigation()
-            try model.replaceServer(with: "https://another.example")
+            try await model.replaceServer(with: "https://another.example")
             model.openHandoffChannel(model.target("first")!, generation: beforeSwitch)
             #expect(model.selectedChannelID == nil)
             #expect(model.serverURL == "https://another.example")
@@ -1309,8 +1310,8 @@ struct ShellTests {
     @Test func aWidgetRequestOpensOnItsOwnServerAndNeverAnUnlistedOne() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
-                                 defaults: defaults, session: fixtureSession())
-            let second = try model.addServer("https://second.example")
+                                 defaults: defaults, session: fixtureSession(peers: ["https://second.example"]))
+            let second = try await model.peer("https://second.example")
             let listed = NeedsYouRequestLink(serverURL: "https://second.example", channelID: "first", sequence: 41)
             await model.openExternalURL(try #require(listed.url))
             let target = try #require(second.target("first"))
@@ -1352,10 +1353,11 @@ struct ShellTests {
 
     @Test func disconnectingForgetsEveryServerAndClosesSettingsOntoWelcome() async throws {
         try await withDefaults { defaults in
-            let model = AppModel(arguments: [], environment: [:], defaults: defaults, session: fixtureSession())
-            let first = try model.addServer("https://first.example")
-            try model.addServer("https://second.example")
-            #expect(model.catalog === first && model.serverURL == "https://first.example")
+            let model = AppModel(arguments: [], environment: [:], defaults: defaults,
+                                 session: fixtureSession(peers: ["https://second.example"]))
+            try await model.connect("https://first.example")
+            _ = try await model.peer("https://second.example")
+            #expect(model.catalogs.count == 2 && model.serverURL == "https://first.example")
             model.cover = .settings
             model.servers.disconnect()
             #expect(model.catalogs.isEmpty && model.catalog == nil && model.serverURL.isEmpty)
@@ -1383,14 +1385,14 @@ struct ShellTests {
 
     @Test func firstLaunchHasNoServerOrChannelLinks() async throws {
         try await withDefaults { defaults in
-            let model = AppModel(arguments: [], environment: [:], defaults: defaults)
+            let model = AppModel(arguments: [], environment: [:], defaults: defaults, session: fixtureSession())
             #expect(model.serverURL.isEmpty)
             #expect(model.catalog == nil)
             #expect(model.configurationError == nil)
             #expect(defaults.string(forKey: "serverURL") == nil)
             let first = try #require(ChannelTarget(serverURL: "https://fixture.example", channelID: "first"))
             #expect(model.channelURL(first) == nil)
-            try model.addServer("https://fixture.example")
+            try await model.connect("https://fixture.example")
             #expect(model.channelURL(first) != nil)
         }
     }
@@ -1525,7 +1527,7 @@ struct ShellTests {
             interaction.isArtifactViewerPresented = true
             let replacement: ChannelStore
             if changingServer {
-                try model.replaceServer(with: "https://second.example")
+                try await model.replaceServer(with: "https://second.example")
                 replacement = try #require(model.catalog?.channel(id: store.id))
             } else {
                 replacement = ChannelStore(id: store.id, api: store.api)
@@ -1679,11 +1681,11 @@ struct ShellTests {
     @Test func changingServerDropsTheOldStoreAndInteractionWithoutOverwritingItsSavedSelection() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://first.example"], environment: [:],
-                                 defaults: defaults)
+                                 defaults: defaults, session: fixtureSession())
             model.selectedChannelID = "first"
             let previousStore = model.selectedStore
             let previousInteraction = model.interaction(for: "first")
-            try model.replaceServer(with: "https://second.example")
+            try await model.replaceServer(with: "https://second.example")
             #expect(model.selectedStore == nil)
             #expect(previousStore?.isTrying == false)
             #expect(model.interaction(for: "first") !== previousInteraction)
@@ -1694,9 +1696,10 @@ struct ShellTests {
 
     @Test func aSelectionKeepsItsServerAndLeavesWithIt() async throws {
         try await withDefaults { defaults in
-            let model = AppModel(arguments: [], environment: [:], defaults: defaults, session: fixtureSession())
-            try model.addServer("https://first.example")
-            let second = try model.addServer("https://second.example")
+            let model = AppModel(arguments: [], environment: [:], defaults: defaults,
+                                 session: fixtureSession(peers: ["https://second.example"]))
+            try await model.connect("https://first.example")
+            let second = try await model.peer("https://second.example")
             model.selection = second.target("second")
             let store = try #require(model.selectedStore)
             #expect(store.api.baseURL == second.api.baseURL)
@@ -1716,8 +1719,8 @@ struct ShellTests {
             model.selectedChannelID = "first"
             let catalog = model.catalog
             let store = model.selectedStore
-            #expect(throws: ChannelAPIError.invalidServerURL("Use HTTP or HTTPS for your Toy Box server.")) {
-                try model.addServer("file:///not-a-server")
+            await #expect(throws: ChannelAPIError.invalidServerURL("Use HTTP or HTTPS for your Toy Box server.")) {
+                try await model.connect("file:///not-a-server")
             }
             #expect(model.serverURL == "https://first.example")
             #expect(model.catalog === catalog)
@@ -1758,7 +1761,7 @@ struct ShellTests {
             model.visibleChannelID = firstStore.id
             model.setScenePhase(.active)
             #expect(firstStore.isTrying)
-            try model.replaceServer(with: secondAddress)
+            try await model.replaceServer(with: secondAddress)
             #expect(!firstStore.isTrying)
             #expect(model.selectedStore == nil)
             #expect(model.visibleChannelID == nil)
@@ -1772,7 +1775,7 @@ struct ShellTests {
             #expect(secondDraft.text.isEmpty)
             secondDraft.text = "Draft for the second server"
             model.selectedChannelID = "second"
-            try model.replaceServer(with: firstAddress)
+            try await model.replaceServer(with: firstAddress)
             await model.refreshCatalog()
             model.selectedChannelID = "first"
             let restoredStore = try #require(model.selectedStore)
@@ -1801,7 +1804,7 @@ struct ShellTests {
     @Test func composerSessionsSurviveNavigationAndAreScopedToTheCurrentServer() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://first.example"], environment: [:],
-                                 defaults: defaults)
+                                 defaults: defaults, session: fixtureSession())
             model.selectedChannelID = "first"
             let first = try #require(model.selectedStore)
             let session = model.composerSession(for: first)
@@ -1816,7 +1819,7 @@ struct ShellTests {
 
             let replacement = ChannelStore(id: first.id, api: first.api)
             #expect(model.composerSession(for: replacement) !== session)
-            try model.replaceServer(with: "https://second.example")
+            try await model.replaceServer(with: "https://second.example")
             #expect(secondSession == nil)
             model.selectedChannelID = "first"
             let changedServer = try #require(model.selectedStore)
@@ -1934,7 +1937,7 @@ struct ShellTests {
     @Test func siriSeesTheChannelScreenOnlyWhileItsInFrontAndUncovered() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
-                                 defaults: defaults, session: fixtureSession())
+                                 defaults: defaults, session: fixtureSession(peers: ["https://second.example"]))
             defer { model.setScenePhase(.background) }
             await model.refreshCatalog()
             model.selectedChannelID = "first"
@@ -1970,7 +1973,7 @@ struct ShellTests {
             #expect(shown === session)
             #expect(owner === store)
 
-            let second = try model.addServer("https://second.example")
+            let second = try await model.peer("https://second.example")
             await second.refresh()
             let elsewhere = try #require(second.target("first"))
             model.selection = elsewhere
@@ -2055,11 +2058,28 @@ struct ShellTests {
             }
         }
     }
+}
 
-    private func fixtureSession() -> URLSession {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ShellFixtureProtocol.self]
-        return URLSession(configuration: configuration)
+/// A session whose every server answers with the same two channels, and lists `peers`.
+func fixtureSession(peers: [String] = []) -> URLSession {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [ShellFixtureProtocol.self]
+    configuration.httpAdditionalHeaders = [ServerInfo.fixturePeers: peers.joined(separator: " ")]
+    return URLSession(configuration: configuration)
+}
+
+extension ServerInfo {
+    /// The header a fixture session lists its servers' peers in, between spaces.
+    static let fixturePeers = "X-Fixture-Peers"
+
+    /// A fixture server's answer to `GET /api/v1/server`, with the name it had before it answered, so
+    /// nothing renames, and the peers its session lists.
+    static func fixture(answering request: URLRequest) throws -> Data {
+        let url = try #require(request.url)
+        let peers = request.value(forHTTPHeaderField: fixturePeers)?.split(separator: " ").map(String.init)
+        return try JSONEncoder().encode(ServerInfo(
+            id: url.host ?? "", name: ChannelCatalogStore.name(of: url.absoluteString), accentColor: "#327785",
+            release: .init(version: "0.4.0", installedVersion: nil), peers: peers ?? []))
     }
 }
 
@@ -2083,7 +2103,8 @@ private final class ShellFixtureProtocol: URLProtocol, @unchecked Sendable {
                 },
                 working: ["first"]
             )
-            let body = try JSONEncoder().encode(catalog)
+            let body = url.path.hasSuffix("/api/v1/server")
+                ? try ServerInfo.fixture(answering: request) : try JSONEncoder().encode(catalog)
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             if isCatalogStream {
                 // The catalog's stream opens with the catalog and stays open until the app closes it.
@@ -2121,6 +2142,8 @@ private final class BadgeRecorder {
 private final class BadgeFixtureProtocol: URLProtocol, @unchecked Sendable {
     struct Response: Sendable { var status: Int; var data: Data }
     static let responses = Mutex<[String: Response]>([:])
+    /// The peers each host lists.
+    static let peers = Mutex<[String: [String]]>([:])
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -2130,6 +2153,13 @@ private final class BadgeFixtureProtocol: URLProtocol, @unchecked Sendable {
             let url = try #require(request.url)
             let result = if url.path == "/api/v1/channels" {
                 try #require(Self.responses.withLock { $0[url.host ?? ""] })
+            } else if url.path == "/api/v1/server" {
+                try Response(status: 200, data: ServerInfo.fixture(answering: {
+                    var request = request
+                    let peers = Self.peers.withLock { $0[url.host ?? ""] } ?? []
+                    request.setValue(peers.joined(separator: " "), forHTTPHeaderField: ServerInfo.fixturePeers)
+                    return request
+                }()))
             } else {
                 Response(status: 503, data: Data(#"{"error":"Request history unavailable."}"#.utf8))
             }
@@ -2175,9 +2205,19 @@ extension AppModel {
 
 extension AppModel {
     /// Puts a server at another address in place of every server, as Disconnect and then Connect do.
-    @discardableResult
-    func replaceServer(with address: String) throws -> ChannelCatalogStore {
+    func replaceServer(with address: String) async throws {
         servers.disconnect()
-        return try addServer(address)
+        try await connect(address)
+    }
+
+    /// The peer at an address, once the first server's read lists it and it answers its own.
+    func peer(_ address: String) async throws -> ChannelCatalogStore {
+        await catalog?.refreshServer()
+        var read: Task<Void, Never>?
+        while let reads = servers.peerReads, reads != read {
+            await reads.value
+            read = reads
+        }
+        return try #require(catalogs.first(at: address))
     }
 }

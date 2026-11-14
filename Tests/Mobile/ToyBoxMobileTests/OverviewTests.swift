@@ -95,8 +95,8 @@ struct OverviewTests {
         #expect(!presentation.isCompactSheetPresented)
     }
 
-    @Test func managementReconstructionRetainsEntriesPendingAndFocus() throws {
-        try withModel { app in
+    @Test func managementReconstructionRetainsEntriesPendingAndFocus() async throws {
+        try await withModel { app in
             let catalog = try #require(app.catalog)
             let sessions = ManagementSessions()
             let flow = try ManagementFlow.addMember(#require(catalog.target("channel")), name: "Initial")
@@ -1263,8 +1263,8 @@ struct OverviewTests {
         #expect(image.size.height > 44)
     }
 
-    @Test func removingAnAgentKeepsItsEditorAndOldSessionsCannotCompleteANewFlow() throws {
-        try withModel { app in
+    @Test func removingAnAgentKeepsItsEditorAndOldSessionsCannotCompleteANewFlow() async throws {
+        try await withModel { app in
             let catalog = try #require(app.catalog)
             let sessions = ManagementSessions()
             let presenter = ManagementPresenter()
@@ -1282,35 +1282,34 @@ struct OverviewTests {
             #expect(replacement !== editor)
             #expect(!sessions.isCurrent(editor, app: app, presenter: presenter))
             #expect(sessions.isCurrent(replacement, app: app, presenter: presenter))
-            try app.replaceServer(with: "https://other.example")
-            try app.replaceServer(with: "https://fixture.example")
+            try await app.replaceServer(with: "https://other.example")
+            try await app.replaceServer(with: "https://fixture.example")
             #expect(!sessions.isCurrent(replacement, app: app, presenter: presenter))
         }
     }
 
-    @Test func managementSessionsBelongToTheirOwnServer() throws {
-        try withModel { app in
-            let second = try app.addServer("https://second.example")
+    @Test func managementSessionsBelongToTheirOwnServer() async throws {
+        try await withModel(peers: ["https://second.example"]) { app in
+            let second = try await app.peer("https://second.example")
             let sessions = ManagementSessions()
             let presenter = ManagementPresenter()
             let editing = try ManagementFlow.editChannel(#require(second.target("channel")))
             presenter.present(editing)
             let editor = sessions.session(for: editing, catalog: second)
-            try app.addServer("https://joined.example")
             #expect(sessions.isCurrent(editor, app: app, presenter: presenter))
             app.servers.disconnect()
             #expect(!sessions.isCurrent(editor, app: app, presenter: presenter))
 
             // New Channel's Server menu moves its session, so the entries stay.
-            try app.addServer("https://first.example")
-            let third = try app.addServer("https://third.example")
+            try await app.connect("https://first.example")
+            let peer = try await app.peer("https://second.example")
             let creating = ManagementFlow.newChannel(server: app.serverURL)
             presenter.present(creating)
             let draft = sessions.session(for: creating, catalog: try #require(app.catalog))
             draft.channelForm.name = "Workshop"
-            draft.catalog = third
+            draft.catalog = peer
             #expect(sessions.session(for: creating, catalog: try #require(app.catalog)) === draft)
-            #expect(sessions.isCurrent(draft, app: app, presenter: presenter) && draft.api.baseURL == third.api.baseURL)
+            #expect(sessions.isCurrent(draft, app: app, presenter: presenter) && draft.api.baseURL == peer.api.baseURL)
         }
     }
 
@@ -1345,11 +1344,12 @@ struct OverviewTests {
         #expect(replacement.server == api.baseURL)
     }
 
-    @Test func changingSelectionClosesTheVisitAndChangingServerDiscardsItsSession() throws {
+    @Test func changingSelectionClosesTheVisitAndChangingServerDiscardsItsSession() async throws {
         let suite = "mobile-overview-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
+        let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults,
+                             session: fixtureSession())
         let artifact = ChannelArtifact(file: .init(kind: "machine", path: "document.md"), title: "Document")
         model.selectedChannelID = "first"
         let first = model.artifactSession(for: try #require(model.selectedStore))
@@ -1358,7 +1358,7 @@ struct OverviewTests {
         #expect(!first.isPresented)
         let second = model.artifactSession(for: try #require(model.selectedStore))
         second.open(artifact)
-        try model.replaceServer(with: "https://replacement.example")
+        try await model.replaceServer(with: "https://replacement.example")
         #expect(!second.isPresented)
         #expect(model.selectedStore == nil)
         model.selectedChannelID = "second"
@@ -1597,11 +1597,12 @@ struct OverviewTests {
         #expect(await downloads.requests == count)
     }
 
-    private func withModel(_ body: (AppModel) throws -> Void) throws {
+    private func withModel(peers: [String] = [], _ body: (AppModel) async throws -> Void) async throws {
         let suite = "mobile-overview-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        try body(AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults))
+        try await body(AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults,
+                                session: fixtureSession(peers: peers)))
     }
 
     private actor NativeArtifactOriginalDownloads {

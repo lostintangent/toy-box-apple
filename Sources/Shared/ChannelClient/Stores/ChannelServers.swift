@@ -82,15 +82,6 @@ public final class ChannelServers {
         return catalog
     }
 
-    /// Opens a server without reading it, until Settings connects with `connect(_:)`.
-    @discardableResult
-    public func add(_ address: String) throws -> ChannelCatalogStore {
-        let catalog = open(try ChannelAPI(serverURL: address, session: session))
-        catalogs.append(catalog)
-        save()
-        return catalog
-    }
-
     /// Disconnects every server and forgets the address, which leaves no servers.
     public func disconnect() {
         for catalog in catalogs {
