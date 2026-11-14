@@ -175,8 +175,12 @@ public final class ComposerDraft {
     public var isLoadingImages: Bool { loadingImageCount > 0 }
     public var isOverLimit: Bool { text.utf16.count > ChannelMessage.maxLength }
 
+    /// Puts `incoming` after `existing`, a blank line apart. A side that's only whitespace adds
+    /// nothing, and `existing` drops its trailing whitespace first, so the gap is always one blank line.
     public nonisolated static func joined(_ existing: String, _ incoming: String) -> String {
-        [existing, incoming].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        guard incoming.contains(where: { !$0.isWhitespace }) else { return existing }
+        guard let end = existing.lastIndex(where: { !$0.isWhitespace }) else { return incoming }
+        return String(existing[...end]) + "\n\n" + incoming
     }
 
     public func isSendable(hasAdditionalContent: @autoclosure () -> Bool = false,

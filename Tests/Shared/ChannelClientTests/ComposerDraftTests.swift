@@ -32,6 +32,13 @@ struct ComposerDraftTests {
         #expect(!draft.isSendable(hasAdditionalContent: true))
     }
 
+    @Test func keptWordsLandOneBlankLineAfterTheDraftWhateverWhitespaceItEndsIn() {
+        #expect(ComposerDraft.joined("", "Words") == "Words")
+        #expect(ComposerDraft.joined(" \n", "Words") == "Words")
+        #expect(ComposerDraft.joined("  Draft\n\n\n", "Words") == "  Draft\n\nWords")
+        #expect(ComposerDraft.joined("Draft \n", " \n") == "Draft \n")
+    }
+
     @Test func anOldCompletionCannotEraseANewerDraft() async throws {
         try await withDraft { draft, _ in
             draft.text = "Original"
