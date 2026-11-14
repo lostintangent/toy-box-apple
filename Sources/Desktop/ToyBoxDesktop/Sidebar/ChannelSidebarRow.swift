@@ -15,6 +15,13 @@ struct ChannelSidebarRow: View {
     let folder: ChannelFolderAvailability?
     /// The channel's server, which an image avatar loads from.
     var api: ChannelAPI? = nil
+    /// The selected row keeps the list's own highlight, so it never lights.
+    var isSelected = false
+    /// The request the row answers from its popover, while it waits and isn't selected.
+    var request: ChannelCatalogStore.WaitingRequest? = nil
+    var answers: SidebarAnswers? = nil
+    /// The done check the avatar wears once the row's reply sends.
+    var check: CardChecks.Check? = nil
     var openFolder: () -> Void
     var onTap: () -> Void
 
@@ -34,9 +41,18 @@ private struct ChannelSidebarRowContent: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.channelTextScale) private var scale
     @Environment(\.backgroundProminence) private var prominence
+    @Environment(\.windowSnapshot) private var snapshot
     @ViewState private var folderFrame: CGRect = .null
+    @ViewState private var bubbleFrame: CGRect = .null
+    @ViewState private var isHovered = false
+    @ViewState private var isPopoverHovered = false
+    @GestureState private var isPressed = false
 
     private static let space = "ChannelSidebarRow"
+    /// How long the pointer rests on a waiting row before its popover opens, and how long it may
+    /// spend crossing between the row and the popover before leaving closes it.
+    private static let rest = Duration.seconds(0.5)
+    private static let crossing = Duration.seconds(0.3)
 
     private var channel: Channel { row.channel }
     private var working: [ChannelAgent] { row.working }
@@ -46,20 +62,71 @@ private struct ChannelSidebarRowContent: View {
     private var emphasized: Bool { prominence == .increased }
     private var updatedAt: Date? { try? Date(channel.updatedAt, strategy: .iso8601) }
 
+    private var isOpen: Bool { row.answers?.isOpen == true && row.request != nil }
+    private var isLit: Bool {
+        !row.isSelected && (isHovered || isPressed || isOpen || snapshot?.requestedState == "hover-all")
+    }
+    /// Leaving the row and its unpinned popover closes it, once the pointer isn't crossing between them.
+    private var isLeaving: Bool {
+        isOpen && !isHovered && !isPopoverHovered && row.answers?.isPinned != true
+    }
+
     var body: some View {
         content
+            .background { hoverFill }
             .help(help)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(channel.name)
             .accessibilityValue(help)
             .accessibilityActions {
+                if row.request != nil {
+                    Button("Answer Request") {
+                        row.answers?.isOpen = true
+                        row.answers?.isPinned = true
+                    }
+                }
                 if folder == .openable { Button("Open Folder in Finder", action: row.openFolder) }
             }
             .contentShape(Rectangle())
             .coordinateSpace(.named(Self.space))
+            .onHover { isHovered = $0 }
             .simultaneousGesture(SpatialTapGesture(coordinateSpace: .named(Self.space)).onEnded { value in
-                if !folderFrame.contains(value.location) { row.onTap() }
+                if !folderFrame.contains(value.location) && !bubbleFrame.contains(value.location) { row.onTap() }
             })
+            .simultaneousGesture(DragGesture(minimumDistance: 0).updating($isPressed) { _, pressed, _ in pressed = true })
+            .popover(item: Binding(get: { isOpen ? row.request : nil }, set: { if $0 == nil { row.answers?.isOpen = false } }),
+                     arrowEdge: .trailing) { entry in
+                if let answers = row.answers {
+                    SidebarRequestPopover(entry: entry, answers: answers, isHovered: $isPopoverHovered)
+                }
+            }
+            .task(id: isHovered) {
+                guard isHovered, row.request != nil, (try? await Task.sleep(for: Self.rest)) != nil else { return }
+                row.answers?.isOpen = true
+            }
+            .task(id: isLeaving) {
+                guard isLeaving, (try? await Task.sleep(for: Self.crossing)) != nil else { return }
+                row.answers?.isOpen = false
+            }
+            // A request answered, replaced or selected closes its popover.
+            .onChange(of: row.request?.id) { if row.answers?.isOpen == true { row.answers?.isOpen = false } }
+    }
+
+    /// The hover fill in the row's own shape, or orange on a waiting row, which stays lit while its
+    /// popover is open.
+    private var hoverFill: some View {
+        let dark = colorScheme == .dark
+        let pressed = isPressed ? 0.05 : 0
+        let fill = attention == .waiting
+            ? Channel.Attention.waiting.color(in: colorScheme).opacity((dark ? 0.2 : 0.14) + pressed)
+            : Color.primary.opacity((dark ? 0.12 : 0.08) + pressed)
+        return RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(fill)
+            // Out to the list's row inset, where its own selection draws.
+            .padding(.horizontal, -6)
+            .opacity(isLit ? 1 : 0)
+            .animation(.easeOut(duration: 0.12), value: isLit)
+            .animation(.easeOut(duration: 0.12), value: isPressed)
     }
 
     private var content: some View {
@@ -109,8 +176,12 @@ private struct ChannelSidebarRowContent: View {
     }
 
     /// The avatar keeps its own colors on the accent selection, like an app icon in System Settings.
+    /// It wears the done check once the row's reply sends.
     private var icon: some View {
-        ChannelMark(channel.avatar, api: row.api)
+        let checked = row.check == .sent
+        return ChannelMark(channel.avatar, api: row.api)
+            .opacity(checked ? 0 : 1)
+            .overlay { SidebarDoneCheck(isShown: checked) }
     }
 
     private var showsFolder: Bool {
@@ -136,8 +207,16 @@ private struct ChannelSidebarRowContent: View {
     @ViewBuilder private var attentionIndicator: some View {
         switch attention {
         case .waiting:
-            Image(systemName: Channel.Attention.waiting.symbol).font(.system(size: 13))
+            let bubble = Image(systemName: Channel.Attention.waiting.symbol).font(.system(size: 13))
                 .foregroundStyle(emphasized ? .white : Channel.Attention.waiting.color(in: colorScheme))
+            if row.request != nil {
+                Button { row.answers?.isOpen = true } label: { bubble.contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { bubbleFrame = $0 }
+                    .onDisappear { bubbleFrame = .null }
+            } else {
+                bubble
+            }
         case .finished:
             Image(systemName: Channel.Attention.finished.symbol).font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(emphasized ? .white : Channel.Attention.finished.color(in: colorScheme))

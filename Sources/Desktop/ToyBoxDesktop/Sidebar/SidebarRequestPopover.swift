@@ -1,0 +1,211 @@
+import AppKit
+import ChannelClient
+import ChannelKit
+import SwiftUI
+import ToyBoxUI
+
+// A waiting row answers its request from a popover beside it, through the phone's Needs You cards.
+// See Answering from the list in docs/spec.md.
+
+extension NeedsYouCards {
+    /// The sidebar's answers, with drafts, VoiceOver announcements and the spec's motion.
+    convenience init(checks: CardChecks) {
+        self.init(checks: checks, draft: { .shared(serverURL: $0.api.baseURL, channelID: $0.id) },
+                  announce: { NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                                                   userInfo: [.announcement: $0,
+                                                              .priority: NSAccessibilityPriorityLevel.high.rawValue]) },
+                  animate: { withAnimation($0.animation, $1) })
+    }
+}
+
+extension CardChecks {
+    /// The sidebar's done checks, settling with the spec's motion.
+    convenience init() {
+        self.init(animate: { withAnimation($0.animation, $1) })
+    }
+}
+
+extension CardMotion {
+    /// The beat's motion from the spec, or a short ease without bounce under Reduce Motion.
+    @MainActor var animation: Animation {
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return .easeInOut(duration: 0.2) }
+        return switch self {
+        case .open: .spring(duration: 0.4, bounce: 0.12)
+        case .sent: .smooth(duration: 0.35)
+        case .settle: .easeOut(duration: 0.4)
+        }
+    }
+}
+
+/// What a row needs to answer its request from its popover, which the sidebar opens one at a time.
+struct SidebarAnswers {
+    let cards: NeedsYouCards
+    /// The row's server, which the reply goes to.
+    let catalog: ChannelCatalogStore
+    /// Whether this row's popover is open.
+    @Binding var isOpen: Bool
+    /// Set once the person clicks into the open popover, so leaving it no longer closes it.
+    @Binding var isPinned: Bool
+}
+
+/// The request alone, since the row beside it shows the channel: the whole question in the
+/// transcript's own body, then its choices, Reply and Read Aloud, or the typed reply's field in
+/// their place. The question scrolls once the popover would outgrow the screen.
+struct SidebarRequestPopover: View {
+    let entry: ChannelCatalogStore.WaitingRequest
+    let answers: SidebarAnswers
+    @Binding var isHovered: Bool
+    @Environment(\.channelTextScale) private var textScale
+    @Environment(\.colorScheme) private var colorScheme
+    @ViewState private var questionHeight: CGFloat?
+    @ViewState private var chrome: CGFloat = 0
+
+    private static let width: CGFloat = 336
+    private static let inset: CGFloat = 12
+
+    private var cards: NeedsYouCards { answers.cards }
+    private var catalog: ChannelCatalogStore { answers.catalog }
+    private var isConnected: Bool { catalog.phase.failure == nil }
+    private var isReplying: Bool { cards.replying?.id == entry.id }
+    private var requester: String { entry.request?.requester?.name ?? "the request" }
+
+    /// The request's Markdown, or the plain question when it has no words.
+    private var markdown: String {
+        guard let text = entry.request?.message.text, !text.isEmpty else { return entry.question }
+        return text
+    }
+
+    var body: some View {
+        let limit = max(60, (NSScreen.main?.visibleFrame.height ?? 800) - chrome - 40)
+        VStack(alignment: .leading, spacing: 10) {
+            ScrollView {
+                TranscriptMarkdown(content: markdown, agents: entry.request?.agents ?? [], baseURL: catalog.api.baseURL)
+                    .environment(\.transcriptSurface, .pendingAgent)
+                    // The sidebar's rows keep to one line, which the popover would inherit.
+                    .lineLimit(nil)
+                    // A popover draws `.primary` vibrant, dimmer than the transcript's own body.
+                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .fixedSize(horizontal: false, vertical: true)
+                    // The popover sizes itself before it lays out, so the question wraps at its own width.
+                    .frame(width: Self.width - 2 * Self.inset, alignment: .leading)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { questionHeight = $0 }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(height: questionHeight.map { min($0, limit) })
+            footer
+        }
+        .padding(Self.inset)
+        .frame(width: Self.width)
+        // Everything but the question, which is what the question gives way to.
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+            chrome = max($0 - min(questionHeight ?? 0, limit), 0)
+        }
+        .background {
+            ZStack {
+                ForEach(Array(TranscriptSurface.pendingAgent.fills(isDark: colorScheme == .dark).enumerated()),
+                        id: \.offset) { $0.element }
+            }
+            .ignoresSafeArea()
+        }
+        .onHover { isHovered = $0 }
+    }
+
+    @ViewBuilder private var footer: some View {
+        if isReplying && cards.isLifted {
+            SidebarReplyField(cards: cards, isConnected: isConnected, prompt: "Reply to \(requester)")
+        } else {
+            // A choice holds the popover as it was while it's saved.
+            let isSending = isReplying && cards.phase == .sending
+            TranscriptRequestActions(spacing: 6, sequence: entry.sequence,
+                                     choices: isSending ? entry.heldChoices : entry.choices(isConnected: isConnected),
+                                     replyHelp: "Reply to \(requester)",
+                                     readAloud: .init(channelID: entry.channel.id, sequence: entry.sequence, text: markdown),
+                                     onChoose: choose, onReply: reply)
+                .controlSize(.small)
+                .font(.system(size: 11 * textScale))
+                // The actions hide a chosen reply themselves, so the held ones start afresh.
+                .id(isSending)
+                .allowsHitTesting(!isSending)
+        }
+    }
+
+    private func choose(_ choice: String) {
+        answers.isPinned = true
+        let store = catalog.channel(id: entry.channel.id)
+        Task { await cards.send(choice, to: entry, on: store) }
+    }
+
+    private func reply() {
+        answers.isPinned = true
+        cards.reply(to: entry, on: catalog.channel(id: entry.channel.id))
+    }
+}
+
+/// A typed reply's field in the actions' place, focused at once, with Send at its end. Return
+/// sends, and Send waits for a connection to the request's server, as the choices do.
+private struct SidebarReplyField: View {
+    @Bindable var cards: NeedsYouCards
+    let isConnected: Bool
+    let prompt: String
+    @Environment(\.channelTextScale) private var textScale
+    @FocusState private var focused: Bool
+
+    private var canSend: Bool { cards.canSend && isConnected }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            TextField(prompt, text: $cards.words, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 14 * textScale))
+                .lineLimit(1...5)
+                .focused($focused)
+                .disabled(cards.phase != .composing)
+                .onSubmit(send)
+            // The inbox's Reply button, sized to the field.
+            Button(action: send) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 24, height: 24)
+                    .background(canSend ? Color.accentColor : Color(nsColor: .quaternaryLabelColor), in: Circle())
+                    .foregroundStyle(canSend ? .white : .secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+            .help("Reply \u{00b7} Return")
+            .accessibilityLabel("Reply")
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .task { focused = true }
+    }
+
+    private func send() {
+        guard canSend else { return }
+        Task { await cards.send() }
+    }
+}
+
+/// The done check a row's avatar wears once its reply sends: a tile in the completion green, 2
+/// points smaller than the avatar, with the check knocked out.
+struct SidebarDoneCheck: View {
+    let isShown: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack {
+            ChannelMark.shape(size: 28).fill(ChannelTaskColors.changes(in: colorScheme).added)
+            Image(systemName: "checkmark")
+                .font(.system(size: 15, weight: .semibold))
+                // Only its shape cuts, and a concrete style keeps the sidebar's vibrancy from filling it.
+                .foregroundStyle(.black)
+                .blendMode(.destinationOut)
+                .scaleEffect(isShown || reduceMotion ? 1 : 0.5)
+        }
+        .frame(width: 28, height: 28)
+        // Lets the check knock out only its own tile.
+        .compositingGroup()
+        .opacity(isShown ? 1 : 0)
+        .accessibilityHidden(true)
+    }
+}

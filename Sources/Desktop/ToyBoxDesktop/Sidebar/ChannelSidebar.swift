@@ -47,11 +47,20 @@ struct ChannelSidebar: View {
 
     /// The list's own selection, which follows `selection` except during a Command-click.
     @ViewState private var listSelection: ChannelTarget?
+    /// The waiting rows' answers from their popovers, and the done checks rows wear once one sends.
+    @ViewState private var cards: NeedsYouCards
+    @ViewState private var checks: CardChecks
+    /// The row whose request popover is open, since one opens at a time.
+    @ViewState private var answering: ChannelTarget?
+    @ViewState private var answeringIsPinned = false
 
     init(selection: Binding<ChannelTarget?>, searchFocusRequest: UUID) {
         _selection = selection
         self.searchFocusRequest = searchFocusRequest
         _listSelection = ViewState(initialValue: selection.wrappedValue)
+        let checks = CardChecks()
+        _checks = ViewState(initialValue: checks)
+        _cards = ViewState(initialValue: NeedsYouCards(checks: checks))
     }
 
     /// A Command-click opens its row in a new window. The list's own Command-click selects that
@@ -138,8 +147,10 @@ struct ChannelSidebar: View {
 
     private func rows(_ catalog: ChannelCatalogStore) -> some View {
         let presentation = model.sidebarPresentation(for: catalog)
+        let requests = requests(catalog)
         return ForEach(channels(in: catalog)) { listed in
-            row(listed, presentation: presentation, api: catalog.api)
+            row(listed, presentation: presentation, catalog: catalog,
+                request: listed.target == listSelection ? nil : requests[listed.target])
                 .listRowInsets(EdgeInsets())
                 .tag(listed.target)
                 .contextMenu { contextMenu(listed, api: catalog.api) }
@@ -165,17 +176,47 @@ struct ChannelSidebar: View {
         }
     }
 
-    private func row(_ listed: Listed, presentation: ChannelSidebarPresentation, api: ChannelAPI) -> some View {
+    private func row(_ listed: Listed, presentation: ChannelSidebarPresentation, catalog: ChannelCatalogStore,
+                     request: ChannelCatalogStore.WaitingRequest?) -> some View {
         let channel = listed.channel
         let current = presentation.channel(channel)
         let agents = presentation.agents(channel)
         return ChannelSidebarRow(
             channel: current, agents: agents, working: presentation.working(channel, agents: agents),
             attention: presentation.attention(channel),
-            folder: folderAvailability(current, api: api), api: api,
+            folder: folderAvailability(current, api: catalog.api), api: catalog.api,
+            isSelected: listed.target == listSelection, request: request,
+            answers: answers(listed.target, catalog: catalog), check: checks[listed.target],
             openFolder: { if let path = current.directory { model.folders.open(path) } },
             onTap: { if !NSEvent.modifierFlags.contains(.command) { selection = listed.target } }
         )
+    }
+
+    /// The server's requests its rows answer, by channel: each whose words are known, and the one
+    /// being answered, which stops waiting once the outbox has its reply.
+    private func requests(_ catalog: ChannelCatalogStore) -> [ChannelTarget: ChannelCatalogStore.WaitingRequest] {
+        var requests: [ChannelTarget: ChannelCatalogStore.WaitingRequest] = [:]
+        for entry in catalog.waitingRequests(openChannelIDs: model.openChannelIDs(on: catalog)) where entry.request != nil {
+            if let target = entry.target { requests[target] = entry }
+        }
+        if let replying = cards.replying, let target = replying.target, requests[target] == nil {
+            requests[target] = replying
+        }
+        return requests
+    }
+
+    /// One row's popover. Leaving opens no other while the open one is pinned, and closing it
+    /// keeps a typed reply as the channel's draft.
+    private func answers(_ target: ChannelTarget, catalog: ChannelCatalogStore) -> SidebarAnswers {
+        SidebarAnswers(cards: cards, catalog: catalog, isOpen: Binding(get: { answering == target }, set: { open in
+            if open {
+                if answering == nil || !answeringIsPinned { answering = target }
+            } else if answering == target {
+                answering = nil
+                answeringIsPinned = false
+                cards.leave()
+            }
+        }), isPinned: $answeringIsPinned)
     }
 
     private func folderAvailability(_ channel: Channel, api: ChannelAPI) -> ChannelFolderAvailability? {
