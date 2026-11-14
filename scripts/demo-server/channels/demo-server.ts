@@ -9,7 +9,7 @@ import { type Snapshot as FixtureSnapshot } from './types.ts';
 type Snapshot = Record<string, any>;
 type Resource = { type: string; content: string | Buffer };
 
-export const fixturePath = path.join(import.meta.dir, '..', '..', '..', 'Tests', 'Shared', 'ChannelKitTests', 'Fixtures', 'channel-snapshot.json');
+export const fixturePath = path.join(import.meta.dir, '..', '..', '..', 'Tests', 'Shared', 'ToyBoxKitTests', 'Fixtures', 'channel-snapshot.json');
 
 const defaultReplies = ['Near the entrance, so visitors can find it', 'Beside the team desks, for quick access',
   'Near the entrance, with a quiet reading nook beside the team desks'];

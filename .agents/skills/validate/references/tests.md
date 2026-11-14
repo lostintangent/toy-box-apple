@@ -17,9 +17,9 @@ and the setting shown.
 
 ## iPhone tests
 
-`SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds the iOS tests and runs the ChannelClient,
+`SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds the iOS tests and runs the ToyBoxClient,
 ToyBoxUI, ToyBoxMobileIntegrations, ToyBoxMobileWidget and ToyBoxMobile suites on the iOS Simulator
-through Apple's `xctest` host. ChannelKit and mocked Intelligence run on the Mac only, but compile
+through Apple's `xctest` host. ToyBoxKit and mocked Intelligence run on the Mac only, but compile
 in the iOS build.
 
 - It rejects interrupted, failed and empty Swift Testing runs.
@@ -43,7 +43,7 @@ in the iOS build.
   Simulator and verifies the extensions' signatures. It runs the iOS suites only with an installed
   iOS 27+ runtime, and otherwise skips them explicitly.
 - Tags and manual release dry runs skip iOS.
-- The Mac runs ChannelClient once under the strict cooperative pool, then the remaining suites.
+- The Mac runs ToyBoxClient once under the strict cooperative pool, then the remaining suites.
 - Bundle, Siri and signing checks run only in the release job.
 - Workflow shell checks gate warnings and errors, not style hints.
 

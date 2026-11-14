@@ -1,6 +1,6 @@
 import AppKit
-import ChannelClient
-import ChannelIntelligence
+import ToyBoxClient
+import ToyBoxIntelligence
 import SwiftUI
 import ToyBoxUI
 import UserNotifications

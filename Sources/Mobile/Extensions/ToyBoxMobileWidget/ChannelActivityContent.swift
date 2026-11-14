@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 import SwiftUI
 
 struct ChannelActivityContent: View {

@@ -1,5 +1,5 @@
-import ChannelClient
-import ChannelKit
+import ToyBoxClient
+import ToyBoxKit
 import SwiftUI
 
 /// A screen fitted to its space, live while the view is active. The host captures only the pixels

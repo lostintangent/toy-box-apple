@@ -1,8 +1,8 @@
 import AppKit
 import Carbon
-import ChannelKit
-@testable import ChannelClient
-import ChannelIntelligence
+import ToyBoxKit
+@testable import ToyBoxClient
+import ToyBoxIntelligence
 import CoreTransferable
 import Observation
 import SwiftUI

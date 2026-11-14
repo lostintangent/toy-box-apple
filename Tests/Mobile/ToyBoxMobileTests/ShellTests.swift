@@ -1,6 +1,6 @@
 import AppIntents
-import ChannelIntelligence
-import ChannelKit
+import ToyBoxIntelligence
+import ToyBoxKit
 import Foundation
 import Observation
 import SwiftUI
@@ -10,7 +10,7 @@ import ToyBoxUI
 import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
-@testable import ChannelClient
+@testable import ToyBoxClient
 @testable import ToyBoxMobile
 @testable import ToyBoxMobileIntegrations
 

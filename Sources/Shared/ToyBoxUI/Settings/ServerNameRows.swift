@@ -1,4 +1,4 @@
-import ChannelClient
+import ToyBoxClient
 import SwiftUI
 
 /// A server's Name, which renames the server itself, with why the last rename failed under it. See

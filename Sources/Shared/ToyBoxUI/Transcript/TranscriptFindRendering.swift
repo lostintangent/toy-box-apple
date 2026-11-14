@@ -1,4 +1,4 @@
-import ChannelClient
+import ToyBoxClient
 import SwiftUI
 
 public struct TranscriptFindHighlight: Equatable {

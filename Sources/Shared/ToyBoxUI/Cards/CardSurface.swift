@@ -1,5 +1,5 @@
-import ChannelClient
-import ChannelKit
+import ToyBoxClient
+import ToyBoxKit
 import SwiftUI
 
 // What the list cards share: the talk card and the phone's Needs You card draw the same surface,

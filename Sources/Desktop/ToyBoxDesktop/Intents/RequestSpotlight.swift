@@ -1,6 +1,6 @@
 import AppIntents
 import AppKit
-import ChannelKit
+import ToyBoxKit
 import CoreSpotlight
 import Observation
 import OSLog

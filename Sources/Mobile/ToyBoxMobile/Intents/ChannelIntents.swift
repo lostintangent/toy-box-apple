@@ -1,6 +1,6 @@
 import AppIntents
-import ChannelClient
-import ChannelKit
+import ToyBoxClient
+import ToyBoxKit
 import Foundation
 
 /// Siri's view of the phone: the channel or artifact on screen, which is all it may read. The

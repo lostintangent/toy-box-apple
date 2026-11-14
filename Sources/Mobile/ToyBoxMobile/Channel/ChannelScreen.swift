@@ -1,5 +1,5 @@
-import ChannelClient
-import ChannelKit
+import ToyBoxClient
+import ToyBoxKit
 import SwiftUI
 import TipKit
 import ToyBoxUI

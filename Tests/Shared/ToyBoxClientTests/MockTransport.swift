@@ -1,0 +1,253 @@
+import ToyBoxKit
+import Foundation
+import Observation
+import Synchronization
+import Testing
+@testable import ToyBoxClient
+
+struct MockResponse: Sendable {
+    var status = 200
+    var contentType = "application/json"
+    var body = Data()
+    var keepOpen = false
+    var headers: [String: String] = [:]
+
+    static func json<Value: Encodable>(_ value: Value, status: Int = 200) throws -> MockResponse {
+        MockResponse(status: status, body: try JSONEncoder().encode(value))
+    }
+
+    static func stream(_ events: [ChannelSubscriptionEvent], keepOpen: Bool = true) throws -> MockResponse {
+        let data = try events.map { "data: " + String(decoding: try JSONEncoder().encode($0), as: UTF8.self) + "\n\n" }
+            .joined()
+        return MockResponse(contentType: "text/event-stream", body: Data(data.utf8), keepOpen: keepOpen)
+    }
+
+    /// A catalog stream as the server opens one: its reconnect hint, then the catalog.
+    static func catalogStream(_ catalog: ChannelCatalog, keepOpen: Bool = true) throws -> MockResponse {
+        catalogStream(body: Data("retry: 1000\n\n".utf8) + (try catalogFrame("snapshot", ("catalog", catalog))),
+                      keepOpen: keepOpen)
+    }
+
+    /// A catalog stream that sends only `body`.
+    static func catalogStream(body: Data = Data("retry: 1000\n\n".utf8), keepOpen: Bool = true) -> MockResponse {
+        MockResponse(contentType: "text/event-stream", body: body, keepOpen: keepOpen)
+    }
+}
+
+/// One catalog stream event, framed the way the server sends it.
+func catalogFrame(_ type: String, _ fields: (String, any Encodable)...) throws -> Data {
+    var members = [#""type":"\#(type)""#]
+    for (key, value) in fields {
+        members.append(#""\#(key)":"# + String(decoding: try JSONEncoder().encode(value), as: UTF8.self))
+    }
+    return Data(("data: {" + members.joined(separator: ",") + "}\n\n").utf8)
+}
+
+let catalogKeepalive = Data(": keepalive\n\n".utf8)
+
+final class MockTransport: Sendable {
+    typealias Handler = @Sendable (URLRequest, Int) throws -> MockResponse
+    struct State {
+        var requests: [URLRequest] = []
+        var stops = 0
+        var pending: [ObjectIdentifier: MockURLProtocol] = [:]
+        var observers: [UUID: AsyncStream<Void>.Continuation] = [:]
+    }
+    let state = Mutex(State())
+    let handler: Handler
+    let host: String
+    let catalogOnly: Bool
+
+    /// A catalog reads `/api/v1/server` each time it connects, so a transport for a test of the
+    /// catalog alone answers that read itself with a 404, which leaves the catalog as it was, and
+    /// leaves it out of `requests`, `stops`, the handler's count and held responses.
+    init(catalogOnly: Bool = false, handler: @escaping Handler) {
+        self.handler = handler
+        self.catalogOnly = catalogOnly
+        host = UUID().uuidString.lowercased() + ".example"
+    }
+
+    var requests: [URLRequest] { state.withLock { $0.requests } }
+    var stops: Int { state.withLock { $0.stops } }
+    var pendingResponseCount: Int { state.withLock { $0.pending.count } }
+
+    func pendingCount(for path: String) -> Int {
+        state.withLock { state in state.pending.values.filter { $0.request.url?.path == path }.count }
+    }
+
+    func observeChanges(_ continuation: AsyncStream<Void>.Continuation) -> UUID {
+        let id = UUID()
+        state.withLock { $0.observers[id] = continuation }
+        return id
+    }
+
+    func stopObservingChanges(_ id: UUID) {
+        state.withLock { $0.observers[id] = nil }
+    }
+
+    private func changed() {
+        let observers = state.withLock { Array($0.observers.values) }
+        for observer in observers { observer.yield(()) }
+    }
+
+    func hold(_ response: MockURLProtocol) {
+        state.withLock { $0.pending[ObjectIdentifier(response)] = response }
+        changed()
+    }
+
+    func stop(_ response: MockURLProtocol) {
+        if answersItself(response.request) { return }
+        state.withLock {
+            $0.stops += 1
+            $0.pending.removeValue(forKey: ObjectIdentifier(response))
+        }
+        changed()
+    }
+
+    @discardableResult
+    /// Finishes every held response, or only those for `path`.
+    func finishPendingResponses(path: String? = nil) -> Int {
+        let pending = state.withLock { state in
+            let pending = state.pending.filter { path == nil || $0.value.request.url?.path == path }
+            for key in pending.keys { state.pending[key] = nil }
+            return Array(pending.values)
+        }
+        changed()
+        for response in pending {
+            response.client?.urlProtocolDidFinishLoading(response)
+        }
+        return pending.count
+    }
+
+    @discardableResult
+    /// Sends `data` to every held response, or only to those for `path`.
+    func sendPendingBody(_ data: Data, path: String? = nil) -> Int {
+        let pending = state.withLock { Array($0.pending.values) }
+            .filter { path == nil || $0.request.url?.path == path }
+        for response in pending {
+            response.client?.urlProtocol(response, didLoad: data)
+        }
+        return pending.count
+    }
+
+    private func answersItself(_ request: URLRequest) -> Bool {
+        catalogOnly && request.httpMethod == "GET" && request.url?.path == "/api/v1/server"
+    }
+
+    func response(for request: URLRequest) throws -> MockResponse {
+        if answersItself(request) { return MockResponse(status: 404) }
+        let count = state.withLock { state in
+            state.requests.append(request)
+            return state.requests.count
+        }
+        changed()
+        // Again once the handler ran, so a test can wait on what it recorded.
+        defer { changed() }
+        return try handler(request, count)
+    }
+
+    func api(scheme: String = "http", port: Int? = nil) throws -> ChannelAPI {
+        try ChannelAPI(serverURL: address(scheme: scheme, port: port), session: Self.session())
+    }
+
+    /// This transport's address, for code that connects by address through `session()`.
+    func address(scheme: String = "http", port: Int? = nil) -> String {
+        MockURLProtocol.registry.withLock { $0[host] = self }
+        return "\(scheme)://\(host)" + (port.map { ":\($0)" } ?? "")
+    }
+
+    /// A session that reaches every transport by its host, and fails for any other host.
+    static func session() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+}
+
+final class MockURLProtocol: URLProtocol, @unchecked Sendable {
+    static let registry = Mutex<[String: MockTransport]>([:])
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let host = request.url?.host,
+              let transport = Self.registry.withLock({ $0[host] }),
+              let url = request.url else {
+            client?.urlProtocol(self, didFailWithError: ChannelAPIError.invalidResponse)
+            return
+        }
+        do {
+            let value = try transport.response(for: request)
+            let response = HTTPURLResponse(url: url, statusCode: value.status,
+                                           httpVersion: "HTTP/1.1",
+                                           headerFields: value.headers.merging(["Content-Type": value.contentType]) { $1 })!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            if !value.body.isEmpty {
+                client?.urlProtocol(self, didLoad: value.body)
+            }
+            if value.keepOpen {
+                transport.hold(self)
+            } else {
+                client?.urlProtocolDidFinishLoading(self)
+            }
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {
+        if let host = request.url?.host, let transport = Self.registry.withLock({ $0[host] }) {
+            transport.stop(self)
+        }
+    }
+}
+
+func requestBody(_ request: URLRequest) throws -> Data {
+    if let data = request.httpBody { return data }
+    let stream = try #require(request.httpBodyStream)
+    stream.open()
+    defer { stream.close() }
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    while stream.hasBytesAvailable {
+        let length = stream.read(&buffer, maxLength: buffer.count)
+        guard length >= 0 else { throw ChannelAPIError.invalidResponse }
+        if length == 0 { break }
+        data.append(contentsOf: buffer.prefix(length))
+    }
+    return data
+}
+
+let testLeadProfile = ChannelLeadProfile(name: "Lead", role: "Test channel coordinator.",
+                                         avatar: .init(mark: "M4 12H20", color: "#123456"))
+
+func testState(revision: Int = 0, messages: [ChannelMessage] = []) -> ChannelState {
+    let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
+                          latestSequence: messages.last?.sequence ?? 0, updatedAt: "2026-10-01T00:00:00Z")
+    return .init(revision: revision, channel: channel,
+                 lead: .lead(id: "test", profile: testLeadProfile), messages: messages)
+}
+
+func testMessage(_ sequence: Int, id: String? = nil, text: String = "Progress") -> ChannelMessage {
+    .init(id: id ?? "m\(sequence)", sequence: sequence, timestamp: "2026-10-01T00:00:00Z",
+          sender: .agent("test"), content: .text(text))
+}
+
+@MainActor
+/// Reads observable main-actor state. Supply the transport when reading its locked counters.
+func eventually(observing transport: MockTransport? = nil, _ condition: () -> Bool) async throws {
+    let changes = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let observer = transport?.observeChanges(changes.continuation)
+    defer {
+        if let observer { transport?.stopObservingChanges(observer) }
+        changes.continuation.finish()
+    }
+
+    var iterator = changes.stream.makeAsyncIterator()
+    while true {
+        try Task.checkCancellation()
+        if withObservationTracking(condition, onChange: { changes.continuation.yield(()) }) { return }
+        guard await iterator.next() != nil else { throw CancellationError() }
+    }
+}

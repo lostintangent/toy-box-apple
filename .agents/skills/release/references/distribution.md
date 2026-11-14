@@ -17,7 +17,7 @@ their serialized, non-cancellable publication group. Tooling typechecking and wo
 on Linux. Native bundling, Siri metadata and signing checks run in the Mac release job.
 The Mac gate emits unbuffered test progress. Its twelve-minute watchdog samples only its own
 SwiftPM and XCTest descendants, prints their stacks and uploads diagnostics before failing.
-The job has a twenty-minute limit. It runs ChannelClient with
+The job has a twenty-minute limit. It runs ToyBoxClient with
 `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1` before the full suite, so test gates must suspend rather than
 block a cooperative worker.
 The iOS gate stops a suite that prints nothing for three minutes, well inside its 25-minute job. It

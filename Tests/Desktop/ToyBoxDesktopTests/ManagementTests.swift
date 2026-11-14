@@ -1,6 +1,6 @@
 import AppKit
-@testable import ChannelClient
-import ChannelKit
+@testable import ToyBoxClient
+import ToyBoxKit
 import Foundation
 import SwiftUI
 import ToyBoxUI

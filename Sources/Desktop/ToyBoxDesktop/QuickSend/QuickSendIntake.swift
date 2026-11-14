@@ -1,5 +1,5 @@
 import AppKit
-import ChannelClient
+import ToyBoxClient
 import UniformTypeIdentifiers
 
 @MainActor

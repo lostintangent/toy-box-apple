@@ -1,8 +1,8 @@
 import AppKit
 import AVKit
-import ChannelClient
-import ChannelIntelligence
-import ChannelKit
+import ToyBoxClient
+import ToyBoxIntelligence
+import ToyBoxKit
 import CryptoKit
 import ImageIO
 import QuickLook

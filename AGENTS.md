@@ -40,13 +40,13 @@ Edit only what you own, and ask the owner in the channel for anything else. App 
 
 | Owner | Owns |
 | --- | --- |
-| Core | `Sources/Shared/ChannelKit/` and `ChannelClient/`, `Tests/` except the files below, `scripts/`, `Package.swift` and `package.json`. On the Mac, `Sources/Desktop/ToyBoxControlIntents/` and `Sources/Desktop/Extensions/ToyBoxDesktopShare/`. On the phone, `Sources/Mobile/ToyBoxMobileIntegrations/`, the app's `Automation`, `Sources/Mobile/Extensions/ToyBoxMobileNotification/` and `ToyBoxMobileShare/`, and `Resources/Mobile/` |
-| Core, with the surface's owner | `Sources/Shared/ToyBoxUI/`, and each surface's folder in `ChannelClient/` |
+| Core | `Sources/Shared/ToyBoxKit/` and `ToyBoxClient/`, `Tests/` except the files below, `scripts/`, `Package.swift` and `package.json`. On the Mac, `Sources/Desktop/ToyBoxControlIntents/` and `Sources/Desktop/Extensions/ToyBoxDesktopShare/`. On the phone, `Sources/Mobile/ToyBoxMobileIntegrations/`, the app's `Automation`, `Sources/Mobile/Extensions/ToyBoxMobileNotification/` and `ToyBoxMobileShare/`, and `Resources/Mobile/` |
+| Core, with the surface's owner | `Sources/Shared/ToyBoxUI/`, and each surface's folder in `ToyBoxClient/` |
 | Shell | `App`, `Shell`, `Sidebar`, `Channel`, `Notifications`, `Intents`, `Settings` and `Shared` in both apps, and the Mac's `MenuBar` and `QuickSend` |
 | Transcript | `Transcript` in both apps, and `Tests/Desktop/ToyBoxDesktopTests/TranscriptTests.swift` |
 | Composer | `Composer`, the composer and its tray, in both apps, the phone's `Cards` (the list's talk and Needs You cards), and `Tests/Desktop/ToyBoxDesktopTests/ComposerTests.swift` |
 | Overview | `Overview`, `Artifacts`, `Management` and `Screens` in both apps, the phone's `LiveActivities`, and the widgets: `Sources/Shared/ToyBoxWidgetViews/`, `Sources/Desktop/Extensions/ToyBoxDesktopWidget/`, `Sources/Mobile/Extensions/ToyBoxMobileWidget/` and `Tests/Mobile/Extensions/ToyBoxMobileWidgetTests/` |
-| Intelligence | `Sources/Shared/ChannelIntelligence/` and `Tests/Shared/ChannelIntelligenceTests/` |
+| Intelligence | `Sources/Shared/ToyBoxIntelligence/` and `Tests/Shared/ToyBoxIntelligenceTests/` |
 | Designer | `Resources/Shared/AppIcon.icon` |
 
 A UI owner may add one `Tests/Desktop/ToyBoxDesktopTests/<Surface>Tests.swift` for their surface.
@@ -58,14 +58,14 @@ their module names, and Swift imports by module.
 
 | Module | Owns |
 | --- | --- |
-| `ChannelKit` | The domain: Toy Box's nouns as values, with their rules as members, like channels, messages, requests, tasks and routines. Pure and synchronous, with no I/O |
-| `ChannelClient` | The live subsystems both apps run, like each server's connection and catalog, a channel's store, the outbox, the composer and cards. Each holds state over time and draws nothing |
-| `ChannelIntelligence` | On-device Foundation Models |
-| `ToyBoxUI` | Shared SwiftUI, without AppKit or UIKit, in two tiers: `Design`, the identity and primitives both apps keep, like the avatars, `ChannelMark` and `ChannelColors`, and a folder per surface that composes them. Typography, navigation and layout stay native to each platform. Code that needs no SwiftUI belongs in ChannelClient or ChannelKit |
+| `ToyBoxKit` | The domain: Toy Box's nouns as values, with their rules as members, like channels, messages, requests, tasks and routines. Pure and synchronous, with no I/O |
+| `ToyBoxClient` | The live subsystems both apps run, like each server's connection and catalog, a channel's store, the outbox, the composer and cards. Each holds state over time and draws nothing |
+| `ToyBoxIntelligence` | On-device Foundation Models |
+| `ToyBoxUI` | Shared SwiftUI, without AppKit or UIKit, in two tiers: `Design`, the identity and primitives both apps keep, like the avatars, `ChannelMark` and `ChannelColors`, and a folder per surface that composes them. Typography, navigation and layout stay native to each platform. Code that needs no SwiftUI belongs in ToyBoxClient or ToyBoxKit |
 | `ToyBoxDesktop`, `ToyBoxMobile` | Each app and its native platform integration, with AppKit or UIKit where SwiftUI falls short |
 | `ToyBoxControlIntents`, `ToyBoxMobileIntegrations` | What each app shares with its extensions, which live under `Extensions` |
 
-Both apps share one implementation of every rule, so look in ChannelKit, ChannelClient and
+Both apps share one implementation of every rule, so look in ToyBoxKit, ToyBoxClient and
 ToyBoxUI before writing one.
 
 Surfaces meet at these seams:
@@ -121,7 +121,7 @@ Surfaces meet at these seams:
   its owner (`Channel.Attention`), a file for its main type and a folder for the subsystem it
   owns. Never a layer or grab-bag like `Stores` or `Shared`, a file at a module's root, or Manager,
   Helper, Support, Context, Projection or Presentation.
-- **Keep a feature's rules out of the app targets,** in a UI-free ChannelClient model with its
+- **Keep a feature's rules out of the app targets,** in a UI-free ToyBoxClient model with its
   animation, waits and announcements passed in, like `TalkRecorder`, proven by Mac tests.
   `simulator --build-only` checks the phone compiles.
 - **Adapt to the phone's scene** with SwiftUI's safe areas, layout margins, size classes and

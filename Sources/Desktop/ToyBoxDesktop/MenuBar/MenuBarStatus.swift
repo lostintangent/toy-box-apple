@@ -1,5 +1,5 @@
-import ChannelClient
-import ChannelKit
+import ToyBoxClient
+import ToyBoxKit
 import Foundation
 
 /// When the menu bar extra appears. See the spec's Menu bar extra.

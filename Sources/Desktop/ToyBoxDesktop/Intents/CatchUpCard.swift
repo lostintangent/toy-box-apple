@@ -1,5 +1,5 @@
 import AppIntents
-import ChannelKit
+import ToyBoxKit
 import SwiftUI
 import ToyBoxUI
 

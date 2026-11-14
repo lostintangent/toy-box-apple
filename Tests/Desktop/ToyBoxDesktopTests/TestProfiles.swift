@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 
 extension ChannelAgent {
     static func lead(id: String) -> ChannelAgent {

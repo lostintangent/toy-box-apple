@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 import SwiftUI
 import Testing
 import ToyBoxUI

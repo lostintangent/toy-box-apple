@@ -1,5 +1,5 @@
 import Foundation
-import ChannelClient
+import ToyBoxClient
 import Observation
 
 struct QuickSendPrefill: Identifiable, Sendable {

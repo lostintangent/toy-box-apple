@@ -1,5 +1,5 @@
-import ChannelClient
-import ChannelKit
+import ToyBoxClient
+import ToyBoxKit
 import SwiftUI
 
 /// The model section of a management sheet: the model, its Reasoning and Context options when the

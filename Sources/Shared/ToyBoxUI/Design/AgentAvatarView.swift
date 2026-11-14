@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 import SwiftUI
 
 /// The shared agent avatar, matching the pane's `AgentAvatar`: the agent's 24-unit vector mark

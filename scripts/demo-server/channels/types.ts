@@ -1,4 +1,4 @@
-import type fixture from "../../../Tests/Shared/ChannelKitTests/Fixtures/channel-snapshot.json";
+import type fixture from "../../../Tests/Shared/ToyBoxKitTests/Fixtures/channel-snapshot.json";
 import type { ServerResponse } from "node:http";
 
 export type Status = { state: string; text?: string; wakeAt?: string; workingOn?: number };

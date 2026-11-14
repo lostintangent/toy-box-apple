@@ -10,7 +10,7 @@ Both apps are presentation and input surfaces over Toy Box's public Channel prot
 Reference sources (read-only):
 
 - Toy Box server and pane: `~/Desktop/toy-box/src/features/channels` (start with its `AGENTS.md`)
-- Contract fixtures: `Tests/Shared/ChannelKitTests/Fixtures`. The demo servers read the same
+- Contract fixtures: `Tests/Shared/ToyBoxKitTests/Fixtures`. The demo servers read the same
   `channel-snapshot.json`.
 
 Signing, notarization, in-place updates and TestFlight are in the [release skill](../.agents/skills/release/references/distribution.md).
@@ -53,10 +53,10 @@ Signing, notarization, in-place updates and TestFlight are in the [release skill
   from Command Line Tools, so it needs no Xcode project or Xcode license. A script assembles and
   launches a signed-ad-hoc `.app` bundle, stamping the binary with the installed SDK version so
   macOS draws it with Liquid Glass rather than in compatibility mode.
-- **Targets:** `ChannelKit` is the pure domain: Codable wire types, the reducer, transcript rows,
-  audience, tasks, presence and the SVG avatar path parser. `ChannelClient` handles transport:
+- **Targets:** `ToyBoxKit` is the pure domain: Codable wire types, the reducer, transcript rows,
+  audience, tasks, presence and the SVG avatar path parser. `ToyBoxClient` handles transport:
   HTTP, SSE, the observer and the catalog. `ToyBoxDesktop` is the app. Tests live in
-  `ChannelKitTests` and `ChannelClientTests`.
+  `ToyBoxKitTests` and `ToyBoxClientTests`.
 - **State:** each open channel has one `@Observable` store, which owns its `ChannelState`, connection
   phase, unread boundary and paging. The catalog store owns the channel list and holds the
   server's catalog stream from launch, so each change arrives as it happens, in the background
@@ -351,7 +351,7 @@ and are there again when it comes back.
 
 ### Sending
 
-Every message the user sends goes through one `ChannelOutbox` (ChannelClient), from a composer,
+Every message the user sends goes through one `ChannelOutbox` (ToyBoxClient), from a composer,
 a card, a choice, a notification, Siri, Quick Send or the share sheet. Each app makes one at
 launch, and the catalog store for the current server delivers that server's messages, whether or
 not their channel is open. So every entry point just calls `send` and moves on. None waits on the
@@ -409,7 +409,7 @@ don't go through it.
   leaves the folder's other messages to the app, and its `send` makes one attempt and marks the
   channel read before it returns. The attempt gives up after 10 seconds without hearing from the
   server, so a sleeping server never holds the sheet for long. Whatever that attempt leaves Sending,
-  the app sends. ChannelClient
+  the app sends. ToyBoxClient
   makes no `UIApplication` call.
 
 ## Protocol
@@ -547,7 +547,7 @@ named and returned in the order sent as the server does.
 optional requester's `handle` beside the system `aps` envelope. Its kinds and categories are
 `request` and `completion`; request uses the `reply` text action. The service must match one of the
 phone's saved registrations before allowing actions or requesting a widget reload.
-The fixtures are `Tests/Shared/ChannelKitTests/Fixtures/push-request.apns`, `push-completion.apns` and
+The fixtures are `Tests/Shared/ToyBoxKitTests/Fixtures/push-request.apns`, `push-completion.apns` and
 `push-activity.apns`.
 
 The server supplies the channel name as the alert title and the flattened question as its body,
@@ -1560,7 +1560,7 @@ written for the phone's glass sidebar, and the card's view is shared by both app
 The Mac answers from its sidebar instead (see Answering from the list). A channel waiting for the user shows its request in the list, and the user can answer
 it there without opening the channel. The list and the Needs You widget read the catalog's
 `waitingRequests`, so they agree on which requests wait, newest first, and on each one's
-words. `NeedsYouCards` in ChannelClient holds the cards' rules, and the views only draw them.
+words. `NeedsYouCards` in ToyBoxClient holds the cards' rules, and the views only draw them.
 
 **Waiting rows.** A waiting channel's row shows its question in one line of primary text in place
 of its folder or purpose, up to three lines at accessibility sizes, and keeps its attention mark.
@@ -1756,7 +1756,7 @@ group, with normal 20-point run spacing around the group. Rows are at least 18 h
 link keeps a 28-point hit target. Help shows the full local date and time and any full values.
 Matching membership events and one actor's consecutive artifact shares or removals merge only
 where the canonical projection does. A merged artifact line is one sentence, "Pixel shared A, B,
-and C", built once in ChannelKit for display, Find and catch-up. Find matches within each title.
+and C", built once in ToyBoxKit for display, Find and catch-up. Find matches within each title.
 Removed titles are links too and open the artifact like the web, since its file stays on disk.
 On iPhone each title is a link in the row's one `Text`, and the event's details move to the
 row's context menu.
@@ -1821,7 +1821,7 @@ show Load Older Messages when more history is available, a small loading row whi
 "Beginning of conversation" label and reserve no empty header space. A filtered view must
 continue paging even when a page contains no visible rows.
 
-`ChannelClient.TranscriptPlacement` defines container-independent placement from ordered row frames
+`ToyBoxClient.TranscriptPlacement` defines container-independent placement from ordered row frames
 and the viewport's width, height and glass insets. Its adapter sends `layoutChanged` only when
 `layoutEvent` detects changed geometry, never just because another native layout pass ran.
 The pure `placement(for:rows:viewport:)` function projects an existing intent against current
@@ -1982,7 +1982,7 @@ inspector, not this row.
 
 #### Suggested replies
 
-A request may offer two to four suggested replies. ChannelKit reads them through `ChannelMessage.suggestedReplies`, which returns trimmed, non-empty labels of at most 80 UTF-16 units, and only on a `request: true` message. A malformed list reads as no choices, so the request still shows with Reply.
+A request may offer two to four suggested replies. ToyBoxKit reads them through `ChannelMessage.suggestedReplies`, which returns trimmed, non-empty labels of at most 80 UTF-16 units, and only on a `request: true` message. A malformed list reads as no choices, so the request still shows with Reply.
 
 **Instant send.** A tap sends the label as the user's reply at once, through the same optimistic send as Reply, with a caller-owned UUID kept in the outbox until the server confirms it. Choices leave when the user answers. A failed send stays in the transcript as Not sent with Retry, and the choices do not return. Reading a request never answers it, and choices never send in the background.
 
@@ -2178,7 +2178,7 @@ exactly as the capsule opens Working Now: `.popover` with `.presentationDetents(
 button stays while its list is open, even after the last bookmark goes, so the list keeps its
 anchor.
 
-**The list.** Both lists show ChannelClient's shared list of bookmarked messages, newest first,
+**The list.** Both lists show ToyBoxClient's shared list of bookmarked messages, newest first,
 with no filter. Each row has the author's avatar and name, the time and a preview. The user's own
 messages show "You" with a secondary `person.crop.circle.fill`, and deleted agents keep the
 deleted identity. Times use `ChannelActivityTime`: 4:55 PM, Yesterday, a weekday, then a short
@@ -2700,7 +2700,7 @@ phone's scoped subtask header follow the same rule. Leaf rows have neither.
 
 A parent's disclosure follows its work in progress: a parent starts expanded only while it or
 any descendant is in progress. Every other parent, pending, blocked or done, starts collapsed to
-its title, chevron and facts, so the list leads with what's moving. ChannelKit owns this test,
+its title, chevron and facts, so the list leads with what's moving. ToyBoxKit owns this test,
 the same one the in-progress filter uses. When a parent gains or loses work in progress, its
 disclosure re-derives: it expands or collapses with the 0.18-second ease-in-out disclosure
 animation (instant under Reduce Motion). A user's toggle holds until that parent's next such
@@ -2722,7 +2722,7 @@ not, and omit it when Tasks is empty. It starts off and keeps the collapsed sect
 Mac window scene, and the phone's retained per-channel Overview session.
 
 While it's on, each level of the tree keeps only the tasks that hold work in progress, the same
-ChannelKit test as disclosure. ChannelKit owns this filtering. Every kept task renders from its
+ToyBoxKit test as disclosure. ToyBoxKit owns this filtering. Every kept task renders from its
 full value, never a pruned copy, so its x/y count, spoken subtask count, diff and timing still
 describe all of its children. A kept parent with no kept children shows its count without a
 chevron, since it has nothing to disclose. Toggling the filter leaves every parent's disclosure
@@ -3215,7 +3215,7 @@ draft, disable sending and show the corresponding explanation with Open Channel.
 are separate from main-window and Quick Send drafts, keyed by normalized server URL, channel and
 request sequence. A new empty reply visibly seeds the requester's canonical @handle.
 
-Waiting comes from the catalog's `waitingRequests` in ChannelClient, shared by the menu bar, Dock,
+Waiting comes from the catalog's `waitingRequests` in ToyBoxClient, shared by the menu bar, Dock,
 notifications and both platforms' widgets. It lists the sidebar's waiting channels newest request
 first and quotes each from the catalog's `request`, or an open channel's store, whose own stream
 can deliver a request first. Nothing reads history to find one.
@@ -3370,7 +3370,7 @@ every server and mirrors them as `INSendMessageIntent` donations, so the share s
 mark. Each donation is grouped by its server and channel, and removing a server or its catalog
 dropping a channel deletes its suggestion. A suggestion opens straight to its composer. Anything
 else opens "Choose a Channel": up to three recent channels, then the rest A to Z through
-ChannelKit's `choices(matching:recentIDs:)`, the same order as the Mac's Quick Send. With several
+ToyBoxKit's `choices(matching:recentIDs:)`, the same order as the Mac's Quick Send. With several
 servers, recents span them, and each server's other channels follow under its name, where one that
 hasn't loaded says so with Retry. Search, pull to refresh and
 "Can't Load Channels" with Retry use the native list.
@@ -3659,7 +3659,7 @@ Any other channel resolves with only its name, and any other artifact resolves t
 never reaches Spotlight: the phone's entities aren't indexed, the Mac's Channel entity gives
 Spotlight only its name, purpose and icon, and the activity isn't eligible for Spotlight.
 
-Both apps build Content in ChannelClient, so Siri reads the same text on each, and export it as
+Both apps build Content in ToyBoxClient, so Siri reads the same text on each, and export it as
 plain text. The Channel entity's Content is "Channel:
 [name]" and its purpose, its tasks as an indented list with each status, then "Messages, oldest
 first:" and the newest loaded messages as "You: …" or "[agent]: …". Markdown is flattened,

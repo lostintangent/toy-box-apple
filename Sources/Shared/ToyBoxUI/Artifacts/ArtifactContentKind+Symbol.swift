@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 
 extension ArtifactContentKind {
     package var symbolName: String {

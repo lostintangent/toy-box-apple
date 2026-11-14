@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 import SwiftUI
 
 /// Overlapping agent avatars with the first agent in front. Each later avatar has a 1.5-point gap

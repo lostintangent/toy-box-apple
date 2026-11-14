@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 import SwiftUI
 
 /// One message's reactions, grouped by kind in first-seen order.

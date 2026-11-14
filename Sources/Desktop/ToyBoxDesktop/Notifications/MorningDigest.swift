@@ -1,7 +1,7 @@
 import AppKit
-import ChannelClient
-import ChannelIntelligence
-import ChannelKit
+import ToyBoxClient
+import ToyBoxIntelligence
+import ToyBoxKit
 import Observation
 
 /// A once-per-morning recap of every server. Reading history here never changes a channel's store or

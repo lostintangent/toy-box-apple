@@ -1,5 +1,5 @@
 import ActivityKit
-import ChannelKit
+import ToyBoxKit
 import Foundation
 
 @MainActor

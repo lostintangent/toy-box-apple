@@ -1,5 +1,5 @@
-@testable import ChannelClient
-import ChannelKit
+@testable import ToyBoxClient
+import ToyBoxKit
 import Foundation
 import Observation
 import Synchronization

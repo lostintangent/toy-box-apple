@@ -1,4 +1,4 @@
-import ChannelClient
+import ToyBoxClient
 import SwiftUI
 
 /// A message's bookmark and how to change it. Two compare equal when what they show does, since a

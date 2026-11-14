@@ -41,17 +41,17 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile --ignore-scripts
-      - name: Test ChannelClient with a single cooperative worker
+      - name: Test ToyBoxClient with a single cooperative worker
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
           NSUnbufferedIO: 'YES'
           LIBDISPATCH_COOPERATIVE_POOL_STRICT: '1'
-        run: bun run test --filter ChannelClientTests
+        run: bun run test --filter ToyBoxClientTests
       - name: Test
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
           NSUnbufferedIO: 'YES'
-        run: bun run test --skip ChannelClientTests
+        run: bun run test --skip ToyBoxClientTests
       - name: Upload blocked test diagnostics
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

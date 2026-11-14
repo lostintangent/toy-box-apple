@@ -6,7 +6,7 @@ import { buildMobile, mobileEnvironment } from "./bundle/index.ts";
 import { bootMobileSimulator, chooseMobileSimulator, seconds, shutDownMobileSimulator } from "./dogfood/boot.ts";
 
 export const mobileTestProducts = [
-    "ChannelClientTests", "ToyBoxUITests",
+    "ToyBoxClientTests", "ToyBoxUITests",
     "ToyBoxMobileIntegrationsTests", "ToyBoxMobileWidgetTests", "ToyBoxMobileTests",
 ];
 

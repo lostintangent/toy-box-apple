@@ -1,7 +1,7 @@
 import AppIntents
 import AppKit
-import ChannelClient
-import ChannelKit
+import ToyBoxClient
+import ToyBoxKit
 import CoreSpotlight
 import SwiftUI
 import ToyBoxUI
