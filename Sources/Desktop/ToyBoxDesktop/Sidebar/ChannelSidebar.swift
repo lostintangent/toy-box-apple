@@ -9,21 +9,29 @@ struct ChannelSidebar: View {
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.windowSnapshot) private var snapshot
     @Binding var selection: ChannelTarget?
     var searchFocusRequest: UUID
+    /// Talk to Lead's request to open the recorder on the open channel's row.
+    var talkRequest: UUID
     @ViewState private var query = ""
     @FocusState private var searchFocused: Bool
     /// The servers whose sections are collapsed, by address.
     @ViewState private var collapsed: Set<URL> = []
 
-    /// A server's channels that match the search.
+    /// A server's channels that match the search, held in place while a note records.
     private func channels(in catalog: ChannelCatalogStore?) -> [Listed] {
         guard let catalog else { return [] }
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return catalog.channels.compactMap { channel in
+        return talk.ordered(catalog.channels, on: catalog.api.baseURL).compactMap { channel in
             guard query.isEmpty || channel.matches(query), let target = catalog.target(channel.id) else { return nil }
-            return Listed(channel: channel, target: target)
+            return Listed(channel: channel, target: target, catalog: catalog)
         }
+    }
+
+    /// Every row the list shows, through each expanded server in order.
+    private var listed: [Listed] {
+        model.servers.shown.filter { !collapsed.contains($0.api.baseURL) }.flatMap(channels(in:))
     }
 
     /// The first run, or after removing every server, which welcomes the person instead.
@@ -47,20 +55,24 @@ struct ChannelSidebar: View {
 
     /// The list's own selection, which follows `selection` except during a Command-click.
     @ViewState private var listSelection: ChannelTarget?
-    /// The waiting rows' answers from their popovers, and the done checks rows wear once one sends.
+    /// The waiting rows' answers from their popovers, Talk to Lead's recorder, and the done checks
+    /// rows wear once either sends.
     @ViewState private var cards: NeedsYouCards
+    @ViewState private var talk: TalkRecorder
     @ViewState private var checks: CardChecks
     /// The row whose request popover is open, since one opens at a time.
     @ViewState private var answering: ChannelTarget?
     @ViewState private var answeringIsPinned = false
 
-    init(selection: Binding<ChannelTarget?>, searchFocusRequest: UUID) {
+    init(selection: Binding<ChannelTarget?>, searchFocusRequest: UUID, talkRequest: UUID) {
         _selection = selection
         self.searchFocusRequest = searchFocusRequest
+        self.talkRequest = talkRequest
         _listSelection = ViewState(initialValue: selection.wrappedValue)
         let checks = CardChecks()
         _checks = ViewState(initialValue: checks)
         _cards = ViewState(initialValue: NeedsYouCards(checks: checks))
+        _talk = ViewState(initialValue: TalkRecorder(checks: checks))
     }
 
     /// A Command-click opens its row in a new window. The list's own Command-click selects that
@@ -97,6 +109,12 @@ struct ChannelSidebar: View {
         // The sidebar leaves this much less room under the search field than between two
         // sections, so the first server's header gets the same room as the others.
         .safeAreaPadding(.top, 4)
+        .talkList(talk, targets: listed.map(\.target), onGlass: true, endsWhenChanging: [selection, query]) { target in
+            if let listed = listed.first(where: { $0.target == target }) {
+                row(listed, presentation: model.sidebarPresentation(for: listed.catalog), catalog: listed.catalog,
+                    request: nil)
+            }
+        }
         .overlay {
             if isEmpty { emptyState }
         }
@@ -117,6 +135,12 @@ struct ChannelSidebar: View {
         .searchFocused($searchFocused)
         .onChange(of: selection) { _, id in listSelection = id }
         .onChange(of: searchFocusRequest) { _, _ in searchFocused = true }
+        .onChange(of: talkRequest) { _, _ in
+            if let open = listed.first(where: { $0.target == selection }) { talk(to: open) }
+        }
+        .task(id: snapshot?.requestedState) {
+            if let name = snapshot?.requestedState, name.hasPrefix("sidebar-talk") { await prepareTalkSnapshot(name) }
+        }
     }
 
     private func isExpanded(_ catalog: ChannelCatalogStore) -> Binding<Bool> {
@@ -155,6 +179,7 @@ struct ChannelSidebar: View {
                 .tag(listed.target)
                 .contextMenu { contextMenu(listed, api: catalog.api) }
                 .accessibilityAction { selection = listed.target }
+                .talkRow(listed.target, recorder: talk) { talk(to: listed) }
         }
     }
 
@@ -187,9 +212,42 @@ struct ChannelSidebar: View {
             folder: folderAvailability(current, api: catalog.api), api: catalog.api,
             isSelected: listed.target == listSelection, request: request,
             answers: answers(listed.target, catalog: catalog), check: checks[listed.target],
+            talk: talk.target == listed.target ? talk : nil,
+            startTalk: offersTalk ? { talk(to: listed) } : nil,
             openFolder: { if let path = current.directory { model.folders.open(path) } },
             onTap: { if !NSEvent.modifierFlags.contains(.command) { selection = listed.target } }
         )
+    }
+
+    private var offersTalk: Bool { talk.isAvailable && !talk.isLifted }
+
+    /// Opens the recorder on the channel's row, closing any request popover, since a note never
+    /// answers one.
+    private func talk(to listed: Listed) {
+        if answering != nil {
+            answering = nil
+            answeringIsPinned = false
+            cards.leave()
+        }
+        talk.start(listed.catalog.channel(id: listed.channel.id), name: listed.channel.name,
+                   contextualNames: model.sidebarPresentation(for: listed.catalog).agents(listed.channel).map(\.name),
+                   catalog: listed.catalog, order: self.listed.map(\.target))
+    }
+
+    /// Records a note on the open channel's row with scripted words, and sends it for the Sent beat.
+    private func prepareTalkSnapshot(_ name: String) async {
+        talk.dictation.system = .scripted(results: [("Can you tighten the sidebar spacing", true), ("?", true),
+                                                    (" And check the header", false)], finishes: false)
+        await talk.dictation.refresh()
+        while !Task.isCancelled, model.servers.shown.contains(where: { $0.state == nil })
+                || listed.first(where: { $0.target == selection }) == nil {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        guard let open = listed.first(where: { $0.target == selection }) else { return }
+        talk(to: open)
+        while !Task.isCancelled, !talk.canSend { try? await Task.sleep(for: .milliseconds(50)) }
+        if name == "sidebar-talk-sent" { await talk.send() }
+        snapshot?.markStateReady(name)
     }
 
     /// The server's requests its rows answer, by channel: each whose words are known, and the one
@@ -227,6 +285,10 @@ struct ChannelSidebar: View {
     @ViewBuilder
     private func contextMenu(_ listed: Listed, api: ChannelAPI) -> some View {
         let channel = listed.channel
+        if offersTalk {
+            Button("Talk to Lead", systemImage: "mic") { talk(to: listed) }
+            Divider()
+        }
         Button("Open in New Window", systemImage: "macwindow.badge.plus") {
             openWindow(value: ChannelWindowValue(listed.target))
         }
@@ -256,6 +318,7 @@ struct ChannelSidebar: View {
 private struct Listed: Identifiable {
     let channel: Channel
     let target: ChannelTarget
+    let catalog: ChannelCatalogStore
     var id: ChannelTarget { target }
 }
 

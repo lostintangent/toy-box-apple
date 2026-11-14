@@ -22,6 +22,10 @@ struct ChannelSidebarRow: View {
     var answers: SidebarAnswers? = nil
     /// The done check the avatar wears once the row's reply sends.
     var check: CardChecks.Check? = nil
+    /// The recorder, on the row it holds and on the card's copy of it, which never lights.
+    var talk: TalkRecorder? = nil
+    /// Starts a note to the Lead from the hover mic, while the row offers one.
+    var startTalk: (() -> Void)? = nil
     var openFolder: () -> Void
     var onTap: () -> Void
 
@@ -44,6 +48,7 @@ private struct ChannelSidebarRowContent: View {
     @Environment(\.windowSnapshot) private var snapshot
     @ViewState private var folderFrame: CGRect = .null
     @ViewState private var bubbleFrame: CGRect = .null
+    @ViewState private var micFrame: CGRect = .null
     @ViewState private var isHovered = false
     @ViewState private var isPopoverHovered = false
     @GestureState private var isPressed = false
@@ -63,9 +68,12 @@ private struct ChannelSidebarRowContent: View {
     private var updatedAt: Date? { try? Date(channel.updatedAt, strategy: .iso8601) }
 
     private var isOpen: Bool { row.answers?.isOpen == true && row.request != nil }
+    /// The pointer's over the row, which the recorder's row ignores.
+    private var hovers: Bool { (isHovered || snapshot?.requestedState == "hover-all") && row.talk == nil }
     private var isLit: Bool {
-        !row.isSelected && (isHovered || isPressed || isOpen || snapshot?.requestedState == "hover-all")
+        !row.isSelected && (hovers || isPressed || isOpen)
     }
+    private var showsMic: Bool { hovers && row.startTalk != nil }
     /// Leaving the row and its unpinned popover closes it, once the pointer isn't crossing between them.
     private var isLeaving: Bool {
         isOpen && !isHovered && !isPopoverHovered && row.answers?.isPinned != true
@@ -77,8 +85,9 @@ private struct ChannelSidebarRowContent: View {
             .help(help)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(channel.name)
-            .accessibilityValue(help)
+            .talkValue(row.talk, details: help)
             .accessibilityActions {
+                if let startTalk = row.startTalk { Button("Talk to Lead", action: startTalk) }
                 if row.request != nil {
                     Button("Answer Request") {
                         row.answers?.isOpen = true
@@ -91,7 +100,7 @@ private struct ChannelSidebarRowContent: View {
             .coordinateSpace(.named(Self.space))
             .onHover { isHovered = $0 }
             .simultaneousGesture(SpatialTapGesture(coordinateSpace: .named(Self.space)).onEnded { value in
-                if !folderFrame.contains(value.location) && !bubbleFrame.contains(value.location) { row.onTap() }
+                if ![folderFrame, bubbleFrame, micFrame].contains(where: { $0.contains(value.location) }) { row.onTap() }
             })
             .simultaneousGesture(DragGesture(minimumDistance: 0).updating($isPressed) { _, pressed, _ in pressed = true })
             .popover(item: Binding(get: { isOpen ? row.request : nil }, set: { if $0 == nil { row.answers?.isOpen = false } }),
@@ -100,8 +109,8 @@ private struct ChannelSidebarRowContent: View {
                     SidebarRequestPopover(entry: entry, answers: answers, isHovered: $isPopoverHovered)
                 }
             }
-            .task(id: isHovered) {
-                guard isHovered, row.request != nil, (try? await Task.sleep(for: Self.rest)) != nil else { return }
+            .task(id: hovers) {
+                guard hovers, row.request != nil, (try? await Task.sleep(for: Self.rest)) != nil else { return }
                 row.answers?.isOpen = true
             }
             .task(id: isLeaving) {
@@ -138,18 +147,41 @@ private struct ChannelSidebarRowContent: View {
                         .font(.system(size: 13 * scale, weight: .semibold))
                         .lineLimit(1).truncationMode(.tail)
                     Spacer(minLength: 0)
-                    if let updatedAt {
-                        Text(ChannelActivityTime.label(for: updatedAt, now: now))
-                            .font(.system(size: 11 * scale)).monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1).fixedSize()
-                    }
+                    time
                 }
-                secondLine
+                secondLine.talkLine(row.talk)
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 8)
         .frame(minHeight: 52 * scale)
+    }
+
+    /// The last activity, which the hover mic replaces and the recorder's counter takes over. The
+    /// counter takes the time's font.
+    private var time: some View {
+        Text(updatedAt.map { ChannelActivityTime.label(for: $0, now: now) } ?? "")
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .lineLimit(1).fixedSize()
+            .opacity(showsMic ? 0 : 1)
+            .overlay(alignment: .trailing) {
+                if showsMic, let startTalk = row.startTalk {
+                    Button(action: startTalk) {
+                        Image(systemName: "mic.fill").font(.system(size: 10 * scale, weight: .medium))
+                            .padding(.horizontal, 6)
+                            .frame(height: 18 * scale)
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(HoverFillButtonStyle(shape: Capsule()))
+                    .help("Talk to Lead")
+                    // The mic ends on the time's trailing edge, like the folder's name starts on the line's.
+                    .padding(.trailing, -6)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { micFrame = $0 }
+                    .onDisappear { micFrame = .null }
+                }
+            }
+            .talkTime(row.talk)
+            .font(.system(size: 11 * scale))
     }
 
     /// The stack gives up faces before the folder or purpose gives up letters. Only the candidate
@@ -171,17 +203,18 @@ private struct ChannelSidebarRowContent: View {
             // The folder token's own 6-point trailing padding makes 12 before the stack.
             Spacer(minLength: showsFolder ? 6 : 12)
             if faces > 0 { AgentAvatarStack(agents: working, size: 16, limit: faces).fixedSize() }
-            if attention != nil { attentionIndicator.frame(width: 16, height: 16).padding(.leading, 6) }
+            if attention != nil {
+                attentionIndicator.frame(width: 16, height: 16).padding(.leading, 6).talkFades(row.talk)
+            }
         }
     }
 
     /// The avatar keeps its own colors on the accent selection, like an app icon in System Settings.
-    /// It wears the done check once the row's reply sends.
+    /// It wears the done check once the row's reply sends, and the recorder's mic while it records.
     private var icon: some View {
-        let checked = row.check == .sent
-        return ChannelMark(channel.avatar, api: row.api)
-            .opacity(checked ? 0 : 1)
-            .overlay { SidebarDoneCheck(isShown: checked) }
+        ChannelMark(channel.avatar, api: row.api)
+            .cardMark(row.check == .sent ? .check : .channel)
+            .talkMark(row.talk)
     }
 
     private var showsFolder: Bool {

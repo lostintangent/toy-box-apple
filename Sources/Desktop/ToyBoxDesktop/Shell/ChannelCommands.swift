@@ -37,6 +37,8 @@ struct WindowCommandActions {
     var nextChannel: (ChannelNavigation.Direction) -> Void
     var nextAttention: () -> Void
     var focusComposer: () -> Void
+    /// Opens Talk to Lead's recorder on the open channel's row, revealing the sidebar first.
+    var talkToLead: () -> Void
     var jumpToLatest: () -> Void
     var revealRequest: () -> Void
     var findInChannel: () -> Void = {}
@@ -152,6 +154,8 @@ struct ChannelCommands: Commands {
             Divider()
             Button("Focus Composer") { actions?.focusComposer() }
                 .keyboardShortcut("l").disabled(!hasConversation)
+            Button("Talk to Lead") { actions?.talkToLead() }
+                .keyboardShortcut("l", modifiers: [.command, .shift]).disabled(actions?.hasChannel != true)
             Button("Jump to Latest") { actions?.jumpToLatest() }
                 .keyboardShortcut("j").disabled(!hasConversation)
             Button("Jump to Input Needed") { actions?.revealRequest() }

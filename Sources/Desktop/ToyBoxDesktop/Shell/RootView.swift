@@ -23,6 +23,7 @@ struct RootView: View {
     /// wait in an overflow menu beside the trailing controls.
     @ViewState private var isSidebarOpening = false
     @ViewState private var searchFocusRequest = UUID()
+    @ViewState private var talkRequest = UUID()
     @ViewState private var windowID = UUID()
     @ViewState private var isKeyWindow = false
     /// The height the narrow Overview sheet sizes to. A live resize updates it only while the
@@ -92,7 +93,7 @@ struct RootView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             ChannelSidebar(selection: Binding(get: { selection }, set: selectChannel),
-                           searchFocusRequest: searchFocusRequest)
+                           searchFocusRequest: searchFocusRequest, talkRequest: talkRequest)
                 .settledLayout()
                 .toolbar(removing: .sidebarToggle)
                 .toolbar {
@@ -402,6 +403,7 @@ struct RootView: View {
             nextChannel: selectAdjacent,
             nextAttention: selectNextAttention,
             focusComposer: { interaction.focusComposer() },
+            talkToLead: { columnVisibility = .all; talkRequest = UUID() },
             jumpToLatest: { interaction.jumpToLatest() },
             revealRequest: {
                 if let sequence = store?.requestSequence { interaction.reveal(sequence: sequence) }
