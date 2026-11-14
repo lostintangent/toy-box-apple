@@ -81,17 +81,19 @@ public struct TranscriptViewport: Equatable, Sendable {
         return resized || bottomGap > old.bottomGap ? false : wasAtBottom
     }
 
-    public func readSequence(in frames: [String: TranscriptMessageFrame], nativeViewportTop: CGFloat? = nil) -> Int? {
-        let top = nativeViewportTop.map { $0 - TranscriptCoordinates.contentTopPadding } ?? 0
-        let visible = CGRect(x: 0, y: top, width: width, height: height)
-        guard width > 0, height > 0 else { return nil }
-        return frames.values.filter {
-            var rect = $0.rect
-            // Read in content coordinates when native clipping has outpaced frame preferences.
-            if nativeViewportTop != nil { rect.origin.y = $0.contentTop }
-            return $0.sequence > 0 && rect.intersects(visible)
-                && rect.intersection(visible).height >= min(24, rect.height / 2)
-        }.map(\.sequence).max()
+    /// The newest message the reader can see, for `TranscriptRead`. Visibility is
+    /// `TranscriptPlacement.visibleRows`, the one rule on both apps.
+    public func visibleThrough(_ frames: [String: TranscriptMessageFrame], nativeViewportTop: CGFloat? = nil) -> Int? {
+        // Read in content coordinates when native clipping has outpaced frame preferences.
+        let origin = nativeViewportTop.map { $0 - TranscriptCoordinates.contentTopPadding } ?? 0
+        let rows = frames.map { id, frame in
+            TranscriptPlacement.RowFrame(id: id, order: frame.sequence,
+                                         top: nativeViewportTop == nil ? frame.rect.minY : frame.contentTop,
+                                         height: frame.rect.height, isAnchorable: frame.sequence > 0)
+        }
+        let viewport = TranscriptPlacement.Viewport(width: width, height: height, topInset: 0, bottomInset: 0)
+        return TranscriptPlacement.visibleRows(rows, viewport: viewport, origin: origin)
+            .compactMap { frames[$0]?.sequence }.max()
     }
 
     /// The first frame starting in the viewport or, when one row fills it, the frame spanning its top.

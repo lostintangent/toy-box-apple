@@ -975,20 +975,20 @@ struct TranscriptTests {
         #expect(abs(capture.viewport.height - 450) < 0.5)
         #expect(capture.viewport.bottomGap < 0.5)
         #expect(abs(try #require(capture.frames["m40"]).rect.maxY - 450) < 0.5)
-        #expect(capture.viewport.readSequence(in: capture.frames) == 40)
+        #expect(capture.viewport.visibleThrough(capture.frames) == 40)
 
         // Three rows sit beneath the bottom bar. They stay unread and still count as distance from the end.
         proxy.scrollTo(37, anchor: .bottom)
         try await settle()
         #expect(abs(capture.viewport.bottomGap - 120) < 0.5)
-        #expect(capture.viewport.readSequence(in: capture.frames) == 37)
+        #expect(capture.viewport.visibleThrough(capture.frames) == 37)
 
         // A row tucked under the toolbar is neither the paging anchor nor the read edge.
         proxy.scrollTo(10, anchor: .top)
         try await settle()
         #expect(abs(try #require(capture.frames["m10"]).rect.minY) < 0.5)
         #expect(capture.viewport.topVisibleFrame(in: capture.frames)?.id == "m10")
-        #expect(capture.viewport.readSequence(in: capture.frames) == 20)
+        #expect(capture.viewport.visibleThrough(capture.frames) == 20)
     }
 
     @MainActor

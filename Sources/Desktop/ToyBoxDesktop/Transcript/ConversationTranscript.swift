@@ -72,12 +72,12 @@ struct ConversationTranscript: View {
         return frames.mapValues { TranscriptCoordinates.viewportFrame($0, top: top) }
     }
 
-    private var visibleReadSequence: Int? {
-        // A viewer covers the transcript, so nothing beneath it counts as read.
-        guard snapshot == nil, hasLanded, !isRevealing, pagingAnchor == nil, window.isKeyWindow,
-              scenePhase == .active, store.phase.isConnected, viewer?.session == nil,
-              !interaction.isArtifactViewerPresented, !find.blocksRead else { return nil }
-        return visibleSequence
+    private var read: TranscriptRead {
+        .init(visibleThrough: visibleSequence,
+              isLooking: snapshot == nil && window.isKeyWindow && scenePhase == .active,
+              isCovered: viewer?.session != nil || interaction.isArtifactViewerPresented,
+              hasLanded: hasLanded, isMoving: isRevealing || pagingAnchor != nil,
+              isFinding: find.blocksRead, isConnected: store.phase.isConnected)
     }
 
     private var pagingRestoreTarget: PagingRestoreTarget? {
@@ -171,7 +171,7 @@ struct ConversationTranscript: View {
                     interaction.consumeRevealRequest(request.token)
                     await reveal(sequence: request.sequence, using: proxy)
                 }
-                .task(id: visibleReadSequence) { await markVisibleRead() }
+                .task(id: read) { await read.mark(in: store) }
                 .task(id: pagingRestoreTarget) { await settlePagingRestore(using: proxy) }
                 // Owned here rather than by the card, which the lazy stack drops when it scrolls away.
                 .task(id: catchUp?.session.generation) { await catchUp?.session.run(using: intelligence) }
@@ -401,7 +401,7 @@ struct ConversationTranscript: View {
 
     private func publishVisibleSequence() {
         guard pagingAnchor == nil else { return }
-        let sequence = viewport.readSequence(in: frames, nativeViewportTop: window.viewportTop ?? viewport.top)
+        let sequence = viewport.visibleThrough(frames, nativeViewportTop: window.viewportTop ?? viewport.top)
         if sequence != visibleSequence { visibleSequence = sequence }
     }
 
@@ -502,16 +502,6 @@ struct ConversationTranscript: View {
             }
             .frame(minHeight: 32)
         }
-    }
-
-    /// The store skips what the server already has, so a read that failed goes again on the next pass.
-    private func markVisibleRead() async {
-        guard let sequence = visibleReadSequence else { return }
-        do { try await Task.sleep(for: .milliseconds(250)) }
-        catch { return }
-        guard !Task.isCancelled, window.isKeyWindow, scenePhase == .active,
-              visibleReadSequence == sequence else { return }
-        await store.markRead(through: sequence)
     }
 
     /// Programmatic scrolls never update the scroll position binding, so an anchor left by an earlier
