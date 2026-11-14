@@ -73,13 +73,14 @@ struct IntentsTests {
 
     @Test func requestQueryAndOpenOnlyResolveTheOriginalWaitingResult() async throws {
         let host = TestHost(api: try ChannelAPI(serverURL: "https://server.test"))
-        var item = MenuBarStatus.Item(target: try #require(ChannelTarget(serverURL: "https://server.test",
-                                                                        channelID: "studio")),
-                                     name: "Studio", subtitle: "Lead needs your reply",
-                                     agent: .init(id: "lead", name: "Lead"), sequence: 8, quote: "Ship the layout?")
-        let entry = try #require(WaitingRequestEntry(item: item))
-        item.target = try #require(ChannelTarget(serverURL: "https://other.test", channelID: "studio"))
-        let otherServer = try #require(WaitingRequestEntry(item: item))
+        let request = ChannelRequestMessage(message: message(8, from: "lead", "Ship the layout?", request: true),
+                                            agents: [.init(id: "lead", name: "Lead")])
+        let waiting = { (server: String) in
+            ChannelWaitingRequest(serverURL: server, channel: channel("studio", "Studio", request: 8), sequence: 8,
+                                  request: request).flatMap(WaitingRequestEntry.init)
+        }
+        let entry = try #require(waiting("https://server.test"))
+        let otherServer = try #require(waiting("https://other.test"))
         host.waitingRequests = [entry]
         let context = host.context
         var query = WaitingRequestQuery()
@@ -692,12 +693,10 @@ extension IntentsTests {
             let before = try #require(host.store("studio-demo")?.state)
             let request = try #require(before.request)
             let agent = try #require(([before.lead] + before.members).first { $0.id == request.sender.agentId })
-            let target = try #require(ChannelTarget(serverURL: api.baseURL.absoluteString,
-                                                    channelID: before.channel.id))
-            let item = MenuBarStatus.Item(target: target, name: before.channel.name, subtitle: "",
-                                         agent: agent, sequence: request.sequence,
-                                         quote: MarkdownBlock.plainText(request.text))
-            let entry = try #require(WaitingRequestEntry(item: item))
+            let waiting = ChannelWaitingRequest(serverURL: api.baseURL.absoluteString, channel: before.channel,
+                                                sequence: request.sequence,
+                                                request: .init(message: request, agents: [before.lead] + before.members))
+            let entry = try #require(waiting.flatMap(WaitingRequestEntry.init))
             host.waitingRequests = [entry]
             let text = "Spotlight reply fixture \(UUID().uuidString.prefix(8))"
             var intent = ReplyToRequestIntent(request: WaitingRequestEntity(entry), message: "  \(text)\n")

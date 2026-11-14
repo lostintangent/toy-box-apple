@@ -3,7 +3,8 @@ import ChannelKit
 import CoreSpotlight
 import Foundation
 
-/// The resolved question the inbox and widget show, not a second waiting-request policy.
+/// What Spotlight shows of a waiting request, so only a change to it re-adds the request, not a
+/// working agent's status or the channel's activity.
 struct WaitingRequestEntry: Equatable, Sendable {
     let id: String
     let target: ChannelTarget
@@ -13,18 +14,18 @@ struct WaitingRequestEntry: Equatable, Sendable {
     let channelName: String
     let requestedAt: Date?
 
-    init?(item: MenuBarStatus.Item) {
-        guard let sequence = item.sequence, sequence > 0, let question = item.quote,
-              !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let agent = item.agent else { return nil }
-        let link = NeedsYouRequestLink(serverURL: item.target.serverURL, channelID: item.target.channelID, sequence: sequence)
+    init?(_ request: ChannelWaitingRequest) {
+        guard let agent = request.requester else { return nil }
+        let link = NeedsYouRequestLink(serverURL: request.target.serverURL, channelID: request.target.channelID,
+                                       sequence: request.sequence)
         guard let url = link.url, NeedsYouRequestLink(url: url) != nil else { return nil }
         id = url.absoluteString
-        target = item.target
+        target = request.target
         self.link = link
-        self.question = question
+        question = request.question
         self.agent = ChannelAgent(id: agent.id, name: agent.name, avatar: agent.avatar, deleted: agent.deleted)
-        channelName = item.name
-        requestedAt = item.requestedAt
+        channelName = request.channel.name
+        requestedAt = request.requestedAt
     }
 }
 

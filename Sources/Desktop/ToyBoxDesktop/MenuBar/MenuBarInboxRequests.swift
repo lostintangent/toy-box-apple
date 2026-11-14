@@ -23,7 +23,7 @@ struct MenuBarInboxRequests: Equatable {
                 requests[index].state = .answered
                 continue
             }
-            if item.sequence == previous.sequence {
+            if item.request?.sequence == previous.request?.sequence {
                 requests[index].item = item
                 requests[index].state = .waiting
             } else {
@@ -65,15 +65,14 @@ struct MenuBarInboxRequests: Equatable {
         var item: MenuBarStatus.Item
         var state: Status = .waiting
         var id: ChannelTarget { item.id }
-        var canReply: Bool { state == .waiting && item.quote != nil && item.agent != nil && item.sequence != nil }
-        var canChoose: Bool { state == .waiting && !item.replies.isEmpty }
+        var canReply: Bool { state == .waiting && item.request?.requester != nil }
 
         /// The choices this row still offers. Choosing one makes the row Replied, and a request the
         /// outbox answers leaves the waiting list until a Not sent answer brings it back with its
         /// choices. They disable while the catalog can't connect, as every Send does.
         func choices(isConnected: Bool) -> TranscriptRequestChoices? {
-            guard canChoose, let sequence = item.sequence else { return nil }
-            return TranscriptRequestChoices(sequence: sequence, labels: item.replies, isConnected: isConnected)
+            guard state == .waiting else { return nil }
+            return TranscriptRequestChoices(request: item.request?.request?.message, isConnected: isConnected)
         }
     }
 }

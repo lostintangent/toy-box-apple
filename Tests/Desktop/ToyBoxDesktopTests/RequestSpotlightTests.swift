@@ -27,19 +27,10 @@ struct RequestSpotlightTests {
         #expect(WaitingRequestQuery.matching("missing", in: [entity]).isEmpty)
     }
 
-    @Test func requestsWithoutARequesterOrWordsAreLeftOut() throws {
-        let healthy = item()
-        var removedRequester = item(sequence: 9)
-        removedRequester.agent = nil
-        var unquoted = item(sequence: 11)
-        unquoted.quote = nil
-        var blank = item(sequence: 12)
-        blank.quote = " \n "
-        var unsequenced = item()
-        unsequenced.sequence = nil
-        let entries = [healthy, removedRequester, unquoted, blank, unsequenced].compactMap {
-            WaitingRequestEntry(item: $0)
-        }
+    @Test func requestsWithoutAKnownRequesterAreLeftOut() throws {
+        var unloaded = request(sequence: 11)
+        unloaded.request = nil
+        let entries = [request(), request(sequence: 9, from: "gone"), unloaded].compactMap(WaitingRequestEntry.init)
         #expect(entries.map(\.id) == [try entry().id])
     }
 
@@ -103,14 +94,11 @@ struct RequestSpotlightTests {
         spotlight.update(.init(entries: [entry]))
         await spotlight.settle()
         #expect(fake.operations.count == 2 && renders == 1)
-        var renamed = item()
-        renamed.name = "Workshop"
-        let nameChange = try #require(WaitingRequestEntry(item: renamed))
+        let nameChange = try #require(WaitingRequestEntry(request(channelName: "Workshop")))
         spotlight.update(.init(entries: [nameChange]))
         await spotlight.settle()
         #expect(fake.operations.last == .add([entry.id]) && renders == 1)
-        renamed.agent?.avatar?.color = "#008800"
-        let avatarChange = try #require(WaitingRequestEntry(item: renamed))
+        let avatarChange = try #require(WaitingRequestEntry(request(channelName: "Workshop", color: "#008800")))
         spotlight.update(.init(entries: [avatarChange]))
         await spotlight.settle()
         #expect(fake.operations.last == .add([entry.id]) && renders == 2)
@@ -204,18 +192,22 @@ struct RequestSpotlightTests {
         #expect(fixture.sent.map(\.text) == ["@new-name Hello"])
     }
 
-    private func item(server: String = "https://server.test", sequence: Int = 8,
-                      agentName: String = "Lead") -> MenuBarStatus.Item {
-        .init(target: ChannelTarget(serverURL: server, channelID: "studio")!, name: "Studio",
-              subtitle: "Lead needs your reply",
-              agent: .init(id: "lead", name: agentName,
-                           avatar: .init(mark: "M4 4L20 20M4 20L20 4", color: "#0891b2")),
-              sequence: sequence, quote: "Should we ship the caf\u{00e9} layout?", requestedAt: .distantPast)
+    private func request(server: String = "https://server.test", sequence: Int = 8, agentName: String = "Lead",
+                         channelName: String = "Studio", color: String = "#0891b2",
+                         from sender: String = "lead") -> ChannelWaitingRequest {
+        let agent = ChannelAgent(id: "lead", name: agentName, avatar: .init(mark: "M4 4L20 20M4 20L20 4", color: color))
+        let message = ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-01-15T00:00:00.000Z",
+                                     sender: .agent(sender), content: .text("Should we ship the caf\u{00e9} layout?"),
+                                     request: true)
+        let channel = Channel(id: "studio", name: channelName, model: .init(provider: "test", name: "test"),
+                              requestSequence: sequence, updatedAt: "2026-01-15T00:00:00.000Z")
+        return ChannelWaitingRequest(serverURL: server, channel: channel, sequence: sequence,
+                                     request: .init(message: message, agents: [agent]))!
     }
 
     private func entry(server: String = "https://server.test", sequence: Int = 8,
                        agentName: String = "Lead") throws -> WaitingRequestEntry {
-        try #require(WaitingRequestEntry(item: item(server: server, sequence: sequence, agentName: agentName)))
+        try #require(WaitingRequestEntry(request(server: server, sequence: sequence, agentName: agentName)))
     }
 }
 

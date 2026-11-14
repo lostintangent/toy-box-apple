@@ -20,7 +20,7 @@ final class RequestSpotlight {
 
         @MainActor init(_ model: AppModel) {
             entries = ChannelIntents.Listed.spotlight(in: model.catalogs) == nil
-                ? nil : model.menuBarStatus.waiting.compactMap(WaitingRequestEntry.init)
+                ? nil : model.menuBarStatus.waiting.compactMap { $0.request.flatMap(WaitingRequestEntry.init) }
         }
     }
 
