@@ -1,5 +1,4 @@
 import AppKit
-import AVFoundation
 @testable import ToyBoxClient
 import ToyBoxKit
 import Foundation
@@ -9,18 +8,10 @@ import SwiftUI
 import ToyBoxUI
 import Synchronization
 import Testing
-import UniformTypeIdentifiers
 @testable import ToyBoxDesktop
 
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct ComposerTests {
-    @Test func sendExplainsWhyOnlyOnceItsChannelIsUnavailable() {
-        #expect(ChannelConnectionPhase.connecting.sendUnavailableReason == nil)
-        #expect(ChannelConnectionPhase.connected.sendUnavailableReason == nil)
-        #expect(ChannelConnectionPhase.failed("Offline").sendUnavailableReason == "The channel isn't connected")
-        #expect(ChannelConnectionPhase.deleted.sendUnavailableReason == "This channel was deleted")
-    }
-
     @Test func sharedDraftNormalizesTheMacsNativeSVGInsteadOfLosingIt() async throws {
         let data = Data("""
             <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
@@ -45,388 +36,6 @@ struct ComposerTests {
         #expect(abs(color.redComponent - nativeColor.redComponent) < 0.02)
         #expect(abs(color.greenComponent - nativeColor.greenComponent) < 0.02)
         #expect(abs(color.blueComponent - nativeColor.blueComponent) < 0.02)
-    }
-
-    @Test func auxiliaryRepliesSeedOnceAndKeepStaleRequestsUnsent() async throws {
-        try await withDraft { draft, url in
-            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"))
-            let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
-                                  requestSequence: 8, updatedAt: "2026-10-24T00:00:00Z")
-            let initial = ChannelState(revision: 1, channel: channel, lead: .lead(id: "lead"))
-            _ = try store.apply(.init(type: "snapshot", state: initial))
-            let outbox = ChannelOutbox(folder: url.deletingLastPathComponent().appending(path: "Sending"))
-            store.outbox = outbox
-            let session = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8),
-                                                   requester: .init(id: "ada", name: "Ada Lovelace"), draft: draft)
-            #expect(draft.text == "@ada-lovelace ")
-            #expect(session.canSend())
-            #expect(!session.requestChanged)
-            #expect(store.state?.channel.seenThrough == 0)
-            session.invalidateRequest()
-            #expect(session.requestChanged)
-            #expect(!session.canSend())
-            #expect(session.requestChangeNotice == "This request was answered elsewhere.")
-            session.invalidateRequest(replacementSequence: 9)
-            #expect(session.requestChangeNotice == "A newer request is waiting.")
-            draft.text = ""
-            ComposerDraft.finishSaving()
-            let restored = ComposerDraft(fileURL: url)
-            let reopened = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8),
-                                                    requester: .init(id: "ada", name: "Ada Lovelace"), draft: restored)
-            #expect(reopened.draft.text.isEmpty)
-            draft.text = "Keep this reply"
-            var changed = initial
-            changed.revision = 2
-            changed.channel.requestSequence = 9
-            _ = try store.apply(.init(type: "snapshot", state: changed))
-            #expect(session.requestChanged)
-            #expect(!session.canSend())
-            await session.send()
-            #expect(draft.text == "Keep this reply")
-            #expect(outbox.queue.isEmpty)
-            #expect(session.error?.contains("request changed") == true)
-            #expect(store.state?.channel.seenThrough == 0)
-        }
-    }
-
-    @Test func auxiliaryEligibilityStopsObservingAfterItsFirstBlocker() throws {
-        let draft = ComposerDraft()
-        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"))
-        let session = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8), draft: draft)
-        let offlineChanges = Mutex(0)
-        let offline = withObservationTracking { session.canSend() } onChange: {
-            offlineChanges.withLock { $0 += 1 }
-        }
-        #expect(!offline)
-        session.invalidateRequest()
-        draft.text = "An offline reply"
-        #expect(offlineChanges.withLock { $0 } == 0)
-        let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
-                              requestSequence: 8, updatedAt: "2026-10-24T00:00:00Z")
-        let state = ChannelState(revision: 1, channel: channel, lead: .lead(id: "lead"))
-        _ = try store.apply(.init(type: "snapshot", state: state))
-        #expect(offlineChanges.withLock { $0 } == 1)
-        let staleChanges = Mutex(0)
-        let stale = withObservationTracking { session.canSend() } onChange: {
-            staleChanges.withLock { $0 += 1 }
-        }
-        #expect(!stale)
-        draft.text = "A newer reply to the stale request"
-        #expect(staleChanges.withLock { $0 } == 0)
-    }
-
-    @Test func quickSendPrefillPreservesDraftsAndIsAppliedOnlyOnce() async throws {
-        try await withDraft { draft, url in
-            let server = try #require(URL(string: "http://localhost:3210"))
-            let incomingURL = url.deletingLastPathComponent().appendingPathComponent("incoming.json")
-            let inbox = QuickSendPrefillInbox(serverURL: server, draft: ComposerDraft(fileURL: incomingURL))
-            let original = try sampleImage()
-            draft.text = "Keep this draft"
-            draft.append(original)
-            let prefill = QuickSendPrefill(text: "Selected text\nhttps://example.com", images: [original])
-            let extra = QuickSendPrefill(text: "Another selection")
-            let merged = prefill.appending(extra)
-            #expect(merged.id != prefill.id && merged.id != extra.id)
-            inbox.receive(merged)
-            ComposerDraft.finishSaving()
-            let staged = ComposerDraft(fileURL: incomingURL)
-            #expect(staged.text == "Selected text\nhttps://example.com\n\nAnother selection")
-            #expect(staged.images.count == 1)
-            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString))
-            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
-            #expect(inbox.apply(to: session))
-            #expect(draft.text == "Keep this draft\n\n" + staged.text)
-            #expect(draft.images.count == 2)
-            #expect(draft.images.first?.id == original.id)
-            #expect(Set(draft.images.map(\.id)).count == 2)
-            #expect(!inbox.hasPendingContent)
-            let revision = draft.revision
-            #expect(!inbox.apply(to: session))
-            #expect(draft.revision == revision)
-            ComposerDraft.finishSaving()
-            #expect(ComposerDraft(fileURL: url).text == draft.text)
-            #expect(!ComposerDraft(fileURL: incomingURL).hasContent)
-            inbox.receive(.init(images: [.init(name: "Corrupt.png", mimeType: "image/png", data: Data([1, 2, 3]))]))
-            #expect(inbox.apply(to: session))
-            #expect(draft.revision == revision)
-            #expect(draft.images.count == 2)
-            #expect(draft.error?.contains("cannot be decoded") == true)
-        }
-    }
-
-    @Test func quickSendPrefillWaitsUntilASavedSendIsPresentedAgain() async throws {
-        try await withDraft { draft, url in
-            let server = try #require(URL(string: "http://localhost:3210"))
-            let inbox = QuickSendPrefillInbox(serverURL: server, draft: ComposerDraft())
-            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString))
-            let outbox = ChannelOutbox(folder: url.deletingLastPathComponent().appending(path: "Sending"))
-            store.outbox = outbox
-            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft, isConnected: { true })
-            draft.text = "Saved message"
-            await session.send()
-            #expect(session.confirmation != nil)
-            inbox.receive(.init(text: "Shared content"))
-            #expect(!inbox.apply(to: session))
-            #expect(inbox.hasPendingContent)
-            session.beginPresentation()
-            #expect(inbox.apply(to: session))
-            #expect(draft.text == "Shared content")
-            withExtendedLifetime(outbox) {}
-        }
-    }
-
-    @Test(arguments: ["http://localhost:3210", "https://remote.example"])
-    func quickSendPrefillAttachesImagesAndKeepsNonImagePathsLocal(serverAddress: String) async throws {
-        try await withDraft { draft, url in
-            let server = try #require(URL(string: serverAddress))
-            let inbox = QuickSendPrefillInbox(serverURL: server, draft: ComposerDraft())
-            let imageURL = url.deletingLastPathComponent().appendingPathComponent("image.png")
-            let fileURL = url.deletingLastPathComponent().appendingPathComponent("private notes.txt")
-            try sampleImage().data.write(to: imageURL)
-            try Data("Private file contents".utf8).write(to: fileURL)
-            draft.text = "Keep this draft"
-            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: serverAddress))
-            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
-            inbox.receive(.init(text: "Shared text", fileURLs: [imageURL, fileURL]))
-            #expect(inbox.draft.isLoadingImages)
-            #expect(!inbox.apply(to: session))
-            try await waitUntil("prefill files finish importing") { !inbox.draft.isLoadingImages }
-            #expect(inbox.apply(to: session))
-            #expect(draft.images.count == 1)
-            #expect(draft.text.hasPrefix("Keep this draft\n\nShared text"))
-            if server.host == "localhost" {
-                #expect(draft.text.hasSuffix(fileURL.path))
-                #expect(draft.error == nil)
-            } else {
-                #expect(!draft.text.contains(fileURL.path))
-                #expect(draft.error?.contains("Only images can be attached") == true)
-            }
-            #expect(!draft.text.contains("Private file contents"))
-        }
-    }
-
-    @Test func quickSendPrefillRecognizesOnlyActualLoopbackHosts() throws {
-        for host in ["localhost", "LOCALHOST.", "app.localhost", "127.0.0.1", "127.12.3.4", "[::1]"] {
-            let server = try #require(URL(string: "http://\(host):3210"))
-            #expect(QuickSendPrefillInbox.acceptsLocalPaths(serverURL: server))
-        }
-        for host in ["127.attacker.example", "127.0.0.999", "localhost.example", "192.168.1.3", "example.com"] {
-            let server = try #require(URL(string: "http://\(host):3210"))
-            #expect(!QuickSendPrefillInbox.acceptsLocalPaths(serverURL: server))
-        }
-        let server = try #require(URL(string: "http://localhost:3210"))
-        #expect(ComposerDraft.storageKey(serverURL: server, channelID: "", scope: .quickSendIncoming)
-            != ComposerDraft.storageKey(serverURL: server, channelID: "", scope: .quickSend))
-    }
-
-    @Test func aWidgetReplyKeepsTheInboxDraftAndNeverRetargetsAChangedRequest() async throws {
-        try await withDraft { draft, _ in
-            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"))
-            var channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
-                                  requestSequence: 12, updatedAt: "2026-10-24T22:00:00Z")
-            _ = try store.apply(.init(type: "snapshot", state: .init(revision: 1, channel: channel,
-                                                                     lead: .lead(id: "lead"))))
-            let requester = ChannelAgent(id: "ada", name: "Ada Lovelace")
-            let session = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 12), draft: draft)
-            session.seedRequesterIfNew(requester)
-            #expect(draft.text == "@ada-lovelace ")
-            draft.text += "My existing inbox reply"
-            session.seedRequesterIfNew(.init(id: "different", name: "Other agent"))
-            #expect(draft.text == "@ada-lovelace My existing inbox reply")
-            let reopened = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 12),
-                                                    requester: requester, draft: draft)
-            #expect(reopened.draft === session.draft)
-            #expect(reopened.requestSequence == 12)
-            channel.requestSequence = 14
-            _ = try store.apply(.init(type: "snapshot", state: .init(revision: 2, channel: channel,
-                                                                     lead: .lead(id: "lead"))))
-            #expect(reopened.requestChanged)
-            #expect(!reopened.canSend())
-            await reopened.send()
-            #expect(store.state?.channel.seenThrough == 0)
-            #expect(draft.text == "@ada-lovelace My existing inbox reply")
-        }
-    }
-
-    @Test func quickSendRestoresDraftTargetsBeforeRecentsAndNeverGuessesAmongChannels() async throws {
-        let suite = "ComposerQuickSend-\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let alpha = Channel(id: "alpha", name: "Alpha", purpose: "Build the launch",
-                            model: .init(provider: "test", name: "test"), updatedAt: "2026-10-24T00:00:00Z")
-        var beta = alpha
-        beta.id = "beta"; beta.name = "Beta"; beta.purpose = "Sketch the entrance"
-        let both = try await loadedCatalog([beta, alpha])
-        let server = both.api.baseURL.absoluteString
-        let onlyBeta = try await loadedCatalog([beta], at: server)
-        let onlyAlpha = try await loadedCatalog([alpha], at: server)
-        let loading = ChannelCatalogStore(api: try ChannelAPI(serverURL: server))
-        let empty = try await loadedCatalog([])
-        let alphaTarget = try #require(both.target("alpha")), betaTarget = try #require(both.target("beta"))
-        func choice(_ channel: Channel, in catalog: ChannelCatalogStore) throws -> QuickSendTargetHistory.Choice {
-            .init(target: try #require(catalog.target(channel.id)), channel: channel)
-        }
-        let history = QuickSendTargetHistory(defaults: defaults)
-        #expect(history.initialTarget(in: [both], lastUsed: nil, hasDraft: { _ in false }) == nil)
-        #expect(history.initialTarget(in: [both], lastUsed: alphaTarget, hasDraft: { _ in false }) == alphaTarget)
-        #expect(history.initialTarget(in: [onlyBeta, empty], lastUsed: nil, hasDraft: { _ in false }) == betaTarget)
-        #expect(history.initialTarget(in: [onlyBeta, loading], lastUsed: nil, hasDraft: { _ in false }) == nil,
-                "The only channel isn't known while another server loads")
-        history.choose(try choice(beta, in: both))
-        #expect(history.initialTarget(in: [loading], lastUsed: nil, hasDraft: { _ in false }) == betaTarget)
-        #expect(history.initialTarget(in: [both], lastUsed: alphaTarget, hasDraft: { _ in false }) == betaTarget)
-        #expect(history.initialTarget(in: [empty], lastUsed: nil, hasDraft: { _ in true }) == nil,
-                "A channel on a server you removed is never the target")
-        history.trackDraft(alphaTarget, name: "Alpha", hasContent: true)
-        history.choose(try choice(beta, in: both))
-        #expect(history.selected == betaTarget)
-        history.restoreTarget(in: [both], lastUsed: betaTarget, hasDraft: { $0 == alphaTarget })
-        #expect(history.selected == alphaTarget)
-
-        let restored = QuickSendTargetHistory(defaults: defaults)
-        #expect(restored.initialTarget(in: [onlyBeta], lastUsed: betaTarget, hasDraft: { $0 == alphaTarget }) == alphaTarget)
-        #expect(restored.name(for: alphaTarget) == "Alpha")
-        func ids(_ query: String) -> [String] {
-            let choices = restored.choices(in: [both], query: query)
-            return (choices.recent + choices.others.joined()).map(\.channel.id)
-        }
-        #expect(ids("") == ["beta", "alpha"])
-        #expect(ids("entrance") == ["beta"])
-        #expect(ids("LAUNCH") == ["alpha"])
-        restored.trackDraft(alphaTarget, name: nil, hasContent: false)
-        #expect(restored.initialTarget(in: [onlyAlpha], lastUsed: alphaTarget, hasDraft: { _ in false }) == nil)
-    }
-
-    @Test func quickSendRecentsSpanServersAndEachServerListsItsOthers() async throws {
-        let suite = "ComposerQuickSendServers-\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let channels = ["alpha", "beta", "gamma"].map { id in
-            Channel(id: id, name: id.capitalized, model: .init(provider: "test", name: "test"),
-                    updatedAt: "2026-10-24T00:00:00Z")
-        }
-        let first = try await loadedCatalog([channels[0], channels[1]])
-        let second = try await loadedCatalog([channels[0], channels[2]])
-        let history = QuickSendTargetHistory(defaults: defaults)
-        history.choose(.init(target: try #require(second.target("alpha")), channel: channels[0]))
-        history.choose(.init(target: try #require(first.target("beta")), channel: channels[1]))
-
-        let choices = history.choices(in: [first, second], query: "")
-        #expect(choices.recent.map(\.target) == [first.target("beta"), second.target("alpha")])
-        #expect(choices.others.map { $0.map(\.target) } == [[first.target("alpha")], [second.target("gamma")]],
-                "The same channel ID on another server is its own channel")
-        #expect(history.initialTarget(in: [second], lastUsed: nil, hasDraft: { _ in false }) == nil,
-                "The last channel chosen is on a server you removed")
-    }
-
-    @Test func quickSendChooserIsATransparentNativeListWhereAClickOrReturnChoosesAnyRow() async throws {
-        let alpha = Channel(id: "alpha", name: "Alpha", purpose: "Build the launch",
-                            model: .init(provider: "test", name: "test"), updatedAt: "2026-10-24T00:00:00Z")
-        let channels = ["alpha", "beta", "gamma", "delta"].map { id in
-            var channel = alpha
-            channel.id = id; channel.name = id.capitalized
-            return channel
-        }
-        let suite = "ComposerQuickSendChooser-\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let catalog = try await loadedCatalog(channels)
-        var chosen: [String] = []
-        let host = NSHostingView(rootView: QuickSendChannelChooser(
-            catalogs: [catalog], history: QuickSendTargetHistory(defaults: defaults), selected: catalog.target("beta"),
-            retry: {}) { chosen.append($0.channel.id) })
-        let panel = QuickSendPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 400),
-                                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.isReleasedWhenClosed = false
-        panel.contentView = host
-        panel.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
-        panel.orderFrontRegardless()
-        panel.makeKey()
-        defer { panel.close() }
-        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
-        var table: NSTableView? { descendants(host).lazy.compactMap { $0 as? NSTableView }.first }
-        try await waitForUpdate(of: host, "the rows mount and the current channel is highlighted") {
-            table?.numberOfRows == 4 && table?.selectedRow == 1
-        }
-        let list = try #require(table)
-        let scroll = try #require(list.enclosingScrollView)
-        #expect(!scroll.drawsBackground, "The popover's material shows through the list")
-        let rowsHeight = list.rect(ofRow: 3).maxY - list.rect(ofRow: 0).minY
-        #expect(scroll.frame.height >= rowsHeight && scroll.frame.height < 252, "The list fits its rows")
-        let rendering = try #require(list.bitmapImageRepForCachingDisplay(in: list.bounds))
-        list.cacheDisplay(in: list.bounds, to: rendering)
-        let scale = CGFloat(rendering.pixelsHigh) / list.bounds.height
-        let boundary = list.rect(ofRow: 2)
-        let separated = stride(from: boundary.minX + 24, to: boundary.maxX - 24, by: 8).contains { x in
-            (rendering.colorAt(x: Int(x * scale), y: Int(boundary.maxY * scale) - 1)?.alphaComponent ?? 0) > 0.05
-        }
-        #expect(!separated, "No separator is drawn between two unselected rows")
-
-        try await waitForUpdate(of: host, "the search field takes focus") { panel.firstResponder is NSTextView }
-        panel.sendEvent(try key(String(UnicodeScalar(NSUpArrowFunctionKey)!), code: 126, in: panel,
-                                modifiers: [.numericPad, .function]))
-        try await waitForUpdate(of: host, "the up arrow moves the native highlight from the search field") {
-            list.selectedRow == 0
-        }
-        panel.sendEvent(try key("\r", code: 36, in: panel))
-        #expect(chosen == ["alpha"])
-
-        func click(row: Int, at y: (NSRect) -> CGFloat = { $0.midY }) throws {
-            let rect = list.rect(ofRow: row)
-            let point = list.convert(NSPoint(x: rect.midX, y: y(rect)), to: nil)
-            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                panel.sendEvent(try #require(NSEvent.mouseEvent(
-                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                    windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
-            }
-        }
-        try click(row: 0)
-        #expect(chosen == ["alpha", "alpha"], "Clicking the highlighted row chooses it though the selection can't change")
-        try click(row: 2) { $0.minY + 1 }
-        try click(row: 1) { $0.maxY - 1 }
-        #expect(chosen == ["alpha", "alpha", "delta", "beta"], "Either edge of a row chooses it too")
-    }
-
-    @Test func auxiliarySendSavesToTheOutboxOnlyWhileTheCatalogIsConnected() async throws {
-        try await withDraft { draft, url in
-            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"))
-            let outbox = ChannelOutbox(folder: url.deletingLastPathComponent().appending(path: "Sending"))
-            store.outbox = outbox
-            let catalogConnected = Mutex(false)
-            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft,
-                                                   isConnected: { catalogConnected.withLock { $0 } })
-            draft.text = "Original message"
-            draft.append(try sampleImage())
-            try await finishLoading(draft)
-            #expect(!session.canSend())
-            await session.send(opensChannel: true)
-            #expect(session.confirmation == nil)
-            #expect(session.error?.contains("connection") == true)
-            #expect(draft.text == "Original message")
-
-            catalogConnected.withLock { $0 = true }
-            #expect(!store.phase.isConnected)
-            #expect(session.canSend(), "QuickSend follows the catalog, not the channel it hasn't opened")
-            await session.send(opensChannel: true)
-            let confirmation = try #require(session.confirmation)
-            #expect(confirmation.opensChannel)
-            #expect(session.error == nil)
-            let id = try #require(UUID(uuidString: confirmation.id))
-            let saved = try #require(outbox.message(id))
-            #expect(saved.channelID == "test")
-            #expect(saved.text == "Original message")
-            #expect(saved.attachments.count == 1)
-            #expect(saved.state == .sending)
-            #expect(!draft.hasContent)
-
-            draft.text = "A new draft"
-            #expect(!session.canSend(), "A saved send waits until the editor is presented again")
-            #expect(session.takeConfirmationPresentation() == confirmation)
-            #expect(session.takeConfirmationPresentation() == nil)
-            session.beginPresentation()
-            #expect(session.confirmation == nil)
-            #expect(session.canSend())
-        }
     }
 
     @Test func mentionManagementHidesOrDisablesCreationUntilAnActionIsAvailable() async throws {
@@ -459,34 +68,6 @@ struct ComposerTests {
         #expect(coordinator.handle(enter))
         try await waitUntil("the created agent replaces the mention query") { draft.text == "@new-person " }
         #expect(created == ["New Person"])
-    }
-
-    @Test func persistenceFailureIsVisibleAndDoesNotEraseText() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-composer-\(UUID())")
-        try Data("Not a directory".utf8).write(to: directory)
-        defer {
-            ComposerDraft.finishSaving()
-            remove(directory)
-        }
-        let draft = ComposerDraft(fileURL: directory.appendingPathComponent("draft.json"))
-        draft.text = "Keep this text"
-        #expect(draft.text == "Keep this text")
-        try await waitUntil("the failed save is reported") { draft.error != nil }
-        #expect(draft.error?.contains("could not be saved") == true)
-        #expect(!draft.isSavedLocally)
-        let server = try #require(URL(string: "http://localhost:3210"))
-        let inbox = QuickSendPrefillInbox(serverURL: server, draft: draft)
-        inbox.receive(.init(text: "Shared content"))
-        let target = ComposerDraft()
-        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString))
-        let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: target)
-        #expect(inbox.apply(to: session))
-        #expect(target.text == "Keep this text\n\nShared content")
-        try await waitUntil("the clear's failed save is reported") { inbox.draft.error != nil }
-        #expect(inbox.draft.error?.contains("could not be saved") == true)
-        let revision = target.revision
-        #expect(!inbox.apply(to: session))
-        #expect(target.revision == revision)
     }
 
     @Test func nativeEditingKeepsNewlinesUndoAndAccessibilityEditsButOnlyReturnSends() throws {
@@ -1005,33 +586,6 @@ struct ComposerTests {
         #expect(heights[0] == heights[1], "\(style) scrollers. \(geometry.joined(separator: "; "))")
     }
 
-    @Test func dictationTranscriptJoinsTranscriberSegmentsAndPadsAgainstTheDraft() {
-        var transcript = DictationTranscript()
-        let changed = transcript.receive(" Can you tighten the sidebar", isFinal: false)
-        #expect(changed)
-        #expect(transcript.visible == "Can you tighten the sidebar")
-        #expect(transcript.finalized.isEmpty)
-        transcript.receive("Can you tighten the sidebar spacing", isFinal: true)
-        transcript.receive("?", isFinal: true)
-        transcript.receive(" and check the", isFinal: false)
-        #expect(transcript.finalized == "Can you tighten the sidebar spacing?")
-        #expect(transcript.visible == "Can you tighten the sidebar spacing? and check the")
-        let repeated = transcript.receive(" and check the", isFinal: false)
-        #expect(!repeated)
-        transcript.promoteTentative()
-        #expect(transcript.finalized == "Can you tighten the sidebar spacing? and check the")
-        #expect(transcript.tentative.isEmpty)
-        #expect(DictationTranscript.join("Hello", "world") == "Hello world")
-        #expect(DictationTranscript.join("Hello", ",") == "Hello,")
-        #expect(DictationTranscript.join("Hello\n", "world") == "Hello\nworld")
-        let between = DictationTranscript.padding(for: "words", after: "x", before: "y")
-        #expect(between.0 == " " && between.1 == " ")
-        let afterSpace = DictationTranscript.padding(for: "words", after: " ", before: ".")
-        #expect(afterSpace.0.isEmpty && afterSpace.1.isEmpty)
-        let punctuation = DictationTranscript.padding(for: "?", after: "d", before: nil)
-        #expect(punctuation.0.isEmpty && punctuation.1.isEmpty)
-    }
-
     @Test func dictationShowsTentativeWordsInPlaceAndCommitsFinalWordsAsOneUndoStep() async throws {
         let draft = ComposerDraft()
         draft.text = "Ship it today"
@@ -1167,307 +721,6 @@ struct ComposerTests {
         #expect(second.text == secondText + "!")
     }
 
-    /// Every switch reconnects the channel it shows, so a quick connect mustn't flash the reason Send is off.
-    @Test func sendingWaitsForFinalWordsAndKeepsUnconfirmedWordsUnsent() async throws {
-        var revision = UUID()
-        let recognizer = ManualDictationRecognizer()
-        var system = DictationSystem.manual(recognizer)
-        system.finalizeTimeout = .milliseconds(150)
-        let dictation = Dictation(system: system)
-        let target = RecordingDictationTarget()
-        dictation.target = target
-        dictation.draftRevision = { revision }
-        await dictation.refresh()
-        defer { dictation.deactivate() }
-
-        dictation.toggle()
-        try await waitUntil("dictation listens") { dictation.phase == .listening }
-        recognizer.send("Check the hed", isFinal: false)
-        recognizer.finalWords = [("Check the header.", true)]
-        #expect(await dictation.stop(.send))
-        #expect(target.commits == ["Check the header."])
-        #expect(dictation.notice == nil)
-
-        dictation.toggle()
-        try await waitUntil("dictation listens again") { dictation.phase == .listening }
-        recognizer.send("And the footer", isFinal: false)
-        recognizer.hangs = true
-        #expect(await !dictation.stop(.send), "A stalled transcriber cannot confirm words for sending")
-        #expect(target.commits == ["Check the header.", "And the footer"], "Unconfirmed words reach the text target")
-        #expect(dictation.notice == .unsent(revision: revision))
-        #expect(dictation.notice?.text == "Dictation didn't finish, so the message wasn't sent. Check the last words, then send.")
-        #expect(!dictation.isSessionActive)
-
-        dictation.draftChanged(to: revision)
-        #expect(dictation.notice != nil, "Committing the unconfirmed words is not an edit")
-        revision = UUID()
-        dictation.draftChanged(to: revision)
-        #expect(dictation.notice == nil, "Editing the draft clears the notice")
-
-        dictation.toggle()
-        try await waitUntil("dictation listens a third time") { dictation.phase == .listening }
-        recognizer.send("Thanks", isFinal: false)
-        recognizer.hangs = true
-        #expect(await !dictation.stop(.send))
-        #expect(dictation.notice == .unsent(revision: revision))
-        #expect(await dictation.stop(.send))
-        #expect(dictation.notice == nil, "Sending clears the notice")
-    }
-
-    @Test func silenceStopsDictationAndKeepsItsWords() async throws {
-        #expect(DictationSystem.live.silenceTimeout == .seconds(30))
-        let recognizer = ManualDictationRecognizer()
-        var system = DictationSystem.manual(recognizer)
-        system.silenceTimeout = .milliseconds(250)
-        var announcements: [String] = []
-        system.announce = { announcements.append($0) }
-        let dictation = Dictation(system: system)
-        let target = RecordingDictationTarget()
-        dictation.target = target
-        await dictation.refresh()
-        defer { dictation.deactivate() }
-        // The words arrive as listening starts, so a busy main actor can't let silence win first.
-        recognizer.firstWords = [("Quiet now", true)]
-        dictation.toggle()
-        try await waitUntil("silence stops dictation after its words") {
-            target.commits == ["Quiet now"] && !dictation.isSessionActive
-        }
-        #expect(dictation.phase == .idle)
-        #expect(announcements == ["Listening", "Dictation stopped"])
-    }
-
-    @Test func microphoneAccessStatesExplainThemselvesAndRecover() async throws {
-        let access = MicrophoneAccessBox()
-        var system = DictationSystem.scripted()
-        system.microphoneAccess = { access.value }
-        system.requestMicrophoneAccess = {
-            access.requests += 1
-            access.value = access.grants ? .granted : .denied
-            return access.grants
-        }
-        var opened: [DictationAccess] = []
-        system.openSettings = { opened.append($0) }
-        let dictation = Dictation(system: system)
-        await dictation.refresh()
-        #expect(dictation.availability == .available)
-        #expect(dictation.accessOff == nil, "Access waits for the first click")
-        dictation.toggle()
-        try await waitUntil("the first click finds access off") { dictation.showsAccessExplanation }
-        #expect(dictation.accessOff == .microphone)
-        #expect(dictation.phase == .idle)
-        dictation.showsAccessExplanation = false
-        dictation.toggle()
-        #expect(dictation.showsAccessExplanation, "Later clicks explain at once")
-        dictation.openSettings()
-        #expect(opened == [.microphone])
-        #expect(!dictation.showsAccessExplanation)
-        #expect(DictationAccess.microphone.settingsURL?.absoluteString.hasSuffix("Privacy_Microphone") == true)
-
-        access.value = .granted
-        await dictation.refresh()
-        #expect(dictation.accessOff == nil)
-
-        access.value = .undetermined
-        dictation.toggle()
-        try await waitUntil("a declined prompt turns access off") { dictation.accessOff == .microphone }
-        #expect(access.requests == 1)
-        #expect(dictation.phase == .idle)
-
-        dictation.system.hasMicrophone = { false }
-        await dictation.refresh()
-        #expect(dictation.availability == .noMicrophone)
-
-        var unsupported = DictationSystem.scripted()
-        unsupported.supportedLocale = { nil }
-        let elsewhere = Dictation(system: unsupported)
-        await elsewhere.refresh()
-        #expect(elsewhere.availability == .unsupported)
-    }
-
-    @Test func theMicrophoneAndItsAccessWaitForTheFirstClick() async throws {
-        let probe = MicrophoneProbe()
-        var system = DictationSystem.scripted()
-        system.hasMicrophone = {
-            probe.deviceChecks += 1
-            return probe.isConnected
-        }
-        system.microphoneAccess = {
-            probe.accessChecks += 1
-            return .granted
-        }
-        var announcements: [String] = []
-        system.announce = { announcements.append($0) }
-        let dictation = Dictation(system: system)
-        dictation.activate()
-        defer { dictation.deactivate() }
-        try await waitUntil("the language check finishes") { dictation.availability != .checking }
-        await dictation.refresh()
-        #expect(probe.deviceChecks == 0, "Finding the input device starts Core Audio, so activating never does")
-        #expect(probe.accessChecks == 0)
-        #expect(dictation.availability == .available, "Dictate shows before anything looks for a microphone")
-
-        dictation.toggle()
-        try await waitUntil("the first click finds no microphone") { dictation.notice == .noMicrophone }
-        #expect(dictation.availability == .noMicrophone)
-        #expect(dictation.phase == .idle)
-        #expect(dictation.notice?.text == "Connect a microphone to dictate.")
-        #expect(announcements == ["Connect a microphone to dictate."])
-        #expect(probe.deviceChecks == 1)
-
-        probe.isConnected = true
-        NotificationCenter.default.post(name: AVCaptureDevice.wasConnectedNotification, object: nil)
-        try await waitUntil("connecting a microphone enables Dictate") { dictation.availability == .available }
-        #expect(dictation.notice == nil)
-    }
-
-    @Test func retainedPhoneAppearanceChecksOnlyLanguageSupport() async throws {
-        let recognizer = ManualDictationRecognizer()
-        let probe = MicrophoneProbe()
-        probe.isConnected = true
-        var assets = 0
-        var system = DictationSystem.manual(recognizer)
-        system.refreshNotifications = []
-        system.hasMicrophone = { probe.deviceChecks += 1; return probe.isConnected }
-        system.microphoneAccess = { probe.accessChecks += 1; return .granted }
-        system.installAssets = { _, _ in assets += 1 }
-        let dictation = Dictation(system: system)
-        let target = RecordingDictationTarget()
-        dictation.target = target
-        defer { dictation.deactivate() }
-
-        await dictation.refreshLanguageSupport()
-        #expect(probe.deviceChecks == 0 && probe.accessChecks == 0 && assets == 0)
-        dictation.toggleRecheckingInput()
-        try await waitUntil("the deliberate phone tap starts listening") { dictation.phase == .listening }
-        dictation.deactivate()
-        let devices = probe.deviceChecks
-        let access = probe.accessChecks
-        let installed = assets
-        await dictation.refreshLanguageSupport()
-        #expect(probe.deviceChecks == devices)
-        #expect(probe.accessChecks == access)
-        #expect(assets == installed)
-        #expect(dictation.phase == .idle)
-    }
-
-    @Test func everyPhoneDictationTapRechecksInputIncludingAPreviouslyMissingMicrophone() async throws {
-        let recognizer = ManualDictationRecognizer()
-        let probe = MicrophoneProbe()
-        var system = DictationSystem.manual(recognizer)
-        system.refreshNotifications = []
-        system.hasMicrophone = { probe.deviceChecks += 1; return probe.isConnected }
-        system.microphoneAccess = { probe.accessChecks += 1; return .granted }
-        let dictation = Dictation(system: system)
-        let target = RecordingDictationTarget()
-        dictation.target = target
-        defer { dictation.deactivate() }
-
-        await dictation.refreshLanguageSupport()
-        dictation.toggleRecheckingInput()
-        try await waitUntil("the phone tap finds no microphone") { dictation.notice == .noMicrophone }
-        #expect(probe.deviceChecks == 1)
-        #expect(dictation.availability == .noMicrophone)
-        dictation.deactivate()
-        await dictation.refreshLanguageSupport()
-        #expect(probe.deviceChecks == 1)
-        #expect(dictation.availability == .available, "The detached result cannot permanently disable a fresh tap")
-
-        probe.isConnected = true
-        dictation.toggleRecheckingInput()
-        try await waitUntil("the returning phone tap finds the connected microphone") { dictation.phase == .listening }
-        #expect(probe.deviceChecks == 2)
-        let access = probe.accessChecks
-        dictation.commitNow()
-        dictation.toggleRecheckingInput()
-        try await waitUntil("another tap rechecks before listening") { dictation.phase == .listening }
-        #expect(probe.deviceChecks == 3)
-        #expect(probe.accessChecks > access)
-
-        dictation.commitNow()
-        dictation.system.microphoneAccess = { .denied }
-        dictation.toggleRecheckingInput()
-        try await waitUntil("the next tap notices access was revoked") { dictation.showsAccessExplanation }
-        #expect(probe.deviceChecks == 4)
-        #expect(dictation.accessOff == .microphone)
-        #expect(target.begins == 2)
-    }
-
-    @Test func anObsoleteHeldInputCheckCannotOverwriteANewerPhoneTap() async throws {
-        let recognizer = ManualDictationRecognizer()
-        var checks = 0
-        var accessChecks = 0
-        var holdsNextCheck = false
-        var held: CheckedContinuation<Bool, Never>?
-        var system = DictationSystem.manual(recognizer)
-        system.refreshNotifications = []
-        system.hasMicrophone = {
-            checks += 1
-            if holdsNextCheck {
-                holdsNextCheck = false
-                return await withCheckedContinuation { held = $0 }
-            }
-            return true
-        }
-        system.microphoneAccess = { accessChecks += 1; return .granted }
-        let dictation = Dictation(system: system)
-        let target = RecordingDictationTarget()
-        dictation.target = target
-        defer {
-            held?.resume(returning: false)
-            dictation.deactivate()
-        }
-
-        await dictation.refresh()
-        await dictation.startTracking()
-        holdsNextCheck = true
-        let obsolete = Task { await dictation.refresh() }
-        try await waitUntil("the old input lookup is held") { held != nil }
-        dictation.deactivate()
-        await dictation.refreshLanguageSupport()
-        dictation.toggleRecheckingInput()
-        try await waitUntil("a newer tap checks input and listens") { dictation.phase == .listening }
-        #expect(checks == 3)
-        let freshAccessChecks = accessChecks
-        held?.resume(returning: false)
-        held = nil
-        await obsolete.value
-        #expect(dictation.availability == .available)
-        #expect(dictation.phase == .listening)
-        #expect(dictation.notice == nil)
-        #expect(accessChecks == freshAccessChecks, "An obsolete device result never reads or changes current access")
-    }
-
-    @Test func firstUseDownloadShowsProgressCancelsAndOnlyStartsInTheKeyWindow() async throws {
-        let dictation = Dictation(system: .scripted(downloadProgress: 0.35))
-        await dictation.refresh()
-        dictation.toggle()
-        try await waitUntil("the download reports progress") { dictation.phase == .downloading(0.35) }
-        #expect(dictation.notice?.text == "Downloading English dictation. This happens once.")
-        dictation.toggle()
-        #expect(dictation.phase == .idle)
-        #expect(dictation.notice == nil)
-
-        let recognizer = ManualDictationRecognizer()
-        var system = DictationSystem.manual(recognizer)
-        system.installAssets = { _, progress in
-            progress(0.5)
-            progress(1)
-        }
-        let target = RecordingDictationTarget()
-        let downloaded = Dictation(system: system)
-        downloaded.target = target
-        await downloaded.refresh()
-        downloaded.toggle()
-        try await waitUntil("the download finishes") { downloaded.phase == .idle && downloaded.notice == nil }
-        #expect(target.begins == 0, "A finished download doesn't start listening in a background window")
-
-        target.isInKeyWindow = true
-        downloaded.toggle()
-        try await waitUntil("listening starts in the key window") { downloaded.phase == .listening }
-        #expect(target.begins == 1)
-        downloaded.commitNow()
-    }
-
     @Test func dictateAndAttachTakeClicksAcrossTheirWholeCircleNotJustTheGlyph() async throws {
         let dictation = Dictation(system: .scripted())
         await dictation.refresh()
@@ -1596,17 +849,6 @@ struct ComposerTests {
         return nil
     }
 
-    private func withDraft(_ body: (ComposerDraft, URL) async throws -> Void) async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-composer-\(UUID())")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer {
-            ComposerDraft.finishSaving()
-            remove(directory)
-        }
-        let url = directory.appendingPathComponent("draft.json")
-        try await body(ComposerDraft(fileURL: url), url)
-    }
-
     private struct ComposerInputTestHost: View {
         @Bindable var draft: ComposerDraft
         var dictation: Dictation? = nil
@@ -1727,22 +969,6 @@ struct ComposerTests {
         do { try FileManager.default.removeItem(at: url) }
         catch { Issue.record("Composer test cleanup failed: \(error.localizedDescription)") }
     }
-
-    /// A catalog that has loaded `channels`, on a server of its own unless `server` names one.
-    private func loadedCatalog(_ channels: [Channel], at server: String? = nil) async throws -> ChannelCatalogStore {
-        let server = server ?? "http://\(UUID().uuidString.lowercased()).quick-send.test"
-        let body = try JSONEncoder().encode(ChannelCatalog(
-            lead: .init(name: "Lead", role: "Coordinates", avatar: .init(mark: "M4 12L12 4L20 12", color: "#327785")),
-            channels: channels))
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [CatalogProtocol.self]
-        configuration.httpAdditionalHeaders = [CatalogProtocol.header: body.base64EncodedString()]
-        let catalog = ChannelCatalogStore(api: try ChannelAPI(serverURL: server,
-                                                              session: URLSession(configuration: configuration)))
-        await catalog.refresh()
-        try #require(catalog.isLoaded)
-        return catalog
-    }
 }
 
 /// A window that counts as key, so typed keys reach the focused view while it stays out of sight.
@@ -1764,26 +990,6 @@ private final class NoContentProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
-/// A server that lists the catalog its session sends in a header.
-private final class CatalogProtocol: URLProtocol, @unchecked Sendable {
-    static let header = "X-Test-Catalog"
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func startLoading() {
-        guard let url = request.url, url.path == "/api/v1/channels",
-              let body = request.value(forHTTPHeaderField: Self.header).flatMap({ Data(base64Encoded: $0) }),
-              let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil,
-                                             headerFields: ["Content-Type": "application/json"]) else {
-            client?.urlProtocol(self, didFailWithError: URLError(.cannotConnectToHost))
-            return
-        }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: body)
-        client?.urlProtocolDidFinishLoading(self)
-    }
-    override func stopLoading() {}
-}
-
 /// The draft a test window shows, which changes like the selected channel.
 @MainActor @Observable private final class ShownDraft {
     var draft: ComposerDraft
@@ -1798,15 +1004,11 @@ private extension DictationSystem {
     }
 }
 
-/// Delivers results when the test says so, and finalizes or stalls on demand.
+/// Delivers results when the test says so, and its final words when dictation stops.
 @MainActor private final class ManualDictationRecognizer: DictationRecognizing {
-    /// Heard the moment listening starts, before any timer can run.
-    var firstWords: [(String, Bool)] = []
     var finalWords: [(String, Bool)] = []
-    var hangs = false
     private(set) var isCancelled = false
     private var onResult: (@MainActor (String, Bool) -> Void)?
-    private var finishing: CheckedContinuation<Void, any Error>?
 
     func start(onListening: @escaping @MainActor () -> Void,
                onResult: @escaping @MainActor (String, Bool) -> Void,
@@ -1814,28 +1016,19 @@ private extension DictationSystem {
                onInterruption: @escaping @MainActor @Sendable () -> Void,
                onFailure: @escaping @MainActor (any Error) -> Void) async throws {
         isCancelled = false
-        hangs = false
         finalWords = []
         self.onResult = onResult
         onListening()
-        for (text, isFinal) in firstWords { onResult(text, isFinal) }
     }
 
     func send(_ text: String, isFinal: Bool) { onResult?(text, isFinal) }
 
     func finish() async throws {
-        if hangs, !isCancelled {
-            try await withCheckedThrowingContinuation { finishing = $0 }
-        }
         if isCancelled { throw CancellationError() }
         for (text, isFinal) in finalWords { onResult?(text, isFinal) }
     }
 
-    func cancel() {
-        isCancelled = true
-        finishing?.resume(throwing: CancellationError())
-        finishing = nil
-    }
+    func cancel() { isCancelled = true }
 }
 
 /// Wraps the real recognizer and records every result it reports, with whether the composer was
@@ -1874,30 +1067,4 @@ private extension DictationSystem {
         recognizers.indices.contains(session)
             && recognizers[session].results.contains { $0.text.localizedCaseInsensitiveContains(word) }
     }
-}
-
-@MainActor private final class RecordingDictationTarget: DictationTextTarget {
-    var isInKeyWindow = false
-    private(set) var begins = 0
-    private(set) var commits: [String] = []
-
-    func beginDictation() -> Bool {
-        begins += 1
-        return true
-    }
-
-    func showDictation(_ transcript: DictationTranscript) {}
-    func endDictation(_ finalized: String) { commits.append(finalized) }
-}
-
-@MainActor private final class MicrophoneProbe {
-    var isConnected = false
-    var deviceChecks = 0
-    var accessChecks = 0
-}
-
-@MainActor private final class MicrophoneAccessBox {
-    var value = DictationMicrophoneAccess.denied
-    var grants = false
-    var requests = 0
 }

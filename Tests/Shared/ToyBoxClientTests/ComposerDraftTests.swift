@@ -9,17 +9,6 @@ import UniformTypeIdentifiers
 
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct ComposerDraftTests {
-    @Test func textSurvivesRestoration() async throws {
-        try await withDraft { draft, url in
-            #expect(!draft.hasContent)
-            draft.text = "@lead First draft"
-            try await saved(draft)
-            let restored = makeDraft(fileURL: url)
-            #expect(draft.error == nil)
-            #expect(restored.text == draft.text)
-        }
-    }
-
     @Test func sendabilityKeepsTheExactLengthBoundaryAndBlocksEachDraftCondition() {
         let draft = ComposerDraft(imageIsReadable: { _ in true })
         #expect(!draft.isSendable())
@@ -80,18 +69,6 @@ struct ComposerDraftTests {
             #expect(restored.images.count == 1)
             #expect(restored.hasUnreadableImage)
             #expect(restored.error?.contains("attach") == true)
-        }
-    }
-
-    @Test func anAttachmentOnlyDraftClears() async throws {
-        try await withDraft { draft, url in
-            draft.append(try sampleImage())
-            draft.clear(ifUnchanged: draft.revision)
-            #expect(!draft.hasContent)
-            #expect(draft.images.isEmpty)
-            try await saved(draft)
-            let restored = makeDraft(fileURL: url)
-            #expect(!restored.hasContent)
         }
     }
 

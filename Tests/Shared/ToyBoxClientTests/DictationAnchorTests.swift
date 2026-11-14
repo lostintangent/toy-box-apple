@@ -17,6 +17,7 @@ struct DictationAnchorTests {
         #expect(draft("hi", NSRange(location: 2, length: 0), "yo") == "hi yo")
         #expect(draft("one two three", NSRange(location: 4, length: 3), "2") == "one 2 three")
         #expect(draft("ab", NSRange(location: 1, length: 0), "?") == "a? b")
+        #expect(draft("a .", NSRange(location: 2, length: 0), "words") == "a words.")
         #expect(draft("😀x", NSRange(location: 2, length: 0), "hi") == "😀 hi x")
     }
 

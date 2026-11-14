@@ -9,7 +9,7 @@ import Testing
 /// outbox and beats the test ends. See Talk to the Lead in docs/spec.md.
 @Suite(.timeLimit(.minutes(1))) @MainActor
 struct TalkRecorderTests {
-    let recognizer = TalkTestRecognizer()
+    let recognizer = ManualDictationRecognizer()
     let beats: CardBeats
     let checks: CardChecks
     let draft = ComposerDraft(imageIsReadable: { _ in false })
@@ -165,31 +165,6 @@ struct TalkRecorderTests {
         try await eventually { recorder.isListening }
         return recorder
     }
-}
-
-/// Words the test speaks into the recorder, and the final pass Send waits for.
-@MainActor final class TalkTestRecognizer: DictationRecognizing {
-    var finalWords: [(String, Bool)] = []
-    private(set) var isCancelled = false
-    private var result: (@MainActor (String, Bool) -> Void)?
-
-    func start(onListening: @escaping @MainActor () -> Void,
-               onResult: @escaping @MainActor (String, Bool) -> Void,
-               onLevel: @escaping @MainActor @Sendable (Double) -> Void,
-               onInterruption: @escaping @MainActor @Sendable () -> Void,
-               onFailure: @escaping @MainActor (any Error) -> Void) async throws {
-        result = onResult
-        onListening()
-    }
-
-    func send(_ text: String, isFinal: Bool) { result?(text, isFinal) }
-
-    func finish() async throws {
-        for (text, isFinal) in finalWords { result?(text, isFinal) }
-        finalWords = []
-    }
-
-    func cancel() { isCancelled = true }
 }
 
 /// Holds each pause in a card's motion until the test ends it, and logs each beat's motion.
