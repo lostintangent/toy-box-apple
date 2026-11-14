@@ -8,16 +8,11 @@ import UniformTypeIdentifiers
 struct ComposerArea: View {
     let store: ChannelStore
     @Environment(AppModel.self) private var app
-    @Environment(\.windowSnapshot) private var snapshot
-    @ViewState private var snapshotDraft = ComposerDraft()
 
     /// One composer serves the window. A switch hands it the next channel's draft, so its text view
     /// is kept rather than rebuilt.
     var body: some View {
-        ChannelComposer(session: app.composerSession(
-            for: store, draft: snapshot == nil
-                ? .shared(serverURL: store.api.baseURL, channelID: store.id) : snapshotDraft
-        ))
+        ChannelComposer(session: app.composerSession(for: store))
     }
 }
 
@@ -142,7 +137,6 @@ private struct ChannelComposer: View {
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.channelTextScale) private var textScale
-    @Environment(\.windowSnapshot) private var snapshot
     @Environment(\.colorSchemeContrast) private var contrast
     @ViewState private var inputHeight: CGFloat = 44
     @ViewState private var isDragging = false
@@ -212,42 +206,53 @@ private struct ChannelComposer: View {
             registerDraft()
             dictation.draftChanged(to: revision)
         }
-        .task(id: snapshot?.requestedState) {
-            switch snapshot?.requestedState {
-            case "composer-draft":
-                draft.text = "@ada Here's the latest screenshot.\nThe draft stays with this channel.\nReady for your review."
-                focusRequest = UUID()
-            case "composer-mentions":
-                draft.text = "@"
-                focusRequest = UUID()
-            case "composer-notices":
-                draft.text = "Here's the revised entrance layout."
-                draft.error = "Library sketch.heic cannot be decoded as an image. Attach a readable image file."
-                snapshot?.markStateReady("composer-notices")
-            case "hover-all":
-                // Every control in `HoverFillButtonStyle` lights itself for this state.
-                snapshot?.markStateReady("hover-all")
-            case let name? where name.hasPrefix("composer-dictation"):
-                await prepareDictationSnapshot(name)
-            default: break
-            }
-        }
+        .snapshotPose(pose)
         .onDisappear {
             requestHoverTask?.cancel()
             dictation.deactivate()
         }
     }
 
+    /// The composer's part of a snapshot's pose. The input readies the draft and mention states
+    /// once it shows them.
+    private func pose(_ state: String) async throws -> Bool {
+        switch state {
+        case "composer-draft":
+            draft.text = "@ada Here's the latest screenshot.\nThe draft stays with this channel.\nReady for your review."
+            focusRequest = UUID()
+            return false
+        case "composer-mentions":
+            draft.text = "@"
+            focusRequest = UUID()
+            return false
+        case "composer-notices":
+            draft.text = "Here's the revised entrance layout."
+            draft.error = "Library sketch.heic cannot be decoded as an image. Attach a readable image file."
+            return true
+        case "hover-all":
+            // Every control in `HoverFillButtonStyle` lights itself for this state.
+            return true
+        case _ where state.hasPrefix("composer-dictation"):
+            try await poseDictation(state)
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Drives the Dictate states with scripted platform services, or the real transcriber on a DEBUG recording.
-    private func prepareDictationSnapshot(_ name: String) async {
+    private func poseDictation(_ name: String) async throws {
         let words: [(String, Bool)] = [("Can you tighten the sidebar spacing", true), ("?", true),
                                        (" And check the header", false)]
         var recording = false
 #if DEBUG
-        recording = name == "composer-dictation-recording" && DictationSystem.recordingOverride != nil
+        recording = DictationSystem.recordingOverride != nil
 #endif
+        if name == "composer-dictation-recording", !recording {
+            throw LaunchArgumentError("composer-dictation-recording needs TOYBOX_DICTATION_AUDIO_FILE")
+        }
         dictation.system = switch name {
-        case _ where recording: .live
+        case "composer-dictation-recording": .live
         case "composer-dictation-listening": .scripted(results: words)
         case "composer-dictation-unsent": .scripted(results: words, finishes: false)
         case "composer-dictation-download": .scripted(downloadProgress: 0.35)
@@ -264,19 +269,20 @@ private struct ChannelComposer: View {
              "composer-dictation-recording", "composer-dictation-unsent", "composer-dictation-no-microphone":
             dictation.contextualStrings = dictationContext
             dictation.toggle()
-            let deadline = ContinuousClock.now + .seconds(recording ? 20 : 5)
-            while ContinuousClock.now < deadline {
-                let ready = switch name {
+            let (dictation, draft) = (dictation, draft)
+            for await ready in Observations({
+                switch name {
                 case "composer-dictation-listening": dictation.isListening && dictation.hasWords && !draft.text.isEmpty
-                case "composer-dictation-recording", "composer-dictation-unsent":
-                    dictation.hasTentativeWords && !draft.text.isEmpty
+                // A recording's words stay tentative, since the file ends without the transcriber
+                // finalizing them.
+                case "composer-dictation-recording": dictation.hasTentativeWords
+                case "composer-dictation-unsent": dictation.hasTentativeWords && !draft.text.isEmpty
                 case "composer-dictation-download": dictation.notice != nil
                 case "composer-dictation-no-microphone": dictation.notice == .noMicrophone
                 default: dictation.isListening && dictation.level > 0.5
                 }
-                if ready { break }
-                try? await Task.sleep(for: .milliseconds(50))
-            }
+            }) where ready { break }
+            try Task.checkCancellation()
             if name == "composer-dictation-unsent" {
                 // Send while the scripted transcriber never finishes its final pass.
                 dictation.system.finalizeTimeout = .milliseconds(300)
@@ -284,7 +290,6 @@ private struct ChannelComposer: View {
             }
         default: break
         }
-        snapshot?.markStateReady(name)
     }
 
     private var dictationContext: [String] {
@@ -347,7 +352,7 @@ private struct ChannelComposer: View {
                                         try await management.createMentionMember(name: name, store: store)
                                     }, edit: { agent in
                                         if let target = store.target { management.present(.editMember(target, agentId: agent.id)) }
-                                    }) : .disabled, snapshot: snapshot,
+                                    }) : .disabled,
                                     dictation: dictation)
                     .frame(height: inputHeight)
             }

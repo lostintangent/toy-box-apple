@@ -45,7 +45,7 @@ private struct ChannelSidebarRowContent: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.channelTextScale) private var scale
     @Environment(\.backgroundProminence) private var prominence
-    @Environment(\.windowSnapshot) private var snapshot
+    @SnapshotRequest private var snapshot
     @ViewState private var folderFrame: CGRect = .null
     @ViewState private var bubbleFrame: CGRect = .null
     @ViewState private var micFrame: CGRect = .null
@@ -69,7 +69,7 @@ private struct ChannelSidebarRowContent: View {
 
     private var isOpen: Bool { row.answers?.isOpen == true && row.request != nil }
     /// The pointer's over the row, which the recorder's row ignores.
-    private var hovers: Bool { (isHovered || snapshot?.requestedState == "hover-all") && row.talk == nil }
+    private var hovers: Bool { (isHovered || snapshot.state == "hover-all") && row.talk == nil }
     private var isLit: Bool {
         !row.isSelected && (hovers || isPressed || isOpen)
     }

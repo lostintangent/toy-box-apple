@@ -8,7 +8,7 @@ struct ConversationTranscript: View {
     let store: ChannelStore
     @Environment(ChannelInteraction.self) var interaction
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.windowSnapshot) var snapshot
+    @SnapshotRequest var snapshot
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.channelTextScale) private var textScale
     @Environment(ImageViewer.self) var viewer: ImageViewer?
@@ -79,7 +79,7 @@ struct ConversationTranscript: View {
 
     private var read: TranscriptRead {
         .init(visibleThrough: visibleSequence,
-              isLooking: snapshot == nil && window.isKeyWindow && scenePhase == .active,
+              isLooking: !snapshot.isActive && window.isKeyWindow && scenePhase == .active,
               isCovered: viewer?.session != nil || interaction.isArtifactViewerPresented,
               hasLanded: hasLanded, isMoving: isRevealing || pagingAnchor != nil,
               isFinding: find.blocksRead, isConnected: store.phase.isConnected)
@@ -211,7 +211,7 @@ struct ConversationTranscript: View {
                 if isAtBottom && !find.isPresented && new.count > old.count { scrollToLatest(using: proxy) }
             }
             .onChange(of: store.requestSequence, initial: true) { _, sequence in
-                let eligible = snapshot == nil && hasLanded && window.isKeyWindow
+                let eligible = !snapshot.isActive && hasLanded && window.isKeyWindow
                     && scenePhase == .active && store.phase.isConnected
                 guard requestAnnouncements.receive(sequence, isEligible: eligible),
                       let sequence else { return }
@@ -547,7 +547,7 @@ struct ConversationTranscript: View {
     /// first unread row, which the scroll view's layout places. One reconnecting shows what it had until
     /// the catch-up arrives, all at once, in the same update.
     private func resolveOpening() {
-        guard !opening.isResolved, snapshot == nil, store.isLoaded, store.phase.isConnected else { return }
+        guard !opening.isResolved, !snapshot.isActive, store.isLoaded, store.phase.isConnected else { return }
         opening.isResolved = true
         guard !hasLanded, !isRevealing else { return }
         opening.plan = TranscriptLanding.opening(
@@ -624,7 +624,7 @@ struct ConversationTranscript: View {
     /// Snapshots never show it, so they stay deterministic.
     private func prepareCatchUp(unreadAfter: Int) {
         guard catchUp == nil, let state = store.state,
-              snapshot == nil,
+              !snapshot.isActive,
               let made = TranscriptCatchUp.make(
                   server: store.api.baseURL, state: state, unreadAfter: unreadAfter, filter: interaction.messageView,
                   availability: intelligence.availability,

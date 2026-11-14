@@ -9,7 +9,6 @@ struct ChannelSidebar: View {
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
-    @Environment(\.windowSnapshot) private var snapshot
     @Binding var selection: ChannelTarget?
     var searchFocusRequest: UUID
     /// Talk to Lead's request to open the recorder on the open channel's row.
@@ -139,9 +138,7 @@ struct ChannelSidebar: View {
         .onChange(of: talkRequest) { _, _ in
             if let open = listed.first(where: { $0.target == selection }) { talk(to: open) }
         }
-        .task(id: snapshot?.requestedState) {
-            if let name = snapshot?.requestedState, name.hasPrefix("sidebar-talk") { await prepareTalkSnapshot(name) }
-        }
+        .snapshotPose(poseTalk)
     }
 
     private func isExpanded(_ catalog: ChannelCatalogStore) -> Binding<Bool> {
@@ -236,19 +233,24 @@ struct ChannelSidebar: View {
     }
 
     /// Records a note on the open channel's row with scripted words, and sends it for the Sent beat.
-    private func prepareTalkSnapshot(_ name: String) async {
+    private func poseTalk(_ state: String) async throws -> Bool {
+        guard state.hasPrefix("sidebar-talk") else { return false }
         talk.dictation.system = .scripted(results: [("Can you tighten the sidebar spacing", true), ("?", true),
                                                     (" And check the header", false)], finishes: false)
         await talk.dictation.refresh()
-        while !Task.isCancelled, model.servers.shown.contains(where: { $0.state == nil })
-                || listed.first(where: { $0.target == selection }) == nil {
-            try? await Task.sleep(for: .milliseconds(50))
+        for await open in Observations({
+            model.servers.shown.contains(where: { $0.state == nil }) ? nil : listed.first(where: { $0.target == selection })
+        }) {
+            guard let open else { continue }
+            talk(to: open)
+            break
         }
-        guard let open = listed.first(where: { $0.target == selection }) else { return }
-        talk(to: open)
-        while !Task.isCancelled, !talk.canSend { try? await Task.sleep(for: .milliseconds(50)) }
-        if name == "sidebar-talk-sent" { await talk.send() }
-        snapshot?.markStateReady(name)
+        try Task.checkCancellation()
+        let talk = talk
+        for await canSend in Observations({ talk.canSend }) where canSend { break }
+        try Task.checkCancellation()
+        if state == "sidebar-talk-sent" { await talk.send() }
+        return true
     }
 
     /// The server's requests its rows answer, by channel: each whose words are known, and the one

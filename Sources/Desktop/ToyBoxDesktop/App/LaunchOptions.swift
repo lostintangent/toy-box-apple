@@ -8,13 +8,22 @@ struct LaunchOptions: Equatable, Sendable {
     var appearance: AppAppearance?
     var width = 1280
     var height = 840
+    #if DEBUG
     var snapshotURL: URL?
     var snapshotState: String?
+    #endif
     #if TOY_BOX_BENCHMARK
     var benchmark: PerformanceBenchmark.Scenario?
     #endif
 
-    var isSnapshot: Bool { snapshotURL != nil }
+    /// A `bun run snapshot` launch, which only debug builds take.
+    var isSnapshot: Bool {
+        #if DEBUG
+        snapshotURL != nil
+        #else
+        false
+        #endif
+    }
 
     /// A snapshot or benchmark launch, which keeps the menu bar, Quick Send and test digests out of
     /// what it captures or measures.
@@ -74,6 +83,7 @@ struct LaunchOptions: Equatable, Sendable {
                 }
                 options.width = width
                 options.height = height
+            #if DEBUG
             case "--snapshot":
                 guard !value.isEmpty, (value as NSString).pathExtension.lowercased() == "png" else {
                     throw LaunchArgumentError("--snapshot must name a PNG file")
@@ -82,6 +92,10 @@ struct LaunchOptions: Equatable, Sendable {
             case "--state":
                 guard !value.isEmpty else { throw LaunchArgumentError("--state must not be empty") }
                 options.snapshotState = value
+            #else
+            case "--snapshot", "--state":
+                throw LaunchArgumentError("Only the app that bun run snapshot builds takes \(flag)")
+            #endif
             #if TOY_BOX_BENCHMARK
             case "--benchmark":
                 guard let scenario = PerformanceBenchmark.Scenario(rawValue: value) else {
@@ -96,12 +110,14 @@ struct LaunchOptions: Equatable, Sendable {
             }
             index += 2
         }
+        #if DEBUG
         if options.isSnapshot, options.channelID == nil {
             throw LaunchArgumentError("--snapshot requires --channel")
         }
         if options.snapshotState != nil, !options.isSnapshot {
             throw LaunchArgumentError("--state requires --snapshot")
         }
+        #endif
         #if TOY_BOX_BENCHMARK
         if options.benchmark != nil, options.isSnapshot || options.channelID == nil {
             throw LaunchArgumentError("--benchmark requires --channel and can't take a snapshot")

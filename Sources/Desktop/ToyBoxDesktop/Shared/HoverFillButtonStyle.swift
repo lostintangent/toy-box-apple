@@ -33,7 +33,7 @@ private struct HoverFillButton<Fill: Shape>: View {
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.backgroundProminence) private var prominence
-    @Environment(\.windowSnapshot) private var snapshot
+    @SnapshotRequest private var snapshot
     @ViewState private var isHovered = false
 
     var body: some View {
@@ -51,7 +51,7 @@ private struct HoverFillButton<Fill: Shape>: View {
     private var isLit: Bool {
         guard isEnabled else { return false }
         switch lighting {
-        case .hover: return isHovered || configuration.isPressed || snapshot?.requestedState == "hover-all"
+        case .hover: return isHovered || configuration.isPressed || snapshot.state == "hover-all"
         case .highlight(let highlighted): return highlighted || configuration.isPressed
         case .off: return false
         }

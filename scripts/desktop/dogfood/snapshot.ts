@@ -15,7 +15,9 @@ if (import.meta.main) await main(async () => {
     if (!values.server || !values.snapshot) {
         throw new CommandFailure(64, `${usage}\nSnapshot rendering requires an explicit server and PNG destination.`);
     }
-    const result = await command([process.execPath, join(root, "scripts/desktop/bundle/index.ts"), "--no-open"], { quiet: true });
+    // The harness exists only in debug builds, so a release CONFIGURATION can't take a snapshot.
+    const result = await command([process.execPath, join(root, "scripts/desktop/bundle/index.ts"), "--no-open"],
+        { quiet: true, env: { CONFIGURATION: "debug" } });
     process.stderr.write(result.stdout);
     process.stderr.write(result.stderr);
     const app = join(scratchPath(), "Toy Box.app");

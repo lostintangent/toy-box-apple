@@ -12,7 +12,6 @@ struct ComposerTray: View {
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.openURL) private var openURL
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.windowSnapshot) private var snapshot
     /// The channel whose popover is open. A popover belongs to the channel it opened in, so the
     /// next channel's first frame shows it closed, and a switch closes it for good.
     @ViewState private var artifactsChannel: ObjectIdentifier?
@@ -126,31 +125,23 @@ struct ComposerTray: View {
         .frame(height: 28)
         .padding(.horizontal, 12 - ComposerCapsuleLabel.outset)
         .padding(.vertical, 3)
-        .task(id: snapshot?.requestedState) {
-            switch snapshot?.requestedState {
+        .snapshotPose { state in
+            switch state {
             case "composer-tasks":
-                guard !store.tasks.isEmpty else {
-                    snapshot?.failState("composer-tasks", message: "This channel has no tasks.")
-                    return
-                }
+                guard !store.tasks.isEmpty else { throw LaunchArgumentError("This channel has no tasks.") }
                 showTasks.wrappedValue = true
-                snapshot?.markStateReady("composer-tasks")
             case "composer-bookmarks":
-                guard tray.bookmarkCount > 0 else {
-                    snapshot?.failState("composer-bookmarks", message: "This channel has no bookmarks.")
-                    return
-                }
+                guard tray.bookmarkCount > 0 else { throw LaunchArgumentError("This channel has no bookmarks.") }
                 showBookmarks.wrappedValue = true
-                snapshot?.markStateReady("composer-bookmarks")
             case "composer-artifacts":
                 guard artifacts.count > 1 else {
-                    snapshot?.failState("composer-artifacts", message: "This channel has no additional artifacts.")
-                    return
+                    throw LaunchArgumentError("This channel has no additional artifacts.")
                 }
                 showArtifacts.wrappedValue = true
-                snapshot?.markStateReady("composer-artifacts")
-            default: break
+            default:
+                return false
             }
+            return true
         }
     }
 

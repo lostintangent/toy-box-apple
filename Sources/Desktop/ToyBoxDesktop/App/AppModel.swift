@@ -10,7 +10,9 @@ import ToyBoxUI
 @MainActor @Observable
 final class AppModel {
     let launchOptions: LaunchOptions
+    #if DEBUG
     let snapshot: WindowSnapshot?
+    #endif
     #if TOY_BOX_BENCHMARK
     let performanceBenchmark: PerformanceBenchmark?
     #endif
@@ -81,7 +83,9 @@ final class AppModel {
             active: { NSApplication.shared.isActive },
             request: { _ = NSApplication.shared.requestUserAttention($0) }
         )
+        #if DEBUG
         snapshot = launchOptions.isSnapshot ? WindowSnapshot(options: launchOptions) : nil
+        #endif
         #if TOY_BOX_BENCHMARK
         performanceBenchmark = launchOptions.benchmark.flatMap { scenario in
             launchOptions.channelID.map { PerformanceBenchmark(scenario: scenario, channelID: $0) }
@@ -184,10 +188,11 @@ final class AppModel {
         catalog.flatMap { ChannelTarget.normalizedServer($0.api.baseURL.absoluteString) }
     }
 
-    func composerSession(for store: ChannelStore, draft: ComposerDraft) -> ChannelComposerSession {
-        if let session = composerSessions[store.id], session.store === store, session.draft === draft {
-            return session
-        }
+    /// The channel's composer, on its saved draft. A snapshot's starts empty and saves nothing.
+    func composerSession(for store: ChannelStore) -> ChannelComposerSession {
+        if let session = composerSessions[store.id], session.store === store { return session }
+        let draft = launchOptions.isSnapshot
+            ? ComposerDraft() : .shared(serverURL: store.api.baseURL, channelID: store.id)
         let session = ChannelComposerSession(store: store, draft: draft)
         composerSessions[store.id] = session
         return session

@@ -5,33 +5,28 @@ import Observation
 import ScreenCaptureKit
 import SwiftUI
 
+#if DEBUG
+/// Poses one window in a requested state and captures it for `bun run snapshot`. Only debug builds
+/// have it, so the shipped app carries none of the harness.
 @MainActor @Observable
 final class WindowSnapshot {
     let options: LaunchOptions
-    private(set) var isPreparing = true
+    /// The state the window poses, asked for once its channel is live.
     private(set) var requestedState: String?
     private(set) var isStateReady = false
+    private(set) var stateError: String?
     @ObservationIgnored private var task: Task<Void, Never>?
-    @ObservationIgnored private var launchWatchdog: Task<Void, Never>?
+    @ObservationIgnored private var deadline: Task<Void, Never>?
     @ObservationIgnored private weak var window: NSWindow?
-    @ObservationIgnored private var stateError: String?
+    @ObservationIgnored private var channel: ChannelStore?
 
     init(options: LaunchOptions) {
         self.options = options
-        launchWatchdog = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(35)) }
-            catch { return }
-            guard let self, task == nil else { return }
-            FileHandle.standardError.write(Data("Snapshot failed: No app window opened within 35 seconds\n".utf8))
-            exit(EXIT_FAILURE)
-        }
+        startDeadline(.seconds(35))
     }
 
-    var appearance: NSAppearance? { NSAppearance(named: options.appearance == .dark ? .darkAqua : .aqua) }
-
     func markStateReady(_ name: String) {
-        // A Handoff may resolve before the snapshot window attaches.
-        guard name == options.snapshotState else { return }
+        guard name == requestedState else { return }
         isStateReady = true
     }
 
@@ -42,31 +37,56 @@ final class WindowSnapshot {
 
     func attach(window: NSWindow, model: AppModel) {
         guard task == nil else { return }
-        launchWatchdog?.cancel()
         self.window = window
         window.isRestorable = false
         window.setFrameAutosaveName("")
-        window.appearance = appearance
+        window.appearance = NSAppearance(named: options.appearance == .dark ? .darkAqua : .aqua)
         applyRequestedSize()
+        startDeadline(.seconds(30))
         task = Task { [weak self] in
             guard let self else { return }
             do {
                 try await prepare(model: model)
+                deadline?.cancel()
                 try await Task.sleep(for: .seconds(1))
                 try await writePNG()
                 exit(EXIT_SUCCESS)
             } catch {
-                FileHandle.standardError.write(Data("Snapshot failed: \(error.localizedDescription)\n".utf8))
-                if let output = options.snapshotURL {
-                    let diagnostic = output.deletingPathExtension().appendingPathExtension("failure.png")
-                    do { try await writePNG(to: diagnostic, validateSize: false) }
-                    catch {
-                        FileHandle.standardError.write(Data("Diagnostic capture failed: \(error.localizedDescription)\n".utf8))
-                    }
-                }
-                exit(EXIT_FAILURE)
+                // A cancelled pose is the deadline's to report.
+                guard !Task.isCancelled else { return }
+                deadline?.cancel()
+                await fail(error)
             }
         }
+    }
+
+    /// One deadline covers the launch: first for a window to open, then for the pose to be ready.
+    private func startDeadline(_ duration: Duration) {
+        deadline?.cancel()
+        deadline = Task { [weak self] in
+            do { try await Task.sleep(for: duration) } catch { return }
+            guard let self else { return }
+            task?.cancel()
+            await fail(LaunchArgumentError(timeoutReason))
+        }
+    }
+
+    private var timeoutReason: String {
+        if task == nil { return "No app window opened within 35 seconds" }
+        if let requestedState { return "Snapshot state '\(requestedState)' did not become ready" }
+        return "Timed out: \(channel?.phase.message ?? "No live channel snapshot arrived")"
+    }
+
+    private func fail(_ error: any Error) async -> Never {
+        FileHandle.standardError.write(Data("Snapshot failed: \(error.localizedDescription)\n".utf8))
+        if window != nil, let output = options.snapshotURL {
+            let diagnostic = output.deletingPathExtension().appendingPathExtension("failure.png")
+            do { try await writePNG(to: diagnostic, validateSize: false) }
+            catch {
+                FileHandle.standardError.write(Data("Diagnostic capture failed: \(error.localizedDescription)\n".utf8))
+            }
+        }
+        exit(EXIT_FAILURE)
     }
 
     private func applyRequestedSize() {
@@ -85,32 +105,25 @@ final class WindowSnapshot {
         guard let target = await launchTarget.value, let catalog = model.catalogs.first(at: target.serverURL) else {
             throw LaunchArgumentError(model.catalogs.lazy.compactMap(\.phase.message).first ?? "No server lists \(id)")
         }
-        let deadline = Date.now.addingTimeInterval(25)
-        while Date.now < deadline {
-            if catalog.channel(id: id).phase.isConnected || options.snapshotState == "handoff-unavailable" {
-                // At launch SwiftUI briefly restores the split view's saved height as the window's
-                // minimum, which can clamp the first resize, so the size is applied again here.
-                applyRequestedSize()
-                isPreparing = false
-                if let state = options.snapshotState {
-                    requestedState = state
-                    while !isStateReady, Date.now < deadline {
-                        if let error = stateError { throw LaunchArgumentError(error) }
-                        try await Task.sleep(for: .milliseconds(50))
-                    }
-                    guard isStateReady else {
-                        throw LaunchArgumentError("Snapshot state '\(state)' did not become ready")
-                    }
-                }
-                return
+        let channel = catalog.channel(id: id)
+        self.channel = channel
+        if options.snapshotState != "handoff-unavailable" {
+            for await phase in Observations({ channel.phase }) {
+                if phase == .deleted { throw LaunchArgumentError("The selected channel was deleted") }
+                if phase.isConnected { break }
             }
-            if catalog.channel(id: id).phase == .deleted {
-                throw LaunchArgumentError("The selected channel was deleted")
-            }
-            try await Task.sleep(for: .milliseconds(50))
+            try Task.checkCancellation()
         }
-        let detail = catalog.channel(id: id).phase.message ?? "No live channel snapshot arrived"
-        throw LaunchArgumentError("Timed out: \(detail)")
+        // At launch SwiftUI briefly restores the split view's saved height as the window's minimum,
+        // which can clamp the first resize, so the size is applied again here.
+        applyRequestedSize()
+        guard let state = options.snapshotState else { return }
+        requestedState = state
+        for await (isReady, error) in Observations({ (self.isStateReady, self.stateError) }) {
+            if let error { throw LaunchArgumentError(error) }
+            if isReady { break }
+        }
+        try Task.checkCancellation()
     }
 
     private func writePNG(to destination: URL? = nil, validateSize: Bool = true) async throws {
@@ -167,3 +180,56 @@ extension EnvironmentValues {
         set { self[WindowSnapshotKey.self] = newValue }
     }
 }
+
+extension View {
+    /// Hands the launch's snapshot, if it has one, to every view in the window.
+    func windowSnapshot(_ model: AppModel) -> some View {
+        environment(\.windowSnapshot, model.snapshot)
+    }
+
+    /// This view's part of a snapshot's pose. It runs for each state the snapshot asks for and
+    /// returns true once the window shows that state, or false when another view readies it or it
+    /// isn't this view's. A thrown error fails the snapshot with its message. Release builds drop it.
+    func snapshotPose(_ pose: @escaping @MainActor (_ state: String) async throws -> Bool) -> some View {
+        modifier(SnapshotPoseModifier(pose: pose))
+    }
+}
+
+private struct SnapshotPoseModifier: ViewModifier {
+    @Environment(\.windowSnapshot) private var snapshot
+    let pose: @MainActor (String) async throws -> Bool
+
+    func body(content: Content) -> some View {
+        content.task(id: snapshot?.requestedState) {
+            guard let snapshot, let state = snapshot.requestedState else { return }
+            do {
+                if try await pose(state) { snapshot.markStateReady(state) }
+            } catch is CancellationError {
+            } catch {
+                snapshot.failState(state, message: error.localizedDescription)
+            }
+        }
+    }
+}
+
+/// What `bun run snapshot` asks of this window: whether it's a snapshot's, which never marks read
+/// or announces, and the state it poses once its channel is live, like `hover-all`.
+@propertyWrapper struct SnapshotRequest: DynamicProperty {
+    @Environment(\.windowSnapshot) private var snapshot
+    var wrappedValue: SnapshotRequest { self }
+    var isActive: Bool { snapshot != nil }
+    @MainActor var state: String? { snapshot?.requestedState }
+}
+#else
+extension View {
+    @inline(__always) func windowSnapshot(_ model: AppModel) -> Self { self }
+    @inline(__always) func snapshotPose(_ pose: @escaping @MainActor (_ state: String) async throws -> Bool) -> Self { self }
+}
+
+/// Release builds never take a snapshot, so every check of one folds away.
+@propertyWrapper struct SnapshotRequest {
+    var wrappedValue: SnapshotRequest { self }
+    var isActive: Bool { false }
+    var state: String? { nil }
+}
+#endif
