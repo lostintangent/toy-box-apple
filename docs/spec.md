@@ -3034,16 +3034,16 @@ deleting a channel removes its agents and private sessions, removing a member re
 messages and reactions as Deleted agent, and deleting a routine stops future scheduled runs.
 Cancel is the safe default. There is no fake Undo for irreversible server deletion.
 
-On iPhone, Delete Channel, Remove Agent and Delete Routine ask only in a system alert over the
-screen they came from, never a sheet: the sidebar's context menu, the channel's title menu, Team,
-Routines or Edit Agent, where Cancel returns to the unchanged editor. The alert's title names
-the target, its message is the consequence above, and it offers the destructive action and
-Cancel. A channel row's revealed Delete is the one exception: Edit's red minus or a short trailing
-swipe reveals it, and tapping it deletes the channel with no alert, because revealing it was the
-confirmation. Full swipe stays off. Every deletion is disabled while disconnected or once the
-target is gone. It sends one request, removes nothing optimistically and adds no pending UI. A
-failure, which in practice means the phone lost its server, follows with one generic alert, such as
-"Couldn't Delete Channel", with no detail and OK.
+On both apps, deleting a channel, removing an agent and deleting a routine ask only in a system
+alert over the place they came from, never a sheet: the sidebar's context menu, the channel's
+title menu, Team, Routines or Edit Agent, where Cancel returns to the unchanged editor. The
+alert's title names the target, its message is the consequence above, and it offers the
+destructive action and Cancel. On iPhone, a channel row's revealed Delete is the one exception:
+Edit's red minus or a short trailing swipe reveals it, and tapping it deletes the channel with no
+alert, because revealing it was the confirmation. Full swipe stays off. Every deletion is disabled
+while disconnected or once the target is gone. It sends one request, removes nothing
+optimistically and adds no pending UI. A failure, which in practice means the app lost its server,
+follows with one generic alert, such as "Couldn't Delete Channel", with no detail and OK.
 
 Settings uses a native scene with General and Notifications sections. The Mac adds a Servers tab
 between them for the servers (see [Several servers](#several-servers)), each with its Name,
