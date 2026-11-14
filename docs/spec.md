@@ -281,8 +281,8 @@ and are there again when it comes back.
   it from the web, an agent or a `PATCH`. The apps keep it on each server, but nothing shows it
   or changes it yet, so both apps keep the system accent.
   Each row shows its server's version in secondary ink after the name. One Check for Updates
-  serves the whole list: on the Mac at the trailing end of the list's bar, beside Add and Remove,
-  and on the phone as a row after the servers with `arrow.triangle.2.circlepath`. It's there
+  serves the whole list: on the Mac at the trailing end of a bar under the list, and on the phone
+  as a row after the servers with `arrow.triangle.2.circlepath`. It's there
   whenever a server has an installed version, and it asks every connected one to install whatever
   is newer, skipping servers that are offline or have none. Each row being checked shows a
   spinner in its version's place, and the button dims until every check ends. Then a row reads
@@ -294,12 +294,17 @@ and are there again when it comes back.
   row shows a spinner in its version's place as the app reconnects, for any reason, until it
   connects or has failed for the catalog's grace, when the row shows its failure as it does for any
   server that can't connect. A restart is pending exactly when `installedVersion` isn't null and
-  differs from `version`, whichever device ran the update, and then a connected row shows a
-  prominent Restart, after "0.3.10 installed" on the Mac. A connected server with an installed
-  release can also restart when nothing newer is installed, which relaunches the same release and
-  reads like any other restart, so the row spins until the app reconnects and reads the server
-  again. A server without an installed release can't restart and offers no Restart. Every server
-  that can restart also offers Restart in two quieter places, pending or not. Its details have a
+  differs from `version`, whichever device ran the update, and then a connected row reads
+  "0.3.10 installed" in secondary ink in its version's place. One Restart serves the whole list
+  too, like the web's: a prominent button before Check for Updates in the Mac's bar, and a row
+  after Check for Updates with `arrow.clockwise` on the phone. It's there while any connected
+  server's restart is pending, and it restarts each of those servers together and no other, so a
+  server with nothing new to run keeps its turns going. Each one's row spins as it restarts. A
+  connected server with an installed release can also restart when nothing newer is installed,
+  which relaunches the same release and reads like any other restart, so the row spins until the
+  app reconnects and reads the server again. A server without an installed release can't restart
+  and offers no Restart. Every server that can restart also offers Restart in two quieter places,
+  pending or not. Its details have a
   Version row, after Status on the Mac and after Server URL on the phone, with the release it runs
   and a bordered Restart, which is disabled while the server checks, reconnects or isn't
   connected, and absent without an installed release. Its row's context menu, from Control-click
