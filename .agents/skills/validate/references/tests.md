@@ -14,6 +14,7 @@ and the setting shown.
 | Image-strip wheel | `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1`, `--filter ComposerTests/imageStripOverflowRespondsToWheelInput` | Keep the Mac awake and unlocked. Equal height, hidden scrollers, overflow and synchronous native clip scrolling stay in the default suite |
 | Live Text interaction | `TOY_BOX_TEST_LIVE_TEXT_INTERACTION=1`, `--filter pressesOnTextReachLiveTextAndEverythingElseReachesTheViewer` | Native press and drag routing in an ordered off-screen window. WindowServer events can stop the runner's outer run loop. Geometry and routing-policy checks and VisionKit analysis gating stay in the default suite |
 | HTML origin probe | `TOY_BOX_TEST_ARTIFACT_HTML_ORIGIN_PROBE=1` | Quarantined. See [docs/quarantined-tests.md](../../../../docs/quarantined-tests.md) |
+| Artifact TOC navigation | `TOY_BOX_TEST_ARTIFACT_TOC_NAVIGATION=1` | Quarantined. See [docs/quarantined-tests.md](../../../../docs/quarantined-tests.md) |
 
 ## iPhone tests
 
