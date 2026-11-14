@@ -97,11 +97,16 @@ public final class ChannelServers {
         save()
     }
 
-    /// A server answered `GET /api/v1/server`, so if it's the one the user connected through, its
-    /// `peers` become the list's and each is read.
+    /// A server answered `GET /api/v1/server`. A peer the latest read listed joins the list, however
+    /// it was read, so one back from a restart doesn't wait for that server's next read. The server
+    /// the user connected through makes its `peers` the list's and reads each.
     func answered(_ catalog: ChannelCatalogStore, _ server: ServerInfo, renamed: Bool) {
         if renamed { onChange?() }
-        guard catalog === catalogs.first else { return }
+        guard catalog === catalogs.first else {
+            let url = catalog.api.baseURL
+            if peers.contains(url), live.insert(url).inserted { onChange?() }
+            return
+        }
         let listed = server.peers.compactMap { try? ChannelAPI(serverURL: $0, session: session) }
         if peers != listed.map(\.baseURL) {
             peers = listed.map(\.baseURL)
@@ -121,7 +126,6 @@ public final class ChannelServers {
                     continue
                 }
                 if catalog(at: api.baseURL) == nil { catalogs.append(open(api, name: server.name)) }
-                if live.insert(api.baseURL).inserted { onChange?() }
                 catalog(at: api.baseURL)?.apply(server)
             }
         }

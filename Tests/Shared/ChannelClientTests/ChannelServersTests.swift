@@ -28,7 +28,7 @@ struct ChannelServersTests {
                 if answers.isDown { throw URLError(.cannotConnectToHost) }
                 switch request.url?.path {
                 case "/api/v1/channels":
-                    return try .json(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel]))
+                    return try .catalogStream(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel]))
                 case "/api/v1/server":
                     var response = try MockResponse.json(ServerInfo(
                         id: answers.id, name: "Server \(answers.id)", accentColor: "#327785",
@@ -140,6 +140,53 @@ struct ChannelServersTests {
         #expect(Set(ids(servers.catalogs)) == ["studio", "mini", "laptop", "asleep"] && servers.catalogs.count == 4,
                 "Each stays open until the app quits or disconnects.")
         #expect(ChannelServers.saved(in: defaults) == first.api.baseURL.absoluteString, "No peer is saved.")
+    }
+
+    @Test func aListedPeerBackFromARestartRejoinsWithItsOwnAnswer() async throws {
+        let studio = Server(id: "studio"), mini = Server(id: "mini")
+        studio.set { $0.peers = [mini.address] }
+        let servers = servers(studio.address)
+        defer {
+            servers.disconnect()
+            clean()
+        }
+        servers.isActive = true
+        try await eventually {
+            servers.shown.count == 2 && servers.catalogs.allSatisfy { $0.phase == .connected && !$0.update.isReconnecting }
+        }
+        await peersRead(servers)
+
+        mini.set { $0.isDown = true }
+        await servers.catalogs[0].refreshServer()
+        await peersRead(servers)
+        #expect(ids(servers.shown) == ["studio"], "A peer still restarting when the first server reads it leaves.")
+        let reads = studio.reads
+
+        mini.set { $0.isDown = false }
+        #expect(mini.transport.finishPendingResponses(path: "/api/v1/channels") == 1)
+        try await eventually { ids(servers.shown) == ["studio", "mini"] }
+        #expect(studio.reads == reads, "Its stream's own read brings it back, with no read of the first server.")
+    }
+
+    @Test func theFirstServersLastPeersStayWhileItReconnects() async throws {
+        let studio = Server(id: "studio"), mini = Server(id: "mini")
+        studio.set { $0.peers = [mini.address] }
+        let servers = servers(studio.address)
+        defer {
+            servers.disconnect()
+            clean()
+        }
+        servers.isActive = true
+        try await eventually {
+            servers.shown.count == 2 && servers.catalogs.allSatisfy { $0.phase == .connected && !$0.update.isReconnecting }
+        }
+        await peersRead(servers)
+
+        studio.set { $0.isDown = true }
+        #expect(studio.transport.finishPendingResponses(path: "/api/v1/channels") == 1)
+        try await eventually { servers.catalogs[0].update.phase == .reconnecting }
+        await servers.catalogs[0].refreshServer()
+        #expect(ids(servers.shown) == ["studio", "mini"], "Only a peer's own read that fails takes it out.")
     }
 
     @Test func twoReadsThatFindTheSamePeerOpenItOnce() async throws {
