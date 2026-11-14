@@ -125,7 +125,8 @@ Surfaces meet at these seams:
 - **Put rules on their nouns.** Write members such as `channel.attention` and
   `state.applying(event)`, not free functions. Name a type for the thing itself, nesting a part
   under its owner (`Channel.Attention`), and avoid Manager, Helper, Support, Context and
-  Projection.
+  Projection. Keep the vocabulary small: reuse a noun or verb the code already has before adding
+  one, so both apps share the same few words.
 - **Keep a feature's rules out of the app targets.** Put them in a UI-free ChannelClient model
   with its animation, waits and announcements passed in, like `TalkRecorder`, and prove them with
   Mac tests. `simulator --build-only` checks the phone compiles, and the simulator is only for
