@@ -13,7 +13,6 @@ final class ComposerSession {
     let dictation: ComposerDictation
     let editor = ComposerEditor()
     private var photoImportCount = 0
-    private(set) var isFinalizingDictation = false
     var store: ChannelStore { composer.store }
     var draft: ComposerDraft { composer.draft }
 
@@ -30,7 +29,7 @@ final class ComposerSession {
     var isLoadingImages: Bool { photoImportCount > 0 || draft.isLoadingImages }
 
     var canSend: Bool {
-        !editor.hasMarkedText && !isFinalizingDictation
+        !editor.hasMarkedText && !dictation.holdsSend
             && composer.canSend(hasAdditionalContent: dictation.hasWords,
                                 isLoadingAdditionalImages: photoImportCount > 0)
     }
@@ -38,16 +37,10 @@ final class ComposerSession {
     @discardableResult
     func send() async -> Bool {
         guard canSend else { return false }
-        if dictation.isSessionActive {
-            isFinalizingDictation = true
-            let finalized = await dictation.stop(.send)
-            isFinalizingDictation = false
-            guard finalized else { return false }
-        } else if dictation.phase != .idle {
-            dictation.deactivate()
-        }
-        dictation.draftSent()
-        return await composer.send()
+        // A mic still preparing stops, rather than carrying into the fresh draft.
+        if !dictation.isSessionActive, dictation.phase != .idle { dictation.deactivate() }
+        guard await dictation.stop(.send) else { return false }
+        return await composer.send() != nil
     }
 
     func reply(to agent: ChannelAgent) {

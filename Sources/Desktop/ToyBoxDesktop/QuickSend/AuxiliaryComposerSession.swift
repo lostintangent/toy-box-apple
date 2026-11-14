@@ -73,7 +73,7 @@ final class AuxiliaryComposerSession {
             return
         }
         error = nil
-        guard let id = await composer.submit() else { return }
+        guard let id = await composer.send() else { return }
         confirmation = .init(id: id.uuidString, opensChannel: opensChannel)
     }
 

@@ -1210,7 +1210,7 @@ struct ComposerTests {
         recognizer.hangs = true
         #expect(await !dictation.stop(.send))
         #expect(dictation.notice == .unsent(revision: revision))
-        dictation.draftSent()
+        #expect(await dictation.stop(.send))
         #expect(dictation.notice == nil, "Sending clears the notice")
     }
 

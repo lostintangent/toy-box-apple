@@ -198,22 +198,18 @@ package final class TalkRecorder: DictationTextTarget {
     package func send() async {
         guard canSend, let store, let outbox = store.outbox, let target else { return }
         phase = .sending
-        if dictation.isSessionActive {
-            let finalized = await dictation.stop(.send)
-            guard phase == .sending, self.store === store else { return }
-            guard finalized else {
-                phase = .recording
-                return
-            }
-        } else if dictation.phase != .idle {
-            dictation.leaveDraft()
+        if !dictation.isSessionActive, dictation.phase != .idle { dictation.leaveDraft() }
+        let finalized = await dictation.stop(.send)
+        guard phase == .sending, self.store === store else { return }
+        guard finalized else {
+            phase = .recording
+            return
         }
         let words = finalizedWords.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !words.isEmpty else {
             phase = .recording
             return
         }
-        dictation.draftSent()
         let id = await outbox.send(words, to: store.id, on: store.api.baseURL)
         guard phase == .sending, self.store === store else { return }
         sentAt = outbox.message(id)?.sentAt ?? .now
