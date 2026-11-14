@@ -190,7 +190,9 @@ and are there again when it comes back.
   first in the list, with its failure while it can't connect, so the list never empties and
   always says why. Its peers follow, in `peers` order, the ones that answered the latest read (see
   Peer servers): a Mac that sleeps, or doesn't run Toy Box, leaves the list with the first read
-  it doesn't answer, and one that wakes joins with the first it does. Between reads, a server in
+  it doesn't answer, and one that wakes joins with the first it does. A restart never takes a
+  server off the list, even a peer that comes back after the server the user connected through:
+  its row spins and its channels stay until it answers again. Between reads, a server in
   the list that can't connect shows its failure like any other. Until the first read after a
   launch, and while the server the user connected through is asleep, the list is only that server,
   until it wakes or the user disconnects and connects through another Mac. Settings, the Screens
