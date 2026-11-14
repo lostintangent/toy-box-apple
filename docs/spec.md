@@ -2988,8 +2988,9 @@ validates HTTP(S), preserves path prefixes and displays actionable failures. An 
 without a scheme, like `machine.tail1234.ts.net`, gets `https://`, so a server needs `http://`
 typed to use HTTP. Both apps' Server URL placeholder is `machine.tail1234.ts.net`, and its
 phone's caption starts "Use your server's address, including its port and any path prefix.",
-while the Mac's welcome line says it already. Only another
-scheme, like `ftp://`, is refused, with "Use HTTP or HTTPS for your Toy Box server." On iPhone,
+while the Mac's welcome line says it already. An address the app can't use is refused in the
+same words on both apps, saying what to fix, like "Use HTTP or HTTPS for your Toy Box server."
+for `ftp://` or "Remove usernames and passwords from the server URL." On iPhone,
 Welcome is the Server URL card, and on the Mac the sidebar's welcome holds the field, each with
 no separate test or confirmation. Return or Connect
 tries the address once: while it runs, the field is disabled and the button reads Connecting…,
