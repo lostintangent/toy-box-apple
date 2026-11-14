@@ -171,7 +171,7 @@ public enum ChannelImageDecoder {
 
     /// A thumbnail no longer than `maxPixelSize` on its long edge, and the oriented size of the
     /// original. Nil when ImageIO can't decode the file, as for SVG.
-    public static func thumbnail(file: URL, maxPixelSize: Int) -> (image: CGImage, pixelSize: CGSize)? {
+    public static func thumbnail(file: URL, maxPixelSize: Int) -> ArtifactDecodedImage? {
         guard let source = CGImageSourceCreateWithURL(file as CFURL, nil) else { return nil }
         return thumbnail(source, maxPixelSize: maxPixelSize)
     }
@@ -181,15 +181,14 @@ public enum ChannelImageDecoder {
         return thumbnail(source, maxPixelSize: maxPixelSize)?.image
     }
 
-    private static func thumbnail(_ source: CGImageSource, maxPixelSize: Int) -> (image: CGImage, pixelSize: CGSize)? {
+    private static func thumbnail(_ source: CGImageSource, maxPixelSize: Int) -> ArtifactDecodedImage? {
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: max(1, maxPixelSize),
             kCGImageSourceCreateThumbnailWithTransform: true
         ] as CFDictionary) else { return nil }
         let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-        let size = properties.flatMap(orientedPixelSize) ?? CGSize(width: image.width, height: image.height)
-        return (image, size)
+        return ArtifactDecodedImage(image: image, size: properties.flatMap(orientedPixelSize))
     }
 }
 
@@ -275,7 +274,7 @@ public enum ChannelThumbnailCache {
 /// caller's actor, and remembered in the shared `ChannelThumbnailCache`.
 public enum ChannelThumbnails {
     /// Rasterizes a format ImageIO can't decode, such as SVG, within a pixel bound.
-    public typealias Fallback = @Sendable (_ file: URL, _ maxPixelSize: Int) throws -> (image: CGImage, pixelSize: CGSize)
+    public typealias Fallback = @Sendable (_ file: URL, _ maxPixelSize: Int) throws -> ArtifactDecodedImage
 
     /// The longest side a thumbnail needs to fill the transcript's 240-point box at `scale`.
     public static func maxPixelSize(scale: CGFloat) -> Int {
@@ -316,7 +315,7 @@ public enum ChannelThumbnails {
     }
 
     public static func decode(_ file: URL, scale: CGFloat,
-                              fallback: Fallback? = nil) throws -> (image: CGImage, pixelSize: CGSize) {
+                              fallback: Fallback? = nil) throws -> ArtifactDecodedImage {
         let bound = maxPixelSize(scale: scale)
         if let decoded = ChannelImageDecoder.thumbnail(file: file, maxPixelSize: bound) { return decoded }
         guard let fallback else { throw ChannelAttachmentError.invalidImage }
@@ -331,7 +330,7 @@ public enum ChannelThumbnails {
         let decoded = try await Task.detached(priority: .userInitiated) {
             try decode(file, scale: scale, fallback: fallback)
         }.value
-        ChannelImageDecoder.rememberPixelSize(decoded.pixelSize, for: attachment, api: api)
+        ChannelImageDecoder.rememberPixelSize(decoded.size, for: attachment, api: api)
         return remember(decoded.image, for: attachment, api: api)
     }
 

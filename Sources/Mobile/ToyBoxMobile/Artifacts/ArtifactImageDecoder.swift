@@ -39,7 +39,7 @@ enum ArtifactImageDecoder {
             guard let decoded = ChannelImageDecoder.thumbnail(file: file, maxPixelSize: limit) else {
                 throw ChannelAttachmentError.invalidImage
             }
-            return ArtifactDecodedImage(image: decoded.image, size: ChannelImageDecoder.pixelSize(file: file))
+            return decoded
         }.value
     }
 

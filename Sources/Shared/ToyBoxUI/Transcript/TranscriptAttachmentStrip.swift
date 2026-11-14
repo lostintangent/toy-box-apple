@@ -45,6 +45,28 @@ public struct TranscriptAttachmentStrip<Tile: View>: View {
     }
 }
 
+extension Shape where Self == RoundedRectangle {
+    /// An attachment tile's corners.
+    public static var transcriptAttachment: RoundedRectangle {
+        #if os(iOS)
+        RoundedRectangle(cornerRadius: 10)
+        #else
+        RoundedRectangle(cornerRadius: 8)
+        #endif
+    }
+}
+
+extension Font {
+    /// A video or file tile's label.
+    static var transcriptAttachment: Font {
+        #if os(iOS)
+        .subheadline
+        #else
+        .callout
+        #endif
+    }
+}
+
 extension View {
     /// The hairline that keeps an image attachment's edge visible when its own margin is white or
     /// black, drawn inside the tile's shape.

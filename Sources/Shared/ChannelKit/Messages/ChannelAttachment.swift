@@ -39,4 +39,5 @@ extension ChannelAttachment {
     }
 
     public var isImage: Bool { contentType?.conforms(to: .image) == true }
+    public var isVideo: Bool { contentType?.conforms(to: .movie) == true }
 }
