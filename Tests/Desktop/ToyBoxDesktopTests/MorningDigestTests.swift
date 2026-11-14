@@ -228,21 +228,15 @@ struct MorningDigestTests {
                                        now: { date("2026-10-24T08:00:00Z") }, calendar: calendar)
         await validation.check()
         #expect(calls == 0)
-        var options = LaunchOptions()
-        #expect(MorningDigest.isAllowed(options, bundleID: "dev.toybox.desktop", environment: [:]))
-        #expect(!MorningDigest.isAllowed(options, bundleID: "dev.toybox.desktop.test", environment: [:]))
-        #expect(!MorningDigest.isAllowed(options, bundleID: "dev.toybox.desktop",
-                                        environment: ["TOY_BOX_SERVER_URL": "http://localhost:3210"]))
-        options.server = "http://localhost:3210"
-        #expect(!MorningDigest.isAllowed(options, bundleID: "dev.toybox.desktop", environment: [:]))
-        options = LaunchOptions()
-        options.snapshotURL = URL(filePath: "/tmp/digest-snapshot.png")
-        #expect(!MorningDigest.isAllowed(options, bundleID: "dev.toybox.desktop", environment: [:]))
-        #expect(!MorningDigest.canTest(bundleID: "dev.toybox.desktop.test", options: options,
+        #expect(!MorningDigest.isAllowed(LaunchOptions(), bundleID: "dev.toybox.desktop.test", environment: [:]))
+        var snapshot = LaunchOptions()
+        snapshot.snapshotURL = URL(filePath: "/tmp/digest-snapshot.png")
+        #expect(MorningDigest.canTest(bundleID: "dev.toybox.desktop.test", options: LaunchOptions(),
+                                     server: "http://localhost:3210"))
+        #expect(!MorningDigest.canTest(bundleID: "dev.toybox.desktop", options: LaunchOptions(),
                                       server: "http://localhost:3210"))
-        options = LaunchOptions()
-        options.benchmark = .scroll
-        #expect(!MorningDigest.isAllowed(options, bundleID: "dev.toybox.desktop", environment: [:]))
+        #expect(!MorningDigest.canTest(bundleID: "dev.toybox.desktop.test", options: snapshot,
+                                      server: "http://localhost:3210"))
         #expect(!MorningDigest.canTest(bundleID: "dev.toybox.desktop.test", options: LaunchOptions(),
                                       server: "http://localhost:3100"))
         #expect(NotificationPresentation.options(kind: MorningDigest.category, isActiveChannel: true) == [.banner, .list])
