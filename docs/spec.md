@@ -176,23 +176,26 @@ Retry are delivery, not connection, and a handed-off channel that couldn't be op
 
 Both apps can stay connected to several Toy Box servers at once. A server is its address, the
 normalized URL that drafts and push registrations already key on, and its name, which the server
-keeps for every device and lead, as Updating a server describes. The apps keep the last name they
-read, so a server that can't connect keeps its name, and a server that hasn't answered yet goes by
-its host, plus its port when it isn't the default. Every server runs Toy Box 0.4.0 or later, so
+keeps for every device and lead, as Updating a server describes. While the app runs it keeps the
+last name it read, so a server that drops keeps its name, and a server that hasn't answered yet
+goes by its host, plus its port when it isn't the default. Every server runs Toy Box 0.4.0 or later, so
 nothing in the apps makes room for an older one. Each server has its own `ChannelAPI`, catalog stream and channel stores, and every rule in
 this spec holds within each server unchanged. Nothing else is new. Where this spec says a server
 change, it means a server leaving or rejoining the list, which touches only that server's channels.
 Drafts and unsent messages stay on the device, keyed to the address, while their server is away,
 and are there again when it comes back.
 
-- **The list shows the servers that answer.** A server joins the list once its channel list
-  loads, and leaves when it's been unavailable for the catalog's grace, as a Mac does when it
-  sleeps, coming back by itself once it connects again. A server that's away is never shown as
-  one that can't connect. The one exception is when none answers, since then it's this device
-  that's offline, or every Mac is asleep: the list keeps every server it showed last, each with
-  its failure, as below, until one answers. Settings, the Screens list, New Channel's server menu
-  and the footer's count follow the same list. A channel that's open when its server leaves stays
-  open with its own reconnecting notice, and only the list drops it.
+- **The list is the server you connected through, then its peers that answer.** The app saves one
+  address, the server the user connected through, and nothing else about servers. That server is
+  always first in the list, with its failure while it can't connect, so the list never empties
+  and always says why. Its peers follow in `peers` order (see Peer servers). A peer joins the list
+  once its channel list loads, and leaves when it's been unavailable for the catalog's grace, as a
+  Mac does when it sleeps, coming back by itself once it connects again, so a peer that's away is
+  never shown as one that can't connect. While the server the user connected through is asleep,
+  a relaunched app shows only it, with its failure, until it wakes or the user disconnects and
+  connects through another Mac. Settings, the Screens list, New Channel's server menu and the
+  footer's count follow the same list. A channel that's open when its server leaves stays open
+  with its own reconnecting notice, and only the list drops it.
 - **Both apps group by server even with one.** Every server in the list has its header, so the list
   always says whose channels it shows and a second never reshapes it.
 - **Grouped list.** The Mac sidebar and the phone list show one collapsible section per server, in
@@ -238,17 +241,16 @@ and are there again when it comes back.
   the labels below, and it's as tall as its rows. Its card keeps the grouped Form's own padding
   around a list, a little roomier than the details card below it. On the phone, each row opens
   its server's page, with Name and then Server URL and its status. Neither list has a caption
-  under it, an Edit mode or a way to reorder, so the servers stay in the order the app found
-  them, the one the user entered first. A saved server's address can't be edited, because a server is
+  under it, an Edit mode or a way to reorder, so the servers stay in the list's order, the one
+  the user connected through first. A server's address can't be edited, because a server is
   its `id` and its name, and the address is only how this device reaches it. Server URL shows it
   as a plain value in secondary ink that can be selected and copied.
 - **Connecting.** The user connects once, by entering the address of any one of their Toy Box
   Macs, and the app shows that server and every peer that answers (see Peer servers). Connect is
-  only there while the app remembers no servers: the phone's Welcome, and on the Mac the sidebar's
+  only there while the app has no server: the phone's Welcome, and on the Mac the sidebar's
   welcome, whose Connect… opens Settings' Connect sheet over the window. There's no Add Server, and
-  no way to remove one server. The app remembers every server it has seen only as a way back in,
-  never as a list the user curates, so it still reaches the user's Macs while the one they entered
-  is asleep, and shows only those that answer.
+  no way to remove one server. The app saves only the address the user entered and reaches the
+  rest as its peers, so there's no list for the user to curate.
 - **Disconnecting** forgets every server at once. It's Disconnect… at the bottom of the Mac's
   Servers tab, and a destructive Disconnect row in its own section after the phone's servers.
   It asks first, "Disconnect from your servers?" with "Toy Box forgets every server on this Mac.
@@ -287,8 +289,8 @@ and are there again when it comes back.
   Mac shows its first line with the rest in its help tag, and the phone shows up to three lines.
   VoiceOver reads all of it. Results stay until the next check or until Settings closes. While a server isn't connected, its
   row shows a spinner in its version's place as the app reconnects, for any reason, until it
-  connects or has failed for the catalog's grace, when it leaves the list like any server that's
-  away. A restart is pending exactly when `installedVersion` isn't null and
+  connects or has failed for the catalog's grace, and then it's away like any other server, as the
+  list describes. A restart is pending exactly when `installedVersion` isn't null and
   differs from `version`, whichever device ran the update, and then a connected row shows a
   prominent Restart, after "0.3.10 installed" on the Mac. A connected server with an installed
   release can also restart when nothing newer is installed, which relaunches the same release and
@@ -304,11 +306,12 @@ and are there again when it comes back.
   connection at once, without accepting new ones, so the apps see an ordinary disconnect: the row
   spins while they reconnect with the usual backoff and grace, then reads the new server and shows
   its version. A rejected restart shows its error the same way, with the old server still running,
-  and a server that doesn't come back leaves the list like any other that's away. The apps read
+  and a server that doesn't come back is away like any other. The apps read
   `GET /api/v1/server` once each time Settings opens, each time a server
   connects, each time the app comes to the foreground and on each Refresh of the channel list,
   which is how a rename made elsewhere reaches them. A failed read changes nothing and reports
-  nothing, and one that succeeds follows the server's peers, as Peer servers describes. A check
+  nothing, and one that succeeds at the server the user connected through follows its peers, as
+  Peer servers describes. A check
   shows the update's own answer, and a failed one shows its error. Checking again is harmless,
   since a server installs only what's newer.
 - **Peer servers.** Each server finds its own peers, the user's other Macs on Tailscale, and its
@@ -317,15 +320,14 @@ and are there again when it comes back.
   `GET /api/v1/server` answers `peers`, the origins of the other online Macs the server's owner
   has on their tailnet, sorted, like `["https://mac-mini.tail1234.ts.net"]`, and empty when there
   are none. A peer is only a candidate, since a Mac may not run Toy Box.
-  - **Following peers.** Connecting to any one of the user's servers adds the rest, and a Mac
-    that joins later appears by itself. Each time the app reads a server, it reads `GET /api/v1/server` at
-    each peer whose origin matches no saved server's address, compared lowercased and without a
-    default port, and saves each one that answers from this device with an `id` that isn't saved,
-    at the peer's origin, after the server that listed it, in `peers` order. A peer that doesn't
-    answer is skipped until the next read, and a saved peer's own peers are followed when the app
-    reads it in turn. Two reads that find the same server save it once, and a peer that answers
-    with a saved `id`, like this Mac's own server saved at a loopback address, changes nothing.
-    Settings keeps the server it had selected, and new rows are the only sign.
+  - **Following peers.** Connecting to any one of the user's servers shows the rest, and a Mac
+    that joins later appears by itself. The app follows only the peers of the server the user
+    connected through, since each of the user's Macs lists all the others. Each time it reads
+    that server, it reads `GET /api/v1/server` at each listed peer it hasn't opened yet and opens
+    each one that answers, at the peer's origin. A peer that doesn't answer is skipped until the
+    next read. The app saves no peer, so after a relaunch they come back with that server's first
+    read, and a peer it has opened stays open until the app quits or disconnects. Settings keeps
+    the server it had selected, and new rows are the only sign.
 
 ### Sending
 
@@ -2984,7 +2986,7 @@ scheme, like `ftp://`, is refused, with "Use HTTP or HTTPS for your Toy Box serv
 Welcome is the Server URL card, with no separate test or confirmation. Return or Connect
 tries the address once: while it runs, the field is disabled and the button reads Connecting…,
 then a server that answers is saved and shown, and a failure shows its error in the card and
-saves nothing. A saved server's page shows its address as a plain value, with the
+saves nothing. A server's page shows its address as a plain value, with the
 same checkmark while it's connected, or its failure. Notifications explains requests
 and completions before asking system permission in response to an explicit enable action.
 Permission denial shows Open System Settings, never repeated permission prompts. General also
@@ -3722,7 +3724,7 @@ There is no generic heading. Keep every line, including timestamp descenders, in
 native 157 x 73.5-point rectangular host.
 Both surfaces render waiting, empty, out-of-date and not-connected states from the phone's
 App Group `NeedsYouSnapshot`. On timeline refresh, the phone widget extension fetches current
-waiting requests from every saved server through the app publisher's HTTP and snapshot path,
+waiting requests from every server in the app's list when it last published, through the app publisher's HTTP and snapshot path,
 within a ten-second total network deadline, then writes the shared snapshot. After a request or completion alert, the notification service
 extension asks WidgetKit to reload this widget's timelines. WidgetKit schedules the refresh,
 so this is not an immediate-delivery guarantee. A failed fetch keeps the saved snapshot and the
