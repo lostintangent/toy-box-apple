@@ -261,7 +261,7 @@ struct ComposerTests {
             window.orderOut(nil)
             window.close()
         }
-        try await waitForUpdate(of: container, "the composer mounts") { composerInput(in: container) != nil }
+        try await waitUntil("the composer mounts", in: container) { composerInput(in: container) != nil }
         let input = try #require(composerInput(in: container))
         #expect(input.selectedRange() == NSRange(location: draft.text.utf16.count, length: 0))
         func press(_ keyCode: UInt16, _ characters: String, _ modifiers: NSEvent.ModifierFlags = []) throws {
@@ -271,7 +271,7 @@ struct ComposerTests {
             #expect(window.makeFirstResponder(input))
             input.string = ""
             input.insertText(text, replacementRange: input.selectedRange())
-            try await waitForUpdate(of: host, "the text and mention menu update") {
+            try await waitUntil("the text and mention menu update", in: host) {
                 draft.text == text && input.coordinator?.isCompletionVisible == (text == "@")
             }
         }
@@ -326,7 +326,7 @@ struct ComposerTests {
         #expect(draft.text == "@")
         input.setSelectedRange(NSRange(location: 1, length: 0))
         input.coordinator?.updateCompletion()
-        try await waitForUpdate(of: host, "the mention menu reopens") { input.coordinator?.isCompletionVisible == true }
+        try await waitUntil("the mention menu reopens", in: host) { input.coordinator?.isCompletionVisible == true }
         try press(53, "\u{1b}")
         input.coordinator?.updateCompletion()
         #expect(input.coordinator?.isCompletionVisible == false)
@@ -492,12 +492,12 @@ struct ComposerTests {
 
         try down()
         try press("\u{7F}", code: 51)
-        try await waitForUpdate(of: host, "Delete removes the highlighted bookmark") { store.bookmarks == [1, 3] }
+        try await waitUntil("Delete removes the highlighted bookmark", in: host) { store.bookmarks == [1, 3] }
         try press("\r", code: 36)
         try up()
         try up()
         try press("\u{F728}", code: 117)
-        try await waitForUpdate(of: host, "Forward Delete removes the highlighted bookmark") { store.bookmarks == [1] }
+        try await waitUntil("Forward Delete removes the highlighted bookmark", in: host) { store.bookmarks == [1] }
         try press("\r", code: 36)
         #expect(revealed.withLock { $0 } == [3, 3, 1, 1])
         #expect(store.bookmarkFailure == nil)
@@ -561,7 +561,7 @@ struct ComposerTests {
             guard width == 160 else { continue }
             let scrollView = try #require(scrollViews.first)
             do {
-                try await waitForUpdate(of: view, "the overflowing strip scrolls sideways") {
+                try await waitUntil("the overflowing strip scrolls sideways", in: view) {
                     if scrollView.contentView.bounds.minX > 0 { return true }
                     let notch = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2,
                                                      wheel1: 0, wheel2: -3, wheel3: 0))
@@ -682,7 +682,7 @@ struct ComposerTests {
         window.isReleasedWhenClosed = false
         window.contentView = host
         defer { window.close() }
-        try await waitForUpdate(of: host, "the composer mounts") { composerInput(in: host) != nil }
+        try await waitUntil("the composer mounts", in: host) { composerInput(in: host) != nil }
         let input = try #require(composerInput(in: host))
         let clip = try #require(input.enclosingScrollView?.contentView)
         #expect(window.makeFirstResponder(input))
@@ -704,7 +704,7 @@ struct ComposerTests {
         #expect(color(of: input, at: 0) == .textColor)
         #expect(input.selectedRange() == NSRange(location: secondText.utf16.count, length: 0), "The caret starts at the end")
         #expect(input.undoManager?.canUndo == false, "Undo never reaches into another draft")
-        try await waitForUpdate(of: host, "the composer grows to three lines") { clip.frame.height > 80 }
+        try await waitUntil("the composer grows to three lines", in: host) { clip.frame.height > 80 }
         #expect(abs(clip.bounds.maxY - input.frame.maxY) < 1, "The caret's last line is in view")
 
         input.insertText("!", replacementRange: input.selectedRange())
@@ -712,11 +712,11 @@ struct ComposerTests {
         #expect(first.text == "Typed here and spoken")
 
         shown.draft = first
-        try await waitForUpdate(of: host, "the first draft returns") { input.string == first.text }
+        try await waitUntil("the first draft returns", in: host) { input.string == first.text }
         #expect(composerInput(in: host) === input)
         #expect(input.selectedRange() == NSRange(location: 21, length: 0))
         #expect(input.undoManager?.canUndo == false)
-        try await waitForUpdate(of: host, "the composer shrinks to one line") { clip.frame.height < 50 }
+        try await waitUntil("the composer shrinks to one line", in: host) { clip.frame.height < 50 }
         #expect(clip.bounds.minY == 0, "A one-line draft isn't left scrolled")
         #expect(second.text == secondText + "!")
     }
@@ -745,7 +745,7 @@ struct ComposerTests {
                 window.sendEvent(event)
             }
         }
-        try await waitForUpdate(of: view, "both buttons take a click at their center") {
+        try await waitUntil("both buttons take a click at their center", in: view) {
             if dictates == 0 { try click(NSPoint(x: size / 2, y: size / 2)) }
             if attaches == 0 { try click(NSPoint(x: size * 1.5, y: size / 2)) }
             return dictates == 1 && attaches == 1
@@ -900,28 +900,11 @@ struct ComposerTests {
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         window.contentView = host
-        try await waitForUpdate(of: host, "the composer mounts") { composerInput(in: host) != nil }
+        try await waitUntil("the composer mounts", in: host) { composerInput(in: host) != nil }
         let input = try #require(composerInput(in: host))
         #expect(window.makeFirstResponder(input))
         await dictation.refresh()
         return (window, input)
-    }
-
-    private func waitUntil(_ description: String, _ condition: () throws -> Bool) async throws {
-        let deadline = ContinuousClock.now + .seconds(30)
-        while try !condition(), ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        let satisfied = try condition()
-        try #require(satisfied, "Timed out waiting until \(description)")
-    }
-
-    /// Waits for SwiftUI to update a hosted AppKit view, for checks on state that isn't observable.
-    private func waitForUpdate(of host: NSView, _ description: String, until condition: () throws -> Bool) async throws {
-        try await waitUntil(description) {
-            host.layoutSubtreeIfNeeded()
-            return try condition()
-        }
     }
 
     private func color(of input: NSTextView, at location: Int) -> NSColor? {

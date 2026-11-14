@@ -504,12 +504,7 @@ struct ComposerTests {
         let connecting = try textTop()
 
         store.connect()
-        let failed = Task { @MainActor in
-            for await unavailable in Observations({ store.phase.isUnavailable }) where unavailable { return true }
-            return false
-        }
-        Task { try await Task.sleep(for: .seconds(10)); failed.cancel() }
-        try #require(await failed.value, "The unreachable channel reports its failure")
+        try await waitUntil("the unreachable channel reports its failure") { store.phase.isUnavailable }
         await Task.yield()
         host.view.layoutIfNeeded()
         #expect(abs(try textTop() - connecting) <= 0.5, "Only a deleted channel draws a notice above the text")
@@ -556,50 +551,45 @@ struct ComposerTests {
         window.isHidden = false
         defer { window.isHidden = true }
 
-        func settle() async {
-            host.view.layoutIfNeeded()
-            await Task.yield()
-            host.view.layoutIfNeeded()
-        }
-        func keyboard(top: CGFloat) async {
+        func keyboard(top: CGFloat) {
             let frame = CGRect(x: 0, y: top, width: 466, height: 336)
             NotificationCenter.default.post(
                 name: UIResponder.keyboardWillChangeFrameNotification, object: window.screen,
                 userInfo: [UIResponder.keyboardFrameEndUserInfoKey: NSValue(cgRect: frame)])
-            await settle()
         }
-        func composerBottom() throws -> CGFloat {
-            let input = try #require(session.editor.textView)
-            #expect(input.window === window)
+        func composerBottom() -> CGFloat? {
+            guard let input = session.editor.textView, input.window === window else { return nil }
             return input.convert(input.bounds, to: window).maxY
         }
-        func findBottom() throws -> CGFloat {
-            try #require(MobileAutomationTree(windows: [window]).elements.first { $0.label == "Close Find" }).frame.maxY
+        func findBottom() -> CGFloat? {
+            MobileAutomationTree(windows: [window]).elements.first { $0.label == "Close Find" }?.frame.maxY
         }
 
-        await settle()
+        try await waitUntil("the composer mounts", in: host.view) { composerBottom() != nil }
         #expect(!screen.keyboardIsVisible)
-        let composerResting = try composerBottom()
+        let composerResting = try #require(composerBottom())
 
-        await keyboard(top: 564)
-        #expect(screen.keyboardIsVisible)
-        #expect(try composerBottom() == composerResting - 8)
+        keyboard(top: 564)
+        try await waitUntil("the composer rises above the keyboard", in: host.view) {
+            screen.keyboardIsVisible && composerBottom() == composerResting - 8
+        }
 
         // Find arrives over a keyboard that doesn't move, so no notification tells it.
         screen.showsFind = true
-        await settle()
-        let findAboveKeyboard = try findBottom()
+        try await waitUntil("Find replaces the composer", in: host.view) { findBottom() != nil }
+        let findAboveKeyboard = try #require(findBottom())
         #expect(screen.keyboardIsVisible)
 
         // The keyboard goes down while the composer is gone.
-        await keyboard(top: 900)
-        #expect(!screen.keyboardIsVisible)
-        #expect(try findBottom() == findAboveKeyboard + 8)
+        keyboard(top: 900)
+        try await waitUntil("Find follows the keyboard down", in: host.view) {
+            !screen.keyboardIsVisible && findBottom() == findAboveKeyboard + 8
+        }
 
         screen.showsFind = false
-        await settle()
-        #expect(!screen.keyboardIsVisible)
-        #expect(try composerBottom() == composerResting)
+        try await waitUntil("the composer returns to rest", in: host.view) {
+            !screen.keyboardIsVisible && composerBottom() == composerResting
+        }
         withExtendedLifetime(target) {}
     }
 
