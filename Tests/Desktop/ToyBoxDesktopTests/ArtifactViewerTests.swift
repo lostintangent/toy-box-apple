@@ -24,7 +24,7 @@ struct ArtifactViewerTests {
         let url = try #require(URL(string: "toybox-sandbox://document/\(policy)"))
         web.load(URLRequest(url: url))
         defer { web.stopLoading() }
-        try await wait { web.url == url && !web.isLoading }
+        try await waitUntil("the probe page finished loading") { web.url == url && !web.isLoading }
         #expect(web.title == (policy == "blocked" ? "Initial" : "Scripts ran"))
         if policy != "blocked" {
             let result = try await web.evaluateJavaScript("window.sandboxProbe")
@@ -59,7 +59,7 @@ struct ArtifactViewerTests {
         opener.open(original)
         defer { opener.close(animated: false) }
         #expect(interaction.isArtifactViewerPresented)
-        try await wait { !opener.isLoading }
+        try await waitUntil("the original loaded") { !opener.isLoading }
         #expect(opener.content?.artifact.id == original.id)
         let loaded = opener.content?.file
         opener.update([original, neighbor, newer])
@@ -71,7 +71,7 @@ struct ArtifactViewerTests {
         #expect(opener.isUnavailable)
         #expect(opener.content == nil)
         opener.select(neighbor.id)
-        try await wait { !opener.isLoading }
+        try await waitUntil("the neighbor loaded") { !opener.isLoading }
         #expect(opener.content?.artifact.id == neighbor.id)
         #expect(!opener.isUnavailable)
         opener.close(animated: false)
@@ -92,11 +92,11 @@ struct ArtifactViewerTests {
                          interaction: interaction, imageViewer: ImageViewer())
         opener.open(document)
         defer { opener.close(animated: false) }
-        try await wait { !opener.isLoading }
+        try await waitUntil("the plan loaded") { !opener.isLoading }
         let loaded = try #require(opener.content?.file)
         _ = fixture.failures.withLock { $0.insert("/api/serve/test/plan.md") }
         opener.reload()
-        try await wait { !opener.isLoading }
+        try await waitUntil("the reload finished") { !opener.isLoading }
         #expect(opener.content?.file == loaded)
         #expect(opener.loadError == nil)
         #expect(opener.actionError?.contains("500") == true)
@@ -118,9 +118,9 @@ struct ArtifactViewerTests {
                          artifacts: [slow, next], interaction: interaction, imageViewer: ImageViewer())
         opener.open(slow)
         defer { opener.close(animated: false) }
-        try await wait { fixture.requests.withLock { $0.contains { $0.path == slowPath } } }
+        try await waitUntil("the slow request reached the fixture") { fixture.requests.withLock { $0.contains { $0.path == slowPath } } }
         opener.select(next.id)
-        try await wait { !opener.isLoading }
+        try await waitUntil("the next artifact loaded") { !opener.isLoading }
         fixture.release(slowPath)
         #expect(opener.artifact?.id == next.id)
         #expect(opener.content?.artifact.id == next.id)
@@ -174,7 +174,7 @@ struct ArtifactViewerTests {
             </script></body></html>
             """, directory: directory, server: fixture.url("/"))
         do {
-            try await wait { !probe.values.isEmpty || web.error != nil }
+            try await waitUntil("the origin probe reported its result") { !probe.values.isEmpty || web.error != nil }
         } catch {
             let requests = fixture.requests.withLock { $0.map(\.path) }
             print("""
@@ -242,11 +242,11 @@ struct ArtifactViewerTests {
             window.addEventListener("scroll",()=>parent.postMessage({jump:scrollY,origin:self.origin}, "*"));
             </script></body></html>
             """, directory: resource.deletingLastPathComponent(), server: server, resource: resource)
-        try await wait { !web.isLoading }
+        try await waitUntil("the page finished loading") { !web.isLoading }
         let original = try #require(web.webView.url)
         _ = try await web.webView.evaluateJavaScript(
             method == "hash" ? "location.hash='section'" : "document.getElementById('jump').click()")
-        try await wait { !probe.values.isEmpty || web.error != nil || !opened.isEmpty }
+        try await waitUntil("the scroll message arrived") { !probe.values.isEmpty || web.error != nil || !opened.isEmpty }
         #expect(web.error == nil)
         #expect(opened.isEmpty)
         let result = try #require(probe.values.last?["result"] as? [String: Any])
@@ -320,10 +320,10 @@ struct ArtifactViewerTests {
                          interaction: ChannelInteraction(), imageViewer: ImageViewer())
         defer { opener.close(animated: false) }
         opener.open(plan)
-        try await wait { !opener.isLoading && opener.thumbnail(for: drawing) != nil }
+        try await waitUntil("the plan and the drawing's thumbnail loaded") { !opener.isLoading && opener.thumbnail(for: drawing) != nil }
         #expect(opener.artifact?.id == plan.id)
         opener.select(drawing.id)
-        try await wait { !opener.isLoading }
+        try await waitUntil("the drawing loaded") { !opener.isLoading }
         #expect(opener.image?.size == CGSize(width: 120, height: 80))
         #expect(fixture.requests.withLock { $0.filter { $0.path.hasSuffix("drawing.svg") }.count } == 1)
     }
@@ -342,7 +342,7 @@ struct ArtifactViewerTests {
         opener.open(artifact("plan.md"))
         #expect(window.makeFirstResponder(nil))
         opener.close()
-        try await wait { window.firstResponder === control }
+        try await waitUntil("the invoking control took focus back") { window.firstResponder === control }
         #expect(!window.isKeyWindow)
     }
 
@@ -384,9 +384,9 @@ struct ArtifactViewerTests {
         defer { opener.close(animated: false); host.window.close() }
         #expect(host.window.makeFirstResponder(composer))
         opener.open(leavingHTML ? html : plan)
-        try await wait { !opener.isLoading }
+        try await waitUntil("the first artifact loaded") { !opener.isLoading }
         if leavingHTML {
-            try await wait { opener.webView != nil }
+            try await waitUntil("the web view appeared") { opener.webView != nil }
             let web = try #require(opener.webView)
             #expect(host.window.makeFirstResponder(web))
             #expect(!opener.canPageUsingKeys)
@@ -396,7 +396,7 @@ struct ArtifactViewerTests {
             #expect(host.window.makeFirstResponder(nil))
             opener.select(plan.id)
         }
-        try await wait {
+        try await waitUntil("the plan can page using keys") {
             opener.artifact?.id == plan.id && opener.canPageUsingKeys
                 && host.window.firstResponder != nil && host.window.firstResponder !== host.window
         }
@@ -407,9 +407,9 @@ struct ArtifactViewerTests {
             }
         }
         try host.press(.rightArrow, modifiers: flags)
-        try await wait { opener.artifact?.id == html.id }
+        try await waitUntil("the right arrow paged to the prototype") { opener.artifact?.id == html.id }
         try host.press(.leftArrow, modifiers: flags)
-        try await wait { opener.artifact?.id == plan.id }
+        try await waitUntil("the left arrow paged back to the plan") { opener.artifact?.id == plan.id }
         #expect(composer.string == "Keep this unsent draft.")
     }
 
@@ -432,7 +432,7 @@ struct ArtifactViewerTests {
         let host = ArtifactKeyboardWindow(opener: opener, composer: NSTextView(), hasToolbar: true, size: size)
         defer { opener.close(animated: false); host.window.close() }
         opener.open(plan)
-        try await wait { !opener.isLoading && host.documentScrollView != nil }
+        try await waitUntil("the plan's scroll view appeared") { !opener.isLoading && host.documentScrollView != nil }
         let scroll = try #require(host.documentScrollView)
         let content = try #require(host.window.contentView)
         let canvas = content.convert(content.bounds, to: nil)
@@ -443,12 +443,12 @@ struct ArtifactViewerTests {
         #expect(abs(scroll.contentInsets.bottom - 80) < 1)
         scroll.contentView.scroll(to: NSPoint(x: 0, y: 900))
         scroll.reflectScrolledClipView(scroll.contentView)
-        try await wait { (opener.scrollOffsets[plan.id] ?? 0) > 500 }
+        try await waitUntil("the reading position was saved") { (opener.scrollOffsets[plan.id] ?? 0) > 500 }
         let offset = try #require(opener.scrollOffsets[plan.id])
         opener.select(other.id)
-        try await wait { scroll.window == nil }
+        try await waitUntil("the plan's scroll view left the window") { scroll.window == nil }
         opener.select(plan.id)
-        try await wait {
+        try await waitUntil("the plan restored its reading position") {
             guard let restored = host.documentScrollView else { return false }
             return abs(restored.contentView.bounds.minY + restored.contentInsets.top - offset) < 1
                 && restored.convert(restored.bounds, to: nil) == frame
@@ -456,16 +456,16 @@ struct ArtifactViewerTests {
         let restored = try #require(host.documentScrollView)
         let topInset = restored.contentInsets.top
         opener.actionError = "The document remains visible while this action error is shown."
-        try await wait { restored.contentInsets.top > topInset }
+        try await waitUntil("the error raised the top inset") { restored.contentInsets.top > topInset }
         #expect(restored.convert(restored.bounds, to: nil) == frame)
         #expect(restored.contentInsets.bottom == 80)
         opener.actionError = nil
-        try await wait { abs(restored.contentInsets.top - topInset) < 1 }
+        try await waitUntil("the top inset returned") { abs(restored.contentInsets.top - topInset) < 1 }
         let document = try #require(restored.documentView)
         let end = document.frame.height - restored.contentView.bounds.height + restored.contentInsets.bottom
         restored.contentView.scroll(to: NSPoint(x: 0, y: end))
         restored.reflectScrolledClipView(restored.contentView)
-        try await wait { abs(restored.contentView.bounds.minY - end) < 1 }
+        try await waitUntil("the document scrolled to its end") { abs(restored.contentView.bounds.minY - end) < 1 }
         let documentEnd = document.convert(NSPoint(x: document.bounds.midX, y: document.bounds.maxY), to: nil)
         #expect(abs(documentEnd.y - 80) < 1)
     }
@@ -483,7 +483,7 @@ struct ArtifactViewerTests {
         let host = ArtifactKeyboardWindow(opener: opener, composer: NSTextView(), hasToolbar: true)
         defer { opener.close(animated: false); host.window.close() }
         opener.open(drawing)
-        try await wait { !opener.isLoading && opener.nativeImageView?.window != nil }
+        try await waitUntil("the image view appeared") { !opener.isLoading && opener.nativeImageView?.window != nil }
         let image = try #require(opener.nativeImageView)
         let frame = image.convert(image.bounds, to: nil)
         #expect(abs(frame.maxY - (host.window.contentLayoutRect.maxY - 16)) < 1)
@@ -520,7 +520,7 @@ struct ArtifactViewerTests {
         let host = ArtifactKeyboardWindow(opener: opener, composer: NSTextView(), hasToolbar: true, size: size)
         defer { opener.close(animated: false); host.window.close() }
         opener.open(html)
-        try await wait { opener.webView?.url != nil && opener.webRenderer?.isLoading == false }
+        try await waitUntil("the page finished loading") { opener.webView?.url != nil && opener.webRenderer?.isLoading == false }
         let web = try #require(opener.webView)
         let contentView = try #require(host.window.contentView)
         let canvas = contentView.convert(contentView.bounds, to: nil)
@@ -549,9 +549,9 @@ struct ArtifactViewerTests {
         opener.select(other.id)
         let savedState = try #require(opener.webReadingStates[html.id])
         #expect(try await savedState.position.value == CGPoint(x: 0, y: 900))
-        try await wait { web.window == nil }
+        try await waitUntil("the web view left the window") { web.window == nil }
         opener.select(html.id)
-        try await wait {
+        try await waitUntil("the restored page finished loading") {
             guard let restored = opener.webView else { return false }
             return restored !== web && opener.webRenderer?.isLoading == false
                 && restored.convert(restored.bounds, to: nil) == frame
@@ -582,14 +582,14 @@ struct ArtifactViewerTests {
             <!doctype html><html><body><form id="form" method="\(method == "form-get" ? "get" : "post")" action="\(destination.absoluteString)">
             <input name="probe" value="not-a-credential"></form></body></html>
             """, directory: fixture.url("/api/serve/test/"), server: fixture.url("/"))
-        try await wait { !web.isLoading }
+        try await waitUntil("the page finished loading") { !web.isLoading }
         #expect(web.error == nil)
         let url = web.webView.url
         let script = method.hasPrefix("form")
             ? "document.getElementById('form').submit()"
             : "location.href='\(destination.absoluteString)'"
         _ = try await web.webView.evaluateJavaScript(script)
-        try await wait { web.error != nil }
+        try await waitUntil("the navigation was refused") { web.error != nil }
         #expect(web.error == ArtifactWebError.rootNavigationUnavailable.localizedDescription)
         #expect(web.webView.url == url)
         let origin = try await web.webView.evaluateJavaScript("self.origin")
@@ -618,7 +618,7 @@ struct ArtifactViewerTests {
         let host = ArtifactKeyboardWindow(opener: opener, composer: NSTextView(), hasToolbar: true)
         defer { opener.close(animated: false); host.window.close() }
         opener.open(html)
-        try await wait { opener.webView?.url != nil && opener.webRenderer?.isLoading == false }
+        try await waitUntil("the page finished loading") { opener.webView?.url != nil && opener.webRenderer?.isLoading == false }
         let web = try #require(opener.webView)
         let contentView = try #require(host.window.contentView)
         let canvas = contentView.convert(contentView.bounds, to: nil)
@@ -628,7 +628,7 @@ struct ArtifactViewerTests {
         #expect(frame == canvas)
         for showsError in [false, true, false] {
             opener.actionError = showsError ? "The document remains visible while this action error is shown." : nil
-            try await wait {
+            try await waitUntil("the top inset followed the error") {
                 showsError ? web.obscuredContentInsets.top > top + 1 : abs(web.obscuredContentInsets.top - top) < 1
             }
             #expect(web.convert(web.bounds, to: nil) == frame)
@@ -721,12 +721,6 @@ struct ArtifactViewerTests {
     @MainActor
     private final class ArtifactFocusTestView: NSView {
         override var acceptsFirstResponder: Bool { true }
-    }
-
-    private func wait(until condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now + .seconds(15)
-        while !condition(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        try #require(condition(), "The artifact did not reach its expected settled state.")
     }
 }
 

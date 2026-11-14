@@ -24,11 +24,19 @@ struct ArtifactWebRendererTests {
         let web = ArtifactWebRenderer(presentation: presentation)
         defer { web.stop() }
         let server = try #require(URL(string: "http://127.0.0.1:1"))
-        await web.load("""
-            <a id="external" href="\(destination.absoluteString)">Review</a>
-            <script>document.getElementById("external").click();</script>
-            """, directory: server.appendingPathComponent("api/serve/test/"), server: server)
-        try await wait { !presentation.opened.isEmpty || web.error != nil }
+        var started = false
+        let loading = Task {
+            await web.load("""
+                <a id="external" href="\(destination.absoluteString)">Review</a>
+                <script>document.getElementById("external").click();</script>
+                """, directory: server.appendingPathComponent("api/serve/test/"), server: server)
+            started = true
+        }
+        defer { loading.cancel() }
+        try await waitUntil("the content rules compiled and the page started loading") { started }
+        try await waitUntil("the link opened the browser (still loading: \(web.isLoading))") {
+            !presentation.opened.isEmpty || web.error != nil
+        }
         #expect(web.error == nil)
         #expect(presentation.opened == [destination])
         #expect(web.webView.url?.scheme == "toybox-artifact")
@@ -43,12 +51,6 @@ struct ArtifactWebRendererTests {
         let compiled = try await WKContentRuleListStore.default().compileContentRuleList(
             forIdentifier: "artifact-viewer-prefix-test", encodedContentRuleList: encoded)
         #expect(compiled != nil)
-    }
-
-    private func wait(until condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now + .seconds(60)
-        while !condition(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        try #require(condition(), "The artifact did not reach its expected settled state.")
     }
 }
 
