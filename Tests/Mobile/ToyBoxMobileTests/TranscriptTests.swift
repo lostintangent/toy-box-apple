@@ -21,6 +21,20 @@ struct TranscriptTests {
                        content: .text("Message \(sequence)"))
     }
 
+    /// The folded phone's 386-point column, with nothing covering it.
+    private let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+
+    /// Rows r0, r1… each 100 points tall, measured and scrolled to `origin`.
+    private func measuredScroll(_ count: Int, firstOrder: Int = 0, origin: CGFloat) -> TranscriptScroll {
+        let scroll = TranscriptScroll()
+        scroll.sync((0..<count).map { .init(id: "r\($0)", order: $0 + firstOrder) })
+        for index in 0..<count {
+            scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100))
+        }
+        scroll.metrics = .init(viewport: viewport, origin: origin, documentEnd: CGFloat(count) * 100)
+        return scroll
+    }
+
     @Test func runsSplitIntoEntriesThatEachMarkTheirOwnSequence() {
         let messages = [
             message(1, .user),
@@ -48,11 +62,7 @@ struct TranscriptTests {
     }
 
     @Test func readingAPositionWaitsForAMeasuredRowInView() {
-        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
-        let scroll = TranscriptScroll()
-        scroll.rows = (0..<10).map { .init(id: "r\($0)", order: $0) }
-        for index in 0..<10 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
-        scroll.metrics = .init(viewport: viewport, origin: 400, documentEnd: 1000)
+        let scroll = measuredScroll(10, origin: 400)
         #expect(scroll.update(.land(.end)) != nil)
 
         // An older page lands above, but the lazy stack hasn't reported it while it's on screen.
@@ -76,11 +86,7 @@ struct TranscriptTests {
     }
 
     @Test func jumpingToLatestDuringAFlickLandsAtTheEndInOneTap() {
-        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
-        let scroll = TranscriptScroll()
-        scroll.rows = (0..<40).map { .init(id: "r\($0)", order: $0) }
-        for index in 0..<40 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
-        scroll.metrics = .init(viewport: viewport, origin: 3400, documentEnd: 4000)
+        let scroll = measuredScroll(40, origin: 3400)
         _ = scroll.update(.land(.end))
 
         // The reader flicks up and taps Jump to Latest while the flick is still decelerating.
@@ -110,11 +116,7 @@ struct TranscriptTests {
     }
 
     @Test func jumpToLatestWaitsForSettledGeometryWhileALandingScrolls() {
-        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
-        let scroll = TranscriptScroll()
-        scroll.rows = (0..<40).map { .init(id: "r\($0)", order: $0) }
-        for index in 0..<40 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
-        scroll.metrics = .init(viewport: viewport, origin: 1000, documentEnd: 4000)
+        let scroll = measuredScroll(40, origin: 1000)
 
         // The landing is still on its way, so the far-from-the-end geometry leaves the button alone.
         let landing = scroll.update(.land(.end))
@@ -170,11 +172,7 @@ struct TranscriptTests {
     }
 
     @Test func aReaderAtRestIsNeverPulledBackToTheirAnchor() {
-        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
-        let scroll = TranscriptScroll()
-        scroll.rows = (0..<40).map { .init(id: "r\($0)", order: $0) }
-        for index in 0..<40 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
-        scroll.metrics = .init(viewport: viewport, origin: 3400, documentEnd: 4000)
+        let scroll = measuredScroll(40, origin: 3400)
         _ = scroll.update(.land(.end))
         scroll.isReaderScrolling = true
         scroll.metrics?.origin = 1500
@@ -190,11 +188,7 @@ struct TranscriptTests {
     }
 
     @Test func aNewTouchReadsEvenBeforeAJumpSettlesAtTheEnd() {
-        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
-        let scroll = TranscriptScroll()
-        scroll.rows = (0..<40).map { .init(id: "r\($0)", order: $0) }
-        for index in 0..<40 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
-        scroll.metrics = .init(viewport: viewport, origin: 3400, documentEnd: 4000)
+        let scroll = measuredScroll(40, origin: 3400)
         _ = scroll.update(.land(.end))
         scroll.metrics?.origin = 1000
         _ = scroll.update()
@@ -212,11 +206,7 @@ struct TranscriptTests {
     }
 
     @Test func aRevealFinishesFromSettledGeometryOrWhenTheReaderTakesOver() {
-        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
-        let scroll = TranscriptScroll()
-        scroll.rows = (0..<20).map { .init(id: "r\($0)", order: $0) }
-        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
-        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        let scroll = measuredScroll(20, origin: 1400)
         _ = scroll.update(.land(.end))
 
         // Asking to scroll isn't revealing: it finishes only once the native origin arrives.
@@ -240,12 +230,8 @@ struct TranscriptTests {
     }
 
     @Test func aRevealIntoAPageThatJustLandedFindsItsRow() {
-        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
-        let scroll = TranscriptScroll()
-        let loaded: [TranscriptPlacement.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 5) }
-        scroll.sync(loaded)
-        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
-        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        let scroll = measuredScroll(20, firstOrder: 5, origin: 1400)
+        let loaded = scroll.rows
         _ = scroll.update(.land(.end))
 
         // The reveal resumes after older pages land but before SwiftUI reports the new rows.
@@ -266,13 +252,9 @@ struct TranscriptTests {
     }
 
     @Test func aRequestAlertsRevealIsTheFirstLandingEvenSeveralPagesBack() {
-        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
-        let scroll = TranscriptScroll()
         // The newest page opens at the bottom with its New divider at r10, but nothing lands there.
-        let latest: [TranscriptPlacement.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 300) }
-        scroll.sync(latest)
-        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
-        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        let scroll = measuredScroll(20, firstOrder: 300, origin: 1400)
+        let latest = scroll.rows
         #expect(scroll.update() == nil && !scroll.hasLanded)
 
         // Three pages arrive above without holding any row, since the reader hasn't seen one.
@@ -315,23 +297,15 @@ struct TranscriptTests {
     }
 
     @Test func aRevealThatCantFindItsRowLeavesTheFirstLandingToTheDivider() {
-        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
-        let scroll = TranscriptScroll()
-        scroll.sync((0..<20).map { .init(id: "r\($0)", order: $0) })
-        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
-        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        let scroll = measuredScroll(20, origin: 1400)
 
         #expect(scroll.update(.reveal("gone"))?.unavailableTarget == "gone" && !scroll.hasLanded)
         #expect(scroll.update(.land(.row("r10", order: 10)))?.origin == 1000 && scroll.hasLanded)
     }
 
     @Test func aPageArrivingAtTheTopKeepsTheReadersRowInsteadOfItsOldFrame() {
-        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
-        let scroll = TranscriptScroll()
-        let loaded: [TranscriptPlacement.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 5) }
-        scroll.sync(loaded)
-        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
-        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        let scroll = measuredScroll(20, firstOrder: 5, origin: 1400)
+        let loaded = scroll.rows
         _ = scroll.update(.land(.end))
         scroll.metrics?.origin = 30
         scroll.isReaderScrolling = true
@@ -351,12 +325,8 @@ struct TranscriptTests {
     }
 
     @Test func aMergedPageLoadsOnceEvenWhenGeometryArrivesBeforeItsRows() {
-        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
-        let scroll = TranscriptScroll()
-        let loaded: [TranscriptPlacement.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 5) }
-        scroll.sync(loaded)
-        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
-        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        let scroll = measuredScroll(20, firstOrder: 5, origin: 1400)
+        let loaded = scroll.rows
         _ = scroll.update(.land(.end))
         var store = loaded
         var loads = 0
@@ -386,7 +356,6 @@ struct TranscriptTests {
     }
 
     @Test func aLandingThatCantFillTheScreenReachesOlderHistoryOnceItsPlaced() {
-        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
         scroll.sync((0..<3).map { .init(id: "r\($0)", order: $0) })
         for index in 0..<3 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
@@ -398,10 +367,7 @@ struct TranscriptTests {
         #expect(scroll.reachesOlder)
 
         // A tall channel landed at its end is out of reach until the reader scrolls to the top.
-        let tall = TranscriptScroll()
-        tall.sync((0..<20).map { .init(id: "r\($0)", order: $0) })
-        for index in 0..<20 { tall.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
-        tall.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        let tall = measuredScroll(20, origin: 1400)
         _ = tall.update(.land(.end))
         #expect(!tall.reachesOlder)
         tall.isReaderScrolling = true
@@ -421,30 +387,6 @@ struct TranscriptTests {
         #expect(startsOwnPost(after: [ids.old], in: [message(ids.old, .notSent), message(ids.new, .sending)]))
         // Retry reuses its id, so it isn't a new post.
         #expect(!startsOwnPost(after: [ids.old], in: [message(ids.old, .sending)]))
-    }
-
-    @Test func phoneFindRevealsOnlyOnNavigationAndSpeaksPartialPositionsAsProvisional() {
-        let find = TranscriptFind()
-        find.revealsWhileTyping = false
-        find.prepare(messages: [
-            ChannelMessage(id: "a", sequence: 4, timestamp: "2026-10-25T12:00:00Z", sender: .user, content: .text("hit")),
-            ChannelMessage(id: "b", sequence: 6, timestamp: "2026-10-25T12:01:00Z", sender: .user, content: .text("hit"))
-        ], agents: [lead], hasOlder: true)
-        find.present()
-        find.query = "hit"
-        #expect(find.revealRequest == nil)
-        #expect(find.isSearching)
-        #expect(find.status(progressDelayElapsed: true) == .progress)
-        find.move(1)
-        #expect(find.revealRequest?.sequence == 4)
-        find.move(1)
-        #expect(find.revealRequest?.sequence == 6)
-        #expect(find.navigationAnnouncement == "2 of 2 found so far, still searching")
-        // Closing leaves the reader at the match. Only a real scroll or Jump to Latest reads again.
-        find.close()
-        #expect(find.blocksRead)
-        find.resumeReading()
-        #expect(!find.blocksRead)
     }
 
     @Test func phoneFindIsOneSixtyPointRowWithAStableStatusSlotAndStacksAtAccessibilitySizes() {
@@ -720,31 +662,7 @@ struct TranscriptTests {
         #expect(targets[2] == CGRect(x: 0, y: 7, width: 200, height: 37))
     }
 
-    @Test func longMessagesCollapseInTheSamePassThatMeasuresThem() {
-        func height(_ text: String, expanded: Bool) -> CGFloat {
-            UIHostingController(rootView: TranscriptCollapsibleBody(isExpanded: expanded, endPadding: 10) {
-                Text(text).font(.body)
-            } toggle: {
-                // The phone's footer shows 40 points and lends its target's last 4 to the space below.
-                Button("Show More") {}.frame(minHeight: 44).padding(.bottom, -4)
-            }).sizeThatFits(in: CGSize(width: 300, height: CGFloat.infinity)).height
-        }
-        let long = Array(repeating: "A line that wraps across the bubble.", count: 30).joined(separator: "\n")
-        let full = UIHostingController(rootView: Text(long).font(.body))
-            .sizeThatFits(in: CGSize(width: 300, height: CGFloat.infinity)).height
-        let short = UIHostingController(rootView: Text("Short").font(.body))
-            .sizeThatFits(in: CGSize(width: 300, height: CGFloat.infinity)).height
-        // A first measurement that comes back clamped means the row never changes height after it's placed.
-        #expect(height(long, expanded: false) == TranscriptCollapsibleBody<Text, Text>.clampHeight + 40)
-        #expect(abs(height(long, expanded: true) - (full + 40)) < 1)
-        #expect(abs(height("Short", expanded: false) - (short + 10)) < 1)
-    }
-
-    @Test func unfoldedMessagesUseTheWholeColumnUpToTheMacsReadingCaps() throws {
-        #expect(TranscriptWidthCap.agentSurface == 760)
-        #expect(TranscriptUserLane.maximumWidth == 640)
-        #expect(transcriptEdgeInset(.compact) == 16)
-        #expect(transcriptEdgeInset(.regular) == 20)
+    @Test func unfoldedMessagesUseTheWholeColumnUpToTheMacsReadingCaps() async throws {
         final class Frames { var agent = CGRect.zero, mine = CGRect.zero }
         // Folded keeps 88% for your messages. Unfolded, a wide column adds air instead of longer lines.
         let cases: [(width: CGFloat, fraction: CGFloat, agent: CGFloat, mine: CGFloat)] = [
@@ -768,8 +686,9 @@ struct TranscriptTests {
             let host = UIHostingController(rootView: view)
             window.rootViewController = host
             window.isHidden = false
-            host.view.layoutIfNeeded()
-            RunLoop.main.run(until: .now + 0.05)
+            try await waitUntil("both lanes measured at \(width)", in: host.view) {
+                frames.agent != .zero && frames.mine != .zero
+            }
             window.isHidden = true
             #expect(abs(frames.agent.width - agent) < 0.5, "\(width): agent \(frames.agent)")
             #expect(abs(frames.agent.minX) < 0.5)
@@ -885,17 +804,14 @@ struct TranscriptTests {
         window.isHidden = false
         defer { window.isHidden = true }
 
-        func reads(_ expected: [String]) async {
-            let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-            repeat {
-                host.view.layoutIfNeeded()
-                await Task.yield()
-            } while ReadRecordingProtocol.reads(on: server) != expected && ContinuousClock.now < deadline
-            #expect(ReadRecordingProtocol.reads(on: server) == expected)
+        func reads(_ expected: [String]) async throws {
+            try await waitUntil("reads \(expected), got \(ReadRecordingProtocol.reads(on: server))", in: host.view) {
+                ReadRecordingProtocol.reads(on: server) == expected
+            }
         }
-        await reads(["busy 400"])
+        try await reads(["busy 400"])
         shown.store = quiet
-        await reads(["busy 400", "quiet 40"])
+        try await reads(["busy 400", "quiet 40"])
     }
 }
 

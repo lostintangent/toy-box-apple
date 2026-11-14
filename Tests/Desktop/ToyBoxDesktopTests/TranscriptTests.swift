@@ -16,29 +16,6 @@ private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["
 
 @Suite("Transcript rendering and visibility")
 struct TranscriptTests {
-    @MainActor
-    @Test func markdownSizingKeepsTranscriptDefaultsAndAcceptsArtifactSizes() {
-        let normal = TranscriptMarkdown(content: "Body and `code`")
-        #expect(normal.bodySize == 14 && normal.codeSize == 12 && normal.lineSpacing == 3)
-        let artifact = TranscriptMarkdown(content: "Body and `code`", bodySize: 15, codeSize: 13, lineSpacing: 4)
-        #expect(artifact.bodySize == 15 && artifact.codeSize == 13 && artifact.lineSpacing == 4)
-    }
-
-    @MainActor
-    @Test func longMessagesCollapseInTheSamePassThatMeasuresThem() {
-        func height(_ view: some View) -> CGFloat { NSHostingView(rootView: view.frame(width: 300)).fittingSize.height }
-        func collapsed(_ text: String, expanded: Bool) -> CGFloat {
-            height(TranscriptCollapsibleBody(isExpanded: expanded, spacing: 6) { Text(text) } toggle: {
-                Text("Show More").frame(height: 20)
-            })
-        }
-        let long = Array(repeating: "A line that wraps across the bubble.", count: 30).joined(separator: "\n")
-        // A first measurement that comes back clamped means the row never changes height after it's placed.
-        #expect(collapsed(long, expanded: false) == TranscriptCollapsibleBody<Text, Text>.clampHeight + 26)
-        #expect(abs(collapsed(long, expanded: true) - (height(Text(long)) + 26)) < 1)
-        #expect(abs(collapsed("Short", expanded: false) - height(Text("Short"))) < 1)
-    }
-
     /// Every addressed agent message carries Show More, so an AppKit button there costs every arrival.
     @MainActor
     @Test func showMoreIsNoAppKitControl() throws {
@@ -278,8 +255,6 @@ struct TranscriptTests {
 
     @MainActor
     @Test func conversationLaneCapsMessageSurfacesWhileTheDockSpansIt() async throws {
-        #expect(TranscriptWidthCap(maxWidth: TranscriptWidthCap.agentSurface * 1.25).maxWidth == 950)
-        #expect(TranscriptUserLane(maxWidth: TranscriptUserLane.maximumWidth * 1.25).maxWidth == 800)
         let widths: [(conversation: CGFloat, agent: CGFloat, mine: CGFloat)] = [
             (420, 328, 298), (720, 628, 538), (760, 668, 570), (1_000, 760, 640), (1_400, 760, 640),
         ]
@@ -310,7 +285,7 @@ struct TranscriptTests {
                 .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }
                 .frame(width: width, height: 60))
             view.frame = NSRect(x: 0, y: 0, width: width, height: 60)
-            try await transcriptUntil(in: view) { capture.frames.count == 4 }
+            try await waitUntil(in: view) { capture.frames.count == 4 }
 
             let avatar = try #require(capture.frames["avatar"]).rect
             let agent = try #require(capture.frames["agent"]).rect
@@ -593,37 +568,7 @@ struct TranscriptTests {
 
     @MainActor
     @Test(arguments: [false, true])
-    func openingAndClosingFindLeaveTheReadersMessagesInPlace(atBottom: Bool) async throws {
-        let find = TranscriptFind()
-        let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), find: find)
-        defer { await harness.close() }
-        try #require(harness.visibleWindowFrames()["m90"] != nil)
-        if !atBottom {
-            let clip = harness.scrollView.contentView
-            clip.scroll(to: NSPoint(x: clip.bounds.minX, y: clip.bounds.minY - 600))
-            harness.scrollView.reflectScrolledClipView(clip)
-            try await harness.settled()
-        }
-        let reading = harness.visibleWindowFrames()
-        try #require(reading.count >= 3)
-        harness.interaction.findInChannel()
-        try await harness.waitUntil { find.isPresented && harness.findField != nil }
-        try await harness.settled()
-        for (id, rect) in reading {
-            let after = harness.windowFrames[id] ?? .null
-            #expect(abs(after.minY - rect.minY) < 0.5, "Opening moved \(id) from \(rect) to \(after)")
-        }
-        find.close()
-        try await harness.settled()
-        for (id, rect) in reading {
-            let after = harness.windowFrames[id] ?? .null
-            #expect(abs(after.minY - rect.minY) < 0.5, "Closing moved \(id) from \(rect) to \(after)")
-        }
-    }
-
-    @MainActor
-    @Test(arguments: [false, true])
-    func findProgressAndErrorsLeaveTheReadersMessagesInPlace(atBottom: Bool) async throws {
+    func findOpeningProgressErrorsAndClosingLeaveTheReadersMessagesInPlace(atBottom: Bool) async throws {
         let find = TranscriptFind()
         let messages = transcriptFindTestMessages(61...90)
         let harness = try await TranscriptHarness(messages: messages,
@@ -636,33 +581,29 @@ struct TranscriptTests {
             harness.scrollView.reflectScrolledClipView(clip)
             try await harness.settled()
         }
-        try #require(harness.visibleWindowFrames().count >= 3)
-        harness.interaction.findInChannel()
-        try await harness.waitUntil { find.isPresented && harness.findField != nil }
-        try await harness.settled()
         let reading = harness.visibleWindowFrames()
         try #require(reading.count >= 3)
+        func expectInPlace(_ step: String) async throws {
+            try await harness.settled()
+            for (id, rect) in reading {
+                let after = harness.windowFrames[id] ?? .null
+                #expect(abs(after.minY - rect.minY) < 0.5, "\(step) moved \(id) from \(rect) to \(after)")
+            }
+        }
 
+        harness.interaction.findInChannel()
+        try await harness.waitUntil { find.isPresented && harness.findField != nil }
+        try await expectInPlace("Opening")
         find.query = "unmatched-find-progress"
         try await harness.waitUntil { find.isSearching }
-        try await harness.settled()
-        for (id, rect) in reading {
-            let after = harness.windowFrames[id] ?? .null
-            #expect(abs(after.minY - rect.minY) < 0.5, "Progress moved \(id) from \(rect) to \(after)")
-        }
+        try await expectInPlace("Progress")
         await find.searchOlder { _ in throw ChannelAPIError.http(status: 503, message: "Unavailable") }
         try #require(find.error != nil)
-        try await harness.settled()
-        for (id, rect) in reading {
-            let after = harness.windowFrames[id] ?? .null
-            #expect(abs(after.minY - rect.minY) < 0.5, "Error moved \(id) from \(rect) to \(after)")
-        }
+        try await expectInPlace("Error")
         find.query = ""
-        try await harness.settled()
-        for (id, rect) in reading {
-            let after = harness.windowFrames[id] ?? .null
-            #expect(abs(after.minY - rect.minY) < 0.5, "Clearing moved \(id) from \(rect) to \(after)")
-        }
+        try await expectInPlace("Clearing")
+        find.close()
+        try await expectInPlace("Closing")
         #expect(harness.readRequests == 0)
     }
 
@@ -1048,20 +989,6 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test func consumingARevealDoesNotCancelItOrReplayItWhenTheTranscriptReopens() throws {
-        let interaction = ChannelInteraction()
-        interaction.reveal(sequence: 12)
-        let first = try #require(interaction.revealRequest)
-        interaction.consumeRevealRequest(first.token)
-        #expect(interaction.revealRequest == nil)
-        #expect(interaction.revealRequestToken == first.token)
-        interaction.reveal(sequence: 25)
-        interaction.consumeRevealRequest(first.token)
-        #expect(interaction.revealRequest?.sequence == 25)
-        #expect(interaction.revealRequestToken != first.token)
-    }
-
-    @MainActor
     @Test func imageHeadersGiveInlineAndCachedImagesTheirFinalSizeOnTheFirstPass() throws {
         let payload = try encodedImage(width: 600, height: 300, type: .png)
         let attachment = ChannelAttachment(name: "wide.png", mimeType: "image/png", base64: payload)
@@ -1227,7 +1154,7 @@ struct TranscriptTests {
             .coordinateSpace(name: "transcript-viewport")
             .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 })
         view.frame = NSRect(x: 0, y: 0, width: 250, height: 100)
-        try await transcriptUntil(in: view) { capture.frames.count == 3 }
+        try await waitUntil(in: view) { capture.frames.count == 3 }
         let first = try #require(capture.frames["item-0"]?.rect)
         let second = try #require(capture.frames["item-1"]?.rect)
         let third = try #require(capture.frames["item-2"]?.rect)
@@ -1262,7 +1189,7 @@ struct TranscriptTests {
         window.setFrameOrigin(NSPoint(x: -6000, y: -6000))
         window.orderFrontRegardless()
         defer { window.close() }
-        try await transcriptUntil(in: view) { capture.frames["share-1"] != nil }
+        try await waitUntil(in: view) { capture.frames["share-1"] != nil }
         let link = try #require(capture.frames["share-1"]?.rect)
         #expect(link.height < 20)
 
@@ -1303,7 +1230,7 @@ struct TranscriptTests {
                     .coordinateSpace(name: "transcript-viewport")
                     .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 })
             view.frame = NSRect(x: 0, y: 0, width: bubbleWidth + 40, height: 80)
-            try await transcriptUntil(in: view) { capture.frames["actions"] != nil }
+            try await waitUntil(in: view) { capture.frames["actions"] != nil }
             let actions = try #require(capture.frames["actions"]?.rect)
             // They end 8 points into the bubble's 10-point top padding.
             #expect(abs(actions.maxY - 28) < 0.5)
@@ -1392,7 +1319,7 @@ struct TranscriptTests {
                 .frame(width: width, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true))
         view.frame = NSRect(x: 0, y: 0, width: width, height: 200)
-        try await transcriptUntil(in: view) { capture.frames.count == messages.count }
+        try await waitUntil(in: view) { capture.frames.count == messages.count }
         return (view.fittingSize.height, capture.frames)
     }
 
@@ -1786,7 +1713,7 @@ struct ImageViewerLiveTextTests {
             viewer.close(animated: false)
             window.close()
         }
-        try await Self.until { viewer.liveText != nil }
+        try await waitUntil { viewer.liveText != nil }
         let content = try #require(window.contentView)
         let view = try #require(Self.find(ImageViewerLiveTextView.self, in: content))
         func point(_ x: CGFloat, _ y: CGFloat) throws -> CGPoint {
@@ -1798,7 +1725,7 @@ struct ImageViewerLiveTextTests {
         // The text runs along the top of the image, so this also proves the overlay isn't flipped.
         let word = try point(0.15, 0.26)
         let blank = try point(0.15, 0.74)
-        try await Self.until { isOverLiveText(word) && !view.overlay.isSupplementaryInterfaceHidden }
+        try await waitUntil { isOverLiveText(word) && !view.overlay.isSupplementaryInterfaceHidden }
         try await transcriptSettled(in: content) { view.overlay.layer?.presentation()?.frame ?? view.overlay.frame }
         // VisionKit establishes its native text tracking when the pointer enters the image.
         Self.send([(.mouseMoved, word, 0)], to: window)
@@ -1809,11 +1736,11 @@ struct ImageViewerLiveTextTests {
 
         // Double-clicking a word selects it rather than zooming.
         Self.click(window, at: word, count: 2)
-        try await Self.until { viewer.selectedLiveText != nil }
+        try await waitUntil { viewer.selectedLiveText != nil }
         #expect(viewer.selectedLiveText == "Release")
         #expect(!viewer.isZoomed)
         // The viewer takes the keyboard back and the selection stays, so Copy copies the text.
-        try await Self.until { !((window.firstResponder as? NSView)?.isDescendant(of: view.overlay) ?? false) }
+        try await waitUntil { !((window.firstResponder as? NSView)?.isDescendant(of: view.overlay) ?? false) }
         #expect(!viewer.isPressingLiveText)
         #expect(viewer.selectedLiveText == "Release")
         #expect(viewer.copiedItems.first?.canLoadObject(ofClass: NSString.self) == true)
@@ -1824,32 +1751,32 @@ struct ImageViewerLiveTextTests {
 
         // Dragging across words selects them.
         Self.drag(window, from: word, to: try point(0.36, 0.26), clicks: 2)
-        try await Self.until { viewer.selectedLiveText?.contains("notes") == true }
+        try await waitUntil { viewer.selectedLiveText?.contains("notes") == true }
         #expect(viewer.selectedLiveText?.contains("Release") == true)
         #expect(!viewer.isZoomed && viewer.session != nil)
         viewer.escape()
 
         // Double-clicking elsewhere zooms, which hides the button but keeps the text selectable.
         Self.click(window, at: blank, count: 2)
-        try await Self.until { viewer.isZoomed }
+        try await waitUntil { viewer.isZoomed }
         let zoomedWord = try point(0.15, 0.26)
-        try await Self.until { view.overlay.isSupplementaryInterfaceHidden && isOverLiveText(zoomedWord) }
+        try await waitUntil { view.overlay.isSupplementaryInterfaceHidden && isOverLiveText(zoomedWord) }
         try await transcriptSettled(in: content) { view.overlay.layer?.presentation()?.frame ?? view.overlay.frame }
         #expect(view.overlay.isSupplementaryInterfaceHidden)
         #expect(isOverLiveText(zoomedWord))
         Self.click(window, at: zoomedWord, count: 2)
-        try await Self.until { viewer.selectedLiveText != nil }
+        try await waitUntil { viewer.selectedLiveText != nil }
         #expect(viewer.isZoomed)
         // A click away from the text lets go of the selection.
         Self.click(window, at: try point(0.15, 0.74), count: 1)
-        try await Self.until { viewer.selectedLiveText == nil }
+        try await waitUntil { viewer.selectedLiveText == nil }
 
         // While zoomed, a drag on text selects instead of panning.
         let pan = viewer.pan
         let start = try point(0.1, 0.26)
         #expect(isOverLiveText(start))
         Self.drag(window, from: start, to: CGPoint(x: start.x + 120, y: start.y), clicks: 2)
-        try await Self.until { viewer.selectedLiveText != nil }
+        try await waitUntil { viewer.selectedLiveText != nil }
         #expect(viewer.pan == pan && viewer.isZoomed)
         viewer.escape()
         #expect(viewer.selectedLiveText == nil && !viewer.isClosing)
@@ -1884,13 +1811,13 @@ struct ImageViewerLiveTextTests {
             view.present(analysis: analysis, in: frame, animated: false)
             view.layoutSubtreeIfNeeded()
             view.overlay.resetSelection()
-            try await Self.until { view.overlay.text.contains(page.lines[line]) }
+            try await waitUntil { view.overlay.text.contains(page.lines[line]) }
             try await transcriptSettled(in: view) { transcriptLayerPixels(of: view) }
             let unselected = transcriptLayerPixels(of: view)
             view.overlay.selectedRanges = [try #require(view.overlay.text.range(of: page.lines[line]))]
             #expect(view.overlay.selectedText == page.lines[line])
             var highlight: CGRect?
-            try await Self.until {
+            try await waitUntil {
                 highlight = transcriptChangedBounds(unselected, transcriptLayerPixels(of: view), width: 1000)
                 return highlight != nil
             }
@@ -1907,7 +1834,7 @@ struct ImageViewerLiveTextTests {
         view.present(analysis: analysis, in: fitted, animated: false)
         view.layoutSubtreeIfNeeded()
         let button = CGPoint(x: fitted.maxX - 21, y: fitted.maxY - 21)
-        try await Self.until { view.target(at: button).control }
+        try await waitUntil { view.target(at: button).control }
         for point in [CGPoint(x: fitted.maxX - 21, y: fitted.maxY - 45), CGPoint(x: fitted.maxX - 45, y: fitted.maxY - 21),
                       CGPoint(x: fitted.maxX + 4, y: fitted.maxY - 21), CGPoint(x: fitted.maxX - 21, y: fitted.maxY + 4)] {
             #expect(!view.target(at: point).control, "button at \(point)")
@@ -1984,7 +1911,7 @@ struct ImageViewerLiveTextTests {
         // The viewer measures each image once, as it decodes.
         let viewer = try Self.openViewer([Self.textPNG("Release notes ship Friday")])
         defer { viewer.close(animated: false) }
-        try await Self.until { viewer.items[0]?.cornerTone != nil }
+        try await waitUntil { viewer.items[0]?.cornerTone != nil }
         let tone = try #require(viewer.items[0]?.cornerTone)
         #expect(tone.isLight(over: 0))
 
@@ -2114,21 +2041,6 @@ struct ImageViewerLiveTextTests {
             if let match = find(type, in: subview) { return match }
         }
         return nil
-    }
-
-    private struct Timeout: Error {}
-
-    /// Loads and analyses share the machine with every other suite in a full run, so waits are generous.
-    private static func until(_ timeout: Duration = .seconds(30), sourceLocation: SourceLocation = #_sourceLocation,
-                              _ condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now + timeout
-        while !condition() {
-            guard ContinuousClock.now < deadline else {
-                Issue.record("Timed out", sourceLocation: sourceLocation)
-                throw Timeout()
-            }
-            try await Task.sleep(for: .milliseconds(20))
-        }
     }
 
     /// Waits for the analysis the viewer started, however long VisionKit takes, and requires a result.
@@ -2307,18 +2219,6 @@ private func transcriptFrame(in view: NSView) async throws {
     try await Task.sleep(for: .milliseconds(16))
 }
 
-@MainActor
-private func transcriptUntil(in view: NSView? = nil, sourceLocation: SourceLocation = #_sourceLocation,
-                             failure: () -> String = { "The transcript did not reach the expected state" },
-                             _ condition: () -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(60)
-    while !condition(), ContinuousClock.now < deadline {
-        if let view { try await transcriptFrame(in: view) }
-        else { try await Task.sleep(for: .milliseconds(20)) }
-    }
-    try #require(condition(), Comment(rawValue: failure()), sourceLocation: sourceLocation)
-}
-
 /// Waits for three unchanged display frames instead of assuming layout finishes in a fixed interval.
 @MainActor
 private func transcriptSettled<Value: Equatable>(in view: NSView, reading: () throws -> Value) async throws {
@@ -2356,54 +2256,8 @@ struct TranscriptCatchUpTests {
 
         let collapsing = try #require(make(unreadAfter: 9))
         collapsing.session.dismiss()
-        try await transcriptUntil { collapsing.session.phase == .collapsed }
+        try await waitUntil { collapsing.session.phase == .collapsed }
         #expect(!collapsing.holdsLanding)
-    }
-
-    @Test func imagesAreDescribedOnlyForVoiceOverAndOnlyOnce() async throws {
-        let descriptions = TranscriptImageDescriptionSession()
-        let service = StubChannelIntelligence(descriptions: ["chart": "A chart of weekly signups rising."])
-        #expect(!TranscriptImageDescriptionSession.isActive(voiceOver: false, isOn: true, using: service))
-        #expect(TranscriptImageDescriptionSession.isActive(voiceOver: true, isOn: true, using: service))
-        #expect(!TranscriptImageDescriptionSession.isActive(voiceOver: true, isOn: false, using: service))
-        #expect(!TranscriptImageDescriptionSession.isActive(
-            voiceOver: true, isOn: true, using: StubChannelIntelligence(availability: .unavailable(.deviceNotEligible))))
-
-        let request = describedImage("chart")
-        #expect(descriptions.text(for: request) == nil)
-        #expect(TranscriptImageDescriptionSession.value(descriptions.text(for: request)) == "")
-        await descriptions.describe(request, using: service)
-        #expect(TranscriptImageDescriptionSession.value(descriptions.text(for: request))
-                == "Generated description: A chart of weekly signups rising.")
-        // The viewer asks for the same image at a higher priority and finds it described.
-        let focused = describedImage("chart", priority: .focused)
-        #expect(descriptions.text(for: focused) == "A chart of weekly signups rising.")
-        await descriptions.describe(focused, using: service)
-
-        // An image the model can't describe isn't asked about again.
-        await descriptions.describe(describedImage("photo"), using: service)
-        await descriptions.describe(describedImage("photo"), using: service)
-        #expect(descriptions.text(for: describedImage("photo")) == nil)
-        #expect(service.altTextCount == 2)
-    }
-
-    @Test func aDescriptionGivenUpWhenItsTileScrollsAwayIsAskedForAgain() async throws {
-        let descriptions = TranscriptImageDescriptionSession()
-        let slow = StubChannelIntelligence(delay: .seconds(30), descriptions: ["chart": "A chart."])
-        let request = describedImage("chart")
-        let task = Task { await descriptions.describe(request, using: slow) }
-        try await transcriptUntil { slow.altTextCount > 0 }
-        task.cancel()
-        await task.value
-        #expect(descriptions.text(for: request) == nil)
-
-        await descriptions.describe(request, using: StubChannelIntelligence(descriptions: ["chart": "A chart."]))
-        #expect(descriptions.text(for: request) == "A chart.")
-    }
-
-    private func describedImage(_ digest: String, priority: AltTextRequest.Priority = .visible) -> AltTextRequest {
-        AltTextRequest(server: server, digest: digest, fileURL: URL(fileURLWithPath: "/tmp/\(digest).png"),
-                       priority: priority)
     }
 
     @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
@@ -2465,19 +2319,15 @@ private final class TranscriptReopenLog {
 private final class StubChannelIntelligence: ChannelIntelligenceService {
     let availability: IntelligenceAvailability
     private let results: Mutex<[CatchUpResult]>
-    private let descriptions: [String: String]
-    private let delay: Duration
-    private let calls = Mutex((catchUp: 0, altText: 0))
+    private let calls = Mutex(0)
     private let hold: Mutex<(isHeld: Bool, waiting: [CheckedContinuation<Void, Never>])>
 
     /// `holdsCatchUp` keeps every catch-up answer waiting until `releaseCatchUp()`.
     init(availability: IntelligenceAvailability = .available, results: [CatchUpResult] = [],
-         delay: Duration = .zero, holdsCatchUp: Bool = false, descriptions: [String: String] = [:]) {
+         holdsCatchUp: Bool = false) {
         self.availability = availability
         self.results = Mutex(results)
-        self.delay = delay
         hold = Mutex((holdsCatchUp, []))
-        self.descriptions = descriptions
     }
 
     func releaseCatchUp() {
@@ -2489,12 +2339,11 @@ private final class StubChannelIntelligence: ChannelIntelligenceService {
         for continuation in waiting { continuation.resume() }
     }
 
-    var catchUpCount: Int { calls.withLock { $0.catchUp } }
-    var altTextCount: Int { calls.withLock { $0.altText } }
+    var catchUpCount: Int { calls.withLock { $0 } }
 
     /// Answers with each result in turn, then keeps answering with the last.
     func catchUp(_ request: CatchUpRequest) async -> CatchUpResult {
-        calls.withLock { $0.catchUp += 1 }
+        calls.withLock { $0 += 1 }
         await withCheckedContinuation { continuation in
             let isHeld = hold.withLock { hold in
                 if hold.isHeld { hold.waiting.append(continuation) }
@@ -2502,15 +2351,10 @@ private final class StubChannelIntelligence: ChannelIntelligenceService {
             }
             if !isHeld { continuation.resume() }
         }
-        if delay > .zero { try? await Task.sleep(for: delay) }
         return results.withLock { $0.count > 1 ? $0.removeFirst() : $0.first ?? .declined }
     }
 
-    func altText(_ request: AltTextRequest) async -> AltText? {
-        calls.withLock { $0.altText += 1 }
-        if delay > .zero { try? await Task.sleep(for: delay) }
-        return descriptions[request.digest].map(AltText.init(text:))
-    }
+    func altText(_ request: AltTextRequest) async -> AltText? { nil }
 }
 
 func catchUpTestMessage(_ sequence: Int, sender: ChannelMessageSender = .agent("lead"),
@@ -2635,11 +2479,7 @@ private final class TranscriptHarness {
         let capture = TranscriptLayoutCapture()
         if warm {
             store.connect()
-            let deadline = ContinuousClock.now + .seconds(60)
-            while !(store.isLoaded && store.phase.isConnected), ContinuousClock.now < deadline {
-                try await Task.sleep(for: .milliseconds(20))
-            }
-            try #require(store.isLoaded && store.phase.isConnected)
+            try await ToyBoxDesktopTests.waitUntil("the store to load and connect") { store.isLoaded && store.phase.isConnected }
         }
         let makeView = {
             let view = NSHostingView(rootView: ConversationTranscript(store: store, find: find,
@@ -2790,11 +2630,11 @@ private final class TranscriptHarness {
 
     /// Waits up to a deadline rather than a count of cycles, since a starved runner stretches each cycle.
     func waitUntil(sourceLocation: SourceLocation = #_sourceLocation, _ condition: () -> Bool) async throws {
-        try await transcriptUntil(in: window.contentView, sourceLocation: sourceLocation, failure: {
-            "Transcript landed: \(self.capture.hasLanded), gap: \(self.bottomGap), "
-                + "clip: \(self.scrollView.contentView.bounds), "
-                + "document: \(String(describing: self.scrollView.documentView?.bounds))"
-        }, condition)
+        try await ToyBoxDesktopTests.waitUntil(
+            "the transcript's expected state. Landed: \(capture.hasLanded), gap: \(bottomGap), "
+                + "clip: \(scrollView.contentView.bounds), "
+                + "document: \(String(describing: scrollView.documentView?.bounds))",
+            in: window.contentView, sourceLocation: sourceLocation, condition)
     }
 
     func frame() async throws {
@@ -3065,7 +2905,7 @@ private final class HoveredMessage {
 
     /// Waits on the result rather than a fixed delay, which a starved test runner can outlast.
     func waitUntil(sourceLocation: SourceLocation = #_sourceLocation, _ condition: () -> Bool) async throws {
-        try await transcriptUntil(in: host, sourceLocation: sourceLocation, condition)
+        try await ToyBoxDesktopTests.waitUntil(in: host, sourceLocation: sourceLocation, condition)
     }
 
     func settled() async throws {

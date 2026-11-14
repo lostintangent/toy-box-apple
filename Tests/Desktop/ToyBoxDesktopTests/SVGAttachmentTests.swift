@@ -95,7 +95,7 @@ struct SVGAttachmentTests {
         let expected = size.width > 952 ? CGSize(width: 952, height: 571.2) : size
         #expect(abs(opening.width - expected.width) < 0.000001)
         #expect(abs(opening.height - expected.height) < 0.000001)
-        try await waitFor { viewer.items[0]?.bitmap != nil || viewer.items[0]?.failure != nil }
+        try await waitUntil { viewer.items[0]?.bitmap != nil || viewer.items[0]?.failure != nil }
         #expect(viewer.items[0]?.failure == nil)
         #expect(viewer.pointSize(at: 0, in: layout) == size)
         #expect(viewer.frame(at: 0, in: layout) == opening)
@@ -185,13 +185,13 @@ struct SVGAttachmentTests {
                 try? FileManager.default.removeItem(at: cached)
             }
         }
-        try await waitFor { viewer.items[0]?.bitmap != nil || viewer.items[0]?.failure != nil }
+        try await waitUntil { viewer.items[0]?.bitmap != nil || viewer.items[0]?.failure != nil }
         #expect(viewer.items[0]?.failure == nil)
         #expect(viewer.items[0]?.isVector == true)
         #expect(viewer.items[0]?.pixelSize == CGSize(width: 12000, height: 6000))
         let fittedFrame = viewer.frame(at: 0, in: try #require(viewer.layout))
         viewer.layout?.displayScale = 3
-        try await waitFor { (viewer.items[0]?.bitmap?.width ?? 0) >= 3072 || viewer.items[0]?.failure != nil }
+        try await waitUntil { (viewer.items[0]?.bitmap?.width ?? 0) >= 3072 || viewer.items[0]?.failure != nil }
         #expect(viewer.items[0]?.failure == nil)
         #expect(viewer.items[0]?.bitmap?.width == 3072)
         let scaledFrame = viewer.frame(at: 0, in: try #require(viewer.layout))
@@ -201,7 +201,7 @@ struct SVGAttachmentTests {
         #expect(abs(scaledFrame.height - fittedFrame.height) < 0.000001)
         for _ in 0..<12 { viewer.zoomIn() }
         let frame = viewer.frame(at: 0, in: try #require(viewer.layout))
-        try await waitFor { viewer.items[0]?.bitmap?.width == 8192 || viewer.items[0]?.failure != nil }
+        try await waitUntil { viewer.items[0]?.bitmap?.width == 8192 || viewer.items[0]?.failure != nil }
         #expect(viewer.items[0]?.failure == nil)
         #expect(viewer.items[0]?.bitmap?.width == 8192)
         #expect(viewer.items[0]?.pixelSize == CGSize(width: 12000, height: 6000))
@@ -224,15 +224,15 @@ struct SVGAttachmentTests {
                 try? FileManager.default.removeItem(at: cached)
             }
         }
-        try await waitFor { viewer.items[0]?.bitmap != nil || viewer.items[0]?.failure != nil }
+        try await waitUntil { viewer.items[0]?.bitmap != nil || viewer.items[0]?.failure != nil }
         let original = try #require(viewer.items[0]?.bitmap)
         try FileManager.default.removeItem(at: try #require(viewer.items[0]?.file))
         for _ in 0..<12 { viewer.zoomIn() }
-        try await waitFor { viewer.items[0]?.failure != nil }
+        try await waitUntil { viewer.items[0]?.failure != nil }
         #expect(viewer.items[0]?.bitmap === original)
         #expect(viewer.items[0]?.pixelSize == CGSize(width: 800, height: 400))
         viewer.retry()
-        try await waitFor { viewer.items[0]?.bitmap?.width == 8192 || viewer.items[0]?.failure != nil }
+        try await waitUntil { viewer.items[0]?.bitmap?.width == 8192 || viewer.items[0]?.failure != nil }
         #expect(viewer.items[0]?.failure == nil)
         #expect(viewer.items[0]?.bitmap?.width == 8192)
         #expect(viewer.items[0]?.pixelSize == CGSize(width: 800, height: 400))
@@ -261,12 +261,6 @@ struct SVGAttachmentTests {
             .appendingPathComponent("toybox-svg-\(UUID().uuidString)").appendingPathExtension(suffix)
         try Data(source.utf8).write(to: url)
         return url
-    }
-
-    @MainActor private func waitFor(_ condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
-        while !condition() && .now < deadline { try await Task.sleep(for: .milliseconds(20)) }
-        #expect(condition())
     }
 }
 

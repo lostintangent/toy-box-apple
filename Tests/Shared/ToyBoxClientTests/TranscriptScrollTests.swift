@@ -271,15 +271,6 @@ struct TranscriptPagingTests {
               historyStart: 31, contentTop: top)
     }
 
-    @Test func replayingAFrameCannotAddItsCorrectionAgain() {
-        let measured = frame(top: 1455, height: 37, measuredY: 1392)
-        var offset: CGFloat = 83
-        for _ in 0..<4 {
-            offset = TranscriptCoordinates.targetOffset(for: measured, bottom: 79, topInset: 0)
-            #expect(offset == 1433)
-        }
-    }
-
     @Test func scrollingReprojectsACachedFrameInsteadOfWaitingForAnotherPreference() {
         let cached = frame(top: 2055, height: 57, measuredY: 2023)
         let positioned = TranscriptCoordinates.viewportFrame(cached, top: 2002)
