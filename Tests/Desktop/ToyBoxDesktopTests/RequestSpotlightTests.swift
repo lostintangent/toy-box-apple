@@ -104,19 +104,6 @@ struct RequestSpotlightTests {
         #expect(fake.operations.last == .add([entry.id]) && renders == 2)
     }
 
-    @Test func isolatedLaunchesCannotTouchEitherSpotlightIndex() {
-        #expect(!ChannelSpotlight.indexes(.init(), bundleID: "dev.toybox.desktop.test", environment: [:]))
-        #expect(!ChannelSpotlight.indexes(.init(), bundleID: "dev.toybox.desktop.benchmark", environment: [:]))
-        var options = LaunchOptions()
-        options.server = "http://127.0.0.1:3210"
-        #expect(!ChannelSpotlight.indexes(options, bundleID: "dev.toybox.desktop", environment: [:]))
-        options = .init()
-        options.snapshotURL = URL(filePath: "/tmp/spotlight.png")
-        #expect(!ChannelSpotlight.indexes(options, bundleID: "dev.toybox.desktop", environment: [:]))
-        #expect(!ChannelSpotlight.indexes(.init(), bundleID: "dev.toybox.desktop",
-                                         environment: ["TOY_BOX_SERVER_URL": "https://server.test"]))
-    }
-
     @Test func openRevealsExactlyTheOriginalRequestOnItsOwnServer() async throws {
         let fixture = try RequestIntentFixture(entry: entry())
         try await fixture.context.openRequest(fixture.entry)

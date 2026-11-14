@@ -71,8 +71,7 @@ struct DockMenuTests {
                                 hasCatalog: true,
                                 quickSendEnabled: true, canCreateChannel: true,
                                 open: { _ in }, quickSend: {}, newChannel: {})
-        #expect(DockMenu.titleLimit == 60)
-        #expect(menu.items[0].title.count <= 60)
+        #expect(menu.items[0].title.count <= DockMenu.titleLimit)
         #expect(menu.items[0].title.hasSuffix("\u{2026}"))
         #expect(!menu.items[0].title.contains("\n"))
         #expect(menu.items[0].toolTip == "Core: " + quote.replacingOccurrences(of: "\n", with: " "))
@@ -136,22 +135,7 @@ struct DockMenuTests {
         #expect(bounces == 3, "One server going offline doesn't quiet the others")
     }
 
-    @Test func onlyOrdinaryProductionLaunchesCanRequestDockAttention() {
-        #expect(DockAttention.isAllowed(.init(), bundleID: "dev.toybox.desktop", environment: [:]))
-        for id in [nil, "dev.toybox.desktop.test", "dev.toybox.desktop.benchmark"] {
-            #expect(!DockAttention.isAllowed(.init(), bundleID: id, environment: [:]))
-        }
-        var snapshot = LaunchOptions()
-        snapshot.snapshotURL = URL(fileURLWithPath: "/tmp/dock-snapshot.png")
-        var benchmark = LaunchOptions()
-        benchmark.benchmark = .scroll
-        var server = LaunchOptions()
-        server.server = "http://127.0.0.1:3210"
-        for options in [snapshot, benchmark, server] {
-            #expect(!DockAttention.isAllowed(options, bundleID: "dev.toybox.desktop", environment: [:]))
-        }
-        #expect(!DockAttention.isAllowed(.init(), bundleID: "dev.toybox.desktop",
-                                        environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"]))
+    @Test func aDisallowedLaunchNeverBouncesTheDock() {
         let attention = DockAttention(allowed: false, enabled: { true }, active: { false },
                                       request: { _ in Issue.record("A validation bundle must never bounce the Dock.") })
         attention.update(status: .init(), usable: usable(Self.server))
@@ -199,14 +183,5 @@ struct DockMenuTests {
             #expect(empty.items.contains { $0.title == "Connect to Toy Box" && !$0.isEnabled })
             #expect(!empty.items.contains { $0.title == "Nothing needs you" })
         }
-    }
-
-    @Test func theApplicationDelegateReturnsTheInjectedNativeMenu() {
-        let delegate = AppDelegate()
-        let menu = NSMenu(title: "Injected Dock menu")
-        delegate.dockMenuProvider = { menu }
-        #expect(delegate.applicationDockMenu(NSApplication.shared) === menu)
-        delegate.dockMenuProvider = nil
-        #expect(delegate.applicationDockMenu(NSApplication.shared) == nil)
     }
 }

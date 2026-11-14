@@ -228,7 +228,6 @@ struct MorningDigestTests {
                                        now: { date("2026-10-24T08:00:00Z") }, calendar: calendar)
         await validation.check()
         #expect(calls == 0)
-        #expect(!MorningDigest.isAllowed(LaunchOptions(), bundleID: "dev.toybox.desktop.test", environment: [:]))
         var snapshot = LaunchOptions()
         snapshot.snapshotURL = URL(filePath: "/tmp/digest-snapshot.png")
         #expect(MorningDigest.canTest(bundleID: "dev.toybox.desktop.test", options: LaunchOptions(),

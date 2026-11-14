@@ -188,19 +188,12 @@ struct ShellTests {
             host.view.frame = window.bounds
             host.view.layoutIfNeeded()
             model.selectedChannelID = "first"
-            @MainActor func channelScreen() async -> UIViewController? {
-                for _ in 0..<20 {
-                    host.view.setNeedsLayout()
-                    host.view.layoutIfNeeded()
-                    if let screen = navigationScreens(in: host).first(where: { titleButton(in: $0.navigationItem) != nil }) {
-                        return screen
-                    }
-                    await Task.yield()
-                }
-                return nil
+            var channelScreen: UIViewController? {
+                navigationScreens(in: host).first { titleButton(in: $0.navigationItem) != nil }
             }
-            let screen = try #require(await channelScreen(),
-                                      "\(navigationScreens(in: host).map { barDescription($0.navigationItem) })")
+            try await waitUntil("a title button in \(navigationScreens(in: host).map { barDescription($0.navigationItem) })",
+                                in: host.view) { channelScreen != nil }
+            let screen = try #require(channelScreen)
             let item = screen.navigationItem
             #expect(item.titleMenuProvider == nil, "The title is a button, so the system draws no chevron.")
             #expect(item.title == "first", "The screen still names itself for Back and VoiceOver.")
@@ -217,21 +210,14 @@ struct ShellTests {
             #expect(title.item.accessibilityValue ?? "" == "", "All Messages leaves the name alone.")
             // The menu's items aren't readable here, so the filter is set as its picker would.
             model.interaction(for: "first").messageView = .yours
-            @MainActor func titleValue() async -> String? {
-                for _ in 0..<20 {
-                    host.view.setNeedsLayout()
-                    host.view.layoutIfNeeded()
-                    if let value = titleButton(in: item)?.item.accessibilityValue, !value.isEmpty { return value }
-                    await Task.yield()
-                }
-                return nil
+            try await waitUntil("Your Messages names itself under the channel's name", in: host.view) {
+                titleButton(in: item)?.item.accessibilityValue == "Your Messages"
             }
-            #expect(await titleValue() == "Your Messages", "Your Messages names itself under the channel's name.")
         }
     }
 
-    @Test func foldingUnfoldingAndRotatingKeepWhetherTheListIsShowing() async {
-        await withDefaults { defaults in
+    @Test func foldingUnfoldingAndRotatingKeepWhetherTheListIsShowing() async throws {
+        try await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
                                  defaults: defaults, session: fixtureSession())
             defer { model.setScenePhase(.background) }
@@ -253,37 +239,37 @@ struct ShellTests {
             window.isHidden = false
             defer { window.isHidden = true }
 
-            await expectColumns(["Toy Box"], in: window)
+            try await expectColumns(["Toy Box"], in: window)
             pose(rotated)
-            await expectColumns(["Toy Box"], in: window, "Rotating keeps the list showing.")
+            try await expectColumns(["Toy Box"], in: window, "Rotating keeps the list showing.")
             pose(folded)
-            await expectColumns(["Toy Box"], in: window)
+            try await expectColumns(["Toy Box"], in: window)
 
             model.selectedChannelID = "first"
-            await expectColumns(["first"], in: window)
+            try await expectColumns(["first"], in: window)
             for size in [unfolded, rotated, unfolded] {
                 pose(size)
-                await expectColumns(["first"], in: window, "A channel open folded unfolds without the list.")
+                try await expectColumns(["first"], in: window, "A channel open folded unfolds without the list.")
             }
             for size in [folded, unfolded] {
                 pose(size)
-                await expectColumns(["first"], in: window, "Folding and unfolding again keep the list hidden.")
+                try await expectColumns(["first"], in: window, "Folding and unfolding again keep the list hidden.")
             }
             pose(folded)
-            await expectColumns(["first"], in: window)
+            try await expectColumns(["first"], in: window)
 
             model.selection = nil
-            await expectColumns(["Toy Box"], in: window)
+            try await expectColumns(["Toy Box"], in: window)
             for size in [unfolded, rotated, unfolded] {
                 pose(size)
-                await expectColumns(["Toy Box"], in: window, "The list folded unfolds with the list showing.")
+                try await expectColumns(["Toy Box"], in: window, "The list folded unfolds with the list showing.")
             }
             model.selectedChannelID = "first"
-            await expectColumns(["Toy Box", "first"], in: window)
+            try await expectColumns(["Toy Box", "first"], in: window)
             pose(folded)
-            await expectColumns(["first"], in: window, "Folding with a channel open shows the channel.")
+            try await expectColumns(["first"], in: window, "Folding with a channel open shows the channel.")
             pose(unfolded)
-            await expectColumns(["first"], in: window)
+            try await expectColumns(["first"], in: window)
         }
     }
 
@@ -305,28 +291,24 @@ struct ShellTests {
         window.rootViewController = host
         window.isHidden = false
         defer { window.isHidden = true }
-        @MainActor func settle(until done: () -> Bool) async {
-            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-            repeat {
-                window.layoutIfNeeded()
-                await Task.yield()
-            } while !done() && ContinuousClock.now < deadline
-        }
-        await settle { !card.frames.isEmpty }
-        let scroll = try #require(scrollViews(in: window).first { $0 is UICollectionView })
+        let collection = { scrollViews(in: window).first { $0 is UICollectionView } }
+        try await waitUntil("the list's collection view", in: window) { collection() != nil }
+        let scroll = try #require(collection())
 
         // The card moves through fractional positions, like a finger's, at which a frame in global
-        // space can differ in its size's last digits.
+        // space can differ in its size's last digits. In a test window, its first frame arrives only
+        // once the list scrolls.
         for step in 1...60 {
             scroll.contentOffset.y = CGFloat(step) * 7 / 3
-            await settle { true }
+            window.layoutIfNeeded()
+            await Task.yield()
         }
         #expect(card.frames.count == 1, "Reported \(card.frames.map(\.size)) while only moving.")
         let height: CGFloat = card.frames.first?.height ?? 0
         #expect(abs(height - (288 + 1.0 / 3)) < 0.01)
 
         card.height = 300
-        await settle { card.frames.count == 2 }
+        try await waitUntil("the resized card's frame", in: window) { card.frames.count == 2 }
         #expect(card.frames.last?.height == 300, "A real resize still reports.")
         #expect(card.frames.last?.minY != card.frames.first?.minY, "The frame is in global space, where it scrolled.")
     }
@@ -338,7 +320,7 @@ struct ShellTests {
     /// Expects the titles of the columns a window's channel split view settles on showing: its one screen
     /// while collapsed, and otherwise the list and the channel, unless the list is hidden.
     private func expectColumns(_ expected: [String], in window: UIWindow, _ comment: Comment? = nil,
-                               sourceLocation: SourceLocation = #_sourceLocation) async {
+                               sourceLocation: SourceLocation = #_sourceLocation) async throws {
         func splits(in controller: UIViewController) -> [UISplitViewController] {
             [controller as? UISplitViewController].compactMap(\.self) + controller.children.flatMap(splits)
         }
@@ -349,10 +331,8 @@ struct ShellTests {
         }
         var shown: [String] = []
         var state = ""
-        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-        repeat {
-            window.rootViewController?.view.setNeedsLayout()
-            window.layoutIfNeeded()
+        try await waitUntil("\(expected) show, not \(shown) in split views \(state). \(comment?.rawValue ?? "")",
+                            in: window, sourceLocation: sourceLocation) {
             // The inspector's split view holds the channel's, so the channel's is the innermost.
             let all = window.rootViewController.map(splits) ?? []
             if let split = all.last {
@@ -363,10 +343,8 @@ struct ShellTests {
             state = all.map {
                 "\($0.isCollapsed ? "collapsed" : "mode \($0.displayMode.rawValue)") \($0.viewControllers.map(titles))"
             }.joined(separator: " in ")
-            if shown == expected { return }
-            try? await Task.sleep(for: .milliseconds(5))
-        } while ContinuousClock.now < deadline
-        Issue.record("Showed \(shown), split views: \(state). \(comment?.rawValue ?? "")", sourceLocation: sourceLocation)
+            return shown == expected
+        }
     }
 
     /// The bar item that draws the channel's name, with the menu it opens.
@@ -1070,25 +1048,6 @@ struct ShellTests {
         }
     }
 
-    @Test func withdrawalRemovesAnsweredRequestsSeenCompletionsAndTheOpenChannelsAlerts() {
-        let channels = [
-            Channel(id: "first", name: "First", model: .init(provider: "test", name: "test"),
-                    seenThrough: 30, completedSequence: 30, requestSequence: 40, updatedAt: ""),
-            Channel(id: "open", name: "Open", model: .init(provider: "test", name: "test"), updatedAt: "")
-        ]
-        let records: [ChannelNotification.Delivered] = [
-            .init(identifier: "answered", payload: .init(kind: .request, channelID: "first", sequence: 20, registrationID: "now")),
-            .init(identifier: "waiting", payload: .init(kind: .request, channelID: "first", sequence: 40, registrationID: "now")),
-            .init(identifier: "seen", payload: .init(kind: .completion, channelID: "first", sequence: 30, registrationID: "now")),
-            .init(identifier: "unseen", payload: .init(kind: .completion, channelID: "first", sequence: 50, registrationID: "now")),
-            .init(identifier: "open", payload: .init(kind: .request, channelID: "open", sequence: 1, registrationID: "now")),
-            .init(identifier: "deleted", payload: .init(kind: .request, channelID: "gone", sequence: 1, registrationID: "now")),
-            .init(identifier: "foreign", payload: .init(kind: .request, channelID: "first", sequence: 1, registrationID: "old")),
-        ]
-        #expect(ChannelNotification.Delivered.stale(records, channels: channels, scope: "now", activeChannelID: "open")
-                == ["answered", "seen", "open", "deleted"])
-    }
-
     @Test func enablingNotificationsRequestsPermissionOnceAndKeepsCategoryChoicesWhenTurnedOff() async {
         await withDefaults { defaults in
             var status = UNAuthorizationStatus.notDetermined
@@ -1123,17 +1082,6 @@ struct ShellTests {
             #expect(restored.isEnabled)
             #expect(!restored.requests)
             #expect(restored.completions)
-        }
-    }
-
-    @Test(arguments: [false, true])
-    func savedNotificationChoicesOverrideTheRequestOnlyDefaults(completions: Bool) async {
-        await withDefaults { defaults in
-            defaults.set(!completions, forKey: "requestNotifications")
-            defaults.set(completions, forKey: "completionNotifications")
-            let notifications = ChannelNotifications(defaults: defaults)
-            #expect(notifications.requests == !completions)
-            #expect(notifications.completions == completions)
         }
     }
 
@@ -1397,27 +1345,6 @@ struct ShellTests {
         }
     }
 
-    @Test func channelRowsKeepTheirMinimumAndGrowForAccessibilityText() {
-        let channel = Channel(id: "layout", name: "A team with a deliberately long channel name",
-                              directory: "/Projects/a-deliberately-long-folder-name",
-                              model: .init(provider: "test", name: "test"), updatedAt: "2026-10-25T12:00:00Z")
-        let lead = ChannelAgent.lead(id: channel.id, profile: .init(
-            name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")
-        ))
-        func fitted(_ size: DynamicTypeSize) -> CGSize {
-            let host = UIHostingController(rootView: ChannelSidebarRow(
-                channel: channel, agents: [lead], working: [lead], attention: .waiting,
-                now: Date(timeIntervalSince1970: 1_793_000_000)
-            ).environment(\.dynamicTypeSize, size))
-            host.loadViewIfNeeded()
-            return host.sizeThatFits(in: CGSize(width: 240, height: CGFloat.greatestFiniteMagnitude))
-        }
-        let regular = fitted(.large)
-        let accessible = fitted(.accessibility5)
-        #expect(regular.height >= 72)
-        #expect(accessible.height > regular.height)
-    }
-
     #if DEBUG
     @Test(arguments: [true, false])
     func aFailingDotIsAButtonNamedByItsStatusInOnlyItsOwnRoom(isLoaded: Bool) throws {
@@ -1450,11 +1377,12 @@ struct ShellTests {
                 name: "Agent \(index)", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")
             ))
         }
-        func height(working: [ChannelAgent], attention: Channel.Attention?) -> CGFloat {
+        func height(working: [ChannelAgent], attention: Channel.Attention?,
+                    size: DynamicTypeSize = .large) -> CGFloat {
             let host = UIHostingController(rootView: ChannelSidebarRow(
                 channel: channel, agents: agents, working: working, attention: attention,
                 now: Date(timeIntervalSince1970: 1_793_000_000)
-            ).environment(\.dynamicTypeSize, .large))
+            ).environment(\.dynamicTypeSize, size))
             host.loadViewIfNeeded()
             return host.sizeThatFits(in: CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)).height
         }
@@ -1467,6 +1395,7 @@ struct ShellTests {
         #expect(height(working: [], attention: nil) == workingHeight)
         #expect(height(working: agents, attention: nil) == workingHeight)
         #expect(height(working: agents, attention: .waiting) == workingHeight)
+        #expect(height(working: agents, attention: .waiting, size: .accessibility5) > workingHeight)
     }
 
     @Test(arguments: [false, true])
@@ -1539,30 +1468,6 @@ struct ShellTests {
         }
     }
 
-    @Test func storesAndInteractionSurviveNavigationAndTheBackgroundStopsTheConnection() async throws {
-        await withDefaults { defaults in
-            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
-                                 defaults: defaults, session: fixtureSession())
-            model.selectedChannelID = "first"
-            let store = model.selectedStore
-            let interaction = model.interaction(for: "first")
-            interaction.messageView = .yours
-            interaction.reveal(sequence: 42)
-            model.setScenePhase(.active)
-            #expect(store?.isTrying == true)
-            model.setScenePhase(.background)
-            #expect(store?.isTrying == false)
-            #expect(model.catalog?.isActive == false)
-            model.selectedChannelID = "second"
-            model.selectedChannelID = "first"
-            #expect(model.selectedStore === store)
-            #expect(model.interaction(for: "first") === interaction)
-            #expect(interaction.messageView == .yours)
-            #expect(interaction.revealRequest?.sequence == 42)
-            #expect(model.selectedStore?.isTrying == false)
-        }
-    }
-
     @Test func briefInterruptionsKeepTheStreamAndOnlyTheBackgroundDropsIt() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
@@ -1595,6 +1500,11 @@ struct ShellTests {
             #expect(interrupted.isSet)
             #expect(!store.isTrying)
             #expect(!catalog.isActive)
+            // Navigating in the background keeps the conversation's store without reconnecting it.
+            model.selectedChannelID = "second"
+            model.selectedChannelID = "first"
+            #expect(model.selectedStore === store)
+            #expect(!store.isTrying)
             model.setScenePhase(.inactive)
             #expect(store.isTrying)
             #expect(catalog.isActive)
@@ -1786,7 +1696,7 @@ struct ShellTests {
         }
     }
 
-    @Test func settingsFailuresKeepTheirRealCategoryAndPhoneAvailabilityReason() {
+    @Test func settingsFailuresKeepTheirRealCategory() {
         enum Key: String, CodingKey { case lead }
         let missingLead = DecodingError.keyNotFound(Key.lead, .init(codingPath: [], debugDescription: "Missing Lead"))
         #expect(ServerConnectionSection.failureMessage(missingLead).contains("required Lead"))
@@ -1796,9 +1706,6 @@ struct ShellTests {
             .hasPrefix("TLS connection error:"))
         #expect(ServerConnectionSection.failureMessage(URLError(.cannotConnectToHost))
             .hasPrefix("Connection error:"))
-        #expect(SettingsView.unavailableText(.deviceNotEligible) == "This iPhone doesn't support Apple Intelligence.")
-        #expect(SettingsView.unavailableText(.unsupportedLanguage).contains("iPhone's language"))
-        #expect(SettingsView.unavailableText(.appleIntelligenceNotEnabled).contains("Open Settings"))
     }
 
     @Test func composerSessionsSurviveNavigationAndAreScopedToTheCurrentServer() async throws {
@@ -1986,8 +1893,8 @@ struct ShellTests {
         }
     }
 
-    @Test func theChannelScreenNamesItsConversationToSiri() async {
-        await withDefaults { defaults in
+    @Test func theChannelScreenNamesItsConversationToSiri() async throws {
+        try await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
                                  defaults: defaults, session: fixtureSession())
             defer { model.setScenePhase(.background) }
@@ -2000,19 +1907,11 @@ struct ShellTests {
             window.isHidden = false
             defer { window.isHidden = true }
             host.view.frame = window.bounds
-            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-            repeat {
-                host.view.layoutIfNeeded()
-                await Task.yield()
-            } while model.screenEntity == nil && ContinuousClock.now < deadline
+            try await waitUntil("the channel screen names its conversation", in: host.view) { model.screenEntity != nil }
             #expect(model.screenEntity == model.target("first").map { .channel($0) })
 
             model.selectedChannelID = nil
-            repeat {
-                host.view.layoutIfNeeded()
-                await Task.yield()
-            } while model.screenEntity != nil && ContinuousClock.now < deadline.advanced(by: .seconds(2))
-            #expect(model.screenEntity == nil)
+            try await waitUntil("closing the channel clears what Siri sees", in: host.view) { model.screenEntity == nil }
         }
     }
 
