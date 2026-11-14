@@ -971,6 +971,12 @@ which the sidebar toggle brings back, and the list folded unfolds with the list 
 keeps the list as it was. Folding with a channel open shows the channel. Overview keeps its own
 presence the same way, as Overview describes.
 
+Unfolded, where the list floats over the conversation, as in portrait, opening a channel from it
+closes the list so the channel shows. That's tapping a row, Open Channel in its menu, or a Needs
+You card's way into its channel. Where the list sits beside the conversation, as in landscape, it
+stays open. Anything in the list that doesn't open a channel, like expanding or answering a card,
+leaves the list as it is.
+
 **Phone channel search.** Use the native bottom-bar search item in the channel-list column,
 folded and unfolded. Search leads the bar, and a flexible space puts Settings (`gearshape`, the
 Mac's gear) at its trailing end. While the split view is collapsed, as
