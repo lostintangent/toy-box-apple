@@ -172,7 +172,8 @@ Use Bun 1.4.4: run `bun install --frozen-lockfile`, then the root `package.json`
   about text sizing. Never hard-code a color or size that would break the others.
 - **A change made for speed proves it against main** with its benchmark before it merges.
 - **Test each promise once,** at the lowest layer that proves it, so shared code is tested in its
-  own module and only native behavior in an app's tests.
+  own module and only native behavior in an app's tests. A test that only restates a constant, a
+  default or the code it calls proves nothing, so leave it out.
 - **Drive scripts, snapshot states and benchmarks stand in for XCUITest,** which SwiftPM can't
   host. Add to them only for a check nothing else can make.
 
@@ -190,9 +191,11 @@ The validate skill says how to capture and drive either app. These limits always
 
 - **CI asserts settled end states** over deterministic inputs such as measured frames, never
   per-frame timing. Frame-timing and WindowServer checks stay opt-in and run locally.
-- **Client tests wait with `eventually`,** through Observation and the mock's own request,
-  held-response and stop signals, never polling or elapsed time. A wait for a signal that might
-  never come needs its own deadline, because Swift Testing's time limit won't end it.
+- **Tests wait on signals.** Client tests use `eventually`, through Observation and the mock's own
+  request, held-response and stop signals. App and view tests use the shared `waitUntil`, which
+  also checks each frame for a layout fact that has no signal. Never write another polling loop or
+  wait for elapsed time. A wait for a signal that might never come needs its own deadline, because
+  Swift Testing's time limit won't end it.
 - **Test gates and hooks suspend,** never block a cooperative worker. CI enforces it with
   `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`.
 - **Quarantine an unexplained failure the same day** instead of rerunning CI until it passes.
