@@ -1,8 +1,8 @@
 import AppIntents
 import AppKit
-import ChannelClient
-import ChannelIntelligence
-import ChannelKit
+import ToyBoxClient
+import ToyBoxIntelligence
+import ToyBoxKit
 import Foundation
 
 /// What Siri and Shortcuts use from the running app: its servers, their loaded catalogs, the

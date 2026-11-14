@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 @Suite("Dictation anchor")
 struct DictationAnchorTests {

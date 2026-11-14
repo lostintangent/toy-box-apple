@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 
 /// What New Channel and Edit Channel hold while you type, and the one request they send.

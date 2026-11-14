@@ -1,5 +1,5 @@
 import AVFoundation
-import ChannelClient
+import ToyBoxClient
 import OSLog
 import ToyBoxUI
 import UIKit

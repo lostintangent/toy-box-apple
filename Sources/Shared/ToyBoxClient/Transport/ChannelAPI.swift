@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 
 public enum ChannelAPIError: Error, Equatable, LocalizedError, Sendable {

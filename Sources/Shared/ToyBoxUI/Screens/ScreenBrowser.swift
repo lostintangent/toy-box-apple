@@ -1,5 +1,5 @@
-import ChannelClient
-import ChannelKit
+import ToyBoxClient
+import ToyBoxKit
 import SwiftUI
 
 /// Refetches a screen list and every thumbnail, from its title menu or the Mac's Command-R. It's

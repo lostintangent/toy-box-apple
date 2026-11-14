@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ChannelIntelligence
+@testable import ToyBoxIntelligence
 
 struct GenerationQueueTests {
     actor Gate {

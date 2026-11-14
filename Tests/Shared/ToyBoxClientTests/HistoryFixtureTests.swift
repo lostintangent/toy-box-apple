@@ -1,7 +1,7 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 /// Both tests change the fixture, so they take turns.
 @Suite(.serialized, .timeLimit(.minutes(1)))

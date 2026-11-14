@@ -1,10 +1,10 @@
-import ChannelKit
+import ToyBoxKit
 import CoreGraphics
 import Foundation
 import Observation
 import Synchronization
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct ComposerThumbnailTests {

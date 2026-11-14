@@ -1,4 +1,4 @@
-import ChannelClient
+import ToyBoxClient
 import SwiftUI
 
 /// The composer's Dictate button. It is styled like Attach Image and never becomes a second filled control.

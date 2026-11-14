@@ -1,7 +1,7 @@
 import AVKit
-import ChannelClient
-import ChannelIntelligence
-import ChannelKit
+import ToyBoxClient
+import ToyBoxIntelligence
+import ToyBoxKit
 import SwiftUI
 import ToyBoxUI
 

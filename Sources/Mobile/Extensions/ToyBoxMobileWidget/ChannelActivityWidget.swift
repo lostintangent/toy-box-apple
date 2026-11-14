@@ -1,5 +1,5 @@
 import ActivityKit
-import ChannelKit
+import ToyBoxKit
 import SwiftUI
 import WidgetKit
 

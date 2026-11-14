@@ -1,8 +1,8 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Testing
 import UserNotifications
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 @MainActor
 private final class FakeNotificationCenter {

@@ -1,5 +1,5 @@
-import ChannelIntelligence
-import ChannelKit
+import ToyBoxIntelligence
+import ToyBoxKit
 import Foundation
 import Testing
 

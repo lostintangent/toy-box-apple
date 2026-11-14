@@ -1,4 +1,4 @@
-import ChannelClient
+import ToyBoxClient
 import SwiftUI
 
 /// Why a management sheet can't save yet, shown only while its channel is unavailable.

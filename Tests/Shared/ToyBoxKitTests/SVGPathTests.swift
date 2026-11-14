@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 import Testing
-@testable import ChannelKit
+@testable import ToyBoxKit
 
 struct SVGPathTests {
     @Test func allCommandsAndRepeatedCoordinates() throws {

@@ -1,5 +1,5 @@
-import ChannelIntelligence
-import ChannelKit
+import ToyBoxIntelligence
+import ToyBoxKit
 import Foundation
 
 /// What Siri says for Catch Me Up. Pure, so every sentence is tested. Quotes are the senders' own

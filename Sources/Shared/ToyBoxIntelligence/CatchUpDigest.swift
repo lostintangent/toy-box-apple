@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 
 /// What's new in a channel in its authors' own words, without the model: the pending request and

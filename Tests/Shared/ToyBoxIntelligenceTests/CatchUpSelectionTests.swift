@@ -1,7 +1,7 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Testing
-@testable import ChannelIntelligence
+@testable import ToyBoxIntelligence
 
 struct CatchUpSelectionTests {
     typealias T = TestChannel

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ChannelKit
+@testable import ToyBoxKit
 
 struct RoutineScheduleTests {
     private struct Corpus: Decodable {

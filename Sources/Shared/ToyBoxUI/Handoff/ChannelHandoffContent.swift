@@ -1,4 +1,4 @@
-import ChannelClient
+import ToyBoxClient
 import SwiftUI
 
 /// The channel window's placeholder while a Handoff channel opens, or when it can't be found.

@@ -1,5 +1,5 @@
 import AppIntents
-import ChannelKit
+import ToyBoxKit
 import SwiftUI
 
 /// What a channel window shows: its conversation, or the artifact open over it. An image open over

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ChannelKit
+@testable import ToyBoxKit
 
 struct ChannelCatalogTests {
     let lead = ChannelLeadProfile(name: "Lead", role: "Coordinates.", avatar: .init(mark: "M4 12H20", color: "#123456"))

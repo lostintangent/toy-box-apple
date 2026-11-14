@@ -1,5 +1,5 @@
 import AppKit
-import ChannelClient
+import ToyBoxClient
 
 extension ComposerImage {
     var image: NSImage? { NSImage(data: data) }

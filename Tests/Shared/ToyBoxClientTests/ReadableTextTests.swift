@@ -1,7 +1,7 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 /// The text Siri reads for the channel or artifact on screen, on both apps.
 @MainActor @Suite(.timeLimit(.minutes(1)))

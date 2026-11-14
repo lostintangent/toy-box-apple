@@ -1,7 +1,7 @@
 import Foundation
 import FoundationModels
 import Testing
-@testable import ChannelIntelligence
+@testable import ToyBoxIntelligence
 
 struct ModelSchemaTests {
     @Test(arguments: [false, true])

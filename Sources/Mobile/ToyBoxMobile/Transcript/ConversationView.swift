@@ -1,10 +1,10 @@
-import ChannelClient
-import ChannelIntelligence
-import ChannelKit
+import ToyBoxClient
+import ToyBoxIntelligence
+import ToyBoxKit
 import SwiftUI
 import ToyBoxUI
 
-/// Places the transcript with ChannelKit's scroll model. Geometry reports feed it and its placements
+/// Places the transcript with ToyBoxKit's scroll model. Geometry reports feed it and its placements
 /// go to the native scroll position. It never re-renders the transcript, so frame reports stay cheap.
 @MainActor
 final class TranscriptScroll {

@@ -1,9 +1,9 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Observation
 import Synchronization
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 struct MockResponse: Sendable {
     var status = 200

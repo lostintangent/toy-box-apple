@@ -1,9 +1,9 @@
 import AVFoundation
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Observation
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 /// Journeys through a talk note, from the row's swipe to the row settling, with scripted words, the
 /// outbox and beats the test ends. See Talk to the Lead in docs/spec.md.

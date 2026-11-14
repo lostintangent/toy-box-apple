@@ -1,11 +1,11 @@
-import ChannelKit
+import ToyBoxKit
 import CoreGraphics
 import Foundation
 import ImageIO
 import Synchronization
 import Testing
 import UniformTypeIdentifiers
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 struct ChannelAttachmentTests {
     @Test func thumbnailsFitTheirBoundsWithoutCroppingOrUpscaling() {

@@ -1,7 +1,7 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Testing
-@testable import ChannelIntelligence
+@testable import ToyBoxIntelligence
 
 enum TestChannel {
     static let server = URL(string: "http://127.0.0.1:3210")!

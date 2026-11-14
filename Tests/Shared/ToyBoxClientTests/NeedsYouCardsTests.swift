@@ -1,8 +1,8 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Synchronization
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 /// The phone list's Needs You cards, from a tap opening one to a reply shrinking back into its row
 /// and its check settling, with the waiting rule, the outbox and beats the test ends. See Needs You

@@ -1,9 +1,9 @@
-import ChannelKit
+import ToyBoxKit
 import SwiftUI
 import Testing
 import ToyBoxUI
 import UIKit
-@testable import ChannelClient
+@testable import ToyBoxClient
 @testable import ToyBoxMobile
 
 @Suite("Mobile task rows")

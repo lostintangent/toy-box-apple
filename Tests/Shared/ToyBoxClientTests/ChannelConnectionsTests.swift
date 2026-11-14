@@ -1,7 +1,7 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 /// Real stores on a mock server whose streams stay open until a store disconnects.
 @Suite("Channel connections", .timeLimit(.minutes(1)))

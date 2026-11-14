@@ -1,6 +1,6 @@
 import AVFoundation
-@testable import ChannelClient
-import ChannelKit
+@testable import ToyBoxClient
+import ToyBoxKit
 import Testing
 import SwiftUI
 import ToyBoxUI

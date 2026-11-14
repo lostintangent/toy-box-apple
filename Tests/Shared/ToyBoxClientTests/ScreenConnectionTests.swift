@@ -4,8 +4,8 @@ import Network
 import Observation
 import Synchronization
 import Testing
-@testable import ChannelClient
-@testable import ChannelKit
+@testable import ToyBoxClient
+@testable import ToyBoxKit
 
 @Suite(.timeLimit(.minutes(1)))
 struct ScreenConnectionTests {

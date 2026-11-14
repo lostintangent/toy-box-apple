@@ -1,4 +1,4 @@
-import ChannelClient
+import ToyBoxClient
 import SwiftUI
 
 /// A pending send's delivery label for its row. A quick send shows none, so confirming it changes

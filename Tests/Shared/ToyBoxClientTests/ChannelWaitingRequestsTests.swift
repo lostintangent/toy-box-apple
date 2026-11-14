@@ -1,7 +1,7 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 @MainActor
 @Suite("Waiting requests", .timeLimit(.minutes(1)))

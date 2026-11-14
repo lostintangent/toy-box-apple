@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 
 /// One viewer's keyboard in control, which turns key events into the host's key input, as the browser

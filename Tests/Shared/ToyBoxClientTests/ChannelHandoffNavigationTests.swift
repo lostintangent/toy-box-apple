@@ -1,8 +1,8 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Observation
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 @Suite("Channel Handoff navigation", .timeLimit(.minutes(1)))
 @MainActor

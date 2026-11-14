@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 import SwiftUI
 
 /// A section header's toggle that narrows its rows. Both apps take its copy, identifier and rule from here.

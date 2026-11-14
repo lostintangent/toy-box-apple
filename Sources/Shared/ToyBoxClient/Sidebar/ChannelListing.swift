@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 
 /// The channel list as both apps show it: live from a channel's store while it's open, else from the catalog.
 @MainActor

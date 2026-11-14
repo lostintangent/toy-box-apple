@@ -1,9 +1,9 @@
-import ChannelKit
+import ToyBoxKit
 import CryptoKit
 import Foundation
 import FoundationModels
 import Testing
-@testable import ChannelIntelligence
+@testable import ToyBoxIntelligence
 
 /// Runs the real on-device model and records what it produced. Opt in with `TBM_LIVE_MODEL=1`.
 /// `TBM_LIVE_REPORT` appends a Markdown report to a file. `TBM_LIVE_FIXTURE_DIR` adds local cases from
@@ -23,7 +23,7 @@ struct LiveModelEvalTests {
     }
 
     func service() -> LiveChannelIntelligence {
-        let directory = URL.temporaryDirectory.appending(path: "ChannelIntelligenceEval-\(UUID().uuidString)")
+        let directory = URL.temporaryDirectory.appending(path: "ToyBoxIntelligenceEval-\(UUID().uuidString)")
         return LiveChannelIntelligence(altTexts: AltTextStore(directory: directory))
     }
 

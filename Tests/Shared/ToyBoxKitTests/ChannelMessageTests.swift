@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 import UniformTypeIdentifiers
-@testable import ChannelKit
+@testable import ToyBoxKit
 
 struct ChannelMessageTests {
     @Test func agentCountsExcludeUsersSystemRowsAndOtherSendersAtTheExactBoundary() {

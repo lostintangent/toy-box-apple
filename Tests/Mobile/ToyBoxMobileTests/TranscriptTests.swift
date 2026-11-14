@@ -1,5 +1,5 @@
-@testable import ChannelClient
-import ChannelKit
+@testable import ToyBoxClient
+import ToyBoxKit
 import CoreGraphics
 import Foundation
 import SwiftUI

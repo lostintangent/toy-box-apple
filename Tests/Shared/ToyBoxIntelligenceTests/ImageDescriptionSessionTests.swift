@@ -1,4 +1,4 @@
-import ChannelIntelligence
+import ToyBoxIntelligence
 import Foundation
 import Testing
 

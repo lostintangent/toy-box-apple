@@ -1,5 +1,5 @@
 import AppKit
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Testing
 @testable import ToyBoxDesktop

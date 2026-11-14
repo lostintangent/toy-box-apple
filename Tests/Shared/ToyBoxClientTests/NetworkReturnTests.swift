@@ -1,8 +1,8 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Synchronization
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 /// A stream response that stays open without sending anything.
 private let heldStream = MockResponse(contentType: "text/event-stream", keepOpen: true)

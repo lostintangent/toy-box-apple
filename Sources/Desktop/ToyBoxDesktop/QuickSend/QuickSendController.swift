@@ -1,5 +1,5 @@
 import AppKit
-import ChannelKit
+import ToyBoxKit
 import Observation
 import SwiftUI
 import ToyBoxUI

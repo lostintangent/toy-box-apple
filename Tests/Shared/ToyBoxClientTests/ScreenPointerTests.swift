@@ -1,7 +1,7 @@
-import ChannelKit
+import ToyBoxKit
 import CoreGraphics
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 struct ScreenPointerTests {
     // Fingers, which UIKit names by their touches.

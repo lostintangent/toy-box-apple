@@ -1,8 +1,8 @@
-import ChannelKit
+import ToyBoxKit
 import Observation
 import Synchronization
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 @MainActor
 struct StoreSliceTests {

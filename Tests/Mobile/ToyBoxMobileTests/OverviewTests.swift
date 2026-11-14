@@ -1,11 +1,11 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Observation
 import Testing
 import SwiftUI
 import ToyBoxUI
 import UIKit
-@testable import ChannelClient
+@testable import ToyBoxClient
 @testable import ToyBoxMobile
 @testable import ToyBoxMobileIntegrations
 

@@ -1,6 +1,6 @@
 import AVFoundation
-import ChannelClient
-import ChannelKit
+import ToyBoxClient
+import ToyBoxKit
 import SwiftUI
 import WebKit
 

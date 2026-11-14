@@ -1,8 +1,8 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Synchronization
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 @Suite(.timeLimit(.minutes(1)))
 @MainActor

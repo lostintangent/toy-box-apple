@@ -1,7 +1,7 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Testing
-@testable import ChannelIntelligence
+@testable import ToyBoxIntelligence
 
 /// Each case here is a mistake the real model made on a real channel transcript, restated with
 /// fixture names: lines that read well and use the messages' own words, but credit the wrong person,

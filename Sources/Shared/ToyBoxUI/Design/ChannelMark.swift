@@ -1,5 +1,5 @@
-import ChannelClient
-import ChannelKit
+import ToyBoxClient
+import ToyBoxKit
 import SwiftUI
 
 /// A channel's avatar in its rounded square, as the pane's `ChannelAvatar` draws it: the project's

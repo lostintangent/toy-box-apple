@@ -1,5 +1,5 @@
-import ChannelKit
-import ChannelClient
+import ToyBoxKit
+import ToyBoxClient
 import Foundation
 import Observation
 

@@ -1,8 +1,8 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Observation
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 /// Reopening a channel that moved far ahead replays everything it missed before `resumed`. The
 /// store holds that replay and publishes it with `resumed`, so views catch up in one change.

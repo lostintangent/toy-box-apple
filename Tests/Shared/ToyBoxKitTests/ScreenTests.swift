@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 import Testing
-@testable import ChannelKit
+@testable import ToyBoxKit
 
 struct ScreenTests {
     @Test func packetsSplitIntoTheirFrameAndJPEG() throws {

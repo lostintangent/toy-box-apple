@@ -30,7 +30,7 @@ Script tests are omitted, so check a script change with `bun check` and
 | `bun run demo:perf` | `demo-server/perf.ts` | Serve the performance fixture on 3292 | Benchmark command |
 | `bun run icon` | `shared/icon.ts` | Regenerate committed icon outputs with Icon Composer | Icon author |
 | `bun run release-notes TAG [OUTPUT.md]` | `shared/release-notes.ts` | Extract one platform's release notes from CHANGELOG.md | Release owner, CI |
-| `bun run cron-fixtures` | `shared/cron-fixtures.ts` | Regenerate ChannelKit cron fixtures from the read-only reference | Core contributors, agents |
+| `bun run cron-fixtures` | `shared/cron-fixtures.ts` | Regenerate ToyBoxKit cron fixtures from the read-only reference | Core contributors, agents |
 | `bun run lint:workflows` | none | Run actionlint, gating ShellCheck warnings and errors, not style | Contributors, agents, CI |
 
 For long Markdown reader captures, start an isolated demo with

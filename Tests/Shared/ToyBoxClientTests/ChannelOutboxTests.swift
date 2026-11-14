@@ -1,10 +1,10 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 import Observation
 import Synchronization
 import Testing
 import UniformTypeIdentifiers
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 /// A clock the test moves. Each sleep waits until `advance` passes its deadline.
 @MainActor @Observable

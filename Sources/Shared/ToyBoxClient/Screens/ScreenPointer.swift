@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 import Foundation
 
 /// One viewer's pointer in control, which turns mouse and touch events into the host's pointer

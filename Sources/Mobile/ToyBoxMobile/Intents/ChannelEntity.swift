@@ -1,6 +1,6 @@
 import AppIntents
-import ChannelClient
-import ChannelKit
+import ToyBoxClient
+import ToyBoxKit
 import CoreTransferable
 import Foundation
 

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 struct ArtifactWebPolicyTests {
     private let resource = URL(string: "https://example.com/api/serve/test/plan.html")!

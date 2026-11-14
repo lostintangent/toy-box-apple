@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 import OSLog
 import SwiftUI
 import ToyBoxMobileIntegrations

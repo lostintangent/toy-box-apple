@@ -1,7 +1,7 @@
 import AppIntents
 import AppKit
-@testable import ChannelClient
-import ChannelKit
+@testable import ToyBoxClient
+import ToyBoxKit
 import Foundation
 import Testing
 @testable import ToyBoxDesktop

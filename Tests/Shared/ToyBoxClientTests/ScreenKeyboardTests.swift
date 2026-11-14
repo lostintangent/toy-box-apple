@@ -1,6 +1,6 @@
-import ChannelKit
+import ToyBoxKit
 import Testing
-@testable import ChannelClient
+@testable import ToyBoxClient
 
 struct ScreenKeyboardTests {
     @Test func onlyAKeyWhosePressWasSentIsReleased() {

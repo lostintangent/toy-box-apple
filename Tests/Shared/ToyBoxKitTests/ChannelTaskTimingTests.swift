@@ -1,4 +1,4 @@
-import ChannelKit
+import ToyBoxKit
 import Testing
 
 @Suite("Shared task timing")

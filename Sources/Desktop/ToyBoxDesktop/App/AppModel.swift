@@ -1,7 +1,7 @@
 import AppKit
-import ChannelClient
-import ChannelIntelligence
-import ChannelKit
+import ToyBoxClient
+import ToyBoxIntelligence
+import ToyBoxKit
 import Foundation
 import Observation
 import SwiftUI

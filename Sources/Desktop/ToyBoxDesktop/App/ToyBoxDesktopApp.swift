@@ -1,6 +1,6 @@
 import AppKit
-import ChannelClient
-import ChannelKit
+import ToyBoxClient
+import ToyBoxKit
 import SwiftUI
 import ToyBoxControlIntents
 import ToyBoxUI

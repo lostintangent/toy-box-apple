@@ -1,5 +1,5 @@
-import ChannelClient
-import ChannelKit
+import ToyBoxClient
+import ToyBoxKit
 import SwiftUI
 
 // The recorder is a card over the list. It opens on the held row's cell and draws the row's own

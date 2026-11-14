@@ -1,5 +1,5 @@
 import AppIntents
-import ChannelKit
+import ToyBoxKit
 import CoreSpotlight
 import Foundation
 

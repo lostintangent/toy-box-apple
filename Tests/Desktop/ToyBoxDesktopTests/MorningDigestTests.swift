@@ -1,6 +1,6 @@
-import ChannelClient
-import ChannelIntelligence
-import ChannelKit
+import ToyBoxClient
+import ToyBoxIntelligence
+import ToyBoxKit
 import Foundation
 import Testing
 @testable import ToyBoxDesktop

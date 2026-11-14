@@ -1,11 +1,11 @@
 import Foundation
 import FoundationModels
 import Testing
-@testable import ChannelIntelligence
+@testable import ToyBoxIntelligence
 
 struct IntelligenceCacheTests {
     func temporaryDirectory() -> URL {
-        URL.temporaryDirectory.appending(path: "ChannelIntelligenceTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        URL.temporaryDirectory.appending(path: "ToyBoxIntelligenceTests-\(UUID().uuidString)", directoryHint: .isDirectory)
     }
 
     @Test func lruEvictsTheLeastRecentlyUsed() {
