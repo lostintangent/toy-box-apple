@@ -138,7 +138,8 @@ struct MenuBarInbox: View {
     private func requestRow(_ request: MenuBarInboxRequests.Request) -> some View {
         let item = request.item
         return VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                icon(item)
                 Button(item.name) { open(item) }
                     .buttonStyle(.plain)
                     .font(.system(size: 13, weight: .semibold))
@@ -195,7 +196,13 @@ struct MenuBarInbox: View {
                     .accessibilityLabel("Reply in \(item.name)")
                 }
             }
+            // The request lines up with the channel name, past the icon and its gap.
+            .padding(.leading, 32)
         }
+    }
+
+    private func icon(_ item: MenuBarStatus.Item) -> some View {
+        ChannelMark(item.avatar, api: model.catalogs.first(at: item.target.serverURL)?.api, size: 24)
     }
 
     /// A request's suggested replies as small bordered choices above Reply.
@@ -220,7 +227,8 @@ struct MenuBarInbox: View {
                 Button {
                     closeThen { model.activate(item.target) }
                 } label: {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
+                        icon(item)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(item.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
                             Text(item.subtitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)

@@ -8,6 +8,7 @@
 
 ### Bugs/Polish
 
+- The menu bar and Quick Send show each channel's icon, and Quick Send shows the folder each channel works in instead of its purpose, so you can spot the one you want at a glance.
 - Windows you leave open now come back where you left them when Toy Box restarts or updates, on the same channel or screens. One showing another of your Macs fills in as soon as that Mac answers.
 
 ## iPhone 0.1.39

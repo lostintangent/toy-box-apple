@@ -186,26 +186,37 @@ struct ChannelFolderToken: View {
     var body: some View {
         switch availability {
         case .openable:
-            Button(action: open) { label(symbol: "folder") }
+            Button(action: open) { token(symbol: "folder") }
                 .buttonStyle(HoverFillButtonStyle(shape: Capsule()))
                 .help("Open \(ChannelFolderName.name(of: path)) in Finder\n\((path as NSString).abbreviatingWithTildeInPath)")
         case .remote(let host):
-            label(symbol: "folder").foregroundStyle(.secondary)
+            token(symbol: "folder").foregroundStyle(.secondary)
                 .help("On \(host): \(path). Folders open only when the server runs on this Mac.")
         case .missing:
-            label(symbol: "questionmark.folder").foregroundStyle(.secondary)
+            token(symbol: "questionmark.folder").foregroundStyle(.secondary)
                 .help("This folder no longer exists: \(path)")
         }
     }
 
-    private func label(symbol: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: symbol).font(.system(size: 10 * scale, weight: .medium))
-            Text(ChannelFolderName.name(of: path)).font(.system(size: 11 * scale))
-                .lineLimit(1).truncationMode(.middle)
+    private func token(symbol: String) -> some View {
+        Label(path: path, symbol: symbol)
+            .padding(.horizontal, 6)
+            .frame(height: 18 * scale)
+            .contentShape(Capsule())
+    }
+
+    /// The folder's symbol and name, which Quick Send's chooser shows on their own.
+    struct Label: View {
+        let path: String
+        var symbol = "folder"
+        @Environment(\.channelTextScale) private var scale
+
+        var body: some View {
+            HStack(spacing: 4) {
+                Image(systemName: symbol).font(.system(size: 10 * scale, weight: .medium))
+                Text(ChannelFolderName.name(of: path)).font(.system(size: 11 * scale))
+                    .lineLimit(1).truncationMode(.middle)
+            }
         }
-        .padding(.horizontal, 6)
-        .frame(height: 18 * scale)
-        .contentShape(Capsule())
     }
 }
