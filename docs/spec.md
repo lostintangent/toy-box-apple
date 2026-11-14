@@ -1275,6 +1275,26 @@ The row stays one accessibility element. Its value reads in this order: last act
 "not on this Mac" or "missing" when it applies), attention, working agents, then team. When the
 folder is openable, the row adds an Open Folder in Finder action.
 
+**Hover.** Every row but the selected one shows the hover fill in the row's own shape while the
+pointer is over it, and a waiting row's is `systemOrange` at 20% in Dark and 14% in Light, 5% more
+while pressed, with its bubble still orange. The selected row keeps its native highlight and never
+lights.
+
+**Answering from the list.** A waiting row that isn't selected answers its request without
+switching channels. Resting the pointer on it for 0.5 s, or clicking its bubble, opens a popover on
+its trailing edge, 336 points wide with 12-point insets, in the transcript's pending-bubble wash.
+It holds only the request, since the row beside it already shows the channel's avatar, name and
+time: the whole question in the transcript's own body, then the transcript's own choices, Reply
+and Read Aloud. A question taller than the screen allows scrolls, with the actions always in view.
+The row stays lit while it's open. Moving into it keeps it open, and leaving both, Escape or
+clicking elsewhere closes it, except that once the user clicks into it, only a send, Escape or a
+click elsewhere does. It answers exactly as Needs You in the list does on the phone, through the
+same `NeedsYouCards`: a choice goes at once and holds the popover only while the outbox saves it,
+Reply puts a field focused with "Reply to [requester]" in the actions' place, closing with a typed
+reply saves its words as the channel's draft, and once a reply is sending the popover closes and
+the row's avatar wears the done check for 2 s. VoiceOver gets an Answer Request action on the row
+that opens it.
+
 Context menu, in groups:
 1. Open in New Window, Open in Toy Box.
 2. Open Folder in Finder, Open Folder With, Copy Folder Path.
@@ -1504,7 +1524,7 @@ the stacked heading, and its words and controls grow with the text.
 
 #### Needs You in the list
 
-Phone only. A channel waiting for the user shows its request in the list, and the user can answer
+The Mac answers from its sidebar instead (see Answering from the list). A channel waiting for the user shows its request in the list, and the user can answer
 it there without opening the channel. The list and the Needs You widget read the catalog's
 `waitingRequests`, so they agree on which requests wait, newest first, and on each one's
 words. `NeedsYouCards` in ChannelClient holds the cards' rules, and the views only draw them.
