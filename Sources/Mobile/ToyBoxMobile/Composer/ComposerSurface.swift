@@ -272,7 +272,7 @@ struct ComposerSurface: View {
     private var sendButton: some View {
         Button(action: send) {
             Group {
-                if session.isFinalizingDictation || isConnecting {
+                if session.dictation.holdsSend || isConnecting {
                     ProgressView().frame(width: 32, height: 32)
                 } else {
                     Image(systemName: "arrow.up")

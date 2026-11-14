@@ -40,17 +40,6 @@ public struct TranscriptRequestChoices: Equatable, Sendable {
     }
 }
 
-extension ChannelWaitingRequest {
-    /// The choices a Needs You card offers.
-    public func choices(isConnected: Bool) -> TranscriptRequestChoices? {
-        TranscriptRequestChoices(sequence: sequence, labels: request?.message.suggestedReplies ?? [],
-                                 isConnected: isConnected)
-    }
-
-    /// The choices as they were before one began sending, which the card holds until it confirms.
-    public var heldChoices: TranscriptRequestChoices? { choices(isConnected: true) }
-}
-
 extension ChannelInteraction {
     /// Sends a suggested reply at once as the user's own message, through the outbox with a new ID,
     /// and follows it to the latest like a composer send. It answers the channel's waiting request.
@@ -77,6 +66,8 @@ public struct TranscriptRequestActions: View {
     let readAloud: TranscriptReadAloud.Request?
     let onChoose: (String) -> Void
     let onReply: () -> Void
+    /// Whether a chosen reply is being saved, which holds the choices as they were until it confirms.
+    private var isHeld = false
     @ViewState private var chosen = false
 
     /// `sequence` is the pending request's own message, which shows `choices` only when they're its own.
@@ -92,9 +83,22 @@ public struct TranscriptRequestActions: View {
         self.onReply = onReply
     }
 
+    /// A Needs You request's actions, whose choices hold while the one chosen is saved.
+    package init(_ entry: ChannelWaitingRequest, cards: NeedsYouCards, isConnected: Bool, spacing: CGFloat,
+                 onChoose: @escaping (String) -> Void, onReply: @escaping () -> Void) {
+        let isHeld = cards.replying?.id == entry.id && cards.phase == .sending
+        self.init(spacing: spacing, sequence: entry.sequence,
+                  choices: .init(sequence: entry.sequence, labels: entry.request?.message.suggestedReplies ?? [],
+                                 isConnected: isConnected || isHeld),
+                  replyHelp: "Reply to \(entry.requester?.name ?? "the request")",
+                  readAloud: .init(channelID: entry.channel.id, sequence: entry.sequence, text: entry.markdown),
+                  onChoose: onChoose, onReply: onReply)
+        self.isHeld = isHeld
+    }
+
     public var body: some View {
         ChoiceFlowLayout(spacing: spacing) {
-            if !chosen {
+            if !chosen || isHeld {
                 ForEach(Array((choices?.labels(for: sequence) ?? []).enumerated()), id: \.offset) { index, label in
                     Button {
                         chosen = true
@@ -125,6 +129,9 @@ public struct TranscriptRequestActions: View {
             }
         }
         .buttonStyle(.bordered)
+        .allowsHitTesting(!isHeld)
+        // A held reply that ends Not sent offers its choices again.
+        .onChange(of: isHeld) { chosen = false }
         #if os(iOS)
         // iOS draws a bordered label in the accent color, which sets blue on the orange wash. The Mac's
         // is already primary.

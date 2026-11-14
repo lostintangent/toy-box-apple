@@ -152,7 +152,6 @@ private struct ChannelComposer: View {
     @ViewState private var requestPreview = false
     @ViewState private var requestHoverTask: Task<Void, Never>?
     @ViewState private var dictation = ComposerDictation()
-    @ViewState private var sendsAfterDictation = false
 
     /// The draft's identity. There's one draft per server and channel.
     private var store: ChannelStore { session.store }
@@ -490,22 +489,13 @@ private struct ChannelComposer: View {
     }
 
     private func send() {
-        guard canSend, !sendsAfterDictation else { return }
-        if dictation.isSessionActive {
-            // Only finalized words are sent. Wait for the transcriber's last pass, then send.
-            sendsAfterDictation = true
-            Task {
-                let finalized = await dictation.stop(.send)
-                sendsAfterDictation = false
-                if finalized { send() }
-            }
-            return
-        }
-        dictation.draftSent()
+        guard canSend, !dictation.holdsSend else { return }
         let session = session
-        interaction.jumpToLatest()
-        Task {
-            if await session.send() { interaction.jumpToLatest() }
+        Task.immediate {
+            // Only finalized words are sent, so Send waits for the transcriber's last pass.
+            guard await dictation.stop(.send), canSend else { return }
+            interaction.jumpToLatest()
+            if await session.send() != nil { interaction.jumpToLatest() }
         }
     }
 

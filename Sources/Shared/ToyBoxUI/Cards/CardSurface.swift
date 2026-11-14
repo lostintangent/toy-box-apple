@@ -392,7 +392,23 @@ package struct CardControls: View {
     }
 }
 
+extension CardChecks {
+    /// The list's done checks, which play both cards' beats with the spec's springs.
+    package convenience init() {
+        self.init(animate: { withAnimation($0.animation, $1) })
+    }
+}
+
 extension CardMotion {
+    /// The beat's spring from the spec, or a short ease without bounce under Reduce Motion.
+    @MainActor package var animation: Animation {
+        #if os(macOS)
+        animation(reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        #else
+        animation(reduceMotion: UIAccessibility.isReduceMotionEnabled)
+        #endif
+    }
+
     /// The beat's spring from the spec, or a short ease without bounce under Reduce Motion.
     package func animation(reduceMotion: Bool) -> Animation {
         if reduceMotion { return .easeInOut(duration: 0.2) }

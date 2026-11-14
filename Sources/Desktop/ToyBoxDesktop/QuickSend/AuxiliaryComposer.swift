@@ -27,7 +27,6 @@ struct AuxiliaryComposer: View {
     @ViewState private var showPicker = false
     @ViewState private var focusRequest = UUID()
     @ViewState private var dictation = ComposerDictation()
-    @ViewState private var finalizing = false
     @ViewState private var noticeHeight: CGFloat = 0
     @ViewState private var imageHeight: CGFloat = 92
 
@@ -38,7 +37,7 @@ struct AuxiliaryComposer: View {
     private var canEdit: Bool { session.confirmation == nil }
     /// QuickSend and the menu bar wait on the channel list, not the channel itself.
     private var isOffline: Bool { !session.isConnected }
-    private var canSend: Bool { !finalizing && session.canSend(hasAdditionalContent: dictation.hasWords) }
+    private var canSend: Bool { !dictation.holdsSend && session.canSend(hasAdditionalContent: dictation.hasWords) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -145,7 +144,7 @@ struct AuxiliaryComposer: View {
                 dictation.toggle()
             }
             .disabled(!canEdit || store.phase == .deleted)
-            if session.isSubmitting || finalizing {
+            if session.isSubmitting || dictation.holdsSend {
                 ProgressView().controlSize(.small).frame(width: 28, height: 28)
                     .accessibilityLabel("Sending")
             } else {
@@ -245,12 +244,8 @@ struct AuxiliaryComposer: View {
 
     private func send(opensChannel: Bool) {
         guard canSend else { return }
-        finalizing = true
-        Task {
-            let finalized = if dictation.isSessionActive { await dictation.stop(.send) } else { true }
-            finalizing = false
-            guard finalized else { return }
-            dictation.draftSent()
+        Task.immediate {
+            guard await dictation.stop(.send) else { return }
             await session.send(opensChannel: opensChannel)
         }
     }

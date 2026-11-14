@@ -27,14 +27,10 @@ public final class ChannelComposerSession {
                                                  isLoadingAdditionalImages: isLoadingAdditionalImages())
     }
 
-    @discardableResult
-    public func send() async -> Bool {
-        await submit() != nil
-    }
-
     /// Hands the draft to the outbox and clears it once the message is saved, unless it changed
     /// meanwhile. Returns the message's ID.
-    public func submit() async -> UUID? {
+    @discardableResult
+    public func send() async -> UUID? {
         guard canSend(), let outbox = store.outbox else { return nil }
         let revision = draft.revision
         isSubmitting = true

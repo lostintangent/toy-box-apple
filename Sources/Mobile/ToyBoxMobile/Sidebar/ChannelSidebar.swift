@@ -38,9 +38,12 @@ struct ChannelSidebar: View {
         self.isCollapsed = isCollapsed
         // Both cards share the list's done checks, so a row wears one check whichever card sent.
         let checks = CardChecks()
+        let draft: @MainActor (ChannelStore) -> ComposerDraft = {
+            .shared(serverURL: $0.api.baseURL, channelID: $0.id, imageIsReadable: ComposerSession.imageIsReadable)
+        }
         _checks = .init(initialValue: checks)
-        _talk = .init(initialValue: TalkRecorder(checks: checks))
-        _cards = .init(initialValue: NeedsYouCards(checks: checks))
+        _talk = .init(initialValue: TalkRecorder(system: .live, checks: checks, draft: draft))
+        _cards = .init(initialValue: NeedsYouCards(checks: checks, draft: draft))
     }
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -100,7 +103,7 @@ struct ChannelSidebar: View {
     private func channelList(now: Date) -> some View {
         @Bindable var model = model
         let waiting = waiting
-        let open = cards.open(in: waiting)
+        let open = cards.card(in: waiting)
         let waitingRows = cards.rows(in: waiting)
         let listed = listed
         let targets = listed.map(\.target)
@@ -278,9 +281,8 @@ struct ChannelSidebar: View {
 
     private func card(_ entry: ChannelWaitingRequest, in item: Listed, now: Date,
                       isLifted: Bool = false, maxHeight: CGFloat) -> NeedsYouCard {
-        NeedsYouCard(channel: item.presentation.channel(item.channel), entry: entry, cards: cards, choices: choices(entry),
-                     now: now, isCollapsed: isCollapsed, isLifted: isLifted, maxHeight: maxHeight,
-                     open: { openChannel(entry) }, choose: { choose($0, for: entry) }, reply: { reply(to: entry) })
+        NeedsYouCard(channel: item.presentation.channel(item.channel), entry: entry, cards: cards, now: now,
+                     isCollapsed: isCollapsed, isLifted: isLifted, maxHeight: maxHeight)
     }
 
     var body: some View {
@@ -347,24 +349,6 @@ struct ChannelSidebar: View {
             talk: talk.target == item.target ? talk : nil, question: question, check: checks[item.target],
             cardInset: NeedsYouCard.margin - reach
         )
-    }
-
-    private func choices(_ entry: ChannelWaitingRequest) -> TranscriptRequestChoices? {
-        entry.choices(isConnected: model.catalogs.first(at: entry.target.serverURL)?.phase.failure == nil)
-    }
-
-    private func openChannel(_ entry: ChannelWaitingRequest) {
-        Task { await model.openChannel(id: entry.channel.id, sequence: entry.sequence, on: entry.target.serverURL) }
-    }
-
-    private func choose(_ choice: String, for entry: ChannelWaitingRequest) {
-        guard let catalog = model.catalogs.first(at: entry.target.serverURL) else { return }
-        Task { await cards.send(choice, to: entry, on: catalog.channel(id: entry.channel.id)) }
-    }
-
-    private func reply(to entry: ChannelWaitingRequest) {
-        guard let catalog = model.catalogs.first(at: entry.target.serverURL) else { return }
-        cards.reply(to: entry, on: catalog.channel(id: entry.channel.id))
     }
 
     private func talk(to item: Listed) {

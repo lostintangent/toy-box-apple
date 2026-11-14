@@ -29,9 +29,9 @@ struct NeedsYouCardsTests {
         let (a, b) = (waiting[0], waiting[1])
         #expect(waiting.map(\.channel.id) == ["a", "b"])
         let target = server.target
-        #expect(cards.open(in: waiting) == nil, "Nothing opens until the person taps a row")
+        #expect(cards.card(in: waiting) == nil, "Nothing opens until the person taps a row")
         cards.open(b.id)
-        #expect(cards.open(in: waiting) == b)
+        #expect(cards.card(in: waiting) == b)
         #expect(cards.rows(in: waiting) == [target("a"): .question(a), target("b"): .card(b)],
                 "The open card replaces its row's question")
         #expect(cards.hiddenLines(in: waiting, order: ["a", "x", "b", "y"].map(target)) == [target("x"), target("b")],
@@ -44,7 +44,7 @@ struct NeedsYouCardsTests {
                 "The card shrinks straight back into its row while the reply is still sending")
         #expect(checks.rows == [target("b"): .sent], "Its row wears the check")
         #expect(server.catalog.waitingRequests() == [a], "Its request stops waiting as the outbox takes the reply")
-        #expect(cards.open(in: [a]) == nil && cards.rows(in: [a]) == [target("a"): .question(a)],
+        #expect(cards.card(in: [a]) == nil && cards.rows(in: [a]) == [target("a"): .question(a)],
                 "Answering a card never opens the next")
         #expect(announcements == ["Reply sent in b"])
 
@@ -58,7 +58,7 @@ struct NeedsYouCardsTests {
         cards.open(a.id)
         await cards.send("Beside the desks", to: a, on: server.catalog.channel(id: "a"))
         #expect(checks.rows == [target("b"): .sent, target("a"): .sent], "Answering another card leaves the first check in place")
-        #expect(server.catalog.waitingRequests().isEmpty && cards.open(in: []) == nil)
+        #expect(server.catalog.waitingRequests().isEmpty && cards.card(in: []) == nil)
         try await beats.end(.seconds(2.35))
         try await eventually { checks[target("b")] == .settling }
         #expect(checks[target("a")] == .sent, "Each row settles on its own")
@@ -81,7 +81,7 @@ struct NeedsYouCardsTests {
         arriving[0].request = nil
         #expect(cards.rows(in: arriving) == [server.target("b"): .question(b)],
                 "A request's channel stays an ordinary row until its words are known")
-        #expect(cards.open(in: arriving) == nil && cards.open(in: known) == nil,
+        #expect(cards.card(in: arriving) == nil && cards.card(in: known) == nil,
                 "Neither a request arriving nor its words opens a card")
 
         cards.open(b.id)
@@ -89,15 +89,15 @@ struct NeedsYouCardsTests {
         #expect(cards.rows(in: known) == [server.target("a"): .card(a), server.target("b"): .question(b)],
                 "One card is open at a time")
         cards.fold()
-        #expect(cards.open(in: known) == nil, "A tap on its words folds it back into its row")
+        #expect(cards.card(in: known) == nil, "A tap on its words folds it back into its row")
         cards.fold()
         #expect(beats.motions == [.open, .open, .open], "Each in the opening's spring, and nothing more once folded")
 
         cards.reply(to: a, on: server.catalog.channel(id: "a"))
         cards.fold()
-        #expect(cards.open(in: known) == a, "A typed reply holds its card")
+        #expect(cards.card(in: known) == a, "A typed reply holds its card")
         cards.leave()
-        #expect(cards.open(in: known) == nil, "Going anywhere from the list ends the reply and closes its card")
+        #expect(cards.card(in: known) == nil, "Going anywhere from the list ends the reply and closes its card")
     }
 
     @Test func eachRowIsItsChannelOnItsServer() async throws {
@@ -118,7 +118,7 @@ struct NeedsYouCardsTests {
 
         await cards.send("Near the entrance", to: workA, on: work.catalog.channel(id: "a"))
         #expect(checks.rows == [work.target("a"): .sent], "Only the answered server's row wears the check")
-        #expect(cards.open(in: [home.catalog, work.catalog].waitingRequests()) == nil,
+        #expect(cards.card(in: [home.catalog, work.catalog].waitingRequests()) == nil,
                 "The other server's request stays a waiting row")
         try await eventually(observing: work.mock) { work.posts.count == 1 }
         #expect(home.posts.isEmpty)
@@ -137,14 +137,14 @@ struct NeedsYouCardsTests {
         cards.words = "Beside the desks"
         #expect(cards.canSend)
         cards.open(b.id)
-        #expect(cards.open(in: waiting) == a, "A lifted reply holds the list")
+        #expect(cards.card(in: waiting) == a, "A lifted reply holds the list")
 
         let sending = Task { await cards.send() }
         try await eventually { cards.landing == a }
         #expect(!cards.isLifted && cards.replying == nil && checks[server.target("a")] == .sent,
                 "The lifted card lowers in the sent beat, onto its row wearing the check")
         #expect(cards.words == "Beside the desks", "The words fade with the card rather than blanking")
-        #expect(cards.open(in: server.catalog.waitingRequests()) == nil, "Nothing opens beneath it")
+        #expect(cards.card(in: server.catalog.waitingRequests()) == nil, "Nothing opens beneath it")
         try await beats.end(.seconds(0.35))
         await sending.value
         #expect(cards.landing == nil && cards.words.isEmpty, "The card is gone once it has shrunk into its row")
@@ -194,13 +194,13 @@ struct NeedsYouCardsTests {
         if leaves { cards.leave() } else { cards.cancel() }
         #expect(cards.replying == nil && !cards.isLifted && cards.words.isEmpty)
         #expect(draft.text == (leaves ? "An earlier draft\n\nBeside the desks" : "An earlier draft"))
-        #expect(cards.open(in: server.catalog.waitingRequests()) == a, "The request still waits, with its card open")
+        #expect(cards.card(in: server.catalog.waitingRequests()) == a, "The request still waits, with its card open")
         #expect(server.outbox.messages(in: "a", on: server.catalog.api.baseURL).isEmpty && server.posts.isEmpty)
     }
 
     private func cards(announce: @escaping @MainActor (String) -> Void = { _ in }) -> NeedsYouCards {
         let draft = draft
-        return NeedsYouCards(checks: checks, draft: { _ in draft }, announce: announce, animate: beats.animate, pause: beats.pause)
+        return NeedsYouCards(checks: checks, draft: { _ in draft }, announce: announce)
     }
 }
 

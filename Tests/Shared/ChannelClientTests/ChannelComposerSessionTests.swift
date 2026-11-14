@@ -55,12 +55,12 @@ struct ChannelComposerSessionTests {
         let draft = ComposerDraft(imageIsReadable: { _ in false })
         let session = ChannelComposerSession(store: store, draft: draft)
         draft.text = " First "
-        #expect(await session.send())
+        #expect(await session.send() != nil)
         #expect(draft.text.isEmpty)
         try await eventually(observing: mock) { mock.pendingCount(for: posts) == 1 }
         draft.text = "Second"
         #expect(session.canSend())
-        #expect(await session.send())
+        #expect(await session.send() != nil)
         #expect(store.sending.map(\.text) == ["First", "Second"])
         #expect(served.posted.map(\.content) == ["First"])
 

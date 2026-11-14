@@ -483,6 +483,8 @@ package final class ComposerDictation {
     package private(set) var hasWords = false
     /// True from the moment dictation anchors at the caret until its words are committed.
     package private(set) var isSessionActive = false
+    /// True while a send waits for dictation's last words.
+    package private(set) var holdsSend = false
     package var showsAccessExplanation = false
 
     package var isListening: Bool { phase == .listening || phase == .finishing }
@@ -682,11 +684,6 @@ package final class ComposerDictation {
         if case .unsent(let described)? = notice, described != revision { notice = nil }
     }
 
-    /// Clears the unsent notice when the person sends.
-    package func draftSent() {
-        if case .unsent? = notice { notice = nil }
-    }
-
     package func windowResignedKey() {
         if isListening { Task { await stop(.windowResigned) } }
     }
@@ -828,21 +825,23 @@ package final class ComposerDictation {
     }
 
     /// Stops listening and waits for the transcriber to finalize every pending word. Returns false
-    /// when words the person saw could not be confirmed, which keeps them in the draft unsent.
+    /// when words the person saw could not be confirmed, which keeps them in the draft unsent. A
+    /// send holds Send while it waits, and clears the unsent notice once it can go ahead.
     @discardableResult
     package func stop(_ reason: StopReason = .button) async -> Bool {
+        if reason == .send { holdsSend = true }
+        defer { if reason == .send { holdsSend = false } }
+        let finalized: Bool
         switch phase {
         case .preparing where !isSessionActive, .downloading:
             if reason != .send { cancelPreparation() }
-            return true
-        case .idle:
-            return true
-        case .finishing:
-            return await finishing?.value ?? true
-        case .preparing, .listening:
-            break
+            finalized = true
+        case .idle: finalized = true
+        case .finishing: finalized = await finishing?.value ?? true
+        case .preparing, .listening: finalized = await finish(failure: nil, reason: reason)
         }
-        return await finish(failure: nil, reason: reason)
+        if finalized, reason == .send, case .unsent? = notice { notice = nil }
+        return finalized
     }
 
     private func stop(failure: String) async {

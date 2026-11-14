@@ -37,7 +37,6 @@ struct SidebarRequestPopover: View {
     private var catalog: ChannelCatalogStore { answers.catalog }
     private var isConnected: Bool { catalog.phase.failure == nil }
     private var isReplying: Bool { cards.replying?.id == entry.id }
-    private var requester: String { entry.requester?.name ?? "the request" }
 
     var body: some View {
         let limit = max(60, (NSScreen.main?.visibleFrame.height ?? 800) - chrome - 40)
@@ -76,20 +75,12 @@ struct SidebarRequestPopover: View {
 
     @ViewBuilder private var footer: some View {
         if isReplying && cards.isLifted {
-            SidebarReplyField(cards: cards, isConnected: isConnected, prompt: "Reply to \(requester)")
+            SidebarReplyField(cards: cards, isConnected: isConnected, prompt: "Reply to \(entry.requester?.name ?? "the request")")
         } else {
-            // A choice holds the popover as it was while it's saved.
-            let isSending = isReplying && cards.phase == .sending
-            TranscriptRequestActions(spacing: 6, sequence: entry.sequence,
-                                     choices: isSending ? entry.heldChoices : entry.choices(isConnected: isConnected),
-                                     replyHelp: "Reply to \(requester)",
-                                     readAloud: .init(channelID: entry.channel.id, sequence: entry.sequence, text: entry.markdown),
+            TranscriptRequestActions(entry, cards: cards, isConnected: isConnected, spacing: 6,
                                      onChoose: choose, onReply: reply)
                 .controlSize(.small)
                 .font(.system(size: 11 * textScale))
-                // The actions hide a chosen reply themselves, so the held ones start afresh.
-                .id(isSending)
-                .allowsHitTesting(!isSending)
         }
     }
 

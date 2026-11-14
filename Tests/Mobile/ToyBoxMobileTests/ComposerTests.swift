@@ -925,7 +925,7 @@ struct ComposerTests {
         #expect(session.draft.text.isEmpty)
         #expect(outbox.queue.map(\.text) == ["Final words."], "It sends the finalized words, never the tentative display")
         #expect(!session.dictation.isSessionActive)
-        #expect(!session.isFinalizingDictation)
+        #expect(!session.dictation.holdsSend)
         withExtendedLifetime(target) {}
     }
 
@@ -942,7 +942,7 @@ struct ComposerTests {
         recognizer.send("Keep these words", isFinal: false)
         let send = Task { await session.send() }
         await recognizer.waitUntilFinishing()
-        #expect(session.isFinalizingDictation)
+        #expect(session.dictation.holdsSend)
         #expect(!session.canSend)
         #expect(await !session.send())
         recognizer.rejectFinish()
@@ -951,7 +951,7 @@ struct ComposerTests {
         #expect(target.input.text == session.draft.text)
         #expect(outbox.queue.isEmpty)
         #expect(session.dictation.notice == .unsent(revision: session.draft.revision))
-        #expect(!session.isFinalizingDictation)
+        #expect(!session.dictation.holdsSend)
     }
 
     @Test(arguments: [false, true])

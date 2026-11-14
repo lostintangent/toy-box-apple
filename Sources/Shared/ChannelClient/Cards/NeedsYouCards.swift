@@ -45,24 +45,16 @@ package final class NeedsYouCards {
     @ObservationIgnored private let checks: CardChecks
     @ObservationIgnored private let draft: @MainActor (ChannelStore) -> ComposerDraft
     @ObservationIgnored private let announce: @MainActor (String) -> Void
-    @ObservationIgnored private let animate: @MainActor (CardMotion, () -> Void) -> Void
-    @ObservationIgnored private let pause: @MainActor (Duration) async -> Void
 
     /// - Parameters:
-    ///   - checks: The list's done checks, which a row wears once its reply sends.
+    ///   - checks: The list's done checks, which a row wears once its reply sends, and the cards' motion.
     ///   - draft: The channel's composer draft, which keeps a typed reply left mid-way.
     ///   - announce: Speaks a VoiceOver announcement.
-    ///   - animate: Applies one beat's change in that beat's motion.
-    ///   - pause: Waits while a beat's motion plays, before the next beat.
     package init(checks: CardChecks, draft: @escaping @MainActor (ChannelStore) -> ComposerDraft,
-                 announce: @escaping @MainActor (String) -> Void,
-                 animate: @escaping @MainActor (CardMotion, () -> Void) -> Void = { $1() },
-                 pause: @escaping @MainActor (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
+                 announce: @escaping @MainActor (String) -> Void = CardMotion.announce) {
         self.checks = checks
         self.draft = draft
         self.announce = announce
-        self.animate = animate
-        self.pause = pause
     }
 
     /// The request being answered, as it was when the answer began, since the waiting requests drop
@@ -74,7 +66,7 @@ package final class NeedsYouCards {
 
     /// The open card among every server's waiting requests: the one being answered, otherwise the
     /// one the person opened while it waits. A request opens only once its words are known.
-    package func open(in waiting: [ChannelWaitingRequest]) -> ChannelWaitingRequest? {
+    package func card(in waiting: [ChannelWaitingRequest]) -> ChannelWaitingRequest? {
         if let replying { return waiting.first { $0.id == replying.id } ?? replying }
         return waiting.first { $0.id == opened && $0.request != nil }
     }
@@ -84,27 +76,27 @@ package final class NeedsYouCards {
     package func rows(in waiting: [ChannelWaitingRequest]) -> [ChannelTarget: Row] {
         var rows: [ChannelTarget: Row] = [:]
         for entry in waiting where entry.request != nil { rows[entry.target] = .question(entry) }
-        if let open = open(in: waiting) { rows[open.target] = .card(open) }
+        if let open = card(in: waiting) { rows[open.target] = .card(open) }
         return rows
     }
 
     /// The rows whose bottom line the open card covers: its own, and the one above, whose line is the
     /// card's top. `order` is the list's channels, top to bottom.
     package func hiddenLines(in waiting: [ChannelWaitingRequest], order: [ChannelTarget]) -> Set<ChannelTarget> {
-        guard let open = open(in: waiting)?.target, let index = order.firstIndex(of: open) else { return [] }
+        guard let open = card(in: waiting)?.target, let index = order.firstIndex(of: open) else { return [] }
         return Set([open] + order[..<index].suffix(1))
     }
 
     /// Opens a waiting row's card, closing any other.
     package func open(_ request: ChannelWaitingRequest.ID) {
         guard answer == nil, opened != request else { return }
-        animate(.open) { opened = request }
+        checks.animate(.open) { opened = request }
     }
 
     /// Folds the open card back into its row. A reply holds its card until the reply ends.
     package func fold() {
         guard opened != nil else { return }
-        animate(.open) { opened = nil }
+        checks.animate(.open) { opened = nil }
     }
 
     /// Sends a choice at once as written.
@@ -120,7 +112,7 @@ package final class NeedsYouCards {
     /// requester by leading with their handle.
     package func reply(to entry: ChannelWaitingRequest, on store: ChannelStore) {
         guard answer == nil else { return }
-        animate(.open) {
+        checks.animate(.open) {
             landing = nil
             opened = entry.id
             answer = Answer(entry: entry, isLifted: true, store: store, handle: entry.request?.requester?.handle,
@@ -151,7 +143,7 @@ package final class NeedsYouCards {
         // The card shrinks straight back into its row, which wears the check, and nothing else opens.
         // Each row's check settles on its own, so answering another card leaves this one's in place.
         // A typed reply's words fade with its card rather than blanking as it lands.
-        animate(.sent) {
+        checks.animate(.sent) {
             // The card ends with its answer, so if the reply ends Not sent, its request comes back
             // as a waiting row without opening or moving the list.
             opened = nil
@@ -165,7 +157,7 @@ package final class NeedsYouCards {
         }
         announce("Reply sent in \(entry.channel.name)")
         guard landing?.id == entry.id else { return }
-        await pause(.seconds(0.35))
+        await checks.pause(.seconds(0.35))
         guard landing?.id == entry.id else { return }
         landing = nil
         if self.answer == nil { words = "" }
@@ -174,19 +166,13 @@ package final class NeedsYouCards {
     /// Lowers a typed reply back into its row and discards its words.
     package func cancel() {
         guard phase == .composing else { return }
-        animate(.open) { close() }
+        checks.animate(.open) { close() }
     }
 
     /// Ends the reply when something takes the person away from the list. A typed reply's words
     /// become the channel's draft, after any draft already there.
     package func leave() {
-        if phase == .composing, let store = answer?.store {
-            let words = words.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !words.isEmpty {
-                let draft = draft(store)
-                draft.text = ComposerDraft.joined(draft.text, words)
-            }
-        }
+        if phase == .composing, let store = answer?.store { draft(store).append(words) }
         if phase != .sending { close() }
     }
 
