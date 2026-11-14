@@ -286,8 +286,9 @@ public final class ChannelOutbox {
         }
     }
 
-    /// The share extension's one attempt, which returns once its outcome is saved. It gives up after 10 seconds without hearing from the server, so a sleeping
-    /// server leaves the message to the app instead of keeping the sheet on Sending for a minute.
+    /// The share extension's one attempt, which returns once its outcome is saved. It gives up after
+    /// 10 seconds without hearing from the server, so a sleeping server leaves the message to the app
+    /// instead of keeping the sheet on Sending for a minute.
     private func attempt(_ message: Message) async {
         guard let catalog = catalog(on: message.server) else { return }
         switch await post(message, api: catalog.api, timeout: 10) {
