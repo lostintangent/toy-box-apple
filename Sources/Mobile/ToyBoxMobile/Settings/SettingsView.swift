@@ -183,7 +183,8 @@ private struct ServerRow: View {
 }
 
 /// The end of a server's row: its version, a spinner while it checks or reconnects, Up to date after
-/// a check that found nothing newer, or the installed release once a restart is pending.
+/// a check that found nothing newer, or the release it runs and the one a restart starts once a
+/// restart is pending.
 private struct ServerUpdateStatus: View {
     let update: ServerUpdate
     /// A server that can't connect says so instead.
@@ -196,8 +197,9 @@ private struct ServerUpdateStatus: View {
         case .reconnecting?:
             ProgressView().accessibilityRepresentation { Text("Reconnecting") }
         case .restartPending?:
-            if showsVersion, let installed = update.version?.installedVersion {
-                Text("\(installed) installed").foregroundStyle(.secondary)
+            if showsVersion, let version = update.version, let installed = version.installedVersion {
+                Text("\(version.version) → \(installed)").foregroundStyle(.secondary)
+                    .accessibilityLabel("\(version.version), \(installed) after restart")
             }
         case .idle?, nil:
             if update.outcome == .upToDate {

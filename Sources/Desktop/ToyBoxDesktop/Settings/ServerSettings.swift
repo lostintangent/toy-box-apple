@@ -111,8 +111,8 @@ struct ServerSettings: View {
 }
 
 /// The end of a server's row: its version, a spinner while it checks or reconnects, how its last
-/// check or restart ended, or the installed release once a restart is pending. See Updating a
-/// server in docs/spec.md.
+/// check or restart ended, or the release it runs and the one a restart starts once a restart is
+/// pending. See Updating a server in docs/spec.md.
 private struct ServerUpdateStatus: View {
     let update: ServerUpdate
 
@@ -126,8 +126,9 @@ private struct ServerUpdateStatus: View {
             case .restartPending?:
                 if case .failed(let words)? = update.outcome {
                     failure(words)
-                } else if let installed = update.version?.installedVersion {
-                    Text("\(installed) installed").foregroundStyle(.secondary)
+                } else if let version = update.version, let installed = version.installedVersion {
+                    Text("\(version.version) → \(installed)").foregroundStyle(.secondary)
+                        .accessibilityLabel("\(version.version), \(installed) after restart")
                 }
             case .idle?, nil:
                 switch update.outcome {
