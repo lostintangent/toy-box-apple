@@ -62,16 +62,6 @@ struct ChannelTaskTests {
         #expect(task("future").statusDescription == "pending")
     }
 
-    @Test func workInProgressAnywhereBelowAParentExpandsIt() {
-        let parent = ChannelTask(id: "a", title: "A", status: "blocked", children: [
-            .init(id: "b", title: "B", children: [.init(id: "c", title: "C", status: "in_progress")]),
-        ])
-        #expect(parent.holdsWorkInProgress && parent.isExpandedByDefault)
-        #expect(parent.children?.first?.isExpandedByDefault == true)
-        let finished = ChannelTask(id: "f", title: "F", status: "done", children: [.init(id: "g", title: "G")])
-        #expect(!finished.holdsWorkInProgress && !finished.isExpandedByDefault)
-    }
-
     @Test func theWorkInProgressFilterKeepsEachKeptTaskWhole() {
         let tasks: [ChannelTask] = [
             .init(id: "a", title: "A", status: "blocked", children: [

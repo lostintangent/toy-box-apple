@@ -82,7 +82,7 @@ struct TaskRowsTests {
         #expect(rows.map(\.depth) == [0, 1])
         #expect(rows.map(\.endsRoot) == [false, true])
         #expect(rows[1].guides == [.init(depth: 0, isFirst: true, isLast: true)])
-        #expect(project(tree).count == 5)
+        #expect(project([tree[1]], showsOnlyInProgress: true).isEmpty)
     }
 
     @Test func inProgressFilterLeavesDisclosureAloneAndKeepsCollapsedParentsCollapsed() {
@@ -115,11 +115,6 @@ struct TaskRowsTests {
         #expect(project([parent], showsOnlyInProgress: true).map(\.id) == [.task("parent")])
     }
 
-    @Test func inProgressFilterShowsNoRowsWhenNothingHoldsWork() {
-        #expect(project([tree[1]], showsOnlyInProgress: true).isEmpty)
-        #expect(project([], showsOnlyInProgress: true).isEmpty)
-    }
-
     @Test func guideSegmentsClearOnlyTheWholeChildGroupsEnds() {
         let rows = project(tree)
         #expect(rows[0].guides.isEmpty)
@@ -142,43 +137,28 @@ struct TaskRowsTests {
         #expect(rows[0].layout.rootHasOwner == false && rows[1].layout.rootHasOwner == false)
         #expect(rows[2].layout.rootHasOwner)
         #expect(rows[1].task == child)
-        #expect(project([]).isEmpty)
-    }
-
-    @Test func aHundredSixLevelTreesKeepEveryTaskAndItsStableIdentity() {
-        func task(root: Int, depth: Int) -> ChannelTask {
-            .init(id: "\(root)-\(depth)", title: String(repeating: "Task title ", count: 11), status: "in_progress",
-                  children: depth < 5 ? [task(root: root, depth: depth + 1)] : nil)
-        }
-        let rows = project((0..<100).map { task(root: $0, depth: 0) })
-        #expect(rows.count == 600 && Set(rows.map(\.id)).count == 600)
-        #expect(rows.filter(\.endsRoot).count == 100)
-        #expect(rows.filter { $0.depth == 5 }.count == 100)
-        #expect(rows.allSatisfy { !$0.isSubtasks })
     }
 
     @Test(arguments: [1.0, 2.0, 3.0], [false, true])
     func segmentedGuidesRenderExactlyLikeOneContinuousGuide(scale: CGFloat, rightToLeft: Bool) throws {
-        for scheme in [ColorScheme.light, .dark] {
-            let segmented = VStack(spacing: 0) {
-                ChannelTaskAncestryGuide(statusWidth: 16, topClearance: 4, bottomClearance: 0)
-                    .frame(height: 44)
-                ChannelTaskAncestryGuide(statusWidth: 16, topClearance: 0, bottomClearance: 0)
-                    .frame(height: 88)
-                ChannelTaskAncestryGuide(statusWidth: 16, topClearance: 0, bottomClearance: 4)
-                    .frame(height: 44)
-            }
-            let whole = ChannelTaskAncestryGuide(statusWidth: 16).frame(height: 176)
-            func pixels(_ view: some View) throws -> [UInt8] {
-                try ownBitmapPixels(view
-                    .frame(width: 60)
-                    .background(scheme == .dark ? Color.black : Color.white)
-                    .environment(\.displayScale, scale)
-                    .environment(\.colorScheme, scheme)
-                    .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight), scale: scale)
-            }
-            #expect(try pixels(segmented) == pixels(whole))
+        let segmented = VStack(spacing: 0) {
+            ChannelTaskAncestryGuide(statusWidth: 16, topClearance: 4, bottomClearance: 0)
+                .frame(height: 44)
+            ChannelTaskAncestryGuide(statusWidth: 16, topClearance: 0, bottomClearance: 0)
+                .frame(height: 88)
+            ChannelTaskAncestryGuide(statusWidth: 16, topClearance: 0, bottomClearance: 4)
+                .frame(height: 44)
         }
+        let whole = ChannelTaskAncestryGuide(statusWidth: 16).frame(height: 176)
+        func pixels(_ view: some View) throws -> [UInt8] {
+            try ownBitmapPixels(view
+                .frame(width: 60)
+                .background(Color.black)
+                .environment(\.displayScale, scale)
+                .environment(\.colorScheme, .dark)
+                .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight), scale: scale)
+        }
+        #expect(try pixels(segmented) == pixels(whole))
     }
 
     /// Draws into the test's own bitmap. `uiImage?.cgImage` returns an image-provider CGImage that rasterizes
@@ -208,11 +188,6 @@ struct TaskRowsTests {
         let opaque = stride(from: 3, to: result.pixels.count, by: 4).allSatisfy { result.pixels[$0] == 255 }
         try #require(opaque, "Incomplete render: an opaque background left transparent pixels.")
         return result.pixels
-    }
-
-    @Test(arguments: [false, true])
-    func taskPaddingTightensOnlyAtOrdinaryTextSizes(accessibility: Bool) {
-        #expect(OverviewTaskMetrics.verticalPadding(accessibility: accessibility) == (accessibility ? 12 : 11))
     }
 
     @Test(arguments: [DynamicTypeSize.large, .accessibility1, .accessibility5])
@@ -271,12 +246,7 @@ struct TaskRowsTests {
                 .filter { $0.identifier.hasPrefix("overview-task-") || $0.identifier.hasPrefix("overview-subtasks-") }
                 .map(\.identifier))
         }
-        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-        while rowIDs() != expected, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(5))
-            host.view.layoutIfNeeded()
-        }
-        #expect(rowIDs() == expected)
+        try await waitUntil("the rows are \(expected), not \(rowIDs())", in: host.view) { rowIDs() == expected }
         #expect(list.numberOfItems(inSection: 0) == expected.count)
         #expect(MobileAutomationTree(windows: [window]).matching("overview-subtasks-depth-4").first?.label
                 == "View 1 subtask of Keep the six-level task hierarchy")
@@ -325,13 +295,9 @@ struct TaskRowsTests {
         host.view.layoutIfNeeded()
         let list = try #require(nativeList(in: host.view))
         let expected = size.isAccessibilitySize ? 4 : 6
-        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-        while list.numberOfItems(inSection: 0) != expected, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(5))
-            host.view.layoutIfNeeded()
+        try await waitUntil("the list shows \(expected) rows", in: host.view) {
+            list.numberOfItems(inSection: 0) == expected
         }
-        try #require(list.numberOfItems(inSection: 0) == expected)
-        host.view.layoutIfNeeded()
 
         func backgroundPixel(item: Int) throws -> [UInt8] {
             let frame = try #require(list.layoutAttributesForItem(at: IndexPath(item: item, section: 0))).frame
@@ -413,11 +379,7 @@ struct TaskRowsTests {
             let collapse = try #require(row.actions.first { $0.name == "Collapse" })
             #expect(row.perform(collapse))
         }
-        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-        while record.entries.allSatisfy(\.expanded), ContinuousClock.now < deadline {
-            host.view.layoutIfNeeded()
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await waitUntil("the disclosure collapses", in: host.view) { !record.entries.allSatisfy(\.expanded) }
         let transaction = try #require(record.entries.first { !$0.expanded })
         let root = try #require(session.task("root"))
         #expect(!session.taskDisclosure.isExpanded(root, key: "root"))

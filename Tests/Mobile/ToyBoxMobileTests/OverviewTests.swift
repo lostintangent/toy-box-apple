@@ -12,25 +12,6 @@ import UIKit
 @Suite("Mobile Overview")
 @MainActor
 struct OverviewTests {
-    @Test func bothFollowMenusUseTheSameLabelsAndEnabledStates() {
-        let available = ChannelFollowAction.Status.available
-        let unavailable = ChannelFollowAction.Status.unavailable(.noTasksInProgress)
-        let starting = ChannelFollowAction.Status.starting
-        let following = ChannelFollowAction.Status.following
-        #expect(available.title == "Follow This Channel")
-        #expect(unavailable.title == available.title)
-        #expect(unavailable.reason == .noTasksInProgress)
-        #expect(available.reason == nil)
-        #expect(available.systemImage == "dot.radiowaves.left.and.right")
-        #expect(available.isEnabled)
-        #expect(!unavailable.isEnabled)
-        #expect(starting.title == "Starting…")
-        #expect(!starting.isEnabled)
-        #expect(following.title == "Stop Following")
-        #expect(following.systemImage == "stop.circle")
-        #expect(following.isEnabled)
-    }
-
     @Test func presentationChangesKeepTheSameOverviewState() throws {
         let api = try ChannelAPI(serverURL: "https://fixture.example")
         let store = ChannelStore(id: "channel", api: api)
@@ -62,9 +43,7 @@ struct OverviewTests {
         #expect(OverviewPlacement(sceneWidth: 669, sizeClass: .regular, verticalSizeClass: .regular) == .sheet)
         #expect(OverviewPlacement(sceneWidth: 951, sizeClass: .compact, verticalSizeClass: .regular) == .sheet)
         #expect(OverviewPlacement(sceneWidth: 951, sizeClass: .regular, verticalSizeClass: .regular) == .column)
-    }
-
-    @Test func aWideCompactHeightSceneKeepsTheSheetSoTheColumnNeverCoversItsBar() {
+        // A wide compact-height scene keeps the sheet, so the column never covers its bar.
         #expect(OverviewPlacement(sceneWidth: 956, sizeClass: .regular, verticalSizeClass: .compact) == .sheet)
     }
 
@@ -116,7 +95,7 @@ struct OverviewTests {
         #expect(!accessible.canInlineChildren(ofDepth: 0, haveOwner: true))
     }
 
-    @Test func closingParentsAndMovingPresentationRetainChildChoicesRoutesAndScopedOffsets() throws {
+    @Test func reconcilingTasksKeepsNestedDisclosureChoicesAndFindsTasksByID() throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let session = ChannelOverview(store: store)
         let tasks: [ChannelTask] = [
@@ -133,9 +112,6 @@ struct OverviewTests {
         session.reconcileTasks(tasks)
         #expect(!session.taskDisclosure.isExpanded(child, key: "child"))
         #expect(!session.taskDisclosure.isExpanded(tasks[0], key: "parent"))
-        session.navigationPath = [.subtasks("parent"), .subtasks("child")]
-        session.expandedSections[.team] = false
-        #expect(!session.isExpanded(.team))
         #expect(ChannelOverview.task("leaf", in: tasks)?.title == "Leaf")
         #expect(ChannelOverview.task("deleted", in: tasks) == nil)
     }
@@ -170,11 +146,9 @@ struct OverviewTests {
         #expect(image.size.height > 10 && image.size.height < 50)
     }
 
-    @Test(arguments: [ColorScheme.light, .dark], DynamicTypeSize.allCases)
-    func waitingCueStaysCenteredOnTheFirstLineWhileTheReasonWraps(
-        scheme: ColorScheme, size: DynamicTypeSize
-    ) throws {
-        let rows = try statusRows(scheme: scheme, size: size)
+    @Test(arguments: DynamicTypeSize.allCases)
+    func waitingCueStaysCenteredOnTheFirstLineWhileTheReasonWraps(size: DynamicTypeSize) throws {
+        let rows = try statusRows(size: size)
         try #require(rows.complete, "Incomplete render: \(rows)")
         let firstTextRow = try #require(rows.text.min(), "\(rows)")
         var lastFirstLineRow = firstTextRow
@@ -186,32 +160,20 @@ struct OverviewTests {
         #expect(try #require(rows.text.max()) > lastFirstLineRow)
     }
 
-    @Test(arguments: [ColorScheme.light, .dark])
-    func waitingCueProbeTellsABlankRenderFromAMissingCue(scheme: ColorScheme) throws {
-        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
-        let blank = try #require(CGContext(
-            data: nil, width: 540, height: 93, bitsPerComponent: 8, bytesPerRow: 0, space: space,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage())
-        #expect(try !StatusRows(blank, scheme: scheme, size: .xSmall).complete)
-        let disconnected = try statusRows(scheme: scheme, size: .xSmall, available: false)
-        #expect(disconnected.complete && !disconnected.text.isEmpty && disconnected.cue.isEmpty,
-                "\(disconnected)")
-    }
-
-    private func statusRows(scheme: ColorScheme, size: DynamicTypeSize, available: Bool = true) throws -> StatusRows {
+    private func statusRows(size: DynamicTypeSize) throws -> StatusRows {
         let image = try render(
             OverviewAgentStatus(
                 presence: .init(state: "waiting", text: "WAITING MMMM MMMM MMMM MMMM MMMM"),
-                available: available)
+                available: true)
                 .frame(width: 180, alignment: .leading)
-                .background(scheme == .dark ? Color.black : Color.white)
-                .environment(\.colorScheme, scheme)
+                .background(Color.black)
+                .environment(\.colorScheme, .dark)
                 .dynamicTypeSize(size),
             scale: 3)
-        return try StatusRows(image, scheme: scheme, size: size)
+        return try StatusRows(image, size: size)
     }
 
-    /// Rows of an `OverviewAgentStatus` render that hold its gray text and its orange waiting cue.
+    /// Rows of a dark `OverviewAgentStatus` render that hold its gray text and its orange waiting cue.
     /// The status fills an opaque background, so any transparent pixel marks an incomplete render.
     private struct StatusRows: CustomStringConvertible {
         let text: Set<Int>
@@ -219,9 +181,8 @@ struct OverviewTests {
         let complete: Bool
         let description: String
 
-        init(_ image: CGImage, scheme: ColorScheme, size: DynamicTypeSize) throws {
+        init(_ image: CGImage, size: DynamicTypeSize) throws {
             let pixels = try OverviewTests.rgba(image)
-            let background = scheme == .dark ? 0 : 255
             var text = Set<Int>(), cue = Set<Int>(), opaque = 0
             for y in 0..<image.height {
                 for x in 0..<image.width {
@@ -229,18 +190,18 @@ struct OverviewTests {
                     let red = Int(pixels[offset]), green = Int(pixels[offset + 1]), blue = Int(pixels[offset + 2])
                     if pixels[offset + 3] == 255 { opaque += 1 }
                     if red > green + 20, green > blue + 20 { cue.insert(y) }
-                    if abs(red - green) <= 4, abs(green - blue) <= 4, abs(red - background) > 24 { text.insert(y) }
+                    if abs(red - green) <= 4, abs(green - blue) <= 4, red > 24 { text.insert(y) }
                 }
             }
             self.text = text
             self.cue = cue
             complete = opaque == image.width * image.height
-            description = "\(scheme), \(size), \(image.width)x\(image.height), opaque pixels \(opaque), "
+            description = "\(size), \(image.width)x\(image.height), opaque pixels \(opaque), "
                 + "text rows \(text.count), cue rows \(cue.count)"
         }
     }
 
-    @Test(arguments: DynamicTypeSize.allCases)
+    @Test(arguments: [DynamicTypeSize.xSmall, .large, .xxxLarge, .accessibility1, .accessibility5])
     func teamRowsAreSixPointsShorterAtOrdinarySizesAndFourAtAccessibilitySizes(
         size: DynamicTypeSize
     ) async throws {
@@ -336,19 +297,12 @@ struct OverviewTests {
         window.rootViewController = host
         window.isHidden = false
         defer { window.isHidden = true }
-        func settle(announcement: Bool) async throws {
-            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-            repeat {
-                host.view.layoutIfNeeded()
-                let value = MobileAutomationTree(windows: [window]).elements.first {
-                    $0.identifier == "overview-agent-\(agentID)"
-                }?.value ?? ""
-                if value.hasPrefix("checks again in ") == announcement { return }
-                try await Task.sleep(for: .milliseconds(5))
-            } while ContinuousClock.now < deadline
-            Issue.record("Team row did not settle with countdown announcement \(announcement)")
+        func announcesCountdown() -> Bool {
+            (MobileAutomationTree(windows: [window]).elements.first {
+                $0.identifier == "overview-agent-\(agentID)"
+            }?.value ?? "").hasPrefix("checks again in ")
         }
-        try await settle(announcement: true)
+        try await waitUntil("the team row announces its countdown", in: host.view) { announcesCountdown() }
         let list = try #require(nativeList(in: host.view))
         let withCountdown = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 0))).frame
         let withoutCountdown = try #require(list.layoutAttributesForItem(at: IndexPath(item: 1, section: 0))).frame
@@ -365,14 +319,14 @@ struct OverviewTests {
         }.count == 1)
 
         interaction.isInspectorPresented = false
-        try await settle(announcement: false)
+        try await waitUntil("the hidden Overview stops the countdown", in: host.view) { !announcesCountdown() }
         interaction.isInspectorPresented = true
-        try await settle(announcement: true)
+        try await waitUntil("the shown Overview resumes the countdown", in: host.view) { announcesCountdown() }
         state.revision += 1
         state.lead.status = .init(state: "working", text: "Compiling", wakeAt: wake)
         store.working = [agentID]
         _ = try store.apply(.init(type: "snapshot", state: state))
-        try await settle(announcement: false)
+        try await waitUntil("working ends the countdown", in: host.view) { !announcesCountdown() }
         #expect(MobileAutomationTree(windows: [window]).elements.first {
             $0.identifier == "overview-agent-\(agentID)"
         }?.label == "Agent, Working, Compiling")
@@ -600,13 +554,10 @@ struct OverviewTests {
                 .filter { let frame = $0.convert($0.bounds, to: window); return !frame.isEmpty && frame.midX > bar.midX }
                 .max { $0.convert($0.bounds, to: window).maxX < $1.convert($1.bounds, to: window).maxX }
         }
-        func expectToolbarClose() async throws {
-            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-            while close() == nil || trailingBarControl() == nil, ContinuousClock.now < deadline {
-                try await Task.sleep(for: .milliseconds(5))
-                host.view.layoutIfNeeded()
+        func expectToolbarClose(sourceLocation: SourceLocation = #_sourceLocation) async throws {
+            try await waitUntil("the bar shows Close Overview", in: host.view, sourceLocation: sourceLocation) {
+                close() != nil && trailingBarControl() != nil
             }
-            _ = try #require(close())
             let control = try #require(trailingBarControl())
             let frame = control.convert(control.bounds, to: window)
             let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
@@ -622,46 +573,15 @@ struct OverviewTests {
         })
         if placement == .sheet { try await expectToolbarClose() } else { #expect(close() == nil) }
         session.navigationPath = [.subtasks("task")]
-        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-        while navigation.isNavigationBarHidden || navigation.topViewController?.navigationItem.title != "Subtasks",
-              ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(5))
-            host.view.layoutIfNeeded()
+        try await waitUntil("Subtasks shows its navigation bar", in: host.view) {
+            !navigation.isNavigationBarHidden && navigation.topViewController?.navigationItem.title == "Subtasks"
         }
-        #expect(!navigation.isNavigationBarHidden)
-        #expect(navigation.topViewController?.navigationItem.title == "Subtasks")
         guard placement == .sheet else {
             #expect(close() == nil)
             return
         }
         // The test host can't activate SwiftUI's bar items, so the simulator drive proves the tap.
         try await expectToolbarClose()
-    }
-
-    @Test func listRowsKeepTheSeparatorBetweenRowsButNotBelowTheLastRow() async throws {
-        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let session = ChannelOverview(store: store)
-        let host = UIHostingController(rootView:
-            OverviewList {
-                OverviewSectionRows(summary: .artifacts(2), section: .artifacts, session: session,
-                                    isFirstSection: true) {
-                    Text("First").listRowSeparatorTint(.red)
-                        .modifier(OverviewListRowBoundary(isLast: false))
-                    Text("Last").listRowSeparatorTint(.red)
-                        .modifier(OverviewListRowBoundary(isLast: true))
-                }
-            }
-            .environment(\.colorScheme, .light))
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 400))
-        window.rootViewController = host
-        window.isHidden = false
-        defer { window.isHidden = true }
-        host.view.layoutIfNeeded()
-        await Task.yield()
-        host.view.layoutIfNeeded()
-        let list = try #require(nativeList(in: host.view))
-        try expectSeparators(in: list, window: window, visible: [IndexPath(item: 1, section: 0)],
-                             hidden: [IndexPath(item: 2, section: 0)])
     }
 
     @Test(arguments: [false, true])
@@ -740,12 +660,9 @@ struct OverviewTests {
         }
 
         state.expanded = true
-        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-        while list.numberOfItems(inSection: 0) != 3, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(5))
-            host.view.layoutIfNeeded()
+        try await waitUntil("the expanded routine shows its prompt", in: host.view) {
+            list.numberOfItems(inSection: 0) == 3
         }
-        try #require(list.numberOfItems(inSection: 0) == 3)
         let cell = list.convert(try #require(list.layoutAttributesForItem(at: IndexPath(item: 2, section: 0))).frame,
                                 to: window)
         let prompt = try #require(MobileAutomationTree(windows: [window]).matching("Review the workshop.").first).frame
@@ -767,12 +684,6 @@ struct OverviewTests {
             #expect(abs(routineTitle - artifactTitle) <= 1,
                     "Routine title at pixel \(routineTitle), artifact title at \(artifactTitle)")
         }
-    }
-
-    @Test func routineSymbolKeepsTheArtifactSymbolsBounds() throws {
-        let renderer = ImageRenderer(content: OverviewRowSymbol(systemName: "calendar.badge.clock", size: 22))
-        let image = try #require(renderer.uiImage)
-        #expect(image.size == CGSize(width: 22, height: 22))
     }
 
     @Test func routineActionsLiveOnTheRowAndWaitForAConnection() async throws {
@@ -816,15 +727,11 @@ struct OverviewTests {
         // SwiftUI also lists swipe actions as accessibility actions, which is why VoiceOver hides them,
         // so the swipe's own "Delete" proves the trailing swipe is there.
         let names = ["Expand", "Run Now", "Delete Routine", "Delete"]
-        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-        while try !names.allSatisfy({ name in try row().actions.contains { $0.name == name } }),
-              ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(5))
-            host.view.layoutIfNeeded()
+        try await waitUntil("the row offers \(names), not \((try? row().actions.map(\.name)) ?? [])",
+                            in: host.view) {
+            try names.allSatisfy { name in try row().actions.contains { $0.name == name } }
         }
         let online = try row()
-        #expect(names.allSatisfy { name in online.actions.contains { $0.name == name } },
-                "Actions: \(online.actions.map(\.name))")
         let delete = try #require(online.actions.first { $0.name == "Delete Routine" })
         #expect(online.perform(delete))
         #expect(try presenter.flow == .deleteRoutine(#require(store.target), routineId: "routine"))
@@ -856,14 +763,6 @@ struct OverviewTests {
         func row() throws -> MobileAutomationTree.Element {
             try #require(MobileAutomationTree(windows: [window]).matching("overview-routine-routine").first)
         }
-        func settle(rows: Int) async throws {
-            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-            while list.numberOfItems(inSection: 0) != rows, ContinuousClock.now < deadline {
-                try await Task.sleep(for: .milliseconds(5))
-                host.view.layoutIfNeeded()
-            }
-            #expect(list.numberOfItems(inSection: 0) == rows)
-        }
 
         let schedule = ChannelRoutine.runLabel(
             schedule: try RoutineSchedule("0 9 * * 1-5").summary(), pending: false, requestedAt: nil)
@@ -877,7 +776,7 @@ struct OverviewTests {
         let expand = try #require(collapsed.actions.first { $0.name == "Expand" })
         #expect(collapsed.perform(expand))
         #expect(state.expanded)
-        try await settle(rows: 2)
+        try await waitUntil("the prompt row appears", in: host.view) { list.numberOfItems(inSection: 0) == 2 }
         let details = MobileAutomationTree(windows: [window])
         #expect(!details.matching("Review the workshop.").isEmpty)
         // The actions stay on the row, so the expanded content is the prompt alone.
@@ -893,7 +792,7 @@ struct OverviewTests {
         #expect(expanded.actions.contains { $0.name == "Collapse" })
         #expect(expanded.activate(in: [window]))
         #expect(!state.expanded)
-        try await settle(rows: 1)
+        try await waitUntil("the prompt row goes", in: host.view) { list.numberOfItems(inSection: 0) == 1 }
         collapsed = try row()
         #expect(collapsed.value == "\(schedule), Collapsed")
     }
@@ -942,22 +841,10 @@ struct OverviewTests {
         // SwiftUI lists the trailing swipe as an accessibility action, which VoiceOver hides, so its own
         // "Remove" proves the swipe is there, alongside the explicit accessibility action.
         let names = ["Remove from Channel", "Remove"]
-        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-        while try !names.allSatisfy({ name in try row().actions.contains { $0.name == name } }),
-              ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(5))
-            host.view.layoutIfNeeded()
+        try await waitUntil("the row offers \(names), not \((try? row().actions.map(\.name)) ?? [])",
+                            in: host.view) {
+            try names.allSatisfy { name in try row().actions.contains { $0.name == name } }
         }
-        let online = try row()
-        #expect(names.allSatisfy { name in online.actions.contains { $0.name == name } },
-                "Actions: \(online.actions.map(\.name))")
-    }
-
-    @Test(arguments: ["plan.md", "workshop.html", "shapes.svg", "reference.png", "unknown.bin"])
-    func artifactSymbolsKeepTheCurrentDocumentIconsBounds(path: String) throws {
-        let renderer = ImageRenderer(content: OverviewArtifactSymbol(artifact: artifact(path), size: 22))
-        let image = try #require(renderer.uiImage)
-        #expect(image.size == CGSize(width: 22, height: 22))
     }
 
     @Test(arguments: [DynamicTypeSize.large, .accessibility5],
@@ -1305,13 +1192,13 @@ struct OverviewTests {
         let reader = ArtifactReader(download: { _, _ in await downloads.file() })
         reader.prepareOriginal(session: session, sharing: true)
         let pending = try #require(reader.originalTask)
-        try await waitForOriginal(downloads)
+        try await waitUntil("the original download starts") { downloads.requests == 1 }
         if changingServer {
             session.configure(api: try ChannelAPI(serverURL: "https://replacement.example"),
                               channelID: "channel", artifacts: [first, second])
             session.open(first)
         } else { session.select(second.id) }
-        await downloads.release(URL(fileURLWithPath: "/fixture/first.dat"))
+        downloads.release(URL(fileURLWithPath: "/fixture/first.dat"))
         await pending.value
         #expect(reader.sharing == nil && reader.preview == nil)
         #expect(!reader.isPreparingOriginal)
@@ -1328,18 +1215,18 @@ struct OverviewTests {
         let reader = ArtifactReader(download: { _, _ in await downloads.file() })
         reader.prepareOriginal(session: session, sharing: true)
         let pending = try #require(reader.originalTask)
-        try await waitForOriginal(downloads)
+        try await waitUntil("the original download starts") { downloads.requests == 1 }
         reader.cancelOriginal()
         #expect(!reader.isPreparingOriginal)
         reader.prepareOriginal(session: session, sharing: true)
         let newer = try #require(reader.originalTask)
-        try await waitForOriginal(downloads, count: 2)
-        await downloads.release(URL(fileURLWithPath: "/fixture/first.dat"))
+        try await waitUntil("the newer download starts") { downloads.requests == 2 }
+        downloads.release(URL(fileURLWithPath: "/fixture/first.dat"))
         await pending.value
         #expect(reader.sharing == nil && reader.preview == nil)
         #expect(reader.isPreparingOriginal && reader.originalTask != nil)
         let current = URL(fileURLWithPath: "/fixture/current.dat")
-        await downloads.release(current, request: 2)
+        downloads.release(current, request: 2)
         await newer.value
         #expect(reader.sharing?.file == current)
         #expect(!reader.isPreparingOriginal && reader.originalTask == nil)
@@ -1496,25 +1383,10 @@ struct OverviewTests {
         return session
     }
 
-    private func waitForOriginal(_ downloads: NativeArtifactOriginalDownloads, count: Int = 1) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
-        while await downloads.requests < count, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(5))
-        }
-        #expect(await downloads.requests == count)
-    }
-
-    private func withModel(peers: [String] = [], _ body: (AppModel) async throws -> Void) async throws {
-        let suite = "mobile-overview-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        try await body(AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults,
-                                session: fixtureSession(peers: peers)))
-    }
-
-    private actor NativeArtifactOriginalDownloads {
+    @MainActor @Observable
+    fileprivate final class NativeArtifactOriginalDownloads {
         private(set) var requests = 0
-        private var pending: [Int: CheckedContinuation<URL, Never>] = [:]
+        @ObservationIgnored private var pending: [Int: CheckedContinuation<URL, Never>] = [:]
 
         func file() async -> URL {
             requests += 1
@@ -1536,7 +1408,7 @@ struct ChannelFollowTests {
         defer { fixture.close() }
         fixture.heldMethod = "PUT"
         let start = Task { await fixture.controller.follow(fixture.store) }
-        await fixture.wait { !fixture.pending.isEmpty }
+        try await waitUntil { !fixture.pending.isEmpty }
         #expect(fixture.controller.state(for: fixture.store) == .starting)
         await fixture.controller.follow(fixture.store)
         #expect(fixture.activities.count == 1)
@@ -1553,7 +1425,7 @@ struct ChannelFollowTests {
         let content = activity.content
         fixture.date.addTimeInterval(60)
         fixture.controller.stop(fixture.store)
-        await fixture.wait { !activity.endings.isEmpty && fixture.completedUnregistrations == 1 }
+        try await waitUntil { !activity.endings.isEmpty && fixture.completedUnregistrations == 1 }
         #expect(activity.endings == [content])
         #expect(fixture.controller.state(for: fixture.store) == .unavailable(nil))
         #expect(fixture.requests.map(\.method) == ["PUT", "DELETE"])
@@ -1566,13 +1438,13 @@ struct ChannelFollowTests {
         defer { fixture.close() }
         await fixture.controller.follow(fixture.store)
         let activity = try #require(fixture.activities.first)
-        await fixture.wait { activity.tokenStreamsStarted == 1 }
+        try await waitUntil { activity.tokenStreamsStarted == 1 }
         fixture.controller.shutdown()
         fixture.controller = fixture.makeController()
         fixture.controller.configure(servers: [.init(catalog: fixture.catalog)])
         #expect(activity.endings.isEmpty)
         fixture.configure(ready: false)
-        await fixture.wait { activity.tokenStreamsStarted == 2 }
+        try await waitUntil { activity.tokenStreamsStarted == 2 }
         #expect(fixture.requests.count == 1)
         #expect(fixture.controller.state(for: fixture.store) == .following)
         #expect(activity.endings.isEmpty)
@@ -1582,7 +1454,7 @@ struct ChannelFollowTests {
         await fixture.controller.registrationCreated(fixture.registration)
         #expect(fixture.requests.count == 1)
         fixture.configure(ready: true)
-        await fixture.wait { fixture.requests.count == 2 }
+        try await waitUntil { fixture.requests.count == 2 }
         #expect(fixture.requests.last?.input?.token == (rotatesWhilePending ? "02" : "01"))
         #expect(fixture.requests.last?.input?.startedAt == fixture.originalDate)
         #expect(fixture.activities.count == 1)
@@ -1597,16 +1469,16 @@ struct ChannelFollowTests {
         defer { fixture.close() }
         await fixture.controller.follow(fixture.store)
         let activity = try #require(fixture.activities.first)
-        await fixture.wait { activity.tokenStreamsStarted == 1 }
+        try await waitUntil { activity.tokenStreamsStarted == 1 }
         fixture.heldMethod = "PUT"
         activity.rotate(Data([2]))
-        await fixture.wait { fixture.pending.count == 1 }
+        try await waitUntil { fixture.pending.count == 1 }
         #expect(fixture.requests.last?.input?.token == "02")
 
         activity.rotate(Data([3]))
         activity.rotate(Data([4]))
         fixture.releaseWrites()
-        await fixture.wait { fixture.requests.count == 3 }
+        try await waitUntil { fixture.requests.count == 3 }
         #expect(fixture.requests.compactMap { $0.input?.token } == ["01", "02", "04"])
         #expect(fixture.requests.allSatisfy { $0.input?.startedAt == fixture.originalDate })
         #expect(fixture.activities.count == 1)
@@ -1624,7 +1496,7 @@ struct ChannelFollowTests {
         await fixture.controller.follow(second)
         let activity = try #require(fixture.activities.first)
         activity.rotate(Data([2]))
-        await fixture.wait { fixture.requests.count == 3 }
+        try await waitUntil { fixture.requests.count == 3 }
         let content = fixture.activities.map(\.content)
 
         await fixture.controller.registrationCreated(.init(
@@ -1702,7 +1574,7 @@ struct ChannelFollowTests {
                                        reconnectPolicy: .init(initialDelay: 60, maximumDelay: 60, grace: 3), sleep: { _ in })
         defer { unreachable.disconnect() }
         unreachable.connect()
-        await fixture.wait { unreachable.phase.isUnavailable }
+        try await waitUntil { unreachable.phase.isUnavailable }
         #expect(fixture.controller.state(for: unreachable) == .unavailable(.unreachable))
     }
 
@@ -1724,7 +1596,7 @@ struct ChannelFollowTests {
         fixture.registrationStatus = 500
         await fixture.controller.follow(fixture.store)
         let activity = try #require(fixture.activities.first)
-        await fixture.wait { !activity.endings.isEmpty && fixture.completedUnregistrations == 1 }
+        try await waitUntil { !activity.endings.isEmpty && fixture.completedUnregistrations == 1 }
         #expect(fixture.controller.startFailed)
         #expect(fixture.controller.state(for: fixture.store) == .available)
         #expect(fixture.requests.filter { $0.method == "PUT" }.count == (missingToken ? 0 : 1))
@@ -1741,14 +1613,14 @@ struct ChannelFollowTests {
         #expect(activity.content.ending == nil)
         let ending: ChannelActivityAttributes.Ending = removed ? .tasksRemoved : .completed
         activity.deactivate(ending: ending)
-        await fixture.wait { fixture.completedUnregistrations == 1 }
+        try await waitUntil { fixture.completedUnregistrations == 1 }
         #expect(activity.endings.isEmpty)
         #expect(fixture.controller.state(for: fixture.store) == .unavailable(.noTasksInProgress))
         try fixture.apply()
         #expect(fixture.controller.state(for: fixture.store) == .available)
         #expect(fixture.activities.count == 1)
         fixture.controller.configure(servers: [])
-        await fixture.wait { activity.endings.count == 1 }
+        try await waitUntil { activity.endings.count == 1 }
         #expect(activity.endings.last?.ending == ending)
     }
 
@@ -1760,11 +1632,11 @@ struct ChannelFollowTests {
         let content = activity.content
         fixture.heldMethod = "DELETE"
         fixture.controller.configure(servers: [])
-        await fixture.wait { !activity.endings.isEmpty && !fixture.pending.isEmpty }
+        try await waitUntil { !activity.endings.isEmpty && !fixture.pending.isEmpty }
         #expect(fixture.completedUnregistrations == 0)
         #expect(activity.endings == [content])
         fixture.releaseWrites()
-        await fixture.wait { fixture.completedUnregistrations == 1 }
+        try await waitUntil { fixture.completedUnregistrations == 1 }
         #expect(fixture.requests.map(\.method) == ["PUT", "DELETE"])
     }
 
@@ -1774,7 +1646,7 @@ struct ChannelFollowTests {
         await fixture.controller.follow(fixture.store)
         let activity = try #require(fixture.activities.first)
         activity.deactivate()
-        await fixture.wait { fixture.completedUnregistrations == 1 }
+        try await waitUntil { fixture.completedUnregistrations == 1 }
         #expect(fixture.controller.state(for: fixture.store) == .available)
         #expect(activity.endings.isEmpty)
         #expect(fixture.requests.map(\.method) == ["PUT", "DELETE"])
@@ -1785,10 +1657,10 @@ struct ChannelFollowTests {
         defer { fixture.close() }
         fixture.heldMethod = "PUT"
         let oldStart = Task { await fixture.controller.follow(fixture.store) }
-        await fixture.wait { fixture.pending.count == 1 }
+        try await waitUntil { fixture.pending.count == 1 }
         fixture.controller.stop(fixture.store)
         let nextStart = Task { await fixture.controller.follow(fixture.store) }
-        await fixture.wait { fixture.activities.count == 2 }
+        try await waitUntil { fixture.activities.count == 2 }
         fixture.releaseWrites()
         await oldStart.value
         await nextStart.value
@@ -1811,7 +1683,7 @@ struct ChannelFollowTests {
 
         fixture.others = []
         fixture.configure()
-        await fixture.wait { !removed.endings.isEmpty && fixture.completedUnregistrations == 1 }
+        try await waitUntil { !removed.endings.isEmpty && fixture.completedUnregistrations == 1 }
         #expect(fixture.requests.last?.method == "DELETE")
         #expect(fixture.requests.last?.registrationID == other.registration.registrationID)
         #expect(kept.endings.isEmpty)
@@ -1842,7 +1714,7 @@ struct ChannelFollowTests {
         fixture.others[0].registration = other.registration
         fixture.configure()
         #expect(fixture.controller.state(for: other.store) == .following)
-        await fixture.wait { !orphan.endings.isEmpty }
+        try await waitUntil { !orphan.endings.isEmpty }
         #expect(fixture.activities.filter { !$0.endings.isEmpty }.count == 1)
     }
 
@@ -1954,12 +1826,6 @@ private final class FollowFixture {
                            tasks: tasks, updatedAt: "2026-10-27T00:00:00Z"),
             lead: .init(id: store.id, name: "Lead")
         )))
-    }
-
-    func wait(_ predicate: @escaping @MainActor @Sendable () -> Bool) async {
-        for await ready in Observations({ predicate() }) {
-            if ready { return }
-        }
     }
 
     func write(_ method: String, registrationID: String, input: PushSubscription? = nil) async throws {

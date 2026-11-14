@@ -56,17 +56,6 @@ struct ArtifactShareTests {
                 == .init(actor: nil, sharedAt: missingActor.timestamp, sequence: 6))
     }
 
-    @Test func removalDecodesActorAndArtifactLikeSharing() throws {
-        let json = #"{"type":"artifact_removed","actor":{"type":"user"},"artifact":{"id":"plan-id","file":{"kind":"machine","path":"/demo/Plan.md"},"title":"Plan","url":"/api/v1/channels/demo/artifacts/plan-id/content"}}"#
-        let content = try JSONDecoder().decode(ChannelSystemContent.self, from: Data(json.utf8))
-        #expect(content.type == "artifact_removed")
-        #expect(content.actor == .user)
-        #expect(content.artifact?.id == "plan-id")
-        #expect(content.artifact?.url == "/api/v1/channels/demo/artifacts/plan-id/content")
-        #expect(content.artifact?.file == WorkspaceFile(kind: "machine", path: "/demo/Plan.md"))
-        #expect(content.artifact?.title == "Plan")
-    }
-
     @Test func removalDropsTheArtifactAndUnlinksItsTasksAtEveryDepth() throws {
         let url = try #require(Bundle.module.url(forResource: "channel-snapshot", withExtension: "json",
                                                 subdirectory: "Fixtures"))

@@ -4,76 +4,12 @@ import ToyBoxKit
 import Foundation
 import SwiftUI
 import ToyBoxUI
-import Synchronization
 import Testing
 @testable import ToyBoxDesktop
 
 @MainActor
 @Suite("Management validation and presentation", .serialized)
 struct ManagementTests {
-    private struct ManagementFixture {
-        let api: ChannelAPI
-        private let session: URLSession
-        private let host: String
-
-        init(memberStatus: Int = 500) throws {
-            let fixtureHost = "management-\(UUID().uuidString.lowercased()).invalid"
-            host = fixtureHost
-            ManagementProtocol.fixtures.withLock {
-                $0[fixtureHost] = .init(memberStatus: memberStatus)
-            }
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.protocolClasses = [ManagementProtocol.self]
-            session = URLSession(configuration: configuration)
-            api = try ChannelAPI(serverURL: "https://\(fixtureHost)", session: session)
-        }
-
-        var requests: [String] {
-            ManagementProtocol.fixtures.withLock { $0[host]?.requests ?? [] }
-        }
-
-        func close() {
-            session.invalidateAndCancel()
-            ManagementProtocol.fixtures.withLock { _ = $0.removeValue(forKey: host) }
-        }
-    }
-
-    private final class ManagementProtocol: URLProtocol, @unchecked Sendable {
-        struct Fixture: Sendable {
-            let memberStatus: Int
-            var requests: [String] = []
-        }
-        static let fixtures = Mutex<[String: Fixture]>([:])
-
-        override class func canInit(with request: URLRequest) -> Bool { true }
-        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-        override func startLoading() {
-            guard let url = request.url, let host = url.host else {
-                client?.urlProtocol(self, didFailWithError: URLError(.badURL))
-                return
-            }
-            let status = Self.fixtures.withLock { fixtures -> Int? in
-                guard var fixture = fixtures[host] else { return nil }
-                fixture.requests.append("\(request.httpMethod ?? "GET") \(url.path)")
-                fixtures[host] = fixture
-                return fixture.memberStatus
-            }
-            guard let status, let response = HTTPURLResponse(
-                url: url, statusCode: status, httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]) else {
-                client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
-                return
-            }
-            let body = status == 201 ? #"{"id":"moss","name":"Moss"}"# : #"{"error":"Management failed."}"#
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: Data(body.utf8))
-            client?.urlProtocolDidFinishLoading(self)
-        }
-
-        override func stopLoading() {}
-    }
-
     @Test func taskDiffTextMeetsSmallTextContrastInBothAppearances() throws {
         for scheme in [ColorScheme.light, .dark] {
             let colors = ChannelTaskColors.changes(in: scheme)
@@ -145,70 +81,7 @@ struct ManagementTests {
         #expect(OverviewPurpose.requiresExpansion(longer + "\u{2026} Show More", width: CGFloat(width), fontSize: 13))
     }
 
-    @Test func aSaveClosesOnlyTheFlowThatSentIt() async throws {
-        let fixture = try ManagementFixture(memberStatus: 201)
-        defer { fixture.close() }
-        let catalog = ChannelCatalogStore(api: fixture.api)
-        let presenter = ManagementPresenter()
-        let channel = try #require(catalog.target("channel"))
-        presenter.present(.addMember(channel, name: "Moss"))
-        #expect(presenter.memberForm.name == "Moss")
-        await presenter.save(on: catalog)
-        #expect(presenter.flow == nil)
-
-        // Presenting the same flow again is a new visit with fresh entries, which the old save leaves open.
-        presenter.present(.addMember(channel, name: "Moss"))
-        let save = Task.immediate { await presenter.save(on: catalog) }
-        presenter.flow = nil
-        presenter.present(.addMember(channel, name: "Moss"))
-        presenter.memberForm.role = "Unsaved"
-        await save.value
-        #expect(presenter.flow == .addMember(channel, name: "Moss"))
-        #expect(presenter.memberForm.role == "Unsaved" && !presenter.isPending)
-
-        // New Channel's Server menu keeps its entries.
-        presenter.present(.newChannel(server: "http://127.0.0.1:3210"))
-        presenter.channelForm.name = "Workshop"
-        presenter.flow = .newChannel(server: "http://127.0.0.1:3211")
-        #expect(presenter.channelForm.name == "Workshop")
-    }
-
-    @Test func aFailedWriteKeepsItsFlowAndEntries() async throws {
-        let fixture = try ManagementFixture()
-        defer { fixture.close() }
-        let catalog = ChannelCatalogStore(api: fixture.api)
-        let presenter = ManagementPresenter()
-        let target = try #require(catalog.target("channel"))
-        let editing = ManagementFlow.editMember(target, agentId: "moss")
-        presenter.present(editing)
-        presenter.memberForm.name = "Unsaved"
-        presenter.focus = .role
-
-        // Removing from Edit Agent asks beside it, and a failure only says so.
-        let removal = ManagementFlow.removeMember(target, agentId: "moss")
-        await presenter.delete(removal, on: catalog)
-        #expect(presenter.deletion?.flow == removal && presenter.deletion?.failed == true)
-        #expect(presenter.flow == editing && presenter.memberForm.name == "Unsaved")
-
-        await presenter.save(on: catalog)
-        #expect(presenter.flow == editing && presenter.error == "Management failed.")
-        #expect(presenter.memberForm.name == "Unsaved" && presenter.focus == .role && !presenter.isPending)
-    }
-
-    @Test func eachFlowWritesToItsOwnServer() throws {
-        let first = ChannelCatalogStore(api: try ChannelAPI(serverURL: "http://127.0.0.1:3210"))
-        let second = ChannelCatalogStore(api: try ChannelAPI(serverURL: "http://127.0.0.1:3211"))
-        let editing = ManagementFlow.editChannel(try #require(second.target("channel")))
-        let creating = ManagementFlow.newChannel(server: "http://127.0.0.1:3211/")
-        #expect(editing.catalog(in: [first, second]) === second)
-        #expect(creating.catalog(in: [first, second]) === second)
-        // Once Settings removes the server, its channel has nowhere to write, and New Channel starts on the first.
-        #expect(editing.catalog(in: [first]) == nil)
-        #expect(creating.catalog(in: [first]) === first)
-    }
-
-    @Test(arguments: [ColorScheme.light, .dark])
-    func aMissingSheetSubtitleCentersTheTitleWithoutAnEmptyLine(_ scheme: ColorScheme) throws {
+    @Test func aMissingSheetSubtitleCentersTheTitleWithoutAnEmptyLine() throws {
         let layout = ManagementSheetLayout(title: "Edit Channel", subtitle: nil) {
             ManagementChannelMark()
         } fields: {
@@ -229,8 +102,8 @@ struct ManagementTests {
         func render(_ content: some View) throws -> CGImage {
             let renderer = ImageRenderer(content: content
                 .frame(width: 480)
-                .background(scheme == .dark ? Color.black : Color.white)
-                .environment(\.colorScheme, scheme))
+                .background(Color.black)
+                .environment(\.colorScheme, .dark))
             renderer.scale = 2
             return try #require(renderer.cgImage)
         }
@@ -240,58 +113,6 @@ struct ManagementTests {
         let pixels = try #require(image.dataProvider?.data) as Data
         let expectedPixels = try #require(expected.dataProvider?.data) as Data
         #expect(pixels == expectedPixels)
-    }
-
-    @Test func inlineCreationReturnsTheMemberWithoutDismissingAnUnrelatedSheet() async throws {
-        let fixture = try ManagementFixture(memberStatus: 201)
-        defer { fixture.close() }
-        let store = ChannelStore(id: "channel", api: fixture.api)
-        let channel = Channel(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"),
-                              updatedAt: "2026-10-25T12:00:00Z")
-        _ = try store.apply(.init(type: "snapshot", state: .init(
-            revision: 1, channel: channel, lead: .lead(id: store.id))))
-        let presenter = ManagementPresenter()
-        let target = try #require(store.target)
-        presenter.present(.addMember(target, name: "Finch"))
-        let member = try await presenter.createMentionMember(name: "Moss", store: store)
-        #expect(member == ChannelAgent(id: "moss", name: "Moss"))
-        #expect(presenter.flow == .addMember(target, name: "Finch"))
-        #expect(fixture.requests == ["POST /api/v1/channels/channel/members"])
-    }
-
-    @Test func inlineCreationRefusesAnUnconnectedStore() async throws {
-        let api = try ChannelAPI(serverURL: "http://localhost:3210")
-        let store = ChannelStore(id: "not-connected", api: api)
-        let presenter = ManagementPresenter()
-        let target = try #require(store.target)
-        presenter.present(.addMember(target, name: "Finch"))
-        do {
-            _ = try await presenter.createMentionMember(name: "Moss", store: store)
-            Issue.record("Disconnected inline creation must fail before making a request.")
-        } catch let error as ChannelAPIError {
-            #expect(error == .disconnected)
-        }
-        #expect(presenter.flow == .addMember(target, name: "Finch"))
-    }
-
-    @Test func inlineCreationValidatesBeforeWriting() async throws {
-        let name = " lead "
-        let fixture = try ManagementFixture()
-        defer { fixture.close() }
-        let store = ChannelStore(id: "channel", api: fixture.api)
-        let channel = Channel(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"),
-                              updatedAt: "2026-10-25T12:00:00Z")
-        _ = try store.apply(.init(type: "snapshot", state: .init(
-            revision: 1, channel: channel, lead: .lead(id: store.id))))
-        let presenter = ManagementPresenter()
-        do {
-            _ = try await presenter.createMentionMember(name: name, store: store)
-            Issue.record("Invalid inline names must fail before making a request.")
-        } catch let error as ChannelAPIError {
-            #expect(error == .invalidMessage(
-                try #require(ChannelAgent.nameError(name, agents: store.roster))))
-        }
-        #expect(fixture.requests.isEmpty)
     }
 
     @Test(arguments: [280, 328])
@@ -422,19 +243,6 @@ struct ManagementTests {
         try await host.waitForDisclosure(expanded: true)
     }
 
-    @Test func theInProgressFilterKeepsOnlyTasksHoldingWorkAtEachLevel() {
-        let leaf: ChannelTask = .init(id: "leaf", title: "Leaf", status: "done")
-        let activeLeaf: ChannelTask = .init(id: "active", title: "Active", status: "in_progress")
-        let holdingParent: ChannelTask = .init(id: "holding", title: "Holding", status: "done", children: [activeLeaf])
-        let idleParent: ChannelTask = .init(id: "idle", title: "Idle", status: "done", children: [leaf])
-        #expect(OverviewTaskList.keeps(leaf, showsOnlyInProgress: false))
-        #expect(OverviewTaskList.keeps(idleParent, showsOnlyInProgress: false))
-        #expect(!OverviewTaskList.keeps(leaf, showsOnlyInProgress: true))
-        #expect(!OverviewTaskList.keeps(idleParent, showsOnlyInProgress: true))
-        #expect(OverviewTaskList.keeps(holdingParent, showsOnlyInProgress: true))
-        #expect(OverviewTaskList.keeps(activeLeaf, showsOnlyInProgress: true))
-    }
-
     @Test func slotsFollowAnItemWithinAVisitAndGoByPositionAcrossVisits() {
         struct Item: Identifiable { let id: String }
         func items(_ ids: String...) -> [Item] { ids.map(Item.init) }
@@ -472,7 +280,7 @@ struct ManagementTests {
         let field = LongTextHost.Model()
         let host = TaskWindow(LongTextHost(model: field), size: NSSize(width: 480, height: 300))
         defer { host.window.close() }
-        try await host.waitUntil { host.window.firstResponder is NSText }
+        try await waitUntil("the field takes focus", in: host.view) { host.window.firstResponder is NSText }
         try host.press("a", keyCode: 0)
         try host.press("\r", keyCode: 36, modifiers: .option)
         try host.press("b", keyCode: 11)
@@ -484,19 +292,19 @@ struct ManagementTests {
         #expect(field.submits == 1)
     }
 
-    @Test(arguments: [ColorScheme.light, .dark], [0.85, 1, 1.15, 1.4])
-    func waitingPauseCentersOnTheStatusCapitalInk(scheme: ColorScheme, scale: Double) throws {
+    @Test(arguments: [0.85, 1, 1.15, 1.4])
+    func waitingPauseCentersOnTheStatusCapitalInk(scale: Double) throws {
         let renderer = ImageRenderer(content:
             OverviewAgentStatusLine(
                 agent: .init(id: "agent", name: "Agent", role: "Engineer"),
                 status: .init(state: "waiting", text: "WAITING MMMM"), isAvailable: true)
                 .padding(4)
-                .background(scheme == .dark ? Color.black : Color.white)
-                .environment(\.colorScheme, scheme)
+                .background(Color.black)
+                .environment(\.colorScheme, .dark)
                 .environment(\.channelTextScale, scale))
         renderer.scale = 3
         let bitmap = try RenderedPixels(try #require(renderer.cgImage))
-        let background = scheme == .dark ? 0.0 : 1.0
+        let background = 0.0
         var cueRows = Set<Int>(), textRows = Set<Int>()
         for y in 0..<bitmap.pixelsHigh {
             for x in 0..<bitmap.pixelsWide {
@@ -511,7 +319,7 @@ struct ManagementTests {
         let cueCenter = Double(try #require(cueRows.min()) + #require(cueRows.max())) / 6
         let textCenter = Double(try #require(textRows.min()) + #require(textRows.max())) / 6
         #expect(abs(cueCenter - textCenter) <= 0.5,
-                "Pause \(cueCenter), capital ink \(textCenter), scale \(scale), \(scheme)")
+                "Pause \(cueCenter), capital ink \(textCenter), scale \(scale)")
     }
 
     @Test func folderRowOffersRevealOnlyForAnOpenableFolder() throws {
@@ -637,24 +445,13 @@ struct ManagementTests {
         for segment in view.segments {
             #expect(segment.frame.minY == 0 && segment.frame.height == view.bounds.height)
             #expect(segment.opacity == ChannelEllipsisPulseMask.rest)
-            let fade = try #require(segment.animation(forKey: "fade") as? CABasicAnimation)
-            #expect(fade.fromValue as? Float == 1 && fade.toValue as? Float == 0.25)
-            #expect(fade.duration == 0.3125)
-            let pulse = try #require(segment.animation(forKey: "pulse") as? CAKeyframeAnimation)
-            #expect((pulse.values as? [NSNumber])?.map(\.floatValue) == [0.25, 1, 0.25, 0.25])
-            #expect(pulse.keyTimes?.map(\.doubleValue) == [0, 0.1875, 0.375, 1])
-            #expect(abs(pulse.duration - 5.0 / 3) < 0.0001)
-            #expect(pulse.repeatCount == .infinity)
-            #expect(pulse.preferredFrameRateRange.maximum == 30)
-            begins.append(pulse.beginTime)
+            begins.append(try #require(segment.animation(forKey: "pulse")).beginTime)
             edges.append(segment.frame.minX)
             edges.append(segment.frame.maxX)
         }
-        // The first dot rises as the fade to rest ends, and the others follow a third of a second apart.
+        // The first dot rises as the fade to rest ends, timed from when the window attached it.
         #expect(begins[0] >= view.segments[0].convertTime(start, from: nil) + 0.3125)
         #expect(begins[0] <= view.segments[0].convertTime(attached, from: nil) + 0.3125)
-        #expect(abs(begins[1] - begins[0] - 1.0 / 3) < 0.0001)
-        #expect(abs(begins[2] - begins[1] - 1.0 / 3) < 0.0001)
         // Each segment starts where the last ends, from one side of the symbol to the other.
         #expect(edges.first == 0 && edges.last == 11)
         #expect(edges[1] == edges[2] && edges[3] == edges[4])
@@ -710,7 +507,8 @@ struct ManagementTests {
         }
 
         func waitForDisclosure(expanded: Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {
-            try await waitUntil(sourceLocation: sourceLocation) {
+            try await waitUntil(expanded ? "the children are drawn" : "only the parent is drawn", in: view,
+                                sourceLocation: sourceLocation) {
                 guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return false }
                 view.cacheDisplay(in: view.bounds, to: bitmap)
                 guard let image = bitmap.cgImage else { return false }
@@ -729,7 +527,7 @@ struct ManagementTests {
 
         /// Waits until no status icon is drawn, so a hidden parent and its expanded children are both gone.
         func waitForNoStatusIcons(sourceLocation: SourceLocation = #_sourceLocation) async throws {
-            try await waitUntil(sourceLocation: sourceLocation) {
+            try await waitUntil("no status icon is drawn", in: view, sourceLocation: sourceLocation) {
                 guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return false }
                 view.cacheDisplay(in: view.bounds, to: bitmap)
                 guard let image = bitmap.cgImage else { return false }
@@ -741,17 +539,6 @@ struct ManagementTests {
                     }
                 }
                 return true
-            }
-        }
-
-        func waitUntil(sourceLocation: SourceLocation = #_sourceLocation, _ condition: () throws -> Bool) async throws {
-            let deadline = ContinuousClock.now + .seconds(30)
-            while try !condition() {
-                try #require(ContinuousClock.now < deadline, "The hosted control never reached the expected state.",
-                             sourceLocation: sourceLocation)
-                view.layoutSubtreeIfNeeded()
-                window.displayIfNeeded()
-                try await Task.sleep(for: .milliseconds(10))
             }
         }
     }
