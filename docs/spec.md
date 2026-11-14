@@ -1493,18 +1493,21 @@ disabled.
      `.sensoryFeedback(.success)` plays as it arrives.
    - The counter gives way to the time the note was sent, in the row's ordinary format, through
      the slot's swap. No word says Sent, because the check does.
-   - The card's shadow and edge fade out as it lands, and its fill stays as a wash.
-4. As the card lands, its wash fades over 0.4 seconds with `.easeOut`, and the chevron and
-   attention mark fade back. The row now looks ordinary except that it wears the check in
-   place of its mark.
+   - The card's shadow and edge fade out as it lands.
+4. As the card lands, it hands back to the list's own row, which carries the rest of the beat
+   in its own slots and ink: the check in place of its mark, the note's time as its time, and
+   the card's fill as a wash in the row highlight's frame and corners. The wash fades over 0.4
+   seconds with `.easeOut`, and the chevron and attention mark fade back. The row now looks
+   ordinary except that it wears the check in place of its mark.
 5. Two seconds after the card lands, the check fades back into the channel's avatar,
-   as the Mark row describes. That's the settle. The card hands back to the cell, which already looks the same,
-   and the row is an ordinary row with no preview of the note. The note's time becomes the row's
-   own time without a swap, since both read the same. Swiping the row again before the
-   settle starts a new note, and the check swaps straight to the mic.
+   as the Mark row describes. That's the settle, and the row is an ordinary row with no preview
+   of the note. The note's time becomes the row's own time without a swap, since both read the
+   same. Swiping the row again before the settle starts a new note, and the check swaps straight
+   to the mic.
 
-On the open channel's row, the selection band returns as the wash fades. The check stays green
-on it, since the glass selection keeps the row's standard ink.
+On the open channel's row, the wash sits over the selection band, so the band returns as the
+wash fades. The row's ink is the list's own throughout, so it always matches the band, and the
+check stays green on it.
 
 **Not sent.** The card never waits on the server or reports a failure. A note the outbox can't
 deliver waits in its channel as Not sent, with Retry, like any message.
