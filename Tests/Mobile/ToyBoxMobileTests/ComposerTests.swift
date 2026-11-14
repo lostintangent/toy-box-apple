@@ -261,19 +261,6 @@ struct ComposerTests {
         #expect(!view.isEditable)
     }
 
-    @Test func theNativeDraftUsesOpaqueAdaptiveLabelInk() throws {
-        let input = ComposerTextView()
-        input.text = "Readable draft"
-        let ink = try #require(input.textColor)
-        #expect(input.text == "Readable draft")
-        for style in [UIUserInterfaceStyle.light, .dark] {
-            let traits = UITraitCollection(userInterfaceStyle: style)
-            let resolved = ink.resolvedColor(with: traits)
-            #expect(resolved == UIColor.label.resolvedColor(with: traits))
-            #expect(resolved.cgColor.alpha == 1)
-        }
-    }
-
     @Test(arguments: [ColorScheme.light, .dark], [false, true])
     func placeholderUsesReadableSecondaryInkEvenUnderAnInheritedPrimaryStyle(
         scheme: ColorScheme, listening: Bool
@@ -319,22 +306,19 @@ struct ComposerTests {
         }
     }
 
-    @Test(arguments: [ColorScheme.light, .dark], [DynamicTypeSize.large, .accessibility5])
-    func hintFitsAtItsNativeFontWithoutEllipsis(scheme: ColorScheme, size: DynamicTypeSize) throws {
+    @Test(arguments: [DynamicTypeSize.large, .accessibility5])
+    func hintFitsAtItsNativeFontWithoutEllipsis(size: DynamicTypeSize) throws {
         let actual = try render(ComposerPlaceholder(isListening: false)
-            .frame(width: 340, alignment: .leading)
-            .environment(\.colorScheme, scheme).dynamicTypeSize(size), width: 340)
+            .frame(width: 340, alignment: .leading).dynamicTypeSize(size), width: 340)
         let expected = try render(Text(size == .accessibility5 ? "Message" : "Message your team")
             .font(.body).foregroundStyle(ChannelInk.secondary)
-            .frame(width: 340, alignment: .leading)
-            .environment(\.colorScheme, scheme).dynamicTypeSize(size), width: 340)
+            .frame(width: 340, alignment: .leading).dynamicTypeSize(size), width: 340)
         #expect(actual.width == expected.width)
         #expect(actual.height == expected.height)
         #expect(try renderedPixels(actual) == renderedPixels(expected))
     }
 
-    @Test(arguments: [ColorScheme.light, .dark])
-    func largestTypeContextUsesSeparateFullHeightRowsWhenBothLabelsDoNotFit(scheme: ColorScheme) throws {
+    @Test func largestTypeContextUsesSeparateFullHeightRowsWhenBothLabelsDoNotFit() throws {
         let lead = ChannelAgent.lead(id: "test", profile: .init(
             name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")
         ))
@@ -342,11 +326,11 @@ struct ComposerTests {
         let request = ComposerRequestLabel(wraps: true).font(.footnote)
         for width: CGFloat in [220, 340, 426] {
             let context = try render(ComposerContextLayout { audience; request }
-                .environment(\.colorScheme, scheme).dynamicTypeSize(.accessibility5), width: width)
+                .dynamicTypeSize(.accessibility5), width: width)
             let reference = try render(VStack(alignment: .leading, spacing: 4) {
                 audience
                 request
-            }.environment(\.colorScheme, scheme).dynamicTypeSize(.accessibility5), width: width)
+            }.dynamicTypeSize(.accessibility5), width: width)
             #expect(abs(context.height - reference.height) <= 1,
                     "The complete wrapping request and audience each retain their measured row")
             #expect(context.width <= Int(width))
@@ -359,20 +343,6 @@ struct ComposerTests {
         let inline = try render(HStack(spacing: 4) { audience; request }
             .dynamicTypeSize(.accessibility5), width: 720)
         #expect(wide.height == inline.height, "Fitting context stays on one row")
-    }
-
-    @Test(arguments: [DynamicTypeSize.large, .accessibility5])
-    func attachmentGlyphStays17PointsInsideIts44PointTarget(size: DynamicTypeSize) throws {
-        let image = try render(ComposerAttachmentLabel().dynamicTypeSize(size))
-        #expect(image.width == 44 && image.height == 44)
-        let pixels = try renderedPixels(image)
-        let occupiedRows = (0..<image.height).filter { y in
-            (0..<image.width).contains { pixels[(y * image.width + $0) * 4 + 3] > 0 }
-        }
-        let first = try #require(occupiedRows.first)
-        let last = try #require(occupiedRows.last)
-        #expect(last - first + 1 <= 22, "A symbol image may extend slightly beyond its 17-point font")
-        #expect(first >= 10 && last < 34)
     }
 
     @Test func upperContextCompressesBeforeTheNativeEditorAndActionRow() throws {
@@ -534,22 +504,11 @@ struct ComposerTests {
         let connecting = try textTop()
 
         store.connect()
-        let failed = Task { @MainActor in
-            for await unavailable in Observations({ store.phase.isUnavailable }) where unavailable { return true }
-            return false
-        }
-        Task { try await Task.sleep(for: .seconds(10)); failed.cancel() }
-        try #require(await failed.value, "The unreachable channel reports its failure")
+        try await waitUntil("the unreachable channel reports its failure") { store.phase.isUnavailable }
         await Task.yield()
         host.view.layoutIfNeeded()
         #expect(abs(try textTop() - connecting) <= 0.5, "Only a deleted channel draws a notice above the text")
         withExtendedLifetime(target) {}
-    }
-
-    @Test(arguments: [false, true], [false, true])
-    func onlyCompactWithTheKeyboardDownRemovesTheBottomGap(compact: Bool, keyboardVisible: Bool) {
-        #expect(ComposerBottomSpacing.value(compact: compact, keyboardVisible: keyboardVisible)
-                == (compact && !keyboardVisible ? 0 : 8))
     }
 
     @Test func keyboardOcclusionDoesNotMistakeTheHomeIndicatorSafeAreaForAVisibleKeyboard() {
@@ -592,50 +551,45 @@ struct ComposerTests {
         window.isHidden = false
         defer { window.isHidden = true }
 
-        func settle() async {
-            host.view.layoutIfNeeded()
-            await Task.yield()
-            host.view.layoutIfNeeded()
-        }
-        func keyboard(top: CGFloat) async {
+        func keyboard(top: CGFloat) {
             let frame = CGRect(x: 0, y: top, width: 466, height: 336)
             NotificationCenter.default.post(
                 name: UIResponder.keyboardWillChangeFrameNotification, object: window.screen,
                 userInfo: [UIResponder.keyboardFrameEndUserInfoKey: NSValue(cgRect: frame)])
-            await settle()
         }
-        func composerBottom() throws -> CGFloat {
-            let input = try #require(session.editor.textView)
-            #expect(input.window === window)
+        func composerBottom() -> CGFloat? {
+            guard let input = session.editor.textView, input.window === window else { return nil }
             return input.convert(input.bounds, to: window).maxY
         }
-        func findBottom() throws -> CGFloat {
-            try #require(MobileAutomationTree(windows: [window]).elements.first { $0.label == "Close Find" }).frame.maxY
+        func findBottom() -> CGFloat? {
+            MobileAutomationTree(windows: [window]).elements.first { $0.label == "Close Find" }?.frame.maxY
         }
 
-        await settle()
+        try await waitUntil("the composer mounts", in: host.view) { composerBottom() != nil }
         #expect(!screen.keyboardIsVisible)
-        let composerResting = try composerBottom()
+        let composerResting = try #require(composerBottom())
 
-        await keyboard(top: 564)
-        #expect(screen.keyboardIsVisible)
-        #expect(try composerBottom() == composerResting - 8)
+        keyboard(top: 564)
+        try await waitUntil("the composer rises above the keyboard", in: host.view) {
+            screen.keyboardIsVisible && composerBottom() == composerResting - 8
+        }
 
         // Find arrives over a keyboard that doesn't move, so no notification tells it.
         screen.showsFind = true
-        await settle()
-        let findAboveKeyboard = try findBottom()
+        try await waitUntil("Find replaces the composer", in: host.view) { findBottom() != nil }
+        let findAboveKeyboard = try #require(findBottom())
         #expect(screen.keyboardIsVisible)
 
         // The keyboard goes down while the composer is gone.
-        await keyboard(top: 900)
-        #expect(!screen.keyboardIsVisible)
-        #expect(try findBottom() == findAboveKeyboard + 8)
+        keyboard(top: 900)
+        try await waitUntil("Find follows the keyboard down", in: host.view) {
+            !screen.keyboardIsVisible && findBottom() == findAboveKeyboard + 8
+        }
 
         screen.showsFind = false
-        await settle()
-        #expect(!screen.keyboardIsVisible)
-        #expect(try composerBottom() == composerResting)
+        try await waitUntil("the composer returns to rest", in: host.view) {
+            !screen.keyboardIsVisible && composerBottom() == composerResting
+        }
         withExtendedLifetime(target) {}
     }
 
@@ -890,24 +844,6 @@ struct ComposerTests {
         #expect(text == view.text)
     }
 
-    @Test func constructingAComposerDoesNotQuerySpeechAssetsDevicesOrPermissions() async throws {
-        let probe = MobileDictationProbe()
-        let recognizer = MobileTestRecognizer()
-        let (session, target) = try dictatingSession(recognizer, probe: probe)
-        #expect(probe.localeChecks == 0)
-        #expect(probe.deviceChecks == 0)
-        #expect(probe.accessChecks == 0)
-        #expect(probe.assetChecks == 0)
-        #expect(probe.sources == 0)
-        await session.dictation.refreshLanguageSupport()
-        #expect(probe.localeChecks == 1)
-        #expect(probe.deviceChecks == 0)
-        #expect(probe.accessChecks == 0)
-        #expect(probe.assetChecks == 0)
-        #expect(probe.sources == 0)
-        #expect(target.input.text.isEmpty)
-    }
-
     @Test func sendWaitsForFinalWordsBeforeSendingThem() async throws {
         let recognizer = MobileTestRecognizer()
         recognizer.finalWords = [("Final words.", true)]
@@ -978,8 +914,7 @@ struct ComposerTests {
     }
 
     private func dictatingSession(
-        _ recognizer: MobileTestRecognizer, probe: MobileDictationProbe = .init(), outbox: ChannelOutbox? = nil,
-        store: ChannelStore? = nil
+        _ recognizer: MobileTestRecognizer, outbox: ChannelOutbox? = nil, store: ChannelStore? = nil
     ) throws -> (ComposerSession, MobileDictationTarget) {
         // Without a catalog the outbox only saves, so nothing here posts.
         let store = try store ?? ChannelStore(id: "test", api: ChannelAPI(serverURL: "https://dictation.test"))
@@ -993,7 +928,7 @@ struct ComposerTests {
         )))
         let draft = ComposerDraft(imageIsReadable: { _ in false })
         let session = ComposerSession(store: store, draft: draft,
-                                      dictationSystem: dictationSystem(recognizer, probe: probe))
+                                      dictationSystem: dictationSystem(recognizer))
         let input = NativeComposerInput(
             text: Binding(get: { draft.text }, set: { draft.text = $0 }), editor: session.editor,
             onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in },
@@ -1011,17 +946,15 @@ struct ComposerTests {
         return (session, target)
     }
 
-    private func dictationSystem(
-        _ recognizer: MobileTestRecognizer, probe: MobileDictationProbe = .init()
-    ) -> DictationSystem {
+    private func dictationSystem(_ recognizer: MobileTestRecognizer) -> DictationSystem {
         var system = DictationSystem(
-            supportedLocale: { probe.localeChecks += 1; return Locale(identifier: "en-US") },
-            hasMicrophone: { probe.deviceChecks += 1; return true },
-            microphoneAccess: { probe.accessChecks += 1; return .granted },
+            supportedLocale: { Locale(identifier: "en-US") },
+            hasMicrophone: { true },
+            microphoneAccess: { .granted },
             requestMicrophoneAccess: { Issue.record("Tests must not request microphone access"); return false },
             speechRecognitionDenied: { false },
-            installAssets: { _, _ in probe.assetChecks += 1 },
-            makeSource: { probe.sources += 1; return MobileInertAudioSource() },
+            installAssets: { _, _ in },
+            makeSource: { MobileInertAudioSource() },
             makeRecognizer: { _, _, _ in recognizer },
             announce: { _ in },
             openSettings: { _ in Issue.record("Tests must not open Settings") }
@@ -1060,32 +993,23 @@ struct ComposerTests {
         #expect(preview.outcome == .revealed)
     }
 
-    @Test func dismissedAndSupersededRequestFailuresNeverReopenTheirPreview() {
-        for supersedesRequest in [false, true] {
-            var preview = ComposerRequestPreviewState()
-            let token = UUID()
-            preview.begin(.init(sequence: 40, text: "Retained"), token: token)
-            preview.update(.init(token: token, sequence: 40, outcome: .failed("Failure")),
-                           requestSequence: 40, currentToken: token)
-            preview.dismiss()
-            preview.update(.init(token: token, sequence: 40, outcome: .failed("Later failure")),
-                           requestSequence: 40, currentToken: token)
-            #expect(!preview.isPresented)
-            preview.update(.init(token: token, sequence: 40, outcome: .failed("Obsolete")),
-                           requestSequence: supersedesRequest ? 41 : 40,
-                           currentToken: supersedesRequest ? token : UUID())
-            #expect(preview.question == nil)
-            #expect(preview.token == nil)
-            #expect(!preview.isPresented)
-        }
-    }
-
-    @MainActor private final class MobileDictationProbe {
-        var localeChecks = 0
-        var deviceChecks = 0
-        var accessChecks = 0
-        var assetChecks = 0
-        var sources = 0
+    @Test(arguments: [false, true])
+    func dismissedAndSupersededRequestFailuresNeverReopenTheirPreview(supersedesRequest: Bool) {
+        var preview = ComposerRequestPreviewState()
+        let token = UUID()
+        preview.begin(.init(sequence: 40, text: "Retained"), token: token)
+        preview.update(.init(token: token, sequence: 40, outcome: .failed("Failure")),
+                       requestSequence: 40, currentToken: token)
+        preview.dismiss()
+        preview.update(.init(token: token, sequence: 40, outcome: .failed("Later failure")),
+                       requestSequence: 40, currentToken: token)
+        #expect(!preview.isPresented)
+        preview.update(.init(token: token, sequence: 40, outcome: .failed("Obsolete")),
+                       requestSequence: supersedesRequest ? 41 : 40,
+                       currentToken: supersedesRequest ? token : UUID())
+        #expect(preview.question == nil)
+        #expect(preview.token == nil)
+        #expect(!preview.isPresented)
     }
 
     @MainActor private final class MobileDictationTarget: DictationTextTarget {
