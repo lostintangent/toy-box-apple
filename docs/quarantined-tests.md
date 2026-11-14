@@ -81,3 +81,28 @@ git history keeps closed incidents.
   loading or its scroll message never arrived. Like the origin probe, the test loads an HTML artifact
   from the fixture server and waits for a `postMessage`, so t607 follows both. Restoration needs the
   stalled step identified, with deterministic coverage, never a longer deadline or a retry.
+
+## Artifact external links on the phone
+
+- `ArtifactWebRendererTests.externalLinksOpenTheBrowserInsteadOfReplacingTheEmbeddedDocument` is
+  quarantined on the iPhone simulator in t1131, behind `TOY_BOX_TEST_ARTIFACT_PHONE_EXTERNAL_LINK=1`.
+  Owner: Overview. Its assertions and its 60-second `wait(until:)` are unchanged, and the phone run
+  skips it with its reason. Both misses were on the simulator, so the Mac runs the same shared test
+  in the gate, and an external link opening the browser stays covered there.
+- On 2026-11-10, under load averages of 59 to 170, the simulator's WebKit took 5.9 seconds to ask
+  for the root document's policy and 8.7 seconds to start it, so the link opened after the
+  then 15-second deadline. The deadline became 60 seconds in `1ce24856`.
+- On 2026-11-14 it hung in CI, in the iOS foundation job of
+  [run 43632443145](https://github.com/lostintangent/toy-box-apple/actions/runs/43632443145) on
+  `f811319`. ToyBoxUITests printed nothing for 3 minutes and was stopped with this test started and
+  unfinished. It stalled somewhere its wait's 60-second deadline couldn't report, and at cleanup the
+  simulator had already shut down. It was the job's first failure in 40 runs.
+- The same day it missed the 60-second deadline in Overview's local full phone run for t1131, on the
+  shared Mac at load averages of about 390 to 455 from ordinary agent builds and a freshly booted
+  simulator, with no burner. It failed at the helper's `#require` (`ArtifactWebRendererTests.swift:40`,
+  unchanged since `d53a8d9`): "The artifact did not reach its expected settled state."
+- The two misses stalled at different points. In CI, the leading candidate is `ArtifactWebRenderer.load`'s
+  `compileContentRuleList`, its one unbounded await. Locally, the load returned, but the helper
+  doesn't say whether the page never finished loading or the link never reached the navigation
+  policy. Neither is measured. t607 follows it with the other WebKit settle misses. Restoration needs
+  the stalled step identified, with deterministic coverage, never a longer deadline or a retry.

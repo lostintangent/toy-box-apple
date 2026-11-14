@@ -28,7 +28,9 @@ in the iOS build.
   finished. A suite's launch waits on the simulator rather than the tests, so the three minutes
   start at its first output, and one that prints nothing for ten minutes after it launches is
   stopped the same way. A sample that fails is noted, and the stall stays the error.
-- Existing opt-ins stay off.
+- Existing opt-ins stay off. Prefix one with `SIMCTL_CHILD_` to pass it to the simulator, like
+  `SIMCTL_CHILD_TOY_BOX_TEST_ARTIFACT_PHONE_EXTERNAL_LINK=1` for the quarantined phone external-link
+  test in [docs/quarantined-tests.md](../../../../docs/quarantined-tests.md).
 - It boots the simulator only once the build finishes, because a CI runner's simulator can shut
   down during the build. It prints how long the simulator took to be ready and each suite took to
   start.
