@@ -196,7 +196,9 @@ and are there again when it comes back.
   until it wakes or the user disconnects and connects through another Mac. Settings, the Screens
   list, New Channel's server menu and the footer's count follow the same list. A channel that's
   open when its server leaves stays open with its own reconnecting notice, and only the list
-  drops it.
+  drops it. A window restored at launch on a peer's channel or screens waits for that peer to
+  open, whichever peers answer first, so it fills in once that Mac answers. Only Disconnect
+  starts a channel window over or closes a Screens window.
 - **Both apps group by server even with one.** Every server in the list has its header, so the list
   always says whose channels it shows and a second never reshapes it.
 - **Grouped list.** The Mac sidebar and the phone list show one collapsible section per server, in
