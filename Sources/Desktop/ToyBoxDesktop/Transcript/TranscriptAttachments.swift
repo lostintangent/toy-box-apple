@@ -8,7 +8,6 @@ import ImageIO
 import QuickLook
 import SwiftUI
 import ToyBoxUI
-import UniformTypeIdentifiers
 
 struct TranscriptAttachments: View {
     let attachments: [ChannelAttachment]
@@ -67,10 +66,8 @@ private struct TranscriptAttachment: View {
     var delete: (() -> Void)?
     @ViewState private var localURL: URL?
     @ViewState private var thumbnail: CGImage?
-    @ViewState private var error: String?
-    @ViewState private var isLoading = false
+    @ViewState private var failed = false
     @ViewState private var previewURL: URL?
-    @ViewState private var isPlaying = false
     @ViewState private var retry = 0
     @FocusState private var isFocused: Bool
     @AccessibilityFocusState private var isAccessibilityFocused: Bool
@@ -86,17 +83,9 @@ private struct TranscriptAttachment: View {
 
     /// Asked for as the tile appears, while VoiceOver is running.
     private var descriptionRequest: AltTextRequest? {
-        guard isImage, TranscriptImageDescriptionSession.isActive(voiceOver: voiceOver, isOn: describesImages,
+        guard attachment.isImage, TranscriptImageDescriptionSession.isActive(voiceOver: voiceOver, isOn: describesImages,
                                                                   using: intelligence) else { return nil }
         return TranscriptImageDescriptionSession.request(for: attachment, api: api, file: localURL, priority: .visible)
-    }
-    private var fileType: UTType? { attachment.contentType }
-    private var isImage: Bool { fileType?.conforms(to: .image) == true }
-    private var isVideo: Bool { fileType?.conforms(to: .movie) == true }
-    /// Where WebKit streams a video the system's player can't decode.
-    private var webVideoURL: URL? {
-        guard !attachment.playsInSystemPlayer, let address = attachment.url else { return nil }
-        return api.resourceURL(address)
     }
 
     /// The tile steps aside only while the viewer's image stands in for it, zooming out of it or
@@ -117,59 +106,20 @@ private struct TranscriptAttachment: View {
     }
 
     var body: some View {
-        let thumbnail = thumbnail ?? ChannelThumbnails.remembered(for: attachment, api: api)
-        VStack(alignment: .leading, spacing: 5) {
-            if isImage {
-                imageTile(thumbnail)
-            } else if isVideo, let localURL {
-                Button { isPlaying = true } label: {
-                    VStack(spacing: 10) {
-                        if let thumbnail {
-                            Image(decorative: thumbnail, scale: 1).resizable().scaledToFit()
-                                .frame(maxWidth: 240, maxHeight: 120)
-                        }
-                        Label("Play \(name)", systemImage: "play.circle.fill")
-                            .lineLimit(2)
-                    }
-                    .padding(12)
-                    .frame(maxWidth: 240, minHeight: 80)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-                .sheet(isPresented: $isPlaying) {
-                    TranscriptVideo(file: localURL, stream: webVideoURL, name: name)
+        Group {
+            if attachment.isImage {
+                imageTile(thumbnail ?? ChannelThumbnails.remembered(for: attachment, api: api))
+            } else if attachment.isVideo, let address = attachment.url, let url = api.resourceURL(address) {
+                TranscriptVideo(attachment: attachment, url: url, api: api) {
+                    TranscriptVideoSheet(attachment: attachment, url: url)
                 }
             } else {
-                HStack(spacing: 8) {
-                    Image(systemName: isVideo ? "video" : "doc")
-                        .font(.title3).foregroundStyle(.secondary)
-                    Text(name).lineLimit(2).frame(maxWidth: 170, alignment: .leading)
-                    if isLoading {
-                        ProgressView().controlSize(.small)
-                    } else if localURL != nil {
-                        Button("Open") { previewURL = localURL }
-                            .buttonStyle(.borderless)
-                    }
-                }
-                .font(.system(size: 12))
-                .padding(10)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
-            }
-            if let error, !isImage {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("Couldn't load \(name): \(error)")
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button("Retry") { retry += 1 }.buttonStyle(.borderless)
-                }
-                .font(.caption)
-                .frame(maxWidth: 240, alignment: .leading)
+                TranscriptFileRow(attachment: attachment, api: api)
             }
         }
         .quickLookPreview($previewURL)
-        .task(id: retry) { await load() }
         .contextMenu {
-            Button("Quick Look") { previewURL = localURL }.disabled(localURL == nil)
+            Button("Quick Look") { Task { await quickLook() } }
             if let address = attachment.url, let url = api.resourceURL(address) {
                 Link("Open in Browser", destination: url)
             }
@@ -180,6 +130,15 @@ private struct TranscriptAttachment: View {
         }
     }
 
+    /// An image's file is already here, and a video or file downloads first.
+    private func quickLook() async {
+        if let localURL {
+            previewURL = localURL
+        } else {
+            previewURL = try? await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: false)
+        }
+    }
+
     /// A loading image holds its final size, from its inline header or from the cached file of an
     /// earlier load, so the row never grows when the preview lands. Only a remote image the app has
     /// never loaded resizes, once.
@@ -187,9 +146,9 @@ private struct TranscriptAttachment: View {
         let pixels = ChannelImageDecoder.pixelSize(for: attachment, api: api)
             ?? thumbnail.map { CGSize(width: $0.width, height: $0.height) } ?? CGSize(width: 120, height: 90)
         let size = ChannelThumbnails.boxSize(fitting: pixels)
-        let tile = RoundedRectangle(cornerRadius: 8)
+        let tile = RoundedRectangle.transcriptAttachment
         // An image that couldn't load keeps its tile, and choosing it tries again.
-        let isBroken = thumbnail == nil && error != nil
+        let isBroken = thumbnail == nil && failed
         let action: () -> Void = isBroken ? { retry += 1 } : { view() }
         return Button(action: action) {
             ZStack {
@@ -239,6 +198,7 @@ private struct TranscriptAttachment: View {
             : TranscriptImageDescriptionSession.value(TranscriptImageDescriptionSession.shared.text(for: descriptionRequest)))
         .accessibilityHint(isBroken ? "Tries again" : "")
         .help(isBroken ? "Couldn't load this image. Click to try again." : "View \(name)")
+        .task(id: retry) { await load() }
         .task(id: descriptionRequest) {
             guard let descriptionRequest else { return }
             await TranscriptImageDescriptionSession.shared.describe(descriptionRequest, using: intelligence)
@@ -246,63 +206,41 @@ private struct TranscriptAttachment: View {
     }
 
     private func load() async {
-        isLoading = true
-        error = nil
-        defer { isLoading = false }
+        failed = false
         do {
-            if isImage {
-                let loaded = try await TranscriptThumbnails.load(for: attachment, api: api, scale: displayScale,
-                                                                 reload: retry > 0)
-                guard !Task.isCancelled else { return }
-                thumbnail = loaded.image
-                localURL = loaded.file
-                return
-            }
-            let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: retry > 0)
+            let loaded = try await TranscriptThumbnails.load(for: attachment, api: api, scale: displayScale,
+                                                             reload: retry > 0)
             guard !Task.isCancelled else { return }
-            localURL = file
-            if isVideo, attachment.playsInSystemPlayer {
-                let asset = AVURLAsset(url: file)
-                let generator = AVAssetImageGenerator(asset: asset)
-                generator.appliesPreferredTrackTransform = true
-                generator.maximumSize = CGSize(width: 480, height: 320)
-                do {
-                    let image = try await generator.image(at: .zero).image
-                    guard !Task.isCancelled else { return }
-                    thumbnail = ChannelThumbnails.remember(image, for: attachment, api: api)
-                } catch {
-                    // A missing poster must not prevent playback of a valid video.
-                    self.error = "Video preview unavailable. Use Play to open the video."
-                }
-            }
+            thumbnail = loaded.image
+            localURL = loaded.file
         } catch is CancellationError {
             return
         } catch {
             // An image that downloaded but can't be decoded still opens in Quick Look.
             localURL = ChannelAttachmentCache.cachedFile(for: attachment, api: api)
-            self.error = error.localizedDescription
+            failed = true
         }
     }
 }
 
-private struct TranscriptVideo: View {
-    let file: URL
-    let stream: URL?
-    let name: String
+/// The player in a sheet: the system's, or WebKit's for a format the system can't decode.
+private struct TranscriptVideoSheet: View {
+    let attachment: ChannelAttachment
+    let url: URL
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(name).font(.headline).lineLimit(1)
+                Text(attachment.displayName).font(.headline).lineLimit(1)
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding()
             Group {
-                if let stream {
-                    TranscriptWebVideo(url: stream)
+                if attachment.playsInSystemPlayer {
+                    TranscriptPlayer(url: url)
                 } else {
-                    TranscriptPlayer(url: file)
+                    TranscriptWebVideo(url: url)
                 }
             }
             .frame(minWidth: 560, minHeight: 340)
@@ -345,19 +283,14 @@ enum TranscriptThumbnails {
     }
 
     nonisolated private static let svg: ChannelThumbnails.Fallback = { file, bound in
-        let decoded = try TranscriptSVGImage.decode(file, maximumPixelSize: bound)
-        return (decoded.image, decoded.pixelSize)
+        try TranscriptSVGImage.decode(file, maximumPixelSize: bound)
     }
 }
 
 enum TranscriptSVGImage {
     static let maximumPixelSize = 8192
-    struct Decoded {
-        let image: CGImage
-        let pixelSize: CGSize
-    }
 
-    static func decode(_ file: URL, maximumPixelSize: Int) throws -> Decoded {
+    static func decode(_ file: URL, maximumPixelSize: Int) throws -> ArtifactDecodedImage {
         let data = try Data(contentsOf: file)
         guard let image = NSImage(data: data) else { throw ChannelAttachmentError.invalidImage }
         let size = image.size
@@ -381,6 +314,6 @@ enum TranscriptSVGImage {
         image.draw(in: CGRect(x: 0, y: 0, width: width, height: height),
                    from: .zero, operation: .copy, fraction: 1)
         guard let bitmap = context.makeImage() else { throw ChannelAttachmentError.invalidImage }
-        return Decoded(image: bitmap, pixelSize: size)
+        return ArtifactDecodedImage(image: bitmap, size: size)
     }
 }

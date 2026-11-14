@@ -606,7 +606,7 @@ final class ImageViewer {
             kCGImageSourceShouldCacheImmediately: true,
         ] as CFDictionary) { return (image, nil) }
         let decoded = try TranscriptSVGImage.decode(file, maximumPixelSize: maximumPixelSize)
-        return (decoded.image, decoded.pixelSize)
+        return (decoded.image, decoded.size)
     }
 
     /// Redraws a decoded image in the display's color space and native BGRA layout. Otherwise

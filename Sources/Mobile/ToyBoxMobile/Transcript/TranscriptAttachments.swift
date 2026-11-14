@@ -2,10 +2,8 @@ import AVKit
 import ChannelClient
 import ChannelIntelligence
 import ChannelKit
-import QuickLook
 import SwiftUI
 import ToyBoxUI
-import UniformTypeIdentifiers
 
 struct TranscriptAttachments: View {
     let attachments: [ChannelAttachment]
@@ -41,10 +39,14 @@ struct TranscriptAttachments: View {
             } else {
                 TranscriptImage(attachment: attachment, api: api, voiceOver: voiceOver)
             }
-        } else if attachment.contentType?.conforms(to: .movie) == true,
-                  let address = attachment.url, let url = api.resourceURL(address) {
-            TranscriptVideo(url: url, name: attachment.displayName,
-                            playsInSystemPlayer: attachment.playsInSystemPlayer)
+        } else if attachment.isVideo, let address = attachment.url, let url = api.resourceURL(address) {
+            TranscriptVideo(attachment: attachment, url: url, api: api) {
+                if attachment.playsInSystemPlayer {
+                    TranscriptPlayer(url: url).ignoresSafeArea()
+                } else {
+                    TranscriptWebPlayer(url: url, name: attachment.displayName)
+                }
+            }
         } else {
             TranscriptFileRow(attachment: attachment, api: api)
         }
@@ -128,8 +130,8 @@ struct TranscriptImage: View {
             }
         }
         .frame(width: size.width, height: size.height)
-        .clipShape(.rect(cornerRadius: 10, style: .continuous))
-        .transcriptAttachmentEdge(.rect(cornerRadius: 10, style: .continuous))
+        .clipShape(.transcriptAttachment)
+        .transcriptAttachmentEdge(.transcriptAttachment)
     }
 
     private func load() async {
@@ -143,99 +145,6 @@ struct TranscriptImage: View {
         } catch is CancellationError {
         } catch {
             failed = true
-        }
-    }
-}
-
-/// Opens the file in Quick Look from the shared attachment cache, inline or remote.
-private struct TranscriptFileRow: View {
-    let attachment: ChannelAttachment
-    let api: ChannelAPI
-    @ViewState private var preview: URL?
-    @ViewState private var isLoading = false
-    @ViewState private var failed = false
-
-    var body: some View {
-        Button {
-            Task { await open() }
-        } label: {
-            Label {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(attachment.displayName).lineLimit(1).truncationMode(.middle)
-                    if failed {
-                        Text("Couldn't open. Tap to try again.").font(.caption).foregroundStyle(.red)
-                    } else if let kind = attachment.contentType?.localizedDescription {
-                        Text(kind).font(.caption).foregroundStyle(TranscriptInk.secondary)
-                    }
-                }
-                // A long name truncates instead of widening the row past an image's width.
-                .frame(maxWidth: 200, alignment: .leading)
-            } icon: {
-                if isLoading { ProgressView() } else { Image(systemName: "doc") }
-            }
-            .font(.subheadline)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .frame(minHeight: 44)
-            .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 10, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .disabled(isLoading)
-        .quickLookPreview($preview)
-    }
-
-    private func open() async {
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            preview = try await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: failed)
-            failed = false
-        } catch {
-            failed = true
-        }
-    }
-}
-
-/// A poster that plays only when tapped, in the system player, or WebKit's for a format the system
-/// can't decode. A missing poster still plays.
-private struct TranscriptVideo: View {
-    let url: URL
-    let name: String
-    let playsInSystemPlayer: Bool
-    @ViewState private var poster: UIImage?
-    @ViewState private var isPlaying = false
-
-    var body: some View {
-        Button { isPlaying = true } label: {
-            VStack(spacing: 8) {
-                if let poster {
-                    Image(uiImage: poster).resizable().scaledToFit()
-                        .frame(maxWidth: 240, maxHeight: 160)
-                        .clipShape(.rect(cornerRadius: 10, style: .continuous))
-                        .transcriptAttachmentEdge(.rect(cornerRadius: 10, style: .continuous))
-                }
-                Label("Play \(name)", systemImage: "play.circle.fill")
-                    .font(.subheadline)
-                    .lineLimit(2)
-            }
-            .padding(12)
-            .frame(maxWidth: 240, minHeight: 44)
-            .background(.quaternary, in: .rect(cornerRadius: 10, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .fullScreenCover(isPresented: $isPlaying) {
-            if playsInSystemPlayer {
-                TranscriptPlayer(url: url).ignoresSafeArea()
-            } else {
-                TranscriptWebPlayer(url: url, name: name)
-            }
-        }
-        .task(id: url) {
-            guard playsInSystemPlayer else { return }
-            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 480, height: 320)
-            poster = try? await UIImage(cgImage: generator.image(at: .zero).image)
         }
     }
 }

@@ -360,7 +360,7 @@ private struct TranscriptGalleryPage: View {
                 guard let decoded = ChannelImageDecoder.thumbnail(file: file, maxPixelSize: 4096) else {
                     throw ChannelAttachmentError.invalidImage
                 }
-                return (decoded.image, decoded.pixelSize, try TranscriptGalleryOriginal.export(file, named: name))
+                return (decoded.image, decoded.size, try TranscriptGalleryOriginal.export(file, named: name))
             }.value
             try Task.checkCancellation()
             let scale = max(1, displayScale)

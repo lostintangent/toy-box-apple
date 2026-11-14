@@ -24,7 +24,7 @@ struct SVGAttachmentTests {
         let decoded = try await Task.detached {
             try TranscriptSVGImage.decode(file, maximumPixelSize: 640)
         }.value
-        #expect(decoded.pixelSize == CGSize(width: 320, height: 180))
+        #expect(decoded.size == CGSize(width: 320, height: 180))
         #expect(decoded.image.width == 640 && decoded.image.height == 360)
         let bitmap = NSBitmapImageRep(cgImage: decoded.image)
         let red = try #require(bitmap.colorAt(x: 80, y: 180)?.usingColorSpace(.sRGB))
@@ -55,7 +55,7 @@ struct SVGAttachmentTests {
         let decoded = try await Task.detached {
             try TranscriptSVGImage.decode(file, maximumPixelSize: 100_000)
         }.value
-        #expect(decoded.pixelSize == CGSize(width: 1_000_000, height: 500_000))
+        #expect(decoded.size == CGSize(width: 1_000_000, height: 500_000))
         #expect(decoded.image.width == 8192 && decoded.image.height == 4096)
     }
 
