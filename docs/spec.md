@@ -226,30 +226,34 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   naming the server. Each is out of date when any server is, the widget showing the oldest
   server's last update, and Retry refreshes every server. The morning digest stays one
   notification, and each line opens on its own server.
-- **Settings** lists the servers with their dots and names, even when there's one, so Add is
-  always there. A row never shows its address, which only the server's details show. On the Mac, they have their own Servers tab between General and Notifications,
-  and the list has Add and
-  Remove buttons and drags to reorder, and the selected server's Name, Server URL and status sit
+- **Settings** lists the servers with their dots and names, even when there's one. A row never shows its address, which only the server's details show. On the Mac, they have their own Servers tab between General and Notifications,
+  and the list drags to reorder, and the selected server's Name, Server URL and status sit
   below it. The list adds no inset of its own: its dots line up with
   the labels below, and it's as tall as its rows. Its card keeps the grouped Form's own padding
   around a list, a little roomier than the details card below it. On the phone, each row opens
-  its server's page, with Name and then Server URL and its status, Add Server follows the rows,
-  and Edit reorders and deletes. Neither list has a caption under it. A saved server's address can't be edited, because a server is
+  its server's page, with Name and then Server URL and its status, and Edit reorders them.
+  Neither list has a caption under it. A saved server's address can't be edited, because a server is
   its `id` and its name, and the address is only how this device reaches it. Server URL shows it
   as a plain value in secondary ink that can be selected and copied, and Test Connection is only
-  in Add Server and Welcome. To use another server, the user adds it and removes the old one.
-  Adding an address that's already listed selects that server. Adding a server whose `id` is
-  already saved at another address moves that server there instead, as if removed from the old
-  address and added at the new one but keeping its place, name, drafts and unsent
-  messages, and selects it, so a server that moved is simply added again. Removing one asks first,
-  then disconnects it and removes its channels from Spotlight, notifications, widgets and Live
-  Activities. Removing the last server returns both apps to their first run, which has no
-  servers and stays that way after a relaunch: the phone shows Welcome, and the Mac an empty
-  sidebar that offers Add Server… (see [Loading, empty, error and stale
-  states](#loading-empty-error-and-stale-states)). Neither app adds a server on its own, other
-  than the peers of one the user saved.
-  With none, the Mac's Servers tab reads "No Servers" in secondary ink, Add is the only way in
-  and Remove is disabled, and it hides the details and Check for Updates.
+  in Connect.
+- **Connecting.** The user connects once, by entering the address of any one of their Toy Box
+  Macs, and the app shows that server and every peer that answers (see Peer servers). Connect is
+  only there while the app has no servers: the phone's Welcome, and on the Mac the sidebar's
+  welcome, whose Connect… opens Settings' Connect sheet over the window. There's no Add Server, and
+  no way to remove one server, so the servers are whatever the app has seen, never a list the user
+  curates. Each stays whether or not it answers, and one that's asleep reads like any server that
+  can't connect, so its channels, drafts and unsent messages wait for it. Any saved server can lead
+  the app to the rest, so it still finds the user's Macs while the one they entered is asleep.
+- **Disconnecting** forgets every server at once. It's Disconnect… at the bottom of the Mac's
+  Servers tab, and a destructive Disconnect row in its own section after the phone's servers.
+  It asks first, "Disconnect from your servers?" with "Toy Box forgets every server on this Mac.
+  Connect to any one of your Macs to see them all again.", saying "this iPhone" on the phone, and
+  a destructive Disconnect,
+  then disconnects every server and removes their channels from Spotlight, notifications, widgets
+  and Live Activities. Both apps return to their first run, which has no servers and stays that
+  way after a relaunch: the phone shows Welcome, and the Mac an empty sidebar that offers
+  Connect… (see [Loading, empty, error and stale states](#loading-empty-error-and-stale-states)).
+  Disconnecting and connecting again is also how a Mac that's gone for good leaves the list.
 - **Naming a server.** Name renames the server itself, for every device and every lead, through
   `PATCH /api/v1/server {name}`, which answers the server. The field has no caption. It saves on
   Return or when the field loses focus, if the name changed, and clearing it gives the server back
@@ -269,7 +273,7 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   or changes it yet, so both apps keep the system accent.
   Each row shows its server's version in secondary ink after the name. One Check for Updates
   serves the whole list: on the Mac at the trailing end of the list's bar, beside Add and Remove,
-  and on the phone as a row after Add Server with `arrow.triangle.2.circlepath`. It's there
+  and on the phone as a row after the servers with `arrow.triangle.2.circlepath`. It's there
   whenever a server has an installed version, and it asks every connected one to install whatever
   is newer, skipping servers that are offline or have none. Each row being checked shows a
   spinner in its version's place, and the button dims until every check ends. Then a row reads
@@ -309,16 +313,15 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   `GET /api/v1/server` answers `peers`, the origins of the other online Macs the server's owner
   has on their tailnet, sorted, like `["https://mac-mini.tail1234.ts.net"]`, and empty when there
   are none. A peer is only a candidate, since a Mac may not run Toy Box.
-  - **Following peers.** Adding any one of the user's servers adds the rest, and a Mac that joins
-    later appears by itself. Each time the app reads a server, it reads `GET /api/v1/server` at
+  - **Following peers.** Connecting to any one of the user's servers adds the rest, and a Mac
+    that joins later appears by itself. Each time the app reads a server, it reads `GET /api/v1/server` at
     each peer whose origin matches no saved server's address, compared lowercased and without a
     default port, and saves each one that answers from this device with an `id` that isn't saved,
     at the peer's origin, after the server that listed it, in `peers` order. A peer that doesn't
     answer is skipped until the next read, and a saved peer's own peers are followed when the app
     reads it in turn. Two reads that find the same server save it once, and a peer that answers
     with a saved `id`, like this Mac's own server saved at a loopback address, changes nothing.
-    So a server the user removes comes back while it's still a peer of a saved one. Settings
-    keeps the server it had selected, and new rows are the only sign.
+    Settings keeps the server it had selected, and new rows are the only sign.
 
 ### Sending
 
@@ -1064,7 +1067,7 @@ navigation keeps list focus until explicitly moving into the conversation.
 | --- | --- |
 | First catalog load | Three static placeholder rows shaped like a channel row: the avatar's rounded square, the name with its time trailing, and the folder line, with no fabricated channel names. On the Mac, after 300 ms the server's header shows a mini spinner (see Several servers). Nothing overlays the list |
 | No channels | Source-list empty state: "Your channels live here" and New Channel. The connection footer already names the server, so the empty state doesn't repeat it |
-| No servers (Mac) | The sidebar's empty state welcomes the user: "Welcome to Toy Box" over "Add a server to see its channels.", and Add Server…, which opens Settings' Add Server sheet over the window, as the Screens list does. The channels fill in once the server connects. The sidebar has no connection footer, New Channel and Open Screen are disabled, and the detail keeps "Choose a channel". The phone shows Welcome instead |
+| No servers (Mac) | The sidebar's empty state welcomes the user: "Welcome to Toy Box" over "Connect to one of your Macs to see its channels.", and Connect…, which opens Settings' Connect sheet over the window. The channels fill in once the server connects. The sidebar has no connection footer, New Channel and Open Screen are disabled, and the detail keeps "Choose a channel". The phone shows Welcome instead |
 | Search has no matches | "No channels match [query]", Clear Search. Do not show the no-channels creation state |
 | Nothing selected | Centered `bubble.left.and.bubble.right` symbol, "Choose a channel", concise navigation hint |
 | First channel snapshot | Static message placeholders and "Connecting", whose spinner appears after 300 ms. On the Mac the label waits with it. Composer shell remains present, Send unavailable |
@@ -1270,7 +1273,7 @@ rather than keep animating.
 **Connection footer.** The bottom of the sidebar sums up the servers this window talks to. Each
 server's header carries its own status, and the footer's status line counts the servers and sums
 up their health (see [Several servers](#several-servers)). With no servers there is no footer,
-since the sidebar's welcome offers Add Server… (see [Loading, empty, error and stale
+since the sidebar's welcome offers Connect… (see [Loading, empty, error and stale
 states](#loading-empty-error-and-stale-states)). Attach it with `.safeAreaBar(edge: .bottom)` on
 the sidebar list so rows scroll beneath it under the system scroll edge effect. Give it no
 background, divider or material of its own. The status line is a 7-point dot (the unread dot's
@@ -2863,7 +2866,7 @@ the same picture a browser pane shows, and can take control of it like the brows
 
 | Part | Specification |
 | --- | --- |
-| Opening | Mac: File > Open Screen… (`Cmd-O`), or Open Screen at the end of the sidebar's connection footer, opens a new Screens window on the list, disabled without a server. iPhone: Screens (`display`) after New Channel in the sidebar's top bar opens a sheet. On both, the list's title is one glass button with no chevron, reading "Screens" over the server's name in secondary text, or just "Screens" with one server. The Mac's is the artifact viewer's title capsule, leading in the toolbar, and the window shows no system title. The iPhone's floats leading over the list under the system's soft scroll edge, in the same slot as a channel's title. It always opens a menu that starts with Refresh (`arrow.clockwise`) and a divider. With several servers, the menu then lists them in Settings' order with the current one checked, then Add Server (`plus`). With one server, Add Server follows Refresh directly. Add Server opens Settings' Add Server sheet over the Mac's window, or its Add Server page inside the phone's sheet, and once that server connects, the list switches to it. A channel's screen preview opens its screen directly from the tray's Preview, Overview's Preview row and the transcript's "Preview updated Screen preview" line |
+| Opening | Mac: File > Open Screen… (`Cmd-O`), or Open Screen at the end of the sidebar's connection footer, opens a new Screens window on the list, disabled without a server. iPhone: Screens (`display`) after New Channel in the sidebar's top bar opens a sheet. On both, the list's title is one glass button with no chevron, reading "Screens" over the server's name in secondary text, or just "Screens" with one server. The Mac's is the artifact viewer's title capsule, leading in the toolbar, and the window shows no system title. The iPhone's floats leading over the list under the system's soft scroll edge, in the same slot as a channel's title. It always opens a menu that starts with Refresh (`arrow.clockwise`) and a divider. With several servers, the menu then lists them in Settings' order with the current one checked. A channel's screen preview opens its screen directly from the tray's Preview, Overview's Preview row and the transcript's "Preview updated Screen preview" line |
 | List | Shared by both apps. Displays, then windows in an adaptive grid of 16:10 thumbnails, each titled with its application beneath and decoded at its card's pixel width. Search matches a window's title and application as one string, so one query can span both. On iPhone, scrolling the results dismisses the keyboard and keeps the query, so the floating search field never covers the last match. Loading and "No windows found" are explicit. A failure shows only "Unable to List Screens" and Try Again, centered in the window, with no description. Refresh, in the title menu on both apps, with `Cmd-R` on the Mac and pull to refresh on iPhone, refetches the list and every thumbnail, keeping each old picture until its new one is decoded. It's disabled while a load is in flight, and the Mac's is hidden on an open screen. The toolbar has no separate Refresh button. Nothing polls |
 | Viewer | Mac: the chosen screen replaces the list in its Screens window, and Back returns to the list. The window keeps its screen across relaunch, a restored screen that is gone shows Ended, and opening a screen a window already shows brings that window forward. Each Screens window keeps its own server, starting on the selected channel's. Its title menu picks another server (see Opening). Changing that server's address or removing it closes the window. iPhone: a full-screen cover with Close. The screen pinches to zoom up to 8× and pans like a photo, centered while smaller than the viewer. A pinch stops at 1× and 8× rather than springing back, and panning, new frames, a pause or a reconnect keep its zoom and position. Its bar never minimizes, since that would resize the screen with every pan. A new size, from a rotation, keeps the zoom and the point at the center of the view, and a side of the view against the picture's edge stays against it, so at 1× the screen simply fits again. Closing returns to where it opened, the list or Overview, which stays in place under it through a rotation. Opening a channel from a notification, the widget or Handoff closes Screens and Settings, and a channel they cover isn't marked read |
 | Control | A Take Control toggle (`hand.point.up.left`), trailing in the viewer's toolbar, enabled only while the screen is live, takes control of the host, and turning it off releases control. It's the Mac's primary action, and sits before Close on iPhone. In control it shows `hand.point.up.left.fill` as a prominent glass button. That's the one sign of control, so the picture draws no ring. It follows the server's `hasControl`, which is true for one viewer across every screen, so another viewer taking control of any screen, a pause, an end or a reconnect turns it off, and control is never restored on its own. A server `error`, like a failed take or input after the window's app lost focus, releases control and shows nothing more, so the toggle turns off and taking control again retries. In control, a press, drag, click or scroll lands where it's made on the picture, mapped through the fitted and zoomed frame, and anything off the frame sends nothing. Mac: the mouse hovers, clicks with any of its three buttons and drags on the host, the scroll wheel and trackpad scroll it, and while the screen has keyboard focus, every key goes to the host by its code, down and up, including Command shortcuts, except Command-V, which sends your clipboard as text. The window losing key status releases control, so no key or button stays down. iPhone: one finger drives the host. A touch waits for lift, 10 points of movement or 150 ms before pressing, so a tap clicks where it lifts and a drag presses where it began. A second finger before then pinches and pans the screen locally until every finger lifts, and after it, extra fingers are ignored. A cancelled waiting touch sends nothing, and a cancelled press releases it. While in control, a Keyboard button (`keyboard`) leading the toggle shows the keyboard. It slides over the picture without moving or resizing it, and adds just enough room to pan the picture's bottom edge above it with two fingers, so nothing shifts while you type. Its typing goes out as text, its Delete and Return as keys, and a hardware keyboard's keys by code. Going to the background closes the socket, which releases control. VoiceOver reads the toggle as Take Control or Release Control |
@@ -2969,13 +2972,13 @@ failure, which in practice means the phone lost its server, follows with one gen
 
 Settings uses a native scene with General and Notifications sections. The Mac adds a Servers tab
 between them for the servers (see [Several servers](#several-servers)), each with its Name,
-Server URL and status. General includes the selected appearance (System by default). Adding a
-server validates HTTP(S), preserves path prefixes and displays actionable failures. An address
+Server URL and status. General includes the selected appearance (System by default). Connecting
+validates HTTP(S), preserves path prefixes and displays actionable failures. An address
 without a scheme, like `machine.tail1234.ts.net`, gets `https://`, so a server needs `http://`
 typed to use HTTP. Both apps' Server URL placeholder is `machine.tail1234.ts.net`, and its
 caption starts "Use your server's address, including its port and any path prefix." Only another
 scheme, like `ftp://`, is refused, with "Use HTTP or HTTPS for your Toy Box server." On iPhone,
-Welcome and Add Server share the Server URL card, with no separate Use Server action or
+Welcome is the Server URL card, with no separate Use Server action or
 confirmation. Return or Test Connection runs the test: while it runs, the field is disabled and
 the row reads Connecting…, then a green checkmark marks a server that answered, and a failed test
 shows its error in the card. A saved server's page shows its address as a plain value, with the
