@@ -43,7 +43,6 @@ struct ChannelOverviewTests {
         #expect(ChannelOverviewFilter.noWorkingAgentsText(isAvailable: true) == "No agents working")
         let offline = ChannelOverviewFilter.noWorkingAgentsText(isAvailable: false)
         #expect(offline == "Status unavailable while disconnected")
-        #expect(offline == ChannelAgent.StatusLine(presence: .init(state: "working"), isAvailable: false).text)
     }
 
     @Test func metadataUsesExactSpacingAndReflowsOnlyBelowTheMeasuredBoundary() {

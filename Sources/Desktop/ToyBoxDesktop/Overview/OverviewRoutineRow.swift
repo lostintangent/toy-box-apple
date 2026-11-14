@@ -9,7 +9,6 @@ struct OverviewRoutineRow: View {
     private enum Focus { case row, menu }
 
     @Environment(ManagementPresenter.self) private var management
-    @Environment(\.windowSnapshot) private var snapshot
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
@@ -94,8 +93,9 @@ struct OverviewRoutineRow: View {
                 ManagementError(message: error).padding(.leading, 38).padding(.bottom, 6)
             }
         }
-        .task(id: snapshot?.requestedState) {
-            if snapshot?.requestedState == "overview-routines" { item[key].expanded = true }
+        .snapshotPose { state in
+            if state == "overview-routines" { item[key].expanded = true }
+            return false
         }
         .task(id: runRequestedAt) {
             guard runRequestedAt != nil else { return }

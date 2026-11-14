@@ -135,7 +135,7 @@ struct ToyBoxDesktopApp: App {
         RootView(initialChannel: channel)
             .environment(model)
             .environment(\.channelTextScale, model.launchOptions.isSnapshot ? 1 : textScale)
-            .environment(\.windowSnapshot, model.snapshot)
+            .windowSnapshot(model)
             .preferredColorScheme(colorScheme)
     }
 }
@@ -154,7 +154,12 @@ struct ChannelWindowValue: Codable, Hashable {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    #if DEBUG
     var isSnapshot = false
+    #else
+    /// Release builds never take a snapshot, so every check of one folds away.
+    var isSnapshot: Bool { get { false } set {} }
+    #endif
     /// Siri and Shortcuts launch the app with activation prohibited to run a background intent,
     /// such as Catch Me Up or Send Message. Until something brings it forward, it opens no window
     /// and stays out of the Dock, so the system quits it once the intent finishes.

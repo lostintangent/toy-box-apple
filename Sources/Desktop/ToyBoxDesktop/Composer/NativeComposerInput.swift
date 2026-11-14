@@ -41,7 +41,6 @@ struct NativeComposerInput: NSViewRepresentable {
     var onImage: (ComposerImage) -> Void
     var onError: (String) -> Void
     var agentManagement: AgentManagement = .hidden
-    var snapshot: WindowSnapshot? = nil
     var dictation: Dictation? = nil
     var isEditable = true
     var minimumHeight: CGFloat = 0
@@ -119,7 +118,8 @@ struct NativeComposerInput: NSViewRepresentable {
         }
         coordinator.measure()
         if input.window?.firstResponder === input { coordinator.updateCompletion() }
-        if let name = snapshot?.requestedState,
+        #if DEBUG
+        if let snapshot = context.environment.windowSnapshot, let name = snapshot.requestedState,
            ["composer-draft", "composer-mentions"].contains(name),
            coordinator.snapshotState != name, !text.isEmpty {
             coordinator.snapshotState = name
@@ -128,12 +128,13 @@ struct NativeComposerInput: NSViewRepresentable {
                 input.setSelectedRange(NSRange(location: input.string.utf16.count, length: 0))
                 coordinator.updateCompletion()
                 if name == "composer-mentions", !coordinator.isCompletionVisible {
-                    snapshot?.failState(name, message: "The native mention menu did not open.")
+                    snapshot.failState(name, message: "The native mention menu did not open.")
                 } else {
-                    snapshot?.markStateReady(name)
+                    snapshot.markStateReady(name)
                 }
             }
         }
+        #endif
     }
 
     static func dismantleNSView(_ nsView: NSScrollView, coordinator: Coordinator) {
@@ -164,7 +165,9 @@ struct NativeComposerInput: NSViewRepresentable {
         weak var input: ComposerTextView?
         var lastFocusRequest: UUID
         var lastCaretRequest: UUID?
+        #if DEBUG
         var snapshotState: String?
+        #endif
         var isCompletionVisible: Bool { popover?.isShown == true }
         private(set) var document: ObjectIdentifier?
         /// The composer's own undo stack, so Undo never reaches into a draft from another channel.

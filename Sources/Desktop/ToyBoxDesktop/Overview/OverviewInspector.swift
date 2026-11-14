@@ -27,7 +27,6 @@ struct OverviewInspector: View {
 private struct OverviewInspectorContent: View {
     @Environment(ArtifactOpener.self) private var artifacts
     @Environment(\.channelTextScale) private var textScale
-    @Environment(\.windowSnapshot) private var snapshot
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @SceneStorage("overviewCollapsedSections") private var collapsedSections = ""
     let store: ChannelStore
@@ -68,13 +67,12 @@ private struct OverviewInspectorContent: View {
                         .id(Self.topID)
                     }
                     .onChange(of: store.id) { proxy.scrollTo(Self.topID, anchor: .top) }
-                    .task(id: snapshot?.requestedState) {
-                        guard let snapshot, let name = snapshot.requestedState,
-                              let section = Self.snapshotSections[name] else { return }
+                    .snapshotPose { state in
+                        guard let section = Self.snapshotSections[state] else { return false }
                         collapsed.wrappedValue.remove(section)
                         await Task.yield()
-                        proxy.scrollTo(name, anchor: .top)
-                        snapshot.markStateReady(name)
+                        proxy.scrollTo(state, anchor: .top)
+                        return true
                     }
                 }
             } else {

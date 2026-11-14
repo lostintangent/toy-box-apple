@@ -57,6 +57,7 @@ package final class Dictation {
 
     package var isListening: Bool { phase == .listening || phase == .finishing }
     package var hasTentativeWords: Bool { !transcript.tentative.isEmpty }
+    private var transcript = DictationTranscript()
 
     @ObservationIgnored package weak var target: (any DictationTextTarget)?
     @ObservationIgnored package var contextualStrings: [String] = []
@@ -65,7 +66,6 @@ package final class Dictation {
     @ObservationIgnored package var draftRevision: () -> UUID? = { nil }
     @ObservationIgnored package var system: DictationSystem
     @ObservationIgnored private var locale: Locale?
-    @ObservationIgnored private var transcript = DictationTranscript()
     @ObservationIgnored private var recognizer: (any DictationRecognizing)?
     @ObservationIgnored private var preparation: Task<Void, Never>?
     @ObservationIgnored private var finishing: Task<Bool, Never>?

@@ -12,7 +12,6 @@ extension View {
 
 private struct ManagementFlowsModifier: ViewModifier {
     @Environment(AppModel.self) private var app
-    @Environment(\.windowSnapshot) private var snapshot
     @Bindable var presenter: ManagementPresenter
 
     func body(content: Content) -> some View {
@@ -22,28 +21,26 @@ private struct ManagementFlowsModifier: ViewModifier {
                 ManagementSheet(flow: flow, presenter: presenter)
             }
             .managementConfirmation($presenter.flow, presenter: presenter, catalogs: app.catalogs)
-            .task(id: snapshot?.requestedState) { prepareSnapshotState() }
+            .snapshotPose(pose)
     }
 
-    private func prepareSnapshotState() {
-        guard let snapshot, let state = snapshot.requestedState, let catalog = app.catalog,
-              let channelId = snapshot.options.channelID, let target = catalog.target(channelId) else { return }
+    private func pose(_ state: String) throws -> Bool {
+        guard let catalog = app.catalog, let channelId = app.launchOptions.channelID,
+              let target = catalog.target(channelId) else { return false }
         switch state {
         case "add-member":
             presenter.present(.addMember(target, name: ""))
-            snapshot.markStateReady(state)
         case "delete-channel":
             presenter.present(.deleteChannel(target))
-            snapshot.markStateReady(state)
         case "edit-member":
             guard let member = catalog.channel(id: channelId).state?.members.first else {
-                snapshot.failState(state, message: "The channel has no member to edit")
-                return
+                throw LaunchArgumentError("The channel has no member to edit")
             }
             presenter.present(.editMember(target, agentId: member.id))
-            snapshot.markStateReady(state)
-        default: break
+        default:
+            return false
         }
+        return true
     }
 }
 

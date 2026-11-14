@@ -153,7 +153,9 @@ struct RootView: View {
             placement.window = window
             artifactOpener.window = window
             reportScreen()
+            #if DEBUG
             model.snapshot?.attach(window: window, model: model)
+            #endif
             #if TOY_BOX_BENCHMARK
             model.performanceBenchmark?.attach(window: window, model: model) { selection = model.target($0) }
             #endif
@@ -243,12 +245,7 @@ struct RootView: View {
                 consumeNewChannelRequest()
             }
         }
-        .onChange(of: model.snapshot?.requestedState) { _, state in prepareSnapshotState(state) }
-        .onChange(of: handoff.phase) { _, _ in
-            if model.snapshot?.requestedState == "handoff-unavailable" {
-                prepareSnapshotState("handoff-unavailable")
-            }
-        }
+        .snapshotPose(pose)
         .onContinueUserActivity(ChannelHandoff.activityType, perform: continueHandoff)
     }
 
@@ -268,43 +265,48 @@ struct RootView: View {
         Task {
             await handoff.continueActivity(activity, catalogs: { model.catalogs }) { catalog, id in
                 selection = catalog.target(id)
-                model.snapshot?.markStateReady("handoff-match")
             }
         }
     }
 
-    private func prepareSnapshotState(_ state: String?) {
-        guard let state, let snapshot = model.snapshot else { return }
+    /// The shell's part of a snapshot's pose.
+    private func pose(_ state: String) async throws -> Bool {
+        let handoff = handoff
         switch state {
         case "inspector":
             setOverviewVisible(true)
-            snapshot.markStateReady(state)
         case "conversation":
             setOverviewVisible(false)
-            snapshot.markStateReady(state)
         case "sidebar-hidden":
             setOverviewVisible(false)
             columnVisibility = .detailOnly
-            snapshot.markStateReady(state)
         case "sidebar-no-servers":
             // The first run, as Disconnect leaves it, with nothing for Overview to describe.
             setOverviewVisible(false)
             model.servers.disconnect()
-            snapshot.markStateReady(state)
         case "handoff-unavailable":
-            if handoff.phase == .missing { snapshot.markStateReady(state) }
+            for await phase in Observations({ handoff.phase }) where phase == .missing { break }
+            try Task.checkCancellation()
+        case "handoff-match":
+            for await phase in Observations({ handoff.phase }) where phase != .opening { break }
+            try Task.checkCancellation()
+            let id = ProcessInfo.processInfo.environment["TOY_BOX_HANDOFF_CHANNEL"]
+            guard handoff.phase == .idle, id != nil, selection?.channelID == id else {
+                throw LaunchArgumentError("The handed-off channel didn't open")
+            }
         case "new-channel":
             management.present(.newChannel(server: model.serverURL))
-            snapshot.markStateReady(state)
         case "edit-channel":
-            if let selection {
-                management.present(.editChannel(selection))
-                snapshot.markStateReady(state)
-            }
+            guard let selection else { throw LaunchArgumentError("No channel is selected to edit") }
+            management.present(.editChannel(selection))
         case "overview-tasks", "overview-artifacts", "overview-routines":
+            // Overview readies these once it shows the section.
             setOverviewVisible(true)
-        default: break
+            return false
+        default:
+            return false
         }
+        return true
     }
 
     @ViewBuilder private var detail: some View {

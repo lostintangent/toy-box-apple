@@ -7,7 +7,10 @@ SCRATCH_PATH=/tmp/tbm-<you> bun run snapshot --server http://127.0.0.1:3210 \
   --channel studio-demo --appearance light|dark --size 1280x840 --snapshot <file.png> [--state <name>]
 ```
 
-Snapshot mode never marks read, saves settings or posts notifications. It uses the normal SwiftUI
+Only debug builds carry the harness, so the command always builds debug, and a release build
+refuses `--snapshot` and `--state`. A view poses its part of a state with `.snapshotPose`, which
+returns true once the window shows it or throws to fail the snapshot, and release builds compile it
+out. Snapshot mode never marks read, saves settings or posts notifications. It uses the normal SwiftUI
 scene, disables restoration only in the volatile argument domain, refuses application-state saving
 and restoration, and captures the window as the window server composites it, attached sheets
 included. Without Screen Recording the snapshot fails instead of writing a blank PNG.
