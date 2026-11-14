@@ -94,6 +94,11 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
     public static func directoryError(_ directory: String) -> String? {
         directory.utf16.count > 4_096 ? "Working directory paths are limited to 4,096 characters." : nil
     }
+
+    public static func folderName(of directory: String) -> String {
+        let name = (directory as NSString).lastPathComponent
+        return name.isEmpty ? directory : name
+    }
 }
 
 extension Channel {

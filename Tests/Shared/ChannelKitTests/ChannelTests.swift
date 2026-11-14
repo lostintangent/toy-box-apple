@@ -93,4 +93,11 @@ struct ChannelTests {
         #expect(state.channel.seenThrough == state.channel.latestSequence)
         #expect(state.channel.attention == nil)
     }
+
+    @Test func folderNamesUseTheLastComponentAndPreserveRootAndEmptyPaths() {
+        #expect(Channel.folderName(of: "/srv/work/toy-box") == "toy-box")
+        #expect(Channel.folderName(of: "/srv/work/toy-box/") == "toy-box")
+        #expect(Channel.folderName(of: "/") == "/")
+        #expect(Channel.folderName(of: "") == "")
+    }
 }

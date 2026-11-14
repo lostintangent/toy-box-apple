@@ -3,7 +3,7 @@ import SwiftUI
 import ToyBoxUI
 
 struct ComposerDictateButton: View {
-    let dictation: ComposerDictation
+    let dictation: Dictation
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -68,7 +68,7 @@ struct ComposerDictateButton: View {
 
 extension View {
     /// Explains how to turn dictation's access back on, wherever a tap found it off.
-    func dictationAccessSheet(_ dictation: ComposerDictation) -> some View {
+    func dictationAccessSheet(_ dictation: Dictation) -> some View {
         @Bindable var dictation = dictation
         return sheet(isPresented: $dictation.showsAccessExplanation) {
             if let access = dictation.accessOff {

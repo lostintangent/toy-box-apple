@@ -109,7 +109,7 @@ private struct OverviewFolderRow: View {
     let directory: String
     @ViewState private var copyToken: UUID?
 
-    private var name: String { ChannelFolderName.name(of: directory) }
+    private var name: String { Channel.folderName(of: directory) }
 
     var body: some View {
         HStack(spacing: 8) {

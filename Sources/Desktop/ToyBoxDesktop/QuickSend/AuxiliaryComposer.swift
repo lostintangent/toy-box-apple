@@ -26,7 +26,7 @@ struct AuxiliaryComposer: View {
     @ViewState private var dragging = false
     @ViewState private var showPicker = false
     @ViewState private var focusRequest = UUID()
-    @ViewState private var dictation = ComposerDictation()
+    @ViewState private var dictation = Dictation()
     @ViewState private var noticeHeight: CGFloat = 0
     @ViewState private var imageHeight: CGFloat = 92
 

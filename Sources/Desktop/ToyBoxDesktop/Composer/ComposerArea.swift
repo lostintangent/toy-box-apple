@@ -151,7 +151,7 @@ private struct ChannelComposer: View {
     @ViewState private var caretRequest: NativeComposerInput.CaretRequest?
     @ViewState private var requestPreview = false
     @ViewState private var requestHoverTask: Task<Void, Never>?
-    @ViewState private var dictation = ComposerDictation()
+    @ViewState private var dictation = Dictation()
 
     /// The draft's identity. There's one draft per server and channel.
     private var store: ChannelStore { session.store }

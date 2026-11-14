@@ -433,7 +433,7 @@ struct ComposerTests {
         let draft = ComposerDraft()
         draft.text = "@new-person"
         let (window, input) = try await hostComposer(
-            draft: draft, dictation: ComposerDictation(system: .scripted())
+            draft: draft, dictation: Dictation(system: .scripted())
         )
         window.setFrameOrigin(NSPoint(x: -4000, y: -4000))
         window.orderBack(nil)
@@ -1036,7 +1036,7 @@ struct ComposerTests {
         let draft = ComposerDraft()
         draft.text = "Ship it today"
         let recognizer = ManualDictationRecognizer()
-        let dictation = ComposerDictation(system: .manual(recognizer))
+        let dictation = Dictation(system: .manual(recognizer))
         let (window, input) = try await hostComposer(draft: draft, dictation: dictation)
         defer { window.close() }
         input.setSelectedRange(NSRange(location: 8, length: 5))
@@ -1078,7 +1078,7 @@ struct ComposerTests {
     @Test func typingAndEscapeStopDictationWithoutMergingUndoSteps() async throws {
         let draft = ComposerDraft()
         let recognizer = ManualDictationRecognizer()
-        let dictation = ComposerDictation(system: .manual(recognizer))
+        let dictation = Dictation(system: .manual(recognizer))
         let (window, input) = try await hostComposer(draft: draft, dictation: dictation)
         defer { window.close() }
         dictation.toggle()
@@ -1120,7 +1120,7 @@ struct ComposerTests {
         let secondText = "One\nTwo\nThree\nFour\nSecond channel draft"
         second.text = secondText
         let recognizer = ManualDictationRecognizer()
-        let dictation = ComposerDictation(system: .manual(recognizer))
+        let dictation = Dictation(system: .manual(recognizer))
         let shown = ShownDraft(first)
         let host = NSHostingView(rootView: ComposerSwitchTestHost(shown: shown, dictation: dictation))
         host.frame = NSRect(x: 0, y: 0, width: 400, height: 140)
@@ -1173,7 +1173,7 @@ struct ComposerTests {
         let recognizer = ManualDictationRecognizer()
         var system = DictationSystem.manual(recognizer)
         system.finalizeTimeout = .milliseconds(150)
-        let dictation = ComposerDictation(system: system)
+        let dictation = Dictation(system: system)
         let target = RecordingDictationTarget()
         dictation.target = target
         dictation.draftRevision = { revision }
@@ -1221,7 +1221,7 @@ struct ComposerTests {
         system.silenceTimeout = .milliseconds(250)
         var announcements: [String] = []
         system.announce = { announcements.append($0) }
-        let dictation = ComposerDictation(system: system)
+        let dictation = Dictation(system: system)
         let target = RecordingDictationTarget()
         dictation.target = target
         await dictation.refresh()
@@ -1247,7 +1247,7 @@ struct ComposerTests {
         }
         var opened: [DictationAccess] = []
         system.openSettings = { opened.append($0) }
-        let dictation = ComposerDictation(system: system)
+        let dictation = Dictation(system: system)
         await dictation.refresh()
         #expect(dictation.availability == .available)
         #expect(dictation.accessOff == nil, "Access waits for the first click")
@@ -1279,7 +1279,7 @@ struct ComposerTests {
 
         var unsupported = DictationSystem.scripted()
         unsupported.supportedLocale = { nil }
-        let elsewhere = ComposerDictation(system: unsupported)
+        let elsewhere = Dictation(system: unsupported)
         await elsewhere.refresh()
         #expect(elsewhere.availability == .unsupported)
     }
@@ -1297,7 +1297,7 @@ struct ComposerTests {
         }
         var announcements: [String] = []
         system.announce = { announcements.append($0) }
-        let dictation = ComposerDictation(system: system)
+        let dictation = Dictation(system: system)
         dictation.activate()
         defer { dictation.deactivate() }
         try await waitUntil("the language check finishes") { dictation.availability != .checking }
@@ -1330,7 +1330,7 @@ struct ComposerTests {
         system.hasMicrophone = { probe.deviceChecks += 1; return probe.isConnected }
         system.microphoneAccess = { probe.accessChecks += 1; return .granted }
         system.installAssets = { _, _ in assets += 1 }
-        let dictation = ComposerDictation(system: system)
+        let dictation = Dictation(system: system)
         let target = RecordingDictationTarget()
         dictation.target = target
         defer { dictation.deactivate() }
@@ -1357,7 +1357,7 @@ struct ComposerTests {
         system.refreshNotifications = []
         system.hasMicrophone = { probe.deviceChecks += 1; return probe.isConnected }
         system.microphoneAccess = { probe.accessChecks += 1; return .granted }
-        let dictation = ComposerDictation(system: system)
+        let dictation = Dictation(system: system)
         let target = RecordingDictationTarget()
         dictation.target = target
         defer { dictation.deactivate() }
@@ -1409,7 +1409,7 @@ struct ComposerTests {
             return true
         }
         system.microphoneAccess = { accessChecks += 1; return .granted }
-        let dictation = ComposerDictation(system: system)
+        let dictation = Dictation(system: system)
         let target = RecordingDictationTarget()
         dictation.target = target
         defer {
@@ -1438,7 +1438,7 @@ struct ComposerTests {
     }
 
     @Test func firstUseDownloadShowsProgressCancelsAndOnlyStartsInTheKeyWindow() async throws {
-        let dictation = ComposerDictation(system: .scripted(downloadProgress: 0.35))
+        let dictation = Dictation(system: .scripted(downloadProgress: 0.35))
         await dictation.refresh()
         dictation.toggle()
         try await waitUntil("the download reports progress") { dictation.phase == .downloading(0.35) }
@@ -1454,7 +1454,7 @@ struct ComposerTests {
             progress(1)
         }
         let target = RecordingDictationTarget()
-        let downloaded = ComposerDictation(system: system)
+        let downloaded = Dictation(system: system)
         downloaded.target = target
         await downloaded.refresh()
         downloaded.toggle()
@@ -1469,7 +1469,7 @@ struct ComposerTests {
     }
 
     @Test func dictateAndAttachTakeClicksAcrossTheirWholeCircleNotJustTheGlyph() async throws {
-        let dictation = ComposerDictation(system: .scripted())
+        let dictation = Dictation(system: .scripted())
         await dictation.refresh()
         var dictates = 0, attaches = 0
         let size: CGFloat = 68
@@ -1548,7 +1548,7 @@ struct ComposerTests {
             return recorder
         }
         let draft = ComposerDraft()
-        let dictation = ComposerDictation(system: system)
+        let dictation = Dictation(system: system)
         let (window, input) = try await hostComposer(draft: draft, dictation: dictation)
         defer { window.close() }
         viewShowsUndraftedWords = { input.string != draft.text }
@@ -1609,7 +1609,7 @@ struct ComposerTests {
 
     private struct ComposerInputTestHost: View {
         @Bindable var draft: ComposerDraft
-        var dictation: ComposerDictation? = nil
+        var dictation: Dictation? = nil
         var startsAtEnd = false
         @ViewState private var height: CGFloat = 44
         @ViewState private var dragging = false
@@ -1630,7 +1630,7 @@ struct ComposerTests {
     /// Like a window switching channels, one composer that the shown draft passes through.
     private struct ComposerSwitchTestHost: View {
         let shown: ShownDraft
-        let dictation: ComposerDictation
+        let dictation: Dictation
 
         var body: some View { ComposerInputTestHost(draft: shown.draft, dictation: dictation) }
     }
@@ -1651,7 +1651,7 @@ struct ComposerTests {
         return (view, window, descendants(view).compactMap { $0 as? NSScrollView })
     }
 
-    private func hostComposer(draft: ComposerDraft, dictation: ComposerDictation) async throws
+    private func hostComposer(draft: ComposerDraft, dictation: Dictation) async throws
         -> (window: NSWindow, input: ComposerTextView) {
         let host = NSHostingView(rootView: ComposerInputTestHost(draft: draft, dictation: dictation))
         host.frame = NSRect(x: 0, y: 0, width: 400, height: 140)

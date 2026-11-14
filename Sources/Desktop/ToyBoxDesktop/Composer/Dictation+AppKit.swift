@@ -2,7 +2,7 @@ import AppKit
 import ChannelClient
 import ToyBoxUI
 
-extension ComposerDictation {
+extension Dictation {
     convenience init() { self.init(system: .live) }
 }
 
