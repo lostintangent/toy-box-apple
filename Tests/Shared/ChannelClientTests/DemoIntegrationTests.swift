@@ -42,15 +42,14 @@ struct DemoIntegrationTests {
         let revision = try #require(echo.revision)
         let repeated = try await api.post(channelId: channel.id, id: id, content: "Not duplicated")
         #expect(repeated == posted)
+        let listed = try await api.catalog().channels.first { $0.id == channel.id }
+        #expect(listed?.seenThrough == posted.sequence, "Posting reads the channel through the message")
         let seen = try await api.markRead(channelId: channel.id, sequence: posted.sequence)
         #expect(seen == posted.sequence)
         let resumedStream = api.subscribe(channelId: channel.id, after: revision)
         var resumed = resumedStream.makeAsyncIterator()
-        let read = try #require(try await resumed.next())
-        #expect(read.type == "read")
-        #expect(read.seenThrough == seen)
         let resume = try #require(try await resumed.next())
-        #expect(resume.type == "resumed")
+        #expect(resume.type == "resumed", "A read that changes nothing publishes no event")
 
         #expect(snapshot.bookmarks == [9, 15])
         try await api.bookmark(channelId: channel.id, sequence: 12, bookmarked: true)

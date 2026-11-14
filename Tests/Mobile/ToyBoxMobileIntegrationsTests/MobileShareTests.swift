@@ -184,7 +184,6 @@ struct MobileShareTests {
 
         await session.send()
         #expect(fixture.posts.map(\.content) == ["Look\n\nhttps://example.com/story"])
-        #expect(fixture.reads == ["studio"], "The sheet waits for its channel to be marked read")
         #expect(outbox.messages(in: "studio", on: session.catalogs[0].api.baseURL).isEmpty)
         #expect(session.phase == .sent)
         #expect(!session.canSend)
@@ -351,11 +350,10 @@ private final class FakeDonor {
     }
 }
 
-/// One fake server per test: the catalog lists Studio and Design, and it accepts every message and
-/// read mark.
+/// One fake server per test: the catalog lists Studio and Design, and it accepts every message.
 private final class ShareHTTPFixture: Sendable {
     struct Post: Sendable { var channel: String; var id: String; var content: String }
-    private struct State { var posts: [Post] = []; var reads: [String] = [] }
+    private struct State { var posts: [Post] = [] }
     private final class Storage: Sendable {
         let value: Mutex<State>
         init(_ state: State) { value = Mutex(state) }
@@ -367,8 +365,6 @@ private final class ShareHTTPFixture: Sendable {
     private let host: String
     private let state: Storage
     var posts: [Post] { state.value.withLock { $0.posts } }
-    /// The channels marked read, in order.
-    var reads: [String] { state.value.withLock { $0.reads } }
 
     init() throws {
         host = "\(UUID().uuidString.lowercased()).share.test"
@@ -393,10 +389,6 @@ private final class ShareHTTPFixture: Sendable {
                     return .success((200, catalog))
                 }
                 let parts = url.pathComponents
-                if request.httpMethod == "POST", parts.count == 6, parts.last == "read" {
-                    state.value.withLock { $0.reads.append(parts[4]) }
-                    return .success((200, Data(#"{"seenThrough":16}"#.utf8)))
-                }
                 guard request.httpMethod == "POST", parts.count == 6, parts.last == "messages" else {
                     Issue.record("Unexpected share request: \(request.httpMethod ?? "") \(url.path)")
                     return .success((500, Data()))

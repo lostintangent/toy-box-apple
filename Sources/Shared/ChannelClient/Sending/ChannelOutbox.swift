@@ -45,8 +45,8 @@ public final class ChannelOutbox {
     /// The requests answered by a confirmed message, by server and channel, until the catalog stops
     /// listing them as waiting.
     private(set) var answered: [Destination: Set<Int>] = [:]
-    /// True while a message to a server with a catalog is still sending, or a confirmed one is still
-    /// marking its channel read, so the phone's app delegate holds background time.
+    /// True while a message to a server with a catalog is still sending, so the phone's app delegate
+    /// holds background time.
     public private(set) var isDelivering = false
     /// The saved messages have been read, so delivery can start in order.
     private(set) var isLoaded = false
@@ -62,7 +62,6 @@ public final class ChannelOutbox {
     /// Confirmed or withdrawn this run, so a scan that read a file before its removal doesn't bring
     /// the message back.
     @ObservationIgnored private var removed: Set<UUID> = []
-    @ObservationIgnored private var reads = 0
     @ObservationIgnored private let sendsOnce: Bool
     @ObservationIgnored private var writes: Task<Void, Never>?
     @ObservationIgnored private var scanning: Task<Void, Never>?
@@ -125,12 +124,6 @@ public final class ChannelOutbox {
     }
 
     func message(_ id: UUID) -> Message? { queue.first { $0.id == id } }
-
-    /// The channels on a server with a message Sending.
-    func sendingChannelIDs(on server: URL) -> Set<String> {
-        let server = Self.key(server)
-        return Set(queue.lazy.filter { $0.server == server && $0.state == .sending }.map(\.channelID))
-    }
 
     /// Puts a Not sent message back in line under the same ID.
     public func sendAgain(_ id: UUID) {
@@ -235,7 +228,7 @@ public final class ChannelOutbox {
     /// Recomputes what depends on the queue and starts a line for each channel with a message to send
     /// on a server with a catalog.
     private func changed() {
-        let delivering = reads > 0 || queue.contains { $0.state == .sending && catalog(on: $0.server) != nil }
+        let delivering = queue.contains { $0.state == .sending && catalog(on: $0.server) != nil }
         if isDelivering != delivering { isDelivering = delivering }
         guard isLoaded else { return }
         for destination in Set(queue.lazy.filter { $0.state == .sending }.map(\.destination))
@@ -293,13 +286,12 @@ public final class ChannelOutbox {
         }
     }
 
-    /// The share extension's one attempt, which returns once its outcome is saved and its channel
-    /// marked read. It gives up after 10 seconds without hearing from the server, so a sleeping
+    /// The share extension's one attempt, which returns once its outcome is saved. It gives up after 10 seconds without hearing from the server, so a sleeping
     /// server leaves the message to the app instead of keeping the sheet on Sending for a minute.
     private func attempt(_ message: Message) async {
         guard let catalog = catalog(on: message.server) else { return }
         switch await post(message, api: catalog.api, timeout: 10) {
-        case .accepted(let sent): await confirm(message.id, merging: sent)?.value
+        case .accepted(let sent): confirm(message.id, merging: sent)
         case .rejected: stop(message.id)
         case .unreachable, .trouble: break
         }
@@ -325,41 +317,20 @@ public final class ChannelOutbox {
         }
     }
 
-    /// Returns the channel's mark read, if it makes one.
-    @discardableResult
-    private func confirm(_ id: UUID, merging sent: ChannelMessage? = nil) -> Task<Void, Never>? {
-        guard let index = queue.firstIndex(where: { $0.id == id }) else { return nil }
+    private func confirm(_ id: UUID, merging sent: ChannelMessage? = nil) {
+        guard let index = queue.firstIndex(where: { $0.id == id }) else { return }
         let message = queue.remove(at: index)
         removed.insert(id)
         delete(id)
         if let request = message.request { answered[message.destination, default: []].insert(request) }
-        var read: Task<Void, Never>?
         if let catalog = catalog(on: message.server) {
-            let store = catalog.existingChannel(id: message.channelID)
             if let sent {
                 ChannelAttachmentCache.handOff(message.attachments, to: sent.attachments ?? [], api: catalog.api)
-                store?.mergeSent(sent)
-            }
-            // The user's own message never leaves its channel unread.
-            if let through = sent?.sequence ?? store?.sequence(ofSent: id) {
-                catalog.read(message.channelID, through: through)
-                read = markRead(message.channelID, through: through, api: catalog.api)
+                catalog.existingChannel(id: message.channelID)?.mergeSent(sent)
             }
             catalog.onSendConfirmed?(message.channelID)
         }
         changed()
-        return read
-    }
-
-    /// One attempt, logging a failure. It counts as delivering, so the phone's background time covers it.
-    private func markRead(_ channelID: String, through sequence: Int, api: ChannelAPI) -> Task<Void, Never> {
-        reads += 1
-        return Task {
-            do { _ = try await api.markRead(channelId: channelID, sequence: sequence) }
-            catch { Self.logger.info("Could not mark a sent message read: \(error.localizedDescription)") }
-            reads -= 1
-            changed()
-        }
     }
 
     private func stop(_ id: UUID) {
