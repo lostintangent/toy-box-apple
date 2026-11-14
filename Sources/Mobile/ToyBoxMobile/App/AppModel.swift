@@ -51,7 +51,7 @@ final class AppModel {
     @ObservationIgnored private var holdsSelectedConnection = false
     @ObservationIgnored private let defaults: UserDefaults
     /// The first server, so a change to it clears what belonged to the last one.
-    @ObservationIgnored private weak var first: ChannelCatalogStore?
+    @ObservationIgnored private var first: ChannelCatalogStore?
     /// The server whose last opened channel opens once its catalog loads, unless a navigation wins.
     @ObservationIgnored private weak var restoring: ChannelCatalogStore?
     @ObservationIgnored private var navigationGeneration = UUID()
@@ -164,15 +164,6 @@ final class AppModel {
     func release(_ store: ChannelStore) { connections.release(store) }
 
     // MARK: Servers
-
-    /// Adds a server. The first one, from Welcome, opens the channel last opened there once it loads.
-    @discardableResult
-    func addServer(_ address: String) throws -> ChannelCatalogStore {
-        let wasEmpty = catalogs.isEmpty
-        let catalog = try servers.add(address)
-        if wasEmpty { restoring = catalog }
-        return catalog
-    }
 
     /// Connects through the server at `address`, from Welcome, then opens the channel last opened
     /// there once it loads.
