@@ -233,10 +233,10 @@ struct ChannelDetailView: View {
     }
 
     private func channelItems(in catalog: ChannelCatalogStore) -> some View {
-        let presentation = model.sidebarPresentation(for: catalog)
+        let listing = model.listing(for: catalog)
         return ForEach(catalog.channels) { channel in
-            Text(presentation.channel(channel).name)
-                .badge(Self.badge(presentation.attention(channel)))
+            Text(listing.channel(channel).name)
+                .badge(Self.badge(listing.attention(channel)))
                 .tag(catalog.target(channel.id))
         }
     }
