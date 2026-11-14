@@ -154,7 +154,9 @@ struct RootView: View {
             artifactOpener.window = window
             reportScreen()
             model.snapshot?.attach(window: window, model: model)
+            #if TOY_BOX_BENCHMARK
             model.performanceBenchmark?.attach(window: window, model: model) { selection = model.target($0) }
+            #endif
         }, onChange: { isKey, size, isLiveResizing in
             // A resize reports every frame, so this changes state only when something the views
             // read changes. Anything more rebuilds the window on each frame.

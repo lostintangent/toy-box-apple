@@ -11,7 +11,9 @@ import ToyBoxUI
 final class AppModel {
     let launchOptions: LaunchOptions
     let snapshot: WindowSnapshot?
+    #if TOY_BOX_BENCHMARK
     let performanceBenchmark: PerformanceBenchmark?
+    #endif
     let updates: AppUpdates
     let openAtLogin: OpenAtLogin
     let quickSend: QuickSendController
@@ -80,9 +82,11 @@ final class AppModel {
             request: { _ = NSApplication.shared.requestUserAttention($0) }
         )
         snapshot = launchOptions.isSnapshot ? WindowSnapshot(options: launchOptions) : nil
+        #if TOY_BOX_BENCHMARK
         performanceBenchmark = launchOptions.benchmark.flatMap { scenario in
             launchOptions.channelID.map { PerformanceBenchmark(scenario: scenario, channelID: $0) }
         }
+        #endif
         // A launch override, snapshot or benchmark keeps its server to the session, so Settings never
         // saves over the user's servers. The app starts with no server the user didn't add.
         let savesServers = launchOptions.allowsUserIntegrations()
@@ -343,7 +347,7 @@ final class AppModel {
 
     /// Captures, snapshots and benchmarks keep the menu bar out of what they measure.
     var showsMenuBarExtra: Bool {
-        !launchOptions.isSnapshot && performanceBenchmark == nil
+        !launchOptions.isAutomated
     }
 
     /// What the menu bar extra shows across every server, from the same waiting requests and

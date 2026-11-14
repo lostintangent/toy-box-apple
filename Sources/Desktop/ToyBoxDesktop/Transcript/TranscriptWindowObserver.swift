@@ -148,18 +148,18 @@ final class TranscriptWindowObserver {
 
 struct TranscriptWindowProbe: NSViewRepresentable {
     let observer: TranscriptWindowObserver
+    #if TOY_BOX_BENCHMARK
     var benchmarkGeometry: (@MainActor () -> BenchmarkScrollGeometry?)? = nil
+    #endif
 
     func makeNSView(context: Context) -> ProbeView {
         let view = ProbeView()
-        view.observer = observer
-        view.benchmarkGeometry = benchmarkGeometry
+        configure(view)
         return view
     }
 
     func updateNSView(_ view: ProbeView, context: Context) {
-        view.observer = observer
-        view.benchmarkGeometry = benchmarkGeometry
+        configure(view)
         Task { @MainActor [weak view] in
             guard let view else { return }
             observer.attach(to: view)
@@ -170,11 +170,18 @@ struct TranscriptWindowProbe: NSViewRepresentable {
         view.observer?.detach()
     }
 
-    final class ProbeView: NSView, BenchmarkScrollGeometrySource {
-        weak var observer: TranscriptWindowObserver?
-        var benchmarkGeometry: (@MainActor () -> BenchmarkScrollGeometry?)?
+    private func configure(_ view: ProbeView) {
+        view.observer = observer
+        #if TOY_BOX_BENCHMARK
+        view.benchmarkGeometry = benchmarkGeometry
+        #endif
+    }
 
-        func benchmarkScrollGeometry() -> BenchmarkScrollGeometry? { benchmarkGeometry?() }
+    final class ProbeView: NSView {
+        weak var observer: TranscriptWindowObserver?
+        #if TOY_BOX_BENCHMARK
+        var benchmarkGeometry: (@MainActor () -> BenchmarkScrollGeometry?)?
+        #endif
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -184,6 +191,11 @@ struct TranscriptWindowProbe: NSViewRepresentable {
             }
         }
     }
+}
+
+#if TOY_BOX_BENCHMARK
+extension TranscriptWindowProbe.ProbeView: BenchmarkScrollGeometrySource {
+    func benchmarkScrollGeometry() -> BenchmarkScrollGeometry? { benchmarkGeometry?() }
 }
 
 extension BenchmarkScrollGeometry {
@@ -209,6 +221,7 @@ extension BenchmarkScrollGeometry {
         self.init(firstVisibleRow: first.id, rowTops: tops)
     }
 }
+#endif
 
 struct TranscriptMessageFrames: PreferenceKey {
     static let defaultValue: [String: TranscriptMessageFrame] = [:]

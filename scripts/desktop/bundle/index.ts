@@ -16,6 +16,8 @@ export async function buildApp(configuration = process.env.CONFIGURATION || "deb
     }
     const args = ["--package-path", root, "--scratch-path", scratch, "--configuration", configuration,
         "--sdk", sdk, "--arch", "arm64"];
+    // Debug builds always compile the benchmark. A release build has it only for `bun run benchmark`.
+    if (process.env.TOY_BOX_BENCHMARK === "1") args.push("-Xswiftc", "-DTOY_BOX_BENCHMARK");
     await command(["xcrun", "swift", "build", ...args]);
     const bin = await text(["xcrun", "swift", "build", ...args, "--show-bin-path"]);
     const app = join(scratch, "Toy Box.app");

@@ -101,6 +101,8 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/Desktop/ToyBoxDesktop",
+            // `bun run benchmark` also passes it to its release build. The shipped app never has it.
+            swiftSettings: [.define("TOY_BOX_BENCHMARK", .when(configuration: .debug))],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         .testTarget(name: "ToyBoxDesktopTests", dependencies: ["ToyBoxDesktop"], path: "Tests/Desktop/ToyBoxDesktopTests"),
