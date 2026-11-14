@@ -18,7 +18,7 @@ struct ChannelSidebarRow: View {
     /// The selected row keeps the list's own highlight, so it never lights.
     var isSelected = false
     /// The request the row answers from its popover, while it waits and isn't selected.
-    var request: ChannelCatalogStore.WaitingRequest? = nil
+    var request: ChannelWaitingRequest? = nil
     var answers: SidebarAnswers? = nil
     /// The done check the avatar wears once the row's reply sends.
     var check: CardChecks.Check? = nil

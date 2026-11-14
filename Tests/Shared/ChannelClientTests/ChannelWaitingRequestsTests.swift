@@ -59,7 +59,7 @@ struct ChannelWaitingRequestsTests {
         let home = MockTransport { _, _ in try .json(homeList) }
         let catalogs = [ChannelCatalogStore(api: try work.api()), ChannelCatalogStore(api: try home.api())]
         for catalog in catalogs { await catalog.refresh() }
-        let servers = catalogs.map { ChannelOutbox.key($0.api.baseURL) }
+        let servers = catalogs.map { ChannelTarget.normalizedServer($0.api.baseURL) }
         let homeTarget = try #require(ChannelTarget(serverURL: servers[1], channelID: "test"))
         var state = testState(revision: 1, messages: [])
         state.channel.requestSequence = nil
@@ -67,7 +67,7 @@ struct ChannelWaitingRequestsTests {
 
         let merged = catalogs.waitingRequests()
         #expect(merged.map(\.sequence) == [9, 3, 8, 4], "A tie keeps Settings order")
-        #expect(merged.map(\.serverURL) == [servers[1], servers[0], servers[1], servers[0]])
+        #expect(merged.map(\.target.serverURL) == [servers[1], servers[0], servers[1], servers[0]])
         #expect(Set(merged.map(\.id)).count == 4, "One channel ID on two servers is two requests")
         let open = catalogs.waitingRequests(open: [homeTarget])
         #expect(open.map(\.sequence) == [9, 3, 4], "Only the open channel's own server reads its stream")

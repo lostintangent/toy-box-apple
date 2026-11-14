@@ -40,7 +40,7 @@ public struct TranscriptRequestChoices: Equatable, Sendable {
     }
 }
 
-extension ChannelCatalogStore.WaitingRequest {
+extension ChannelWaitingRequest {
     /// The choices a Needs You card offers.
     public func choices(isConnected: Bool) -> TranscriptRequestChoices? {
         TranscriptRequestChoices(sequence: sequence, labels: request?.message.suggestedReplies ?? [],

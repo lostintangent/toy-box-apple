@@ -14,20 +14,17 @@ struct WaitingRequestEntry: Equatable, Sendable {
     let requestedAt: Date?
 
     init?(item: MenuBarStatus.Item) {
-        guard let request = ChannelWaitingRequest(serverURL: item.target.serverURL, channelID: item.target.channelID,
-                                                sequence: item.sequence,
-                                                question: item.quote, agent: item.agent, channelName: item.name,
-                                                requestedAt: item.requestedAt) else { return nil }
-        let link = NeedsYouRequestLink(serverURL: request.id.serverURL, channelID: request.id.channelID,
-                                      sequence: request.id.sequence)
+        guard let sequence = item.sequence, sequence > 0, let question = item.quote,
+              !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let agent = item.agent else { return nil }
+        let link = NeedsYouRequestLink(serverURL: item.target.serverURL, channelID: item.target.channelID, sequence: sequence)
         guard let url = link.url, NeedsYouRequestLink(url: url) != nil else { return nil }
         id = url.absoluteString
         target = item.target
         self.link = link
-        question = request.question
-        agent = request.agent
-        channelName = request.channelName
-        requestedAt = request.requestedAt
+        self.question = question
+        self.agent = ChannelAgent(id: agent.id, name: agent.name, avatar: agent.avatar, deleted: agent.deleted)
+        channelName = item.name
+        requestedAt = item.requestedAt
     }
 }
 

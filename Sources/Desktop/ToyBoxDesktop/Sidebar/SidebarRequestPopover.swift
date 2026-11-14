@@ -22,7 +22,7 @@ struct SidebarAnswers {
 /// transcript's own body, then its choices, Reply and Read Aloud, or the typed reply's field in
 /// their place. The question scrolls once the popover would outgrow the screen.
 struct SidebarRequestPopover: View {
-    let entry: ChannelCatalogStore.WaitingRequest
+    let entry: ChannelWaitingRequest
     let answers: SidebarAnswers
     @Binding var isHovered: Bool
     @Environment(\.channelTextScale) private var textScale
@@ -37,19 +37,13 @@ struct SidebarRequestPopover: View {
     private var catalog: ChannelCatalogStore { answers.catalog }
     private var isConnected: Bool { catalog.phase.failure == nil }
     private var isReplying: Bool { cards.replying?.id == entry.id }
-    private var requester: String { entry.request?.requester?.name ?? "the request" }
-
-    /// The request's Markdown, or the plain question when it has no words.
-    private var markdown: String {
-        guard let text = entry.request?.message.text, !text.isEmpty else { return entry.question }
-        return text
-    }
+    private var requester: String { entry.requester?.name ?? "the request" }
 
     var body: some View {
         let limit = max(60, (NSScreen.main?.visibleFrame.height ?? 800) - chrome - 40)
         VStack(alignment: .leading, spacing: 10) {
             ScrollView {
-                TranscriptMarkdown(content: markdown, agents: entry.request?.agents ?? [], baseURL: catalog.api.baseURL)
+                TranscriptMarkdown(content: entry.markdown, agents: entry.request?.agents ?? [], baseURL: catalog.api.baseURL)
                     .environment(\.transcriptSurface, .pendingAgent)
                     // The sidebar's rows keep to one line, which the popover would inherit.
                     .lineLimit(nil)
@@ -89,7 +83,7 @@ struct SidebarRequestPopover: View {
             TranscriptRequestActions(spacing: 6, sequence: entry.sequence,
                                      choices: isSending ? entry.heldChoices : entry.choices(isConnected: isConnected),
                                      replyHelp: "Reply to \(requester)",
-                                     readAloud: .init(channelID: entry.channel.id, sequence: entry.sequence, text: markdown),
+                                     readAloud: .init(channelID: entry.channel.id, sequence: entry.sequence, text: entry.markdown),
                                      onChoose: choose, onReply: reply)
                 .controlSize(.small)
                 .font(.system(size: 11 * textScale))

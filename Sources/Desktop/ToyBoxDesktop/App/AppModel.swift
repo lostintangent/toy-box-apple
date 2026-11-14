@@ -177,7 +177,7 @@ final class AppModel {
     }
 
     private static func address(of catalog: ChannelCatalogStore?) -> String? {
-        catalog.flatMap { ChannelWaitingRequest.normalizedServer($0.api.baseURL.absoluteString) }
+        catalog.flatMap { ChannelTarget.normalizedServer($0.api.baseURL.absoluteString) }
     }
 
     func composerSession(for store: ChannelStore, draft: ComposerDraft) -> ChannelComposerSession {

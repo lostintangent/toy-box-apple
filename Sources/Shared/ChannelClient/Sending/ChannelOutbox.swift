@@ -103,7 +103,7 @@ public final class ChannelOutbox {
     @discardableResult
     public func send(_ text: String, attachments: [ChannelAttachment] = [], to channelID: String, on server: URL,
                      answering request: Int? = nil) async -> UUID {
-        let destination = Destination(server: Self.key(server), channelID: channelID)
+        let destination = Destination(server: ChannelTarget.normalizedServer(server), channelID: channelID)
         let message = Message(id: UUID(), server: destination.server, channelID: channelID,
                               text: text.trimmingCharacters(in: .whitespacesAndNewlines),
                               attachments: attachments,
@@ -119,7 +119,7 @@ public final class ChannelOutbox {
 
     /// The transcript's own rows for a channel: Sending or Not sent, in order.
     public func messages(in channelID: String, on server: URL) -> [Message] {
-        let server = Self.key(server)
+        let server = ChannelTarget.normalizedServer(server)
         return queue.filter { $0.server == server && $0.channelID == channelID }
     }
 
@@ -148,7 +148,7 @@ public final class ChannelOutbox {
     /// confirmed and the catalog still lists the request. A Not sent answer doesn't count, so the
     /// request comes back where it was.
     public func answers(_ request: Int, in channelID: String, on server: URL) -> Bool {
-        let server = Self.key(server)
+        let server = ChannelTarget.normalizedServer(server)
         let destination = Destination(server: server, channelID: channelID)
         return answered[destination]?.contains(request) == true || queue.contains {
             $0.server == server && $0.channelID == channelID && $0.request == request && $0.state == .sending
@@ -159,7 +159,7 @@ public final class ChannelOutbox {
 
     /// A catalog store delivers its server's messages, in place of any other for that server.
     func attach(_ catalog: ChannelCatalogStore) {
-        let server = Self.key(catalog.api.baseURL)
+        let server = ChannelTarget.normalizedServer(catalog.api.baseURL)
         guard self.catalog(on: server) !== catalog else { return }
         restart(lines.keys.filter { $0.server == server })
         catalogs[server] = Attached(catalog: catalog)
@@ -168,7 +168,7 @@ public final class ChannelOutbox {
     }
 
     func detach(_ catalog: ChannelCatalogStore) {
-        let server = Self.key(catalog.api.baseURL)
+        let server = ChannelTarget.normalizedServer(catalog.api.baseURL)
         guard self.catalog(on: server) === catalog else { return }
         restart(lines.keys.filter { $0.server == server })
         catalogs[server] = nil
@@ -183,7 +183,7 @@ public final class ChannelOutbox {
 
     /// The catalog's server may be reachable again, so every line waiting for it tries now.
     func wake(_ catalog: ChannelCatalogStore) {
-        let server = Self.key(catalog.api.baseURL)
+        let server = ChannelTarget.normalizedServer(catalog.api.baseURL)
         guard self.catalog(on: server) === catalog else { return }
         restart(waiting.filter { $0.server == server })
         changed()
@@ -192,7 +192,7 @@ public final class ChannelOutbox {
     /// Each catalog prunes answers the catalog no longer lists as waiting, and drops the messages of
     /// channels it no longer lists. One that follows a failure means the server is back.
     func catalogChanged(_ store: ChannelCatalogStore, recovered: Bool) {
-        let server = Self.key(store.api.baseURL)
+        let server = ChannelTarget.normalizedServer(store.api.baseURL)
         guard catalog(on: server) === store, let catalog = store.state else { return }
         if recovered { wake(store) }
         let channels = Dictionary(catalog.channels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -213,7 +213,7 @@ public final class ChannelOutbox {
     /// A channel's snapshot or replay arrived with these messages, so any of ours among them, Sending
     /// or Not sent, is confirmed.
     func received(_ messages: some Sequence<ChannelMessage>, in channelID: String, api: ChannelAPI) {
-        let key = Self.key(api.baseURL)
+        let key = ChannelTarget.normalizedServer(api.baseURL)
         guard queue.contains(where: { $0.server == key && $0.channelID == channelID }) else { return }
         for echo in messages where echo.sender == .user {
             guard let message = UUID(uuidString: echo.id).flatMap({ self.message($0) }),
@@ -355,10 +355,6 @@ public final class ChannelOutbox {
     }
 
     private func catalog(on server: String) -> ChannelCatalogStore? { catalogs[server]?.catalog }
-
-    nonisolated static func key(_ server: URL) -> String {
-        ChannelWaitingRequest.normalizedServer(server.absoluteString) ?? server.absoluteString
-    }
 
     // MARK: Files
 

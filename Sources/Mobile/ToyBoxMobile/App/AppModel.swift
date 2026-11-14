@@ -175,7 +175,7 @@ final class AppModel {
 
     /// Closes a server's channels wherever they're open, as it leaves the list.
     private func close(_ catalog: ChannelCatalogStore) {
-        let server = ChannelWaitingRequest.normalizedServer(catalog.api.baseURL.absoluteString)
+        let server = ChannelTarget.normalizedServer(catalog.api.baseURL.absoluteString)
         func belongs(_ store: ChannelStore) -> Bool { catalog.existingChannel(id: store.id) === store }
         if selection?.serverURL == server { selection = nil }
         if visibleChannel?.serverURL == server {
@@ -251,7 +251,7 @@ final class AppModel {
     func reconcileSelection() {
         guard let catalog = restoring, !isResolvingNavigation, catalog.isLoaded else { return }
         restoring = nil
-        guard selection == nil, let server = ChannelWaitingRequest.normalizedServer(catalog.api.baseURL.absoluteString),
+        guard selection == nil, let server = ChannelTarget.normalizedServer(catalog.api.baseURL.absoluteString),
               let id = rememberedSelections[server] else { return }
         if catalog.channels.contains(where: { $0.id == id }) {
             selection = catalog.target(id)

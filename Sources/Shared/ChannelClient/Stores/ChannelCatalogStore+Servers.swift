@@ -58,8 +58,8 @@ extension [ChannelCatalogStore] {
 
     /// The catalog for a server, by its normalized address.
     @MainActor public func first(at serverURL: String) -> ChannelCatalogStore? {
-        guard let server = ChannelWaitingRequest.normalizedServer(serverURL) else { return nil }
-        return first { ChannelOutbox.key($0.api.baseURL) == server }
+        guard let server = ChannelTarget.normalizedServer(serverURL) else { return nil }
+        return first { ChannelTarget.normalizedServer($0.api.baseURL) == server }
     }
 
     /// The first catalog in Settings order that lists a channel, for a reference that doesn't name its

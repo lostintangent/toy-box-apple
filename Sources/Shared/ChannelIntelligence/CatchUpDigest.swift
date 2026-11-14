@@ -29,7 +29,7 @@ public struct CatchUpDigest: Sendable, Hashable {
 
     public init(state: ChannelState, unreadAfter: Int?) {
         let limit = 280
-        let pending = state.channel.requestSequence.flatMap { ChannelWaitingRequest.message(at: $0, in: state) }
+        let pending = state.channel.requestSequence.flatMap { state.message(at: $0) }
         // A request's ask is usually at its end, so a long one keeps both ends like the model's.
         request = pending.flatMap { Message($0, state: state) { $0.condensed(limit: limit) } }
         guard let unreadAfter else {

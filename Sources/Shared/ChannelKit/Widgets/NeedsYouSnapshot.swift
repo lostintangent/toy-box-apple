@@ -109,10 +109,10 @@ public struct NeedsYouSnapshot: Codable, Equatable, Sendable {
 
     /// A server's part, however its address is spelled.
     func part(at serverURL: String) -> Server? {
-        guard let address = ChannelWaitingRequest.normalizedServer(serverURL) else {
+        guard let address = ChannelTarget.normalizedServer(serverURL) else {
             return servers.first { $0.serverURL == serverURL }
         }
-        return servers.first { ChannelWaitingRequest.normalizedServer($0.serverURL) == address }
+        return servers.first { ChannelTarget.normalizedServer($0.serverURL) == address }
     }
 
     public func isStale(at now: Date) -> Bool {
@@ -140,7 +140,7 @@ public struct NeedsYouSnapshot: Codable, Equatable, Sendable {
 }
 
 /// Lossless Mac route payload for exact saved-server matching, unlike the normalized
-/// `ChannelWaitingRequest.Identity` lookup key.
+/// `ChannelWaitingRequest.ID` lookup key.
 public struct NeedsYouRequestLink: Equatable, Sendable {
     public var serverURL: String
     public var channelID: String

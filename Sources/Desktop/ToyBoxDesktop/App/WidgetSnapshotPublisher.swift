@@ -31,7 +31,7 @@ final class WidgetSnapshotPublisher {
         var serverURL: String
         var isOffline: Bool
         /// Its waiting requests, or nil until its catalog loads.
-        var waiting: [ChannelCatalogStore.WaitingRequest]?
+        var waiting: [ChannelWaitingRequest]?
     }
 
     func update(_ sources: [Source], now: Date = .now) {

@@ -120,8 +120,8 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     /// A server's registration, however its address is spelled.
     func registration(for serverURL: String) -> MobilePushRegistration? {
-        guard let server = ChannelWaitingRequest.normalizedServer(serverURL) else { return nil }
-        return registrations.first { ChannelWaitingRequest.normalizedServer($0.serverURL) == server }
+        guard let server = ChannelTarget.normalizedServer(serverURL) else { return nil }
+        return registrations.first { ChannelTarget.normalizedServer($0.serverURL) == server }
     }
 
     func registration(id: String) -> MobilePushRegistration? {
@@ -309,7 +309,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         let delivered = await deliveredNotifications()
         let stale = scopes.flatMap { scope -> [String] in
             guard let registration = registration(id: scope), let channels = self.channels[scope] else { return [] }
-            let active = self.activeChannel?.serverURL == ChannelWaitingRequest.normalizedServer(registration.serverURL)
+            let active = self.activeChannel?.serverURL == ChannelTarget.normalizedServer(registration.serverURL)
                 ? self.activeChannel?.channelID : nil
             return ChannelNotification.Delivered.stale(delivered, channels: channels, scope: scope, activeChannelID: active)
         }
