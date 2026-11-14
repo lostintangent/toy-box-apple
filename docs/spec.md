@@ -104,13 +104,12 @@ Signing, notarization, in-place updates and TestFlight are in the [release skill
 
 ### Connections
 
-A channel's stream, the catalog's stream and Settings' Test Connection each report `connecting`,
+A channel's stream, the catalog's stream and Connect each report `connecting`,
 `connected` or `failed`, and a channel can also be `deleted`. Each scope shows one notice: the
-transcript's "Reconnecting to server" for a channel, the sidebar footer for the catalog and Settings
-for Test Connection. A channel with cached state reconnects on its own, so its notice has no verb
+transcript's "Reconnecting to server" for a channel, the sidebar footer for the catalog and the
+Server URL card for Connect. A channel with cached state reconnects on its own, so its notice has no verb
 and Overview adds no notice of its own. Retry stays only where nothing has loaded yet, on Can't
-Connect and a management sheet with no channel behind it, and on the catalog footer and Test
-Connection. Three invariants hold:
+Connect and a management sheet with no channel behind it, and on the catalog footer. Three invariants hold:
 
 - **A channel failure keeps retrying its stream.** A channel is `failed` once it has tried for a
   grace (`ReconnectPolicy.grace`, three seconds spent trying) in which nothing arrived, without
@@ -125,7 +124,7 @@ Connection. Three invariants hold:
   someone asked for reports at once. Reconnecting continues and the rows stay. The
   error stays typed, because a refused sign-in shows red and the widget rethrows it. Refresh, from
   Cmd-R, the footer, pull to refresh or Quick Send, means only this channel list.
-- **A Test Connection failure is final.** It reports one attempt and doesn't retry.
+- **A Connect failure is final.** It reports one attempt and doesn't retry.
 
 Send, management and read marking wait for `isConnected`. A read write belongs to the store, so
 cancelling the reader that started it neither interrupts it nor reports an error. A later read
@@ -168,11 +167,10 @@ Retry are delivery, not connection, and a handed-off channel that couldn't be op
   verb and VoiceOver value on both apps (see Sidebar). Only a refresh the user asked for lights the
   Mac's header spinner, through `AppModel.isRefreshingCatalog`. The stream, Handoff, management and the
   widget never do.
-- **Test Connection:** `ServerConnectionProbe.phase` is nil until a test runs, then `connecting`,
-  `connected` with the channel count, or `failed`. `isConnecting` drives the button.
+- **Connect:** one read of `GET /api/v1/server` at the entered address, `connecting` while it
+  runs and `failed` with its error, and a server that answers is saved.
 - **Holders:** `ChannelConnections` counts who holds each store through `hold` and `release`. The
-  last release lingers as State describes, and `disconnectAll(in:)` serves moving or removing a
-  server.
+  last release lingers as State describes, and `disconnectAll(in:)` serves Disconnect.
 
 ### Several servers
 
@@ -227,15 +225,14 @@ Drafts stay keyed to the address, so adding it back finds them, and move with a 
   server's last update, and Retry refreshes every server. The morning digest stays one
   notification, and each line opens on its own server.
 - **Settings** lists the servers with their dots and names, even when there's one. A row never shows its address, which only the server's details show. On the Mac, they have their own Servers tab between General and Notifications,
-  and the list drags to reorder, and the selected server's Name, Server URL and status sit
-  below it. The list adds no inset of its own: its dots line up with
+  and the selected server's Name, Server URL and status sit below the list. The list adds no inset of its own: its dots line up with
   the labels below, and it's as tall as its rows. Its card keeps the grouped Form's own padding
   around a list, a little roomier than the details card below it. On the phone, each row opens
-  its server's page, with Name and then Server URL and its status, and Edit reorders them.
-  Neither list has a caption under it. A saved server's address can't be edited, because a server is
+  its server's page, with Name and then Server URL and its status. Neither list has a caption
+  under it, an Edit mode or a way to reorder, so the servers stay in the order the app found
+  them, the one the user entered first. A saved server's address can't be edited, because a server is
   its `id` and its name, and the address is only how this device reaches it. Server URL shows it
-  as a plain value in secondary ink that can be selected and copied, and Test Connection is only
-  in Connect.
+  as a plain value in secondary ink that can be selected and copied.
 - **Connecting.** The user connects once, by entering the address of any one of their Toy Box
   Macs, and the app shows that server and every peer that answers (see Peer servers). Connect is
   only there while the app has no servers: the phone's Welcome, and on the Mac the sidebar's
@@ -1000,13 +997,12 @@ readers keep their own system titles, without the button.
 **Phone Welcome.** With no working server the phone shows Welcome, not a titled form. Its
 first Form row, with a clear background and no horizontal insets, holds the large bold heading
 "Welcome to Toy Box 👋" and one secondary sentence. The navigation bar is hidden. The shared Server
-URL card follows: the address and Test Connection, each a native row of the same height, with
-errors below them. Continue is a full-width `.glassProminent` button at `.controlSize(.extraLarge)`
+URL card follows: the address, with errors below it. Connect is a full-width `.glassProminent` button at `.controlSize(.extraLarge)`
 in `.safeAreaBar(edge: .bottom)`, aligned to the card's measured edges and 8 points above the
 bottom safe area, so it rides above the keyboard. The Form keeps its default soft bottom scroll
-edge, so Continue floats like the composer, with no band or hairline. At accessibility sizes the
-bar would cover the card, so Continue becomes the Form's last row after the card instead, with the
-same edges and style. It's disabled until the current address tests successfully.
+edge, so Connect floats like the composer, with no band or hairline. At accessibility sizes the
+bar would cover the card, so Connect becomes the Form's last row after the card instead, with the
+same edges and style. It's disabled while the address is empty.
 
 **Phone sheet semantics.** Working Now, Select Text, reactors, system-message details, Overview in both presentations,
 and Settings use native `Button(role: .close)`. iOS supplies the X. Place it at
@@ -2978,10 +2974,10 @@ without a scheme, like `machine.tail1234.ts.net`, gets `https://`, so a server n
 typed to use HTTP. Both apps' Server URL placeholder is `machine.tail1234.ts.net`, and its
 caption starts "Use your server's address, including its port and any path prefix." Only another
 scheme, like `ftp://`, is refused, with "Use HTTP or HTTPS for your Toy Box server." On iPhone,
-Welcome is the Server URL card, with no separate Use Server action or
-confirmation. Return or Test Connection runs the test: while it runs, the field is disabled and
-the row reads Connecting…, then a green checkmark marks a server that answered, and a failed test
-shows its error in the card. A saved server's page shows its address as a plain value, with the
+Welcome is the Server URL card, with no separate test or confirmation. Return or Connect
+tries the address once: while it runs, the field is disabled and the button reads Connecting…,
+then a server that answers is saved and shown, and a failure shows its error in the card and
+saves nothing. A saved server's page shows its address as a plain value, with the
 same checkmark while it's connected, or its failure. Notifications explains requests
 and completions before asking system permission in response to an explicit enable action.
 Permission denial shows Open System Settings, never repeated permission prompts. General also
