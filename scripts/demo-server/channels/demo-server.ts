@@ -241,7 +241,9 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
         snapshot.messages.push(message);
         snapshot.messages = snapshot.messages.slice(-100);
         snapshot.revision++;
-        Object.assign(snapshot.channel, { latestSequence: sequence, requestSequence: null, updatedAt: timestamp });
+        // Like Toy Box 0.4.5, the user's message reads the channel through itself.
+        Object.assign(snapshot.channel, { latestSequence: sequence, seenThrough: sequence, requestSequence: null,
+          updatedAt: timestamp });
         snapshot.request = null;
         publish({ type: 'message', revision: snapshot.revision, message });
         json(response, 201, message);

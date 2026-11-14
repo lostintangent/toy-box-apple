@@ -58,9 +58,6 @@ struct ChannelOutboxTests {
     final class Served: Sendable {
         let catalog: Mutex<ChannelCatalog>
         let channel = Mutex(testState())
-        let reads = Mutex<[Int]>([])
-        /// Holds each read open until the test finishes it.
-        let holdsReads = Mutex(false)
         private let sent = Mutex<[Posted]>([])
 
         init(_ catalog: ChannelCatalog) { self.catalog = Mutex(catalog) }
@@ -94,14 +91,6 @@ struct ChannelOutboxTests {
             }
             if path == "/api/v1/channels/test" {
                 return try .stream([.init(type: "snapshot", state: served.channel.withLock { $0 })])
-            }
-            if request.httpMethod == "POST", path.hasSuffix("/read") {
-                struct Read: Codable { var sequence: Int }
-                let read = try JSONDecoder().decode(Read.self, from: requestBody(request))
-                served.reads.withLock { $0.append(read.sequence) }
-                var response = try MockResponse.json(["seenThrough": read.sequence])
-                response.keepOpen = served.holdsReads.withLock { $0 }
-                return response
             }
             throw URLError(.unsupportedURL)
         }
@@ -180,82 +169,6 @@ struct ChannelOutboxTests {
         #expect(Self.files(folder).isEmpty)
     }
 
-    @Test func aConfirmedMessageMarksItsChannelReadThroughItselfBeforeDeliveryEnds() async throws {
-        let folder = Self.folder()
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let clock = TestClock()
-        let served = Served(Self.catalog())
-        served.holdsReads.withLock { $0 = true }
-        let mock = Self.transport(served) { number, request in
-            struct Body: Decodable { var id: String }
-            let id = try JSONDecoder().decode(Body.self, from: requestBody(request)).id
-            return try .json(Self.userMessage(id: id, sequence: 5 + number))
-        }
-        let outbox = outbox(folder, clock: clock)
-        let catalog = try await catalog(mock, outbox: outbox)
-
-        await outbox.send("First", to: "test", on: catalog.api.baseURL)
-        await outbox.send("Second", to: "test", on: catalog.api.baseURL)
-        try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/channels/test/read") == 2 }
-        #expect(outbox.messages(in: "test", on: catalog.api.baseURL).isEmpty)
-        #expect(outbox.isDelivering)
-        mock.finishPendingResponses()
-        try await eventually { !outbox.isDelivering }
-        // Both reads are in flight at once, so they arrive in either order, and the server keeps the
-        // higher one.
-        #expect(served.reads.withLock { $0 }.sorted() == [6, 7])
-    }
-
-    /// The server's change for the user's message reaches the list before or after its answer to the
-    /// send, and carries the read from before it. Neither order shows the message unread, and the
-    /// next message after it still does.
-    @Test(arguments: [true, false])
-    func theUsersOwnMessageNeverLeavesItsChannelUnread(changeFirst: Bool) async throws {
-        let folder = Self.folder()
-        defer { try? FileManager.default.removeItem(at: folder) }
-        var channel = Self.channel(latest: 5)
-        channel.seenThrough = 5
-        let served = Served(Self.catalog([channel]))
-        served.holdsReads.withLock { $0 = true }
-        let mock = Self.transport(served, streamsCatalog: true) { _, request in
-            struct Body: Decodable { var id: String }
-            let id = try JSONDecoder().decode(Body.self, from: requestBody(request)).id
-            var response = try MockResponse.json(Self.userMessage(id: id, sequence: 6))
-            response.keepOpen = changeFirst
-            return response
-        }
-        defer { mock.finishPendingResponses() }
-        let catalog = ChannelCatalogStore(api: try mock.api())
-        catalog.startPolling()
-        defer { catalog.stopPolling() }
-        try await eventually { catalog.isLoaded }
-        let outbox = outbox(folder, clock: TestClock())
-        catalog.outbox = outbox
-        func change(latest: Int) async throws {
-            channel.latestSequence = latest
-            let frame = try catalogFrame("channel.upserted", ("channel", channel))
-            #expect(mock.sendPendingBody(frame, path: "/api/v1/channels") == 1)
-            try await eventually { catalog.state?.channels.first?.latestSequence == latest }
-        }
-
-        await outbox.send("Hello", to: "test", on: catalog.api.baseURL)
-        if changeFirst {
-            try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/channels/test/messages") == 1 }
-            try await change(latest: 6)
-            #expect(catalog.channels.first?.attention == nil, "Sending")
-            mock.finishPendingResponses(path: "/api/v1/channels/test/messages")
-            try await eventually { outbox.messages(in: "test", on: catalog.api.baseURL).isEmpty }
-        } else {
-            try await eventually { outbox.messages(in: "test", on: catalog.api.baseURL).isEmpty }
-            try await change(latest: 6)
-        }
-        #expect(catalog.channels.first?.attention == nil, "Sent")
-        try await eventually(observing: mock) { served.reads.withLock { $0 } == [6] }
-
-        try await change(latest: 7)
-        #expect(catalog.channels.first?.attention == .unread, "Someone's message after it shows")
-    }
-
     @Test func aRelaunchSendsWhatTheLastRunSaved() async throws {
         let folder = Self.folder()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -322,7 +235,7 @@ struct ChannelOutboxTests {
         store.connect()
         defer { store.disconnect() }
         try await eventually { outbox.message(id) == nil }
-        try await eventually(observing: mock) { !outbox.isDelivering && served.reads.withLock { $0 } == [1] }
+        #expect(!outbox.isDelivering)
         clock.advance(by: 60)
         #expect(served.postedIDs == [id.uuidString])
     }

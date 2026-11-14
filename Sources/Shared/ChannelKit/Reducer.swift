@@ -75,8 +75,11 @@ extension ChannelState {
                 next.channel.latestSequence = max(previous.channel.latestSequence, message.sequence)
                 next.channel.updatedAt = message.timestamp
                 if !message.isSystem {
-                    if message.sender.type == "user" { next.channel.requestSequence = nil }
-                    else if message.request == true { next.channel.requestSequence = message.sequence }
+                    if message.sender.type == "user" {
+                        // A user message reads its channel through itself, however it was posted.
+                        next.channel.seenThrough = max(previous.channel.seenThrough, message.sequence)
+                        next.channel.requestSequence = nil
+                    } else if message.request == true { next.channel.requestSequence = message.sequence }
                 } else if let content = message.system {
                     switch content.type {
                     case "channel_renamed":

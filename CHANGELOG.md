@@ -10,6 +10,7 @@
 
 - The menu bar and Quick Send show each channel's icon, and Quick Send shows the folder each channel works in instead of its purpose, so you can spot the one you want at a glance.
 - Windows you leave open now come back where you left them when Toy Box restarts or updates, on the same channel or screens. One showing another of your Macs fills in as soon as that Mac answers.
+- A reply you send from anywhere, like the web, a notification or another device, marks its channel read everywhere at once, once your Macs run Toy Box 0.4.5.
 
 ## iPhone 0.1.39
 
@@ -20,6 +21,7 @@
 ### Bugs/Polish
 
 - A channel waiting on you stays a calm row in your list that shows its question, and opens to answer only when you tap it, so a new request never takes over the screen.
+- A reply you send from anywhere, like the web, a notification or another device, marks its channel read everywhere at once, once your Macs run Toy Box 0.4.5.
 
 ## Mac 0.1.40
 

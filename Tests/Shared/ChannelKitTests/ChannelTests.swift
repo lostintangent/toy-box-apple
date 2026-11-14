@@ -70,4 +70,27 @@ struct ChannelTests {
         let missing = Data(#"{"type":"channel_avatar_changed","actor":{"type":"user"}}"#.utf8)
         #expect(throws: DecodingError.self) { try JSONDecoder().decode(ChannelSystemContent.self, from: missing) }
     }
+
+    /// Mirrors Toy Box 0.4.5's `reduceChannel`, which moves the server's read position the same way.
+    @Test func yourMessageReadsTheChannelThroughItselfAndClearsACompletion() throws {
+        let url = try #require(Bundle.module.url(forResource: "channel-snapshot", withExtension: "json",
+                                                subdirectory: "Fixtures"))
+        var state = try JSONDecoder().decode(ChannelState.self, from: Data(contentsOf: url))
+        func post(_ sender: String) throws {
+            let sequence = state.channel.latestSequence + 1
+            let message = try JSONDecoder().decode(ChannelMessage.self, from: Data("""
+                {"id":"m\(sequence)","sequence":\(sequence),"timestamp":"2026-11-12T05:30:00.000Z",
+                 "sender":\(sender),"content":"Found a regression."}
+                """.utf8))
+            state = state.applying(.init(type: "message", revision: state.revision + 1, message: message))
+        }
+
+        try post(#"{"type":"agent","agentId":"\#(state.lead.id)"}"#)
+        state.channel.requestSequence = nil
+        state.channel.completedSequence = state.channel.latestSequence
+        #expect(state.channel.attention == .finished)
+        try post(#"{"type":"user"}"#)
+        #expect(state.channel.seenThrough == state.channel.latestSequence)
+        #expect(state.channel.attention == nil)
+    }
 }

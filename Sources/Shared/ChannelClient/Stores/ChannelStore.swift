@@ -477,11 +477,6 @@ public final class ChannelStore {
         return false
     }
 
-    /// Where a message the outbox sent landed, once this channel has it.
-    func sequence(ofSent id: UUID) -> Int? {
-        state?.messages.first { $0.sender == .user && UUID(uuidString: $0.id) == id }?.sequence
-    }
-
     /// Shows a message the outbox sent before its event arrives.
     func mergeSent(_ message: ChannelMessage) {
         guard var current = state, phase != .deleted else { return }
@@ -541,17 +536,7 @@ public final class ChannelCatalogStore {
     /// The list this server is in, which each answer reaches, so a new name or peers show.
     @ObservationIgnored weak var servers: ChannelServers?
     public private(set) var state: ChannelCatalog?
-    /// A channel the outbox is sending to reads as read through its latest, since the server marks it
-    /// read through the user's message once that lands.
-    public var channels: [Channel] {
-        let channels = state?.channels ?? []
-        guard let sending = outbox?.sendingChannelIDs(on: api.baseURL), !sending.isEmpty else { return channels }
-        return channels.map { channel in
-            var channel = channel
-            if sending.contains(channel.id) { channel.read(through: channel.latestSequence) }
-            return channel
-        }
-    }
+    public var channels: [Channel] { state?.channels ?? [] }
     public var members: [ChannelAgent] { state?.members ?? [] }
     /// The server's release, and checking for a newer one and restarting onto it.
     public let update: ServerUpdate
@@ -648,12 +633,6 @@ public final class ChannelCatalogStore {
 
     /// A channel's store, only if something already asked for it.
     public func existingChannel(id: String) -> ChannelStore? { detailStores[id] }
-
-    /// Reads a channel through `sequence` at once, ahead of the server's echo.
-    func read(_ channelID: String, through sequence: Int) {
-        guard let index = state?.channels.firstIndex(where: { $0.id == channelID }) else { return }
-        state?.channels[index].read(through: sequence)
-    }
 
     /// A refresh someone asked for, which joins one already in flight instead of returning early.
     /// While the stream is open it reopens the stream and returns with the fresh catalog that opens
