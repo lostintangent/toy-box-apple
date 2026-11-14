@@ -7,7 +7,7 @@ import ToyBoxUI
 enum OverviewPlacement: Equatable {
     case sheet, inspector
 
-    /// The column opens at its narrowest, where readers kept shrinking it, and widens up to 360.
+    /// The column's fixed width, the narrowest readers kept shrinking it to.
     static let columnWidth: CGFloat = 280
 
     /// The column takes room only on scenes at least 716 points wide, so the conversation keeps more
@@ -15,8 +15,13 @@ enum OverviewPlacement: Equatable {
     /// portrait also reports a regular size class, so the scene's width decides.
     static let inspectorSceneWidth: CGFloat = 716
 
-    init(sceneWidth: CGFloat, sizeClass: UserInterfaceSizeClass?) {
-        self = sizeClass == .regular && sceneWidth >= Self.inspectorSceneWidth ? .inspector : .sheet
+    /// The column covers the detail's trailing corner, so it also needs regular height, where the
+    /// channel's Overview button stands in the trailing vertical bar beside it. A compact-height scene
+    /// as wide, like a Pro Max in landscape, keeps a horizontal bar whose Overview button the column
+    /// would cover.
+    init(sceneWidth: CGFloat, sizeClass: UserInterfaceSizeClass?, verticalSizeClass: UserInterfaceSizeClass?) {
+        self = sizeClass == .regular && verticalSizeClass == .regular && sceneWidth >= Self.inspectorSceneWidth
+            ? .inspector : .sheet
     }
 
     /// Folded landscape stands the sheet's bar items in a leading vertical bar, which would move the
@@ -51,14 +56,10 @@ final class Overview {
         return session
     }
 
-    /// The landscape column has no close of its own. The Overview button and Close Overview own its
-    /// presence, like the sidebar's. SwiftUI writes `false` while the columns reflow during a
-    /// rotation or fold, so the column never writes back.
-    func columnBinding(for interaction: ChannelInteraction?) -> Binding<Bool> {
-        Binding(get: { [self] in
-            placement == .inspector && interaction?.isInspectorPresented == true
-                && interaction?.isArtifactViewerPresented != true
-        }, set: { _ in })
+    /// The landscape column has no close of its own. Only Overview's presence shows it, which the
+    /// Overview button owns, like the sidebar's, so no rotation, fold or unfold opens or closes it.
+    func showsColumn(for interaction: ChannelInteraction) -> Bool {
+        placement == .inspector && interaction.isInspectorPresented && !interaction.isArtifactViewerPresented
     }
 
     /// A screen over Overview holds it where it is, so a rotation can't hand the screen to another

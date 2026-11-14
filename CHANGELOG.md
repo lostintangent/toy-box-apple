@@ -8,6 +8,7 @@
 
 ### Bugs/Polish
 
+- On iPhone Duo, unfolding your phone keeps Overview and the channel list just as you left them, and Overview's button now always closes it on the first tap.
 - On iPhone Duo, the unfolded channel list no longer squeezes a cut-off Toy Box title into its top bar.
 
 ## Mac 0.1.39
