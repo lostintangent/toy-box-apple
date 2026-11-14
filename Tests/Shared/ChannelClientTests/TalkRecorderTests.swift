@@ -159,8 +159,7 @@ struct TalkRecorderTests {
         system.makeRecognizer = { [recognizer] _, _, _ in recognizer }
         system.refreshNotifications = []
         let draft = draft
-        let recorder = TalkRecorder(system: system, checks: checks, draft: { _ in draft }, announce: announce,
-                                    animate: beats.animate, pause: beats.pause)
+        let recorder = TalkRecorder(system: system, checks: checks, draft: { _ in draft }, announce: announce)
         await recorder.dictation.refreshLanguageSupport()
         recorder.start(store, name: "Studio", order: order)
         try await eventually { recorder.isListening }

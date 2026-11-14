@@ -70,9 +70,10 @@ struct ChannelSidebar: View {
         self.talkRequest = talkRequest
         _listSelection = ViewState(initialValue: selection.wrappedValue)
         let checks = CardChecks()
+        let draft: @MainActor (ChannelStore) -> ComposerDraft = { .shared(serverURL: $0.api.baseURL, channelID: $0.id) }
         _checks = ViewState(initialValue: checks)
-        _cards = ViewState(initialValue: NeedsYouCards(checks: checks))
-        _talk = ViewState(initialValue: TalkRecorder(checks: checks))
+        _cards = ViewState(initialValue: NeedsYouCards(checks: checks, draft: draft))
+        _talk = ViewState(initialValue: TalkRecorder(system: .live, checks: checks, draft: draft))
     }
 
     /// A Command-click opens its row in a new window. The list's own Command-click selects that

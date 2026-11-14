@@ -1,3 +1,4 @@
+import Accessibility
 import ChannelKit
 import Foundation
 import Observation
@@ -7,7 +8,16 @@ import Observation
 
 /// A card's beats, which the app animates with the spec's springs. A card that closes without
 /// sending plays `open` in reverse.
-package enum CardMotion: Sendable { case open, sent, settle }
+package enum CardMotion: Sendable {
+    case open, sent, settle
+
+    /// Tells VoiceOver a card sent, ahead of whatever speech its close brings.
+    @MainActor package static func announce(_ announcement: String) {
+        var announcement = AttributedString(announcement)
+        announcement.accessibilitySpeechAnnouncementPriority = .high
+        AccessibilityNotification.Announcement(announcement).post()
+    }
+}
 
 /// Where an open card sits over the list: on its row, growing down until its bottom meets the
 /// room's, then holding that bottom and growing up, never past the room's top.
@@ -30,7 +40,7 @@ package struct CardPlacement: Equatable, Sendable {
 
 /// The done check a list row wears once its card sends: through the card's shrink and two seconds
 /// more, then it settles back to the channel's mark. The list owns one for both of its cards, and
-/// each row's check settles on its own.
+/// each row's check settles on its own. Both cards play their beats through its motion.
 @MainActor @Observable
 package final class CardChecks {
     package enum Check: Equatable, Sendable {
@@ -43,12 +53,11 @@ package final class CardChecks {
     /// The rows wearing a check, by channel on its server.
     package private(set) var rows: [ChannelTarget: Check] = [:]
     @ObservationIgnored private var settles: [ChannelTarget: Task<Void, Never>] = [:]
-    @ObservationIgnored private let animate: @MainActor (CardMotion, () -> Void) -> Void
-    @ObservationIgnored private let pause: @MainActor (Duration) async -> Void
+    /// Applies one beat's change in that beat's motion.
+    @ObservationIgnored package let animate: @MainActor (CardMotion, () -> Void) -> Void
+    /// Waits while a beat's motion plays, before the next beat.
+    @ObservationIgnored package let pause: @MainActor (Duration) async -> Void
 
-    /// - Parameters:
-    ///   - animate: Applies one beat's change in that beat's motion.
-    ///   - pause: Waits while a beat's motion plays, before the next beat.
     package init(animate: @escaping @MainActor (CardMotion, () -> Void) -> Void = { $1() },
                  pause: @escaping @MainActor (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
         self.animate = animate

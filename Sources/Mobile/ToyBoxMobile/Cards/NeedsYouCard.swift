@@ -7,15 +7,6 @@ import UIKit
 // A waiting channel's row in the list: its question in one line, or, for the open card, the whole
 // question with its choices and Reply. See Needs You in the list in docs/spec.md.
 
-extension NeedsYouCards {
-    /// The phone's cards, with drafts, VoiceOver announcements and the spec's springs.
-    convenience init(checks: CardChecks) {
-        self.init(checks: checks, draft: { .shared(serverURL: $0.api.baseURL, channelID: $0.id, imageIsReadable: ComposerSession.imageIsReadable) },
-                  announce: { UIAccessibility.post(notification: .announcement, argument: $0) },
-                  animate: { withAnimation($0.animation, $1) })
-    }
-}
-
 /// The open card: the channel's heading, the whole question, then the choices and Reply, which
 /// hold while a choice is saved. Lifted above the dimmed list, a typed reply's field and its Cancel
 /// and Send take the choices' place. The question scrolls only once the card would run past
@@ -27,16 +18,12 @@ struct NeedsYouCard: View {
     let channel: Channel
     let entry: ChannelWaitingRequest
     let cards: NeedsYouCards
-    let choices: TranscriptRequestChoices?
     let now: Date
     var isCollapsed = false
     /// The copy above the dimmed list while a typed reply is open.
     var isLifted = false
     /// The tallest the card can be and still fit in the list's visible area.
     let maxHeight: CGFloat
-    let open: () -> Void
-    let choose: (String) -> Void
-    let reply: () -> Void
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var colorScheme
     @ViewState private var questionHeight: CGFloat?
@@ -44,7 +31,6 @@ struct NeedsYouCard: View {
     /// Whether the question runs on above or below what's shown.
     @ViewState private var hidden: Edge.Set = []
 
-    private var isReplying: Bool { cards.replying?.id == entry.id }
     /// The request's own server, which its links resolve against and its reply waits for.
     private var catalog: ChannelCatalogStore? { model.catalogs.first(at: entry.target.serverURL) }
 
@@ -128,25 +114,31 @@ struct NeedsYouCard: View {
         .contentShape(Rectangle())
     }
 
-    private var requester: String { entry.requester?.name ?? "the request" }
-
     @ViewBuilder private var footer: some View {
         if isLifted {
-            NeedsYouReplyField(cards: cards, catalog: catalog, prompt: "Reply to \(requester)")
+            NeedsYouReplyField(cards: cards, catalog: catalog, prompt: "Reply to \(entry.requester?.name ?? "the request")")
         } else {
             // A choice holds the card as it was while it's saved, as the talk card holds its note.
-            let isSending = isReplying && cards.phase == .sending
-            TranscriptRequestActions(spacing: 8, sequence: entry.sequence, choices: isSending ? entry.heldChoices : choices,
-                                     replyHelp: "Reply to \(requester)",
-                                     readAloud: .init(channelID: channel.id, sequence: entry.sequence, text: entry.markdown),
+            TranscriptRequestActions(entry, cards: cards, isConnected: catalog?.phase.failure == nil, spacing: 8,
                                      onChoose: choose, onReply: reply)
                 .controlSize(.small)
                 .font(.footnote)
                 .labelStyle(InlineLabelStyle())
-                // The actions hide a chosen reply themselves, so the held ones start afresh.
-                .id(isSending)
-                .allowsHitTesting(!isSending)
         }
+    }
+
+    private func open() {
+        Task { await model.openChannel(id: entry.channel.id, sequence: entry.sequence, on: entry.target.serverURL) }
+    }
+
+    private func choose(_ choice: String) {
+        guard let catalog else { return }
+        Task { await cards.send(choice, to: entry, on: catalog.channel(id: entry.channel.id)) }
+    }
+
+    private func reply() {
+        guard let catalog else { return }
+        cards.reply(to: entry, on: catalog.channel(id: entry.channel.id))
     }
 }
 

@@ -50,28 +50,20 @@ package final class TalkRecorder: DictationTextTarget {
     @ObservationIgnored private var closing: Task<Void, Never>?
     @ObservationIgnored private let draft: @MainActor (ChannelStore) -> ComposerDraft
     @ObservationIgnored private let announce: @MainActor (String) -> Void
-    @ObservationIgnored private let animate: @MainActor (CardMotion, () -> Void) -> Void
-    @ObservationIgnored private let pause: @MainActor (Duration) async -> Void
 
     package static let sampleCount = 64
 
     /// - Parameters:
-    ///   - checks: The list's done checks, which the row wears once its note sends.
+    ///   - checks: The list's done checks, which the row wears once its note sends, and the cards' motion.
     ///   - draft: The channel's composer draft, which keeps the words of a note left mid-way.
     ///   - announce: Speaks a VoiceOver announcement.
-    ///   - animate: Applies one beat's change in that beat's motion.
-    ///   - pause: Waits while a beat's motion plays, before the next beat.
     package init(system: DictationSystem, checks: CardChecks,
                  draft: @escaping @MainActor (ChannelStore) -> ComposerDraft,
-                 announce: @escaping @MainActor (String) -> Void,
-                 animate: @escaping @MainActor (CardMotion, () -> Void) -> Void = { $1() },
-                 pause: @escaping @MainActor (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
+                 announce: @escaping @MainActor (String) -> Void = CardMotion.announce) {
         dictation = ComposerDictation(system: system)
         self.checks = checks
         self.draft = draft
         self.announce = announce
-        self.animate = animate
-        self.pause = pause
         dictation.target = self
     }
 
@@ -179,7 +171,7 @@ package final class TalkRecorder: DictationTextTarget {
         listened = 0
         listeningSince = nil
         dictation.contextualStrings = ["Lead"] + contextualNames
-        animate(.open) {
+        checks.animate(.open) {
             self.target = target
             channelName = name
             phase = .recording
@@ -213,7 +205,7 @@ package final class TalkRecorder: DictationTextTarget {
         let id = await outbox.send(words, to: store.id, on: store.api.baseURL)
         guard phase == .sending, self.store === store else { return }
         sentAt = outbox.message(id)?.sentAt ?? .now
-        animate(.sent) {
+        checks.animate(.sent) {
             phase = .sent
             checks.sent(target)
         }
@@ -225,9 +217,9 @@ package final class TalkRecorder: DictationTextTarget {
     private func land(_ target: ChannelTarget) {
         closing?.cancel()
         closing = Task { [weak self] in
-            await self?.pause(.seconds(0.35))
+            await self?.checks.pause(.seconds(0.35))
             guard let self, !Task.isCancelled, phase == .sent else { return }
-            animate(.settle) { phase = .landed }
+            checks.animate(.settle) { phase = .landed }
             for await check in Observations({ [checks] in checks[target] }) where check == nil { break }
             guard !Task.isCancelled, phase == .landed else { return }
             close()
@@ -241,10 +233,10 @@ package final class TalkRecorder: DictationTextTarget {
         sampling?.cancel()
         listeningSince = nil
         dictation.leaveDraft()
-        animate(.open) { phase = .cancelled }
+        checks.animate(.open) { phase = .cancelled }
         closing?.cancel()
         closing = Task { [weak self] in
-            await self?.pause(.seconds(0.45))
+            await self?.checks.pause(.seconds(0.45))
             guard let self, !Task.isCancelled, phase == .cancelled else { return }
             close()
         }
