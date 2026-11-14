@@ -10,6 +10,7 @@
 
 ### Bugs/Polish
 
+- A channel now counts as read up to where you stop scrolling, so messages you only glimpse in a quick flick stay unread until you come back to them.
 - Sending a message while dictation downloads your language for the first time no longer cancels the download, so dictation is ready the next time you tap it.
 
 ## Mac 0.1.41

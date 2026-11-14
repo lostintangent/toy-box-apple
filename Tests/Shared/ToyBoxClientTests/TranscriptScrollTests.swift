@@ -44,7 +44,7 @@ struct TranscriptScrollTests {
         #expect(completions == [false, false, false, false, false, true])
     }
 
-    @Test func readCandidateRequiresEnoughVisibleCommittedContent() {
+    @Test func readCandidateIsTheNewestVisibleCommittedMessage() {
         let viewport = TranscriptViewport(width: 600, height: 400)
         let frames: [String: TranscriptMessageFrame] = [
             "above": frame(sequence: 11, y: -100, height: 60),
@@ -52,22 +52,15 @@ struct TranscriptScrollTests {
             "below": frame(sequence: 99, y: 450, height: 60),
             "optimistic": frame(sequence: 0, y: 200, height: 60)
         ]
-        #expect(viewport.readSequence(in: frames) == 12)
+        #expect(viewport.visibleThrough(frames) == 12)
         let older: [String: TranscriptMessageFrame] = [
             "older-first": frame(sequence: 281, y: -20, height: 100),
             "older-last": frame(sequence: 282, y: 100, height: 100),
             "later-history": frame(sequence: 456, y: 500, height: 100),
             "newest-request": frame(sequence: 480, y: 800, height: 100)
         ]
-        #expect(viewport.readSequence(in: older) == 282)
-        #expect(viewport.readSequence(in: ["edge": frame(sequence: 12, y: 390, height: 100)]) == nil)
-        #expect(viewport.readSequence(in: ["edge": frame(sequence: 12, y: 376, height: 100)]) == 12)
-        #expect(viewport.readSequence(in: ["system": frame(sequence: 7, y: 390, height: 20)]) == 7)
-        #expect(viewport.readSequence(in: ["system": frame(sequence: 7, y: 391, height: 20)]) == nil)
-        let outside = TranscriptMessageFrame(sequence: 8, rect: CGRect(x: 700, y: 20, width: 80, height: 40),
-                                             historyStart: 1)
-        #expect(viewport.readSequence(in: ["outside": outside]) == nil)
-        #expect(TranscriptViewport().readSequence(in: ["unmeasured": frame(sequence: 8, y: 0, height: 40)]) == nil)
+        #expect(viewport.visibleThrough(older) == 282)
+        #expect(TranscriptViewport().visibleThrough(["unmeasured": frame(sequence: 8, y: 0, height: 40)]) == nil)
     }
 
     @Test func pagingAnchorsUseOnlyVisibleCommittedFrames() {
@@ -358,28 +351,25 @@ struct TranscriptPagingTests {
             "optimistic": TranscriptMessageFrame(sequence: 0, rect: CGRect(x: 68, y: 80, width: 400, height: 60),
                                                 historyStart: 31, contentTop: 1000)
         ]
-        #expect(viewport.readSequence(in: measured) == 99)
-        #expect(viewport.readSequence(in: measured, nativeViewportTop: 1020) == 61)
-        #expect(viewport.readSequence(in: measured, nativeViewportTop: 1470) == 99)
-        #expect(viewport.readSequence(in: measured, nativeViewportTop: 2000) == nil)
-        #expect(TranscriptViewport().readSequence(in: measured, nativeViewportTop: 1020) == nil)
+        #expect(viewport.visibleThrough(measured) == 99)
+        #expect(viewport.visibleThrough(measured, nativeViewportTop: 1020) == 61)
+        #expect(viewport.visibleThrough(measured, nativeViewportTop: 1470) == 99)
+        #expect(viewport.visibleThrough(measured, nativeViewportTop: 2000) == nil)
+        #expect(TranscriptViewport().visibleThrough(measured, nativeViewportTop: 1020) == nil)
     }
 
     @Test(arguments: [CGFloat(0), 52, 2002, 2032])
     func nativeReadBoundsKeepTheSameVisibilityThresholdsAsPositionedFrames(_ top: CGFloat) {
         let viewport = TranscriptViewport(width: 600, height: 400)
-        for (relativeTop, height, x) in [
-            (CGFloat(-100), CGFloat(60), CGFloat(68)),
-            (-36, 60, 68), (-36.01, 60, 68), (80, 60, 68),
-            (376, 100, 68), (376.01, 100, 68), (390, 20, 68), (391, 20, 68),
-            (20, 40, 700)
+        for (relativeTop, height) in [
+            (CGFloat(-100), CGFloat(60)), (-36, 60), (-36.01, 60), (80, 60),
+            (376, 100), (376.01, 100), (390, 20), (391, 20)
         ] {
-            var measured = frame(top: top - TranscriptCoordinates.contentTopPadding + relativeTop,
+            let measured = frame(top: top - TranscriptCoordinates.contentTopPadding + relativeTop,
                                  height: height, measuredY: 9999)
-            measured.rect.origin.x = x
             let positioned = TranscriptCoordinates.viewportFrame(measured, top: top)
-            #expect(viewport.readSequence(in: ["message": measured], nativeViewportTop: top)
-                    == viewport.readSequence(in: ["message": positioned]))
+            #expect(viewport.visibleThrough(["message": measured], nativeViewportTop: top)
+                    == viewport.visibleThrough(["message": positioned]))
         }
     }
 }

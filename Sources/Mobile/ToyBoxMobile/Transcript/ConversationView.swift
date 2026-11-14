@@ -223,7 +223,9 @@ struct ConversationView: View {
     @ViewState private var startedReveal: UUID?
     /// Whether the scroll view has reported its geometry, which a reveal needs before it can place a row.
     @ViewState private var hasGeometry = false
-    @ViewState private var requestedRead = 0
+    /// The newest message settled geometry shows, which only an idle scroll publishes.
+    @ViewState private var visibleThrough: Int?
+    @ViewState private var isScrolling = false
     @ViewState private var expanded: Set<String> = []
     @ViewState private var catchUp: TranscriptCatchUpSession?
     @ViewState private var find: TranscriptFind = {
@@ -338,6 +340,10 @@ struct ConversationView: View {
         .onScrollPhaseChange { _, phase in
             scroll.isReaderScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
             scroll.isScrollIdle = phase == .idle
+            if isScrolling != phase.isScrolling {
+                isScrolling = phase.isScrolling
+                publishVisible()
+            }
             if phase == .tracking || phase == .interacting {
                 scroll.readerTouched()
                 find.resumeReading()
@@ -411,8 +417,7 @@ struct ConversationView: View {
             startedReveal = request.token
             Task { await reveal(sequence: request.sequence, token: request.token) }
         }
-        .onChange(of: scenePhase) { markRead() }
-        .onChange(of: isUncovered) { markRead() }
+        .task(id: read) { await read.mark(in: store) }
     }
 
     private var statusReactions: [Int: [ChannelReaction]] {
@@ -513,8 +518,9 @@ struct ConversationView: View {
             withAnimation(.easeOut(duration: 0.2)) { showsJumpToLatest = away }
         }
         // The current geometry is about to be replaced, so it says nothing about what the reader saw.
-        if !isMoving {
-            markRead()
+        if isMoving {
+            if visibleThrough != nil { visibleThrough = nil }
+        } else {
             if let reveal = scroll.finishedReveal() {
                 landsOnReveal = false
                 interaction.finishReveal(reveal.token, reveal.isRevealed ? .revealed : .failed(Self.revealInterrupted))
@@ -523,6 +529,7 @@ struct ConversationView: View {
                scroll.loadsOlder(with: rowIdentities) {
                 Task { await loadOlder() }
             }
+            publishVisible()
         }
     }
 
@@ -536,15 +543,18 @@ struct ConversationView: View {
             && !interaction.isRequestPreviewPresented
     }
 
-    /// Reads advance only for committed rows the reader can see in an active scene.
-    private func markRead() {
-        guard scroll.hasLanded, scenePhase == .active, store.phase.isConnected, isUncovered, !find.blocksRead else { return }
+    private var read: TranscriptRead {
+        .init(visibleThrough: visibleThrough, isLooking: scenePhase == .active, isCovered: !isUncovered,
+              hasLanded: scroll.hasLanded, isMoving: isScrolling, isFinding: find.blocksRead,
+              isConnected: store.phase.isConnected)
+    }
+
+    /// A scroll in flight publishes nothing, so its frames never re-render the conversation.
+    private func publishVisible() {
+        guard scroll.hasLanded, scroll.isScrollIdle, scroll.pendingReveal == nil else { return }
         let visible = Set(scroll.visibleRows)
-        guard !visible.isEmpty else { return }
-        let sequence = items.lazy.filter { visible.contains($0.id) }.map(\.sequence).max() ?? 0
-        guard sequence > requestedRead else { return }
-        requestedRead = sequence
-        Task { await store.markRead(through: sequence) }
+        let sequence = items.lazy.filter { visible.contains($0.id) }.map(\.sequence).max()
+        if sequence != visibleThrough { visibleThrough = sequence }
     }
 
     private func loadOlder() async {
