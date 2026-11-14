@@ -5,6 +5,7 @@
 ### Bugs/Polish
 
 - Pressing Send while dictation is still getting ready sends what you typed and leaves the microphone off, instead of it starting to listen in your next message.
+- Closing Bookmarks before it finishes finding an older message no longer leaves the conversation stuck on "Couldn't load older messages", so scrolling back keeps loading earlier history.
 
 ## iPhone 0.1.40
 
@@ -12,6 +13,7 @@
 
 - Flicking past new messages and then scrolling back no longer marks them read, because a channel now counts as read only up to where you stop scrolling.
 - Sending a message while dictation downloads your language for the first time no longer cancels the download, so dictation is ready the next time you tap it.
+- Closing Bookmarks before it finishes finding an older message no longer stops the conversation from loading earlier history as you scroll back.
 
 ## Mac 0.1.41
 

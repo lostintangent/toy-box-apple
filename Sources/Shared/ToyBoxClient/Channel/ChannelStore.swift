@@ -109,6 +109,7 @@ public final class ChannelStore {
     @ObservationIgnored private let sleep: @Sendable (TimeInterval) async throws -> Void
     @ObservationIgnored private var capturedUnread = false
     @ObservationIgnored private var historyGeneration = UUID()
+    @ObservationIgnored private var olderPage: Task<Void, Never>?
     @ObservationIgnored private var readWrite: Task<Void, Never>?
     @ObservationIgnored private var pendingRead = 0
     @ObservationIgnored private var acknowledgedRead = 0
@@ -295,16 +296,27 @@ public final class ChannelStore {
         capturedUnread = state != nil && phase.isConnected
     }
 
+    /// Returns once the page before the oldest loaded message lands or fails. The store owns the page,
+    /// so cancelling a caller doesn't interrupt it, and a caller that arrives while it loads joins it.
     public func loadOlder() async {
-        guard !isLoadingOlder, hasOlderMessages, let state,
-              let first = state.messages.first else { return }
-        if first.sequence <= 1 { hasOlderMessages = false; return }
-        let historyToken = historyGeneration
-        isLoadingOlder = true
-        historyError = nil
-        defer { isLoadingOlder = false }
+        if olderPage == nil {
+            guard hasOlderMessages, let first = state?.messages.first else { return }
+            if first.sequence <= 1 { hasOlderMessages = false; return }
+            isLoadingOlder = true
+            historyError = nil
+            let generation = historyGeneration
+            olderPage = Task { await loadPage(before: first.sequence, generation: generation) }
+        }
+        await olderPage?.value
+    }
+
+    private func loadPage(before sequence: Int, generation historyToken: UUID) async {
+        defer {
+            isLoadingOlder = false
+            olderPage = nil
+        }
         do {
-            let page = try await api.history(channelId: id, before: first.sequence)
+            let page = try await api.history(channelId: id, before: sequence)
             guard historyGeneration == historyToken, phase != .deleted else { return }
             if var current = self.state {
                 current.messages = current.messages.merging(page.messages)
@@ -323,14 +335,10 @@ public final class ChannelStore {
     public func loadHistory(through sequence: Int) async -> String? {
         let generation = historyGeneration
         while let first = state?.messages.first, first.sequence > sequence && hasOlderMessages {
-            let before = first.sequence
-            if isLoadingOlder {
-                do { try await Task.sleep(for: .milliseconds(40)) }
-                catch { return nil }
-            } else { await loadOlder() }
+            await loadOlder()
             guard !Task.isCancelled, historyGeneration == generation else { return nil }
             if let historyError { return historyError }
-            if !isLoadingOlder && state?.messages.first?.sequence == before { return nil }
+            if state?.messages.first?.sequence == first.sequence { return nil }
         }
         return nil
     }
