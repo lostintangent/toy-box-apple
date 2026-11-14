@@ -62,7 +62,7 @@ struct IntentsTests {
     @Test func onlyTheServerSavedInSettingsFillsSpotlight() {
         #expect(ChannelSpotlight.indexes(LaunchOptions(), bundleID: "dev.toybox.desktop", environment: [:]))
         var session = LaunchOptions()
-        session.servers = ["http://127.0.0.1:3210"]
+        session.server = "http://127.0.0.1:3210"
         #expect(!ChannelSpotlight.indexes(session, bundleID: "dev.toybox.desktop", environment: [:]))
         #expect(!ChannelSpotlight.indexes(LaunchOptions(), bundleID: "dev.toybox.desktop",
                                          environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"]))

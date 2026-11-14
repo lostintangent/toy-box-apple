@@ -85,14 +85,13 @@ final class AppModel {
         // A launch override, snapshot or benchmark keeps its server to the session, so Settings never
         // saves over the user's servers. The app starts with no server the user didn't add.
         let savesServers = launchOptions.allowsUserIntegrations()
-        let list = savesServers ? ChannelCatalogStore.Saved.load(from: .standard)
-            : launchOptions.sessionServers().map { ChannelCatalogStore.Saved(url: $0) }
-        serverURL = list.first?.url ?? ""
-        servers = ChannelServers(list, savingTo: savesServers ? .standard : nil, outbox: outbox,
+        let address = savesServers ? ChannelServers.saved(in: .standard) : launchOptions.sessionServer()
+        serverURL = address ?? ""
+        servers = ChannelServers(address, savingTo: savesServers ? .standard : nil, outbox: outbox,
                                  connections: connections, isActive: NSApplication.shared.isActive,
                                  streamsInBackground: true)
-        if servers.catalogs.isEmpty {
-            do { for server in list { _ = try ChannelAPI(serverURL: server.url) } }
+        if servers.catalogs.isEmpty, let address {
+            do { _ = try ChannelAPI(serverURL: address) }
             catch { configurationError = error.localizedDescription }
         }
         servers.onChange = { [weak self] in

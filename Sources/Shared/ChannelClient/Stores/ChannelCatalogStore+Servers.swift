@@ -2,73 +2,21 @@ import ChannelKit
 import Foundation
 
 extension ChannelCatalogStore {
-    /// A server as Settings saves it. Each app keeps its servers in its defaults under `servers`, in
-    /// Settings order.
-    public struct Saved: Codable, Equatable, Sendable {
-        public static let key = "servers"
-        /// Where each app saved its one server before it could have several.
-        static let singleServerKey = "serverURL"
-
-        public var url: String
-        /// The last name the server answered.
-        public var name: String
-        /// The identity the server answered, so the same server at another address is found.
-        public var id: String?
-        /// Where other servers reach a server saved at a loopback address, usually through
-        /// `tailscale serve`, so it can link.
-        public var tailscaleAddress: String?
-
-        public init(url: String, name: String? = nil, id: String? = nil, tailscaleAddress: String? = nil) {
-            self.url = url
-            self.name = name ?? Self.name(of: url)
-            self.id = id
-            self.tailscaleAddress = tailscaleAddress
+    /// The name of a server that hasn't answered yet: its host, and a port that isn't the default.
+    nonisolated public static func name(of url: String) -> String {
+        guard let components = URLComponents(string: url), let host = components.host, !host.isEmpty else {
+            return url
         }
-
-        /// The name of a server that hasn't answered yet: its host, and a port that isn't the default.
-        public static func name(of url: String) -> String {
-            guard let components = URLComponents(string: url), let host = components.host, !host.isEmpty else {
-                return url
-            }
-            let name = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
-            guard let port = components.port else { return name }
-            let standard = ["http": 80, "https": 443][components.scheme?.lowercased() ?? ""]
-            return port == standard ? name : "\(name):\(port)"
-        }
-
-        /// The saved servers, each address once. The first time, the one server saved before becomes
-        /// the list, and its old key goes.
-        public static func load(from defaults: UserDefaults) -> [Saved] {
-            guard let data = defaults.data(forKey: key) else {
-                let single = defaults.string(forKey: singleServerKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
-                let servers = single.map { [Saved(url: $0)] }?.filter(\.isValid) ?? []
-                save(servers, to: defaults)
-                defaults.removeObject(forKey: singleServerKey)
-                return servers
-            }
-            var addresses: Set<String> = []
-            return ((try? JSONDecoder().decode([Saved].self, from: data)) ?? []).filter { saved in
-                guard let address = ChannelWaitingRequest.normalizedServer(saved.url) else { return false }
-                return addresses.insert(address).inserted
-            }
-        }
-
-        public static func save(_ servers: [Saved], to defaults: UserDefaults) {
-            defaults.set(try? JSONEncoder().encode(servers), forKey: key)
-        }
-
-        private var isValid: Bool { ChannelWaitingRequest.normalizedServer(url) != nil }
-    }
-
-    /// How Settings saves this server.
-    public var saved: Saved {
-        .init(url: api.baseURL.absoluteString, name: name, id: serverID, tailscaleAddress: links.tailscaleAddress)
+        let name = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+        guard let port = components.port else { return name }
+        let standard = ["http": 80, "https": 443][components.scheme?.lowercased() ?? ""]
+        return port == standard ? name : "\(name):\(port)"
     }
 
     /// The longest name a server takes, in UTF-16 units after trimming, so an emoji counts as 2.
     public static let nameLimit = 64
 
-    /// Reads the server's identity, name, releases and links together. A failure keeps the last
+    /// Reads the server's name, accent, releases and peers together. A failure keeps the last
     /// answer, since the server's connection status already says it's unreachable.
     public func refreshServer() async {
         if let server = try? await api.server() { apply(server) }
@@ -88,12 +36,10 @@ extension ChannelCatalogStore {
     /// The server's answer.
     func apply(_ server: ServerInfo) {
         update.apply(server.release)
-        links.apply(server.links)
         accentColor = server.accentColor
-        let savedChanged = server.name != name || server.id != serverID
+        let renamed = server.name != name
         name = server.name
-        serverID = server.id
-        servers?.answered(self, server, savedChanged: savedChanged)
+        servers?.answered(self, server, renamed: renamed)
     }
 
     /// One of this server's channels.
@@ -108,12 +54,6 @@ extension [ChannelCatalogStore] {
         await withTaskGroup(of: Void.self) { group in
             for catalog in self { group.addTask { await catalog.refreshServer() } }
         }
-    }
-
-    /// The saved server with this identity.
-    @MainActor public func first(identifiedAs id: String?) -> ChannelCatalogStore? {
-        guard let id else { return nil }
-        return first { $0.serverID == id }
     }
 
     /// The catalog for a server, by its normalized address.

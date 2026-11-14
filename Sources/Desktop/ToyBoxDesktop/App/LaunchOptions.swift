@@ -2,8 +2,8 @@ import Foundation
 import ToyBoxUI
 
 struct LaunchOptions: Equatable, Sendable {
-    /// Session-only servers in sidebar order, from each `--server`.
-    var servers: [String] = []
+    /// A session-only server, from `--server`.
+    var server: String?
     var channelID: String?
     var appearance: AppAppearance?
     var width = 1280
@@ -14,16 +14,15 @@ struct LaunchOptions: Equatable, Sendable {
 
     var isSnapshot: Bool { snapshotURL != nil }
 
-    /// The servers a launch override keeps to the session: each `--server`, or else
-    /// `TOY_BOX_SERVER_URL`.
-    func sessionServers(environment: [String: String] = ProcessInfo.processInfo.environment) -> [String] {
-        servers.isEmpty ? environment["TOY_BOX_SERVER_URL"].map { [$0] } ?? [] : servers
+    /// The server a launch override keeps to the session: `--server`, or else `TOY_BOX_SERVER_URL`.
+    func sessionServer(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        server ?? environment["TOY_BOX_SERVER_URL"]
     }
 
     /// Isolated launches never change the user's integrations with the saved server.
     func allowsUserIntegrations(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
         !isSnapshot && benchmark == nil
-            && servers.isEmpty && environment["TOY_BOX_SERVER_URL"] == nil
+            && server == nil && environment["TOY_BOX_SERVER_URL"] == nil
     }
 
     static func parse(_ arguments: [String]) throws -> LaunchOptions {
@@ -40,7 +39,7 @@ struct LaunchOptions: Equatable, Sendable {
                    "--benchmark"].contains(flag) else {
                 throw LaunchArgumentError("Unknown argument: \(flag)")
             }
-            guard flag == "--server" || seen.insert(flag).inserted else {
+            guard seen.insert(flag).inserted else {
                 throw LaunchArgumentError("Repeated argument: \(flag)")
             }
             guard index + 1 < arguments.count, !arguments[index + 1].hasPrefix("--") else {
@@ -48,7 +47,7 @@ struct LaunchOptions: Equatable, Sendable {
             }
             let value = arguments[index + 1]
             switch flag {
-            case "--server": options.servers.append(value)
+            case "--server": options.server = value
             case "--channel":
                 guard !value.isEmpty else { throw LaunchArgumentError("--channel must not be empty") }
                 options.channelID = value

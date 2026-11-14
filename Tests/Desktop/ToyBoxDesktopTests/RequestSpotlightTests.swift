@@ -116,7 +116,7 @@ struct RequestSpotlightTests {
         #expect(!ChannelSpotlight.indexes(.init(), bundleID: "dev.toybox.desktop.test", environment: [:]))
         #expect(!ChannelSpotlight.indexes(.init(), bundleID: "dev.toybox.desktop.benchmark", environment: [:]))
         var options = LaunchOptions()
-        options.servers = ["http://127.0.0.1:3210"]
+        options.server = "http://127.0.0.1:3210"
         #expect(!ChannelSpotlight.indexes(options, bundleID: "dev.toybox.desktop", environment: [:]))
         options = .init()
         options.snapshotURL = URL(filePath: "/tmp/spotlight.png")

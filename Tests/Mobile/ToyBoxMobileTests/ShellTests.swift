@@ -793,19 +793,21 @@ struct ShellTests {
             try model.replaceServer(with: "https://other.example")
             model.cover = nil
             try model.replaceServer(with: "https://\(host)")
+            await badges.waitForCalls(4)
+            #expect(badges.counts == [2, 2, 0, 0], "Disconnect clears the badge.")
             try serve([channels[0]])
             await model.catalog?.refresh()
-            await badges.waitForCalls(4)
-            #expect(badges.counts == [2, 2, 0, 1])
+            await badges.waitForCalls(5)
+            #expect(badges.counts == [2, 2, 0, 0, 1])
 
             try serve(channels, on: otherHost)
             let other = try model.addServer("https://\(otherHost)")
             await other.refresh()
-            await badges.waitForCalls(5)
-            #expect(badges.counts == [2, 2, 0, 1, 3])
-            model.servers.remove(try #require(model.catalog))
             await badges.waitForCalls(6)
-            #expect(badges.counts == [2, 2, 0, 1, 3, 2])
+            #expect(badges.counts == [2, 2, 0, 0, 1, 3])
+            model.servers.disconnect()
+            await badges.waitForCalls(7)
+            #expect(badges.counts == [2, 2, 0, 0, 1, 3, 0])
             authorization?.resume(returning: .authorized)
             authorization = nil
             await startup.value
@@ -1375,35 +1377,28 @@ struct ShellTests {
             #expect(defaults.string(forKey: "serverURL") == "https://saved.example/prefix")
             let saved = AppModel(arguments: [], environment: [:], defaults: defaults)
             #expect(saved.serverURL == "https://saved.example/prefix")
-            #expect(ChannelCatalogStore.Saved.load(from: defaults) == [.init(url: "https://saved.example/prefix")])
         }
     }
 
-    @Test func anInvalidSavedServerIsDroppedSoWelcomeAsksForOne() async {
+    @Test func anInvalidSavedServerLeavesWelcomeAskingForOne() async {
         await withDefaults { defaults in
             defaults.set("ftp://not-a-server", forKey: "serverURL")
             let model = AppModel(arguments: [], environment: [:], defaults: defaults)
             #expect(model.catalog == nil)
             #expect(model.configurationError == nil)
             #expect(model.serverURL.isEmpty)
-            #expect(defaults.string(forKey: "serverURL") == nil)
         }
     }
 
-    @Test func settingsKeepsEveryServerInItsOrderAndTheLastOneCanGo() async throws {
+    @Test func disconnectingForgetsEveryServerAndClosesSettingsOntoWelcome() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: [], environment: [:], defaults: defaults, session: fixtureSession())
             let first = try model.addServer("https://first.example")
-            let second = try model.addServer("https://second.example")
-            #expect(try model.addServer("https://second.example") === second)
-            model.servers.move(fromOffsets: [1], toOffset: 0)
-            #expect(model.catalog === second)
-            #expect(model.serverURL == "https://second.example")
-            model.servers.remove(first)
-            #expect(model.catalogs.count == 1 && model.catalog === second)
+            try model.addServer("https://second.example")
+            #expect(model.catalog === first && model.serverURL == "https://first.example")
             model.cover = .settings
-            model.servers.remove(second)
-            #expect(model.catalog == nil && model.serverURL.isEmpty)
+            model.servers.disconnect()
+            #expect(model.catalogs.isEmpty && model.catalog == nil && model.serverURL.isEmpty)
             #expect(model.cover == nil, "Settings closes onto Welcome.")
             let relaunched = AppModel(arguments: [], environment: [:], defaults: defaults)
             #expect(relaunched.catalogs.isEmpty && relaunched.serverURL.isEmpty)
@@ -1733,30 +1728,11 @@ struct ShellTests {
             #expect(previousStore?.isTrying == false)
             #expect(model.interaction(for: "first") !== previousInteraction)
             #expect(defaults.dictionary(forKey: "lastChannelByServer")?["https://first.example"] as? String == "first")
-            #expect(defaults.data(forKey: ChannelCatalogStore.Saved.key) == nil, "A launch server stays in the session.")
+            #expect(defaults.string(forKey: "serverURL") == nil, "A launch server stays in the session.")
         }
     }
 
-    @Test func anAddressAlreadyListedFindsThatServerAndLeavesTheFirstUntouched() async throws {
-        try await withDefaults { defaults in
-            let model = AppModel(arguments: ["--server", "https://first.example"], environment: [:],
-                                 defaults: defaults, session: fixtureSession())
-            let first = try #require(model.catalog)
-            let second = try model.addServer("https://second.example/prefix")
-            model.selectedChannelID = "second"
-            model.visibleChannelID = "second"
-            let store = model.selectedStore
-            let interaction = model.interaction(for: "second")
-            #expect(try model.addServer("https://second.example/prefix") === second)
-            #expect(model.catalogs.count == 2 && model.catalog === first && model.catalogs.last === second)
-            #expect(model.serverURL == "https://first.example")
-            #expect(model.selectedStore === store)
-            #expect(model.visibleChannelID == "second")
-            #expect(model.interaction(for: "second") === interaction)
-        }
-    }
-
-    @Test func aSelectionKeepsItsServerThroughARelaunchAndAReorderAndLeavesWithIt() async throws {
+    @Test func aSelectionKeepsItsServerAndLeavesWithIt() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: [], environment: [:], defaults: defaults, session: fixtureSession())
             try model.addServer("https://first.example")
@@ -1765,16 +1741,7 @@ struct ShellTests {
             let store = try #require(model.selectedStore)
             #expect(store.api.baseURL == second.api.baseURL)
             #expect(model.selectedServer == model.selection?.serverURL)
-
-            let relaunched = AppModel(arguments: [], environment: [:], defaults: defaults, session: fixtureSession())
-            await relaunched.refreshCatalog()
-            #expect(relaunched.selection == second.target("second"))
-
-            model.servers.move(fromOffsets: [1], toOffset: 0)
-            #expect(model.catalog === second)
-            #expect(model.selection == second.target("second"))
-            #expect(model.selectedStore === store)
-            model.servers.remove(second)
+            model.servers.disconnect()
             #expect(model.selection == nil)
             #expect(model.selectedStore == nil)
             #expect(model.selectedServer == model.serverURL)
@@ -2270,13 +2237,10 @@ extension AppModel {
 }
 
 extension AppModel {
-    /// Puts a server at another address in place of the first, as adding it and removing the first
-    /// in Settings does.
+    /// Puts a server at another address in place of every server, as Disconnect and then Connect do.
     @discardableResult
     func replaceServer(with address: String) throws -> ChannelCatalogStore {
-        let first = try #require(catalog)
-        let added = try addServer(address)
-        servers.remove(first)
-        return added
+        servers.disconnect()
+        return try addServer(address)
     }
 }

@@ -22,7 +22,7 @@ public struct ServerVersion: Codable, Equatable, Sendable {
     }
 }
 
-/// What `GET /api/v1/server` answers: the server's identity, name, accent, releases and links.
+/// What `GET /api/v1/server` answers: the server's identity, name, accent, releases and peers.
 public struct ServerInfo: Codable, Equatable, Sendable {
     /// An identity the server makes once and keeps, whatever address reaches it.
     public var id: String
@@ -31,18 +31,18 @@ public struct ServerInfo: Codable, Equatable, Sendable {
     /// The server's accent, `#` and six hex digits.
     public var accentColor: String
     public var release: ServerVersion
-    /// The origins of the servers this one links, in link order.
-    public var links: [String]
+    /// The origins of the owner's other online Macs on their tailnet, sorted. Each may not run Toy Box.
+    public var peers: [String]
 
-    public init(id: String, name: String, accentColor: String, release: ServerVersion, links: [String]) {
+    public init(id: String, name: String, accentColor: String, release: ServerVersion, peers: [String]) {
         self.id = id
         self.name = name
         self.accentColor = accentColor
         self.release = release
-        self.links = links
+        self.peers = peers
     }
 
-    private enum CodingKeys: String, CodingKey { case id, name, accentColor, links }
+    private enum CodingKeys: String, CodingKey { case id, name, accentColor, peers }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -50,7 +50,7 @@ public struct ServerInfo: Codable, Equatable, Sendable {
         name = try container.decode(String.self, forKey: .name)
         accentColor = try container.decode(String.self, forKey: .accentColor)
         release = try ServerVersion(from: decoder)
-        links = try container.decode([String].self, forKey: .links)
+        peers = try container.decode([String].self, forKey: .peers)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -59,13 +59,13 @@ public struct ServerInfo: Codable, Equatable, Sendable {
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
         try container.encode(accentColor, forKey: .accentColor)
-        try container.encode(links, forKey: .links)
+        try container.encode(peers, forKey: .peers)
     }
 }
 
 /// A server's release in Settings' server list: checking for a newer one and restarting.
 /// Each catalog has one, so every window agrees, and the catalog's `refreshServer()` reads it with
-/// the server's name and links, as each catalog stream that connects does too. The list's
+/// the server's name and peers, as each catalog stream that connects does too. The list's
 /// one Check for Updates checks every server together with `checkForUpdates()`. A restart is an
 /// ordinary disconnect, so the row shows `.reconnecting` for it as it would for any other.
 @MainActor @Observable
@@ -104,7 +104,7 @@ public final class ServerUpdate {
     /// dropped again doesn't end the reconnect.
     @ObservationIgnored private var connection = UUID()
     @ObservationIgnored private let api: ChannelAPI
-    /// The catalog that reads the server, with its name and links.
+    /// The catalog that reads the server, with its name and peers.
     @ObservationIgnored weak var catalog: ChannelCatalogStore?
 
     public init(api: ChannelAPI) {

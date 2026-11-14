@@ -2,12 +2,19 @@ import ChannelKit
 import Foundation
 import Observation
 
-/// The user's servers in Settings order, each with its catalog connected to the app's outbox. Adding,
-/// removing, reordering and each server's answers save the list, so the app and its extensions
-/// start from it next time.
+/// The servers the app has opened this run: the one the user connected through, whose address each
+/// app saves and nothing else, then its peers.
 @MainActor @Observable
 public final class ChannelServers {
+    /// Every server opened this run, the one the user connected through first. A peer that leaves
+    /// the list stays open until the app quits or disconnects.
     public private(set) var catalogs: [ChannelCatalogStore] = []
+    /// The list: the server the user connected through, then the peers its latest read listed that
+    /// answered their own read, in `peers` order.
+    public var shown: [ChannelCatalogStore] {
+        guard let first = catalogs.first else { return [] }
+        return [first] + peers.filter(live.contains).compactMap(catalog(at:))
+    }
     /// Whether the app is in front, which each catalog follows. A catalog streams only while it is,
     /// unless the app streams in the background.
     public var isActive: Bool {
@@ -16,134 +23,123 @@ public final class ChannelServers {
             for catalog in catalogs { follow(catalog) }
         }
     }
-    /// Called after the list or anything saved with it changes, once it's saved.
+    /// Called after the list changes or a server in it is renamed.
     @ObservationIgnored public var onChange: (@MainActor () -> Void)?
-    /// Called as a server leaves the list, before its catalog disconnects, so the app closes what
-    /// shows its channels.
+    /// Called for each server as Disconnect closes it, before its catalog disconnects, so the app
+    /// closes what shows its channels.
     @ObservationIgnored public var onRemove: (@MainActor (ChannelCatalogStore) -> Void)?
     @ObservationIgnored private let defaults: UserDefaults?
     @ObservationIgnored private let session: URLSession
     @ObservationIgnored private let outbox: ChannelOutbox
     @ObservationIgnored private let connections: ChannelConnections
     @ObservationIgnored private let streamsInBackground: Bool
-    @ObservationIgnored private let drafts: URL
-    /// The servers the user just added whose first answer is still to come. A relaunch forgets them,
-    /// so a server added just before quitting never adds its links.
-    @ObservationIgnored private var joining: Set<ObjectIdentifier> = []
-    /// The latest reads of a just-added server's links, for a test to wait on.
-    @ObservationIgnored private(set) var linkReads: Task<Void, Never>?
+    /// The peers the latest read of the first server listed, and those whose own read last answered.
+    private var peers: [URL] = []
+    private var live: Set<URL> = []
+    /// The latest reads of peers, for a test to wait on.
+    @ObservationIgnored private(set) var peerReads: Task<Void, Never>?
 
-    /// Connects every saved server, skipping an address that isn't usable. `defaults` saves the list
-    /// after each change, and nil keeps it to the session, as a launch override does.
-    public init(_ saved: [ChannelCatalogStore.Saved], savingTo defaults: UserDefaults?,
+    nonisolated private static let key = "serverURL"
+    /// Where each app kept its servers when it saved every one.
+    nonisolated private static let listKey = "servers"
+
+    /// The address the user connected through. The first time, the first of the servers saved
+    /// before becomes it.
+    nonisolated public static func saved(in defaults: UserDefaults) -> String? {
+        if let list = defaults.data(forKey: listKey) {
+            struct Saved: Decodable { var url: String }
+            defaults.set((try? JSONDecoder().decode([Saved].self, from: list))?.first?.url, forKey: key)
+            defaults.removeObject(forKey: listKey)
+        }
+        return defaults.string(forKey: key)
+    }
+
+    /// Opens the address if it's usable, as the server the user connected through. A nil `defaults`
+    /// keeps it to the session, for a launch override.
+    public init(_ address: String?, savingTo defaults: UserDefaults?,
                 session: URLSession = .shared, outbox: ChannelOutbox, connections: ChannelConnections,
-                isActive: Bool, streamsInBackground: Bool, drafts: URL = ComposerDraft.folder) {
+                isActive: Bool, streamsInBackground: Bool) {
         self.defaults = defaults
         self.session = session
         self.outbox = outbox
         self.connections = connections
         self.isActive = isActive
         self.streamsInBackground = streamsInBackground
-        self.drafts = drafts
-        catalogs = saved.compactMap { server in
-            (try? ChannelAPI(serverURL: server.url, session: session)).map {
-                connect($0, name: server.name, id: server.id, tailscaleAddress: server.tailscaleAddress)
-            }
+        if let api = address.flatMap({ try? ChannelAPI(serverURL: $0, session: session) }) {
+            catalogs = [open(api)]
         }
     }
 
-    /// Adds a server, or finds the one already at that address, for Settings to select. Its first
-    /// answer then adds the servers it's linked with, and if it's a saved server at another address,
-    /// moves that server here in its place.
+    /// Reads the server at an address once, and if it answers, saves its address and opens its
+    /// peers. A failure throws, with nothing saved.
+    public func connect(_ address: String) async throws -> ChannelCatalogStore {
+        let api = try ChannelAPI(serverURL: address, session: session)
+        let server = try await api.server()
+        let catalog = open(api, name: server.name)
+        catalogs.append(catalog)
+        save()
+        catalog.apply(server)
+        return catalog
+    }
+
+    /// Opens a server without reading it, until Settings connects with `connect(_:)`.
     @discardableResult
     public func add(_ address: String) throws -> ChannelCatalogStore {
-        let api = try ChannelAPI(serverURL: address, session: session)
-        if let listed = catalogs.first(at: api.baseURL.absoluteString) { return listed }
-        let catalog = connect(api, name: nil)
-        joining.insert(ObjectIdentifier(catalog))
+        let catalog = open(try ChannelAPI(serverURL: address, session: session))
         catalogs.append(catalog)
         save()
         return catalog
     }
 
-    /// Disconnects a server and forgets it. Removing the last one leaves no servers.
-    public func remove(_ catalog: ChannelCatalogStore) {
-        guard catalogs.contains(where: { $0 === catalog }) else { return }
-        disconnect(catalog)
-        catalogs.removeAll { $0 === catalog }
-        save()
-    }
-
-    /// Reorders the servers as a list's move reports it.
-    public func move(fromOffsets source: IndexSet, toOffset destination: Int) {
-        catalogs.moveSubranges(RangeSet(source.rangeView), to: destination)
-        save()
-    }
-
-    /// Where other servers reach a server saved at a loopback address, from what the user typed, saved
-    /// with the server. Empty clears it.
-    public func setTailscaleAddress(_ input: String, of catalog: ChannelCatalogStore) throws {
-        try catalog.links.setTailscaleAddress(input)
-        save()
-    }
-
-    /// A server answered `GET /api/v1/server`. The first answer of a server the user just added, once
-    /// its channels are loaded so its drafts can move, finishes adding it.
-    func answered(_ catalog: ChannelCatalogStore, _ server: ServerInfo, savedChanged: Bool) {
-        if catalog.isLoaded, joining.remove(ObjectIdentifier(catalog)) != nil { return join(catalog, server) }
-        if savedChanged { save() }
-    }
-
-    /// Moves a saved server with the same identity here, with its drafts and unsent messages, then
-    /// adds the servers it's linked with.
-    private func join(_ catalog: ChannelCatalogStore, _ server: ServerInfo) {
-        if let old = catalogs.first(where: { $0 !== catalog && $0.serverID == server.id }) {
-            if catalog.links.tailscaleAddress == nil, catalog.links.isLoopback {
-                catalog.links.tailscaleAddress = old.links.tailscaleAddress
-            }
-            disconnect(old)
-            outbox.move(from: old.api.baseURL, to: catalog.api.baseURL)
-            catalogs = catalogs.compactMap { $0 === catalog ? nil : $0 === old ? catalog : $0 }
-            ComposerDraft.move(from: old.api.baseURL, to: catalog.api.baseURL,
-                               identities: catalog.draftIdentities, folder: drafts)
+    /// Disconnects every server and forgets the address, which leaves no servers.
+    public func disconnect() {
+        for catalog in catalogs {
+            onRemove?(catalog)
+            catalog.servers = nil
+            catalog.stopPolling()
+            catalog.outbox = nil
+            connections.disconnectAll(in: catalog)
         }
+        catalogs = []
+        peers = []
+        live = []
         save()
-        addLinks(server.links, of: catalog)
     }
 
-    /// Reads each link that matches no saved server, and adds each one that answers with an identity
-    /// that isn't saved, after `catalog` in link order. Each is added as it answers, so one that never
-    /// answers holds up none of the others, and the added servers' own links aren't followed.
-    private func addLinks(_ links: [String], of catalog: ChannelCatalogStore) {
-        let reads = links.enumerated().compactMap { index, link -> (Int, ChannelAPI)? in
-            guard !catalogs.contains(where: { $0.isNamed(by: link) }) else { return nil }
-            return (try? ChannelAPI(serverURL: link, session: session)).map { (index, $0) }
+    /// A server answered `GET /api/v1/server`, so if it's the one the user connected through, its
+    /// `peers` become the list's and each is read.
+    func answered(_ catalog: ChannelCatalogStore, _ server: ServerInfo, renamed: Bool) {
+        if renamed { onChange?() }
+        guard catalog === catalogs.first else { return }
+        let listed = server.peers.compactMap { try? ChannelAPI(serverURL: $0, session: session) }
+        if peers != listed.map(\.baseURL) {
+            peers = listed.map(\.baseURL)
+            onChange?()
         }
-        guard !reads.isEmpty else { return }
-        linkReads = Task {
-            var added: [Int: ChannelCatalogStore] = [:]
-            await withTaskGroup(of: (Int, ChannelAPI, ServerInfo?).self) { group in
-                for (index, api) in reads { group.addTask { (index, api, try? await api.server()) } }
-                for await (index, api, server) in group {
-                    guard let server, catalogs.contains(where: { $0 === catalog }),
-                          catalogs.first(identifiedAs: server.id) == nil,
-                          catalogs.first(at: api.baseURL.absoluteString) == nil else { continue }
-                    let previous = added.filter { $0.key < index }.sorted { $0.key < $1.key }.map(\.value)
-                    let anchor = previous.last { linked in catalogs.contains { $0 === linked } } ?? catalog
-                    guard let position = catalogs.firstIndex(where: { $0 === anchor }) else { continue }
-                    let linked = connect(api, name: server.name, id: server.id)
-                    linked.apply(server)
-                    catalogs.insert(linked, at: position + 1)
-                    added[index] = linked
-                    save()
+        peerReads = Task { await read(listed, of: catalog) }
+    }
+
+    /// Reads each peer, opening one the first time it answers. Each joins or leaves the list as its
+    /// own answer comes, so one that never answers holds up none of the others.
+    private func read(_ listed: [ChannelAPI], of first: ChannelCatalogStore) async {
+        await withTaskGroup(of: (ChannelAPI, ServerInfo?).self) { group in
+            for api in listed { group.addTask { (api, try? await api.server()) } }
+            for await (api, server) in group where first === catalogs.first {
+                guard let server else {
+                    if live.remove(api.baseURL) != nil { onChange?() }
+                    continue
                 }
+                if catalog(at: api.baseURL) == nil { catalogs.append(open(api, name: server.name)) }
+                if live.insert(api.baseURL).inserted { onChange?() }
+                catalog(at: api.baseURL)?.apply(server)
             }
         }
     }
 
-    private func connect(_ api: ChannelAPI, name: String?, id: String? = nil,
-                         tailscaleAddress: String? = nil) -> ChannelCatalogStore {
-        let catalog = ChannelCatalogStore(api: api, name: name, id: id, tailscaleAddress: tailscaleAddress)
+    private func catalog(at url: URL) -> ChannelCatalogStore? { catalogs.first { $0.api.baseURL == url } }
+
+    private func open(_ api: ChannelAPI, name: String? = nil) -> ChannelCatalogStore {
+        let catalog = ChannelCatalogStore(api: api, name: name)
         catalog.outbox = outbox
         catalog.servers = self
         follow(catalog)
@@ -155,33 +151,8 @@ public final class ChannelServers {
         if isActive || streamsInBackground { catalog.startPolling() } else { catalog.stopPolling() }
     }
 
-    private func disconnect(_ catalog: ChannelCatalogStore) {
-        onRemove?(catalog)
-        joining.remove(ObjectIdentifier(catalog))
-        catalog.servers = nil
-        catalog.stopPolling()
-        catalog.outbox = nil
-        connections.disconnectAll(in: catalog)
-    }
-
     private func save() {
-        if let defaults { ChannelCatalogStore.Saved.save(catalogs.map(\.saved), to: defaults) }
+        defaults?.set(catalogs.first?.api.baseURL.absoluteString, forKey: Self.key)
         onChange?()
-    }
-}
-
-private extension ChannelCatalogStore {
-    /// Whether a link names this server: its address, or its Tailscale address.
-    func isNamed(by link: String) -> Bool {
-        guard let origin = ServerLinks.origin(link) else { return false }
-        return origin == ServerLinks.origin(links.key) || origin == links.tailscaleAddress
-    }
-
-    /// Every draft this server's channels may have: each channel's conversation and Quick Send,
-    /// Quick Send's incoming text, and a reply to each request waiting.
-    var draftIdentities: [ComposerDraft.Identity] {
-        channels.flatMap { [.init($0.id, .conversation), .init($0.id, .quickSend)] }
-            + [.init("", .quickSendIncoming)]
-            + waitingRequests().map { .init($0.channel.id, .inboxReply(sequence: $0.sequence)) }
     }
 }

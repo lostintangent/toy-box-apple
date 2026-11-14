@@ -312,10 +312,10 @@ struct QuickSendIntakeTests {
 struct ShellTests {
     @Test func ordinaryLaunchKeepsNativeDefaults() throws {
         let options = try LaunchOptions.parse([])
-        #expect(options.servers.isEmpty)
-        #expect(options.sessionServers(environment: [:]).isEmpty, "The app adds no server the user didn't.")
-        #expect(options.sessionServers(environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"])
-                == ["http://127.0.0.1:3210"])
+        #expect(options.server == nil)
+        #expect(options.sessionServer(environment: [:]) == nil, "The app adds no server the user didn't.")
+        #expect(options.sessionServer(environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"])
+                == "http://127.0.0.1:3210")
         #expect(options.channelID == nil)
         #expect(options.appearance == nil)
         #expect(options.width == 1280)
@@ -363,13 +363,12 @@ struct ShellTests {
         #expect(!updates.canCheckForUpdates)
     }
 
-    @Test func serverRepeatsAsSessionOnlyServersInOrder() throws {
-        let options = try LaunchOptions.parse(["--server", "http://127.0.0.1:3210", "--server", "http://127.0.0.1:3211"])
-        #expect(options.servers == ["http://127.0.0.1:3210", "http://127.0.0.1:3211"])
-        #expect(options.sessionServers(environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3299"]) == options.servers)
+    @Test func serverIsSessionOnlyAndWinsOverTheEnvironment() throws {
+        let options = try LaunchOptions.parse(["--server", "http://127.0.0.1:3210"])
+        #expect(options.sessionServer(environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3299"]) == "http://127.0.0.1:3210")
         #expect(!options.allowsUserIntegrations(environment: [:]))
-        #expect(throws: LaunchArgumentError("Repeated argument: --channel")) {
-            try LaunchOptions.parse(["--channel", "a", "--channel", "b"])
+        #expect(throws: LaunchArgumentError("Repeated argument: --server")) {
+            try LaunchOptions.parse(["--server", "http://127.0.0.1:3210", "--server", "http://127.0.0.1:3211"])
         }
     }
 
@@ -379,7 +378,7 @@ struct ShellTests {
             "--channel", "studio-demo", "--appearance", "dark",
             "--size", "760x560", "--snapshot", "/tmp/shell-test.png", "--state", "inspector"
         ])
-        #expect(options.servers == ["https://example.test/toy-box"])
+        #expect(options.server == "https://example.test/toy-box")
         #expect(options.channelID == "studio-demo")
         #expect(options.appearance == .dark)
         #expect(options.width == 760)

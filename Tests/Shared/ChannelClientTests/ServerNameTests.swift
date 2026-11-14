@@ -30,7 +30,7 @@ struct ServerNameTests {
             try answers.withLock { answers throws -> MockResponse in
                 func info() throws -> MockResponse {
                     try .json(ServerInfo(id: answers.id, name: answers.name, accentColor: answers.accentColor,
-                                         release: .init(version: "0.4.0", installedVersion: nil), links: []))
+                                         release: .init(version: "0.4.0", installedVersion: nil), peers: []))
                 }
                 switch (request.httpMethod ?? "GET", request.url?.path ?? "") {
                 case ("GET", "/api/v1/channels"):
@@ -62,10 +62,10 @@ struct ServerNameTests {
         mock.requests.filter { $0.httpMethod == "GET" && $0.url?.path == "/api/v1/server" }.count
     }
 
-    @Test func aReadTakesTheServersNameAndIdentityAndSavesOnlyAChange() async throws {
+    @Test func aReadTakesTheServersNameAndReportsOnlyARename() async throws {
         let server = Server()
         let mock = MockTransport { request, _ in try server.response(to: request) }
-        let servers = ChannelServers([.init(url: mock.address(), name: "Typed")], savingTo: nil,
+        let servers = ChannelServers(mock.address(), savingTo: nil,
                                      session: MockTransport.session(), outbox: ChannelOutbox(folder: outboxFolder),
                                      connections: ChannelConnections(), isActive: false, streamsInBackground: false)
         let catalog = servers.catalogs[0]
@@ -73,13 +73,12 @@ struct ServerNameTests {
         servers.onChange = { saves += 1 }
 
         await catalog.refreshServer()
-        #expect(catalog.name == "Studio" && catalog.serverID == "studio-id")
+        #expect(catalog.name == "Studio")
         #expect(catalog.accentColor == "#123abc", "The accent is kept, though nothing shows it yet.")
-        #expect(catalog.saved.name == "Studio" && catalog.saved.id == "studio-id")
         #expect(saves == 1)
 
         await catalog.refreshServer()
-        #expect(saves == 1, "The same answer saves nothing.")
+        #expect(saves == 1, "The same answer changes nothing.")
 
         server.set { $0.read = MockResponse(status: 500) }
         await catalog.refreshServer()
@@ -150,16 +149,5 @@ struct ServerNameTests {
         await catalog.refresh()
         try await eventually { catalog.name == "Renamed again" }
         #expect(reads(mock) == 3, "Refresh reopens the stream, which reads the server as every connection does.")
-    }
-
-    @Test func aSavedServerIsFoundByItsIdentity() async throws {
-        let studio = Server(), mini = Server()
-        mini.set { $0.id = "mini-id"; $0.name = "Mini" }
-        let catalogs = [try catalog(studio).0, try catalog(mini).0]
-        #expect(catalogs.first(identifiedAs: "mini-id") == nil, "Nothing is known until it answers.")
-
-        await catalogs.refreshServers()
-        #expect(catalogs.first(identifiedAs: "mini-id") === catalogs[1])
-        #expect(catalogs.first(identifiedAs: "other") == nil && catalogs.first(identifiedAs: nil) == nil)
     }
 }

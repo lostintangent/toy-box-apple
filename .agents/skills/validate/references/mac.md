@@ -47,10 +47,11 @@ open -n -g "/tmp/tbm-<you>/Toy Box.app" --args --server http://127.0.0.1:3210 -A
 ```
 
 Use the bundle `bun run build` makes, which carries the real SDK stamp, never SwiftPM's unstamped
-executable. `-g` avoids taking focus. `--server` and `TOY_BOX_SERVER_URL` are session-only, and
-`--server` repeats to list several servers in sidebar order, for snapshots too. Keep
-`-ApplePersistenceIgnoreState YES` even with the restored-zero-window fallback, so test instances
-neither restore nor overwrite the shared saved window state.
+executable. `-g` avoids taking focus. `--server` and `TOY_BOX_SERVER_URL` are session-only. For
+several servers, start the demo with `TOY_BOX_DEMO_PEERS`, which lists the others as its peers
+(see [scripts/README.md](../../../../scripts/README.md)). Keep `-ApplePersistenceIgnoreState YES`
+even with the restored-zero-window fallback, so test instances neither restore nor overwrite the
+shared saved window state.
 
 ## Development-signed build
 
