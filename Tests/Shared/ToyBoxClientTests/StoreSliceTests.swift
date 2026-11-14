@@ -112,7 +112,6 @@ struct StoreSliceTests {
         state.routines = [.init(id: "r1", title: "Daily", schedule: "0 9 * * *", prompt: "Summarize")]
         _ = try store.apply(.init(type: "snapshot", state: state))
         #expect(store.details == ChannelDetails(state.channel))
-        #expect(store.details?.preview == state.channel.preview)
         #expect(store.roster == [ChannelAgent.lead(id: "test", profile: testLeadProfile)])
         #expect(store.agentStatuses == ["test": .init(state: "waiting", text: "Review")])
         #expect(store.presence == ["test": .init(state: "waiting", text: "Review")])

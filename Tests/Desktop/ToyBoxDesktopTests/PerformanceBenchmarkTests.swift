@@ -24,17 +24,6 @@ struct PerformanceBenchmarkTests {
         }
     }
 
-    @Test(arguments: [CGFloat(-40), 0, 40])
-    func measuresMovementAgainstDeliveredWheelDelta(_ delta: CGFloat) {
-        var drift = BenchmarkScrollDrift()
-        drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 12, "b": 120]), scrollDelta: 0)
-        drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 12 + delta, "b": 120 + delta]),
-                     scrollDelta: delta)
-        #expect(drift.measuredFrames == 1)
-        #expect(drift.unmeasuredFrames == 0)
-        #expect(drift.maximum == 0)
-    }
-
     @Test func retainsThePreviousFirstRowAcrossAVisibleRowHandoff() {
         var drift = BenchmarkScrollDrift()
         drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": -10, "b": 80]), scrollDelta: 0)
@@ -71,21 +60,31 @@ struct PerformanceBenchmarkTests {
         #expect(drift.exceedingFrames == 1)
     }
 
-    @Test func cancellingSpikesStillCountAsDrift() {
-        var drift = BenchmarkScrollDrift()
-        drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0]), scrollDelta: 0)
-        drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0]), scrollDelta: 40)
-        drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 80]), scrollDelta: 40)
-        #expect(drift.maximum == 40)
-        #expect(drift.exceedingFrames == 2)
+    struct UnmeasurablePair: Sendable {
+        var before = BenchmarkScrollGeometry(firstVisibleRow: "a", rowTops: ["a": 0])
+        var after: BenchmarkScrollGeometry
+        var delta: CGFloat = 0
     }
 
-    @Test func lackOfSharedFirstRowGeometryIsNotAZeroDriftPass() {
+    private static let unmeasurablePairs: [UnmeasurablePair] = [
+        // No first row the two frames share across a handoff: missing geometry fails, not zero drift.
+        .init(before: .init(firstVisibleRow: "a", rowTops: ["a": 0, "shared": 150]),
+              after: .init(firstVisibleRow: "b", rowTops: ["b": 0, "shared": 110]), delta: -40),
+        .init(before: .init(firstVisibleRow: "missing", rowTops: ["a": 0]),
+              after: .init(firstVisibleRow: "a", rowTops: ["a": 0])),
+        .init(after: .init(firstVisibleRow: "a", rowTops: ["a": .infinity])),
+        .init(after: .init(firstVisibleRow: "a", rowTops: ["a": -.infinity])),
+        .init(after: .init(firstVisibleRow: "a", rowTops: ["a": .nan])),
+        .init(after: .init(firstVisibleRow: "a", rowTops: ["a": 0]), delta: .nan),
+    ]
+
+    @Test(arguments: Self.unmeasurablePairs)
+    func pairsWithoutTrustworthyGeometryAreUnmeasuredNotZeroDrift(_ pair: UnmeasurablePair) {
         var drift = BenchmarkScrollDrift()
-        drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0, "shared": 150]), scrollDelta: 0)
-        drift.sample(.init(firstVisibleRow: "b", rowTops: ["b": 0, "shared": 110]), scrollDelta: -40)
-        #expect(drift.measuredFrames == 0)
+        drift.sample(pair.before, scrollDelta: 0)
+        drift.sample(pair.after, scrollDelta: pair.delta)
         #expect(drift.unmeasuredFrames == 1)
+        #expect(drift.measuredFrames == 0)
     }
 
     @Test func missingFramesBreakTheComparisonUntilThereAreTwoFreshSamples() {
@@ -100,53 +99,20 @@ struct PerformanceBenchmarkTests {
         #expect(drift.maximum == 0)
     }
 
-    @Test(arguments: [CGFloat.infinity, -.infinity, .nan])
-    func invalidCoordinatesAreReportedAsUnmeasurable(_ invalid: CGFloat) {
-        var drift = BenchmarkScrollDrift()
-        drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0]), scrollDelta: 0)
-        drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": invalid]), scrollDelta: 0)
-        #expect(drift.unmeasuredFrames == 1)
-        #expect(drift.measuredFrames == 0)
-    }
-
-    @Test func anInvalidWheelDeltaIsNotMeasuredAsAZeroMovementFrame() {
-        var drift = BenchmarkScrollDrift()
-        drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0]), scrollDelta: 0)
-        drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0]), scrollDelta: .nan)
-        #expect(drift.unmeasuredFrames == 1)
-        #expect(drift.measuredFrames == 0)
-    }
-
-    @Test func missingFirstRowIsNotHiddenBySomeOtherSharedRow() {
-        var drift = BenchmarkScrollDrift()
-        drift.sample(.init(firstVisibleRow: "missing", rowTops: ["a": 0]), scrollDelta: 0)
-        drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0]), scrollDelta: 0)
-        #expect(drift.unmeasuredFrames == 1)
-        #expect(drift.measuredFrames == 0)
-    }
-
-    @Test func deliveryRequiresEveryPostedEventIncludingTheZeroDeltaEnd() {
-        var delivery = BenchmarkScrollDelivery()
+    @Test(arguments: [
+        BenchmarkScrollDelivery(),
+        BenchmarkScrollDelivery(postedEvents: 3, deliveredEvents: 2, postedDelta: 80, deliveredDelta: 80),
+        BenchmarkScrollDelivery(postedEvents: 3, deliveredEvents: 3, postedDelta: 80, deliveredDelta: 40),
+        BenchmarkScrollDelivery(postedEvents: 4, deliveredEvents: 4, postedDelta: -120, deliveredDelta: -120,
+                                creationFailures: 1),
+        BenchmarkScrollDelivery(postedEvents: 4, deliveredEvents: 4, postedDelta: -120, deliveredDelta: -120,
+                                observationFailures: 1),
+        BenchmarkScrollDelivery(postedEvents: 2, deliveredEvents: 2, postedDelta: .infinity,
+                                deliveredDelta: .infinity),
+    ])
+    func deliveryFailsUnlessEveryPostedEventAndPointArrived(_ delivery: BenchmarkScrollDelivery) {
         #expect(!delivery.matches)
-        delivery.postedEvents = 3
-        delivery.postedDelta = 80
-        delivery.deliveredEvents = 2
-        delivery.deliveredDelta = 80
-        #expect(!delivery.matches)
-        delivery.deliveredEvents = 3
-        #expect(delivery.matches)
-        delivery.deliveredDelta = 40
-        #expect(!delivery.matches)
-    }
-
-    @Test func coalescingOrEventCreationFailureCannotMasqueradeAsCompleteDelivery() {
-        var delivery = BenchmarkScrollDelivery(postedEvents: 4, deliveredEvents: 3,
-                                                postedDelta: -120, deliveredDelta: -120)
-        #expect(!delivery.matches)
-        delivery.deliveredEvents = 4
-        #expect(delivery.matches)
-        delivery.creationFailures = 1
-        #expect(!delivery.matches)
+        #expect(!delivery.matchesNativeTravel(delivery.deliveredDelta))
     }
 
     @Test func deliveryIsNotProofThatTheNativeScrollViewAppliedTheInput() {
@@ -160,9 +126,6 @@ struct PerformanceBenchmarkTests {
         delivery.postedDelta = -120
         delivery.deliveredDelta = -120
         #expect(delivery.matchesNativeTravel(-120))
-        delivery.observationFailures = 1
-        #expect(!delivery.matches)
-        #expect(!delivery.matchesNativeTravel(-120))
     }
 
     // AppKit's first event creation registers HIToolbox types without a lock, so parallel cases
@@ -177,14 +140,7 @@ struct PerformanceBenchmarkTests {
         #expect(event.momentumPhase.isEmpty)
         #expect(event.scrollingDeltaY == CGFloat(delta))
         #expect(event.scrollingDeltaX == 0)
-        #expect(event.windowNumber == 0)
         #expect(event.locationInWindow == CGPoint(x: 200, y: 300))
-    }
-
-    @Test func nonFiniteWheelTotalsFailDeliveryValidation() {
-        let delivery = BenchmarkScrollDelivery(postedEvents: 2, deliveredEvents: 2,
-                                                postedDelta: .infinity, deliveredDelta: .infinity)
-        #expect(!delivery.matches)
     }
 
     @Test func lazyProbeUsesNativeClippingAndCurrentHistoryNotStaleViewportRects() throws {

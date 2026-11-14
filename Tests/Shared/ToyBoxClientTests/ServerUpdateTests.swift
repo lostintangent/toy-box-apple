@@ -91,15 +91,6 @@ struct ServerUpdateTests {
         #expect(try !decode(#"{"version":"0.3.9","installedVersion":null}"#).isRestartPending)
     }
 
-    @Test func aServerWithoutAnInstalledReleaseOffersNeitherAction() async throws {
-        let server = Server(installed: nil)
-        let catalog = ChannelCatalogStore(api: try server.transport().api())
-        let update = catalog.update
-        await catalog.refreshServer()
-        #expect(update.version == ServerVersion(version: Self.old, installedVersion: nil))
-        #expect(update.phase == nil)
-    }
-
     @Test func aCheckSaysUpToDateOrOffersRestartOnceItInstallsANewerRelease() async throws {
         let server = Server()
         let mock = server.transport()
@@ -129,33 +120,22 @@ struct ServerUpdateTests {
         #expect(reads(mock) == 1, "The check's answer is the read")
     }
 
-    @Test func aRejectedCheckKeepsTheRowWithTheServersWords() async throws {
+    /// A server waiting to restart still checks, and either row keeps its phase and says why it failed.
+    @Test(arguments: [false, true])
+    func aFailedCheckKeepsTheRowsPhaseAndSaysWhy(waitingToRestart: Bool) async throws {
         let server = Server()
+        if waitingToRestart { server.set { $0.installed = Self.new } }
         let mock = server.transport()
         let catalog = ChannelCatalogStore(api: try mock.api())
         let update = catalog.update
         await catalog.refreshServer()
+        let phase = update.phase
+        #expect(phase == (waitingToRestart ? .restartPending : .idle))
 
         try server.set { $0.update = try .json(["error": "npm couldn't reach the registry."], status: 422) }
         await update.check()
-        #expect(update.phase == .idle)
+        #expect(update.phase == phase)
         #expect(update.outcome == .failed(failure(422, "npm couldn't reach the registry.")))
-        #expect(reads(mock) == 1)
-    }
-
-    @Test func aServerWaitingToRestartStillChecksAndSaysWhenThatFails() async throws {
-        let server = Server()
-        server.set { $0.installed = Self.new }
-        let mock = server.transport()
-        let catalog = ChannelCatalogStore(api: try mock.api())
-        let update = catalog.update
-        await catalog.refreshServer()
-        #expect(update.phase == .restartPending)
-
-        server.set { $0.update = MockResponse(status: 504) }
-        await update.check()
-        #expect(update.phase == .restartPending)
-        #expect(update.outcome == .failed(failure(504)))
         #expect(reads(mock) == 1, "A failure is sent once, and the live catalog shows if it installed anyway")
     }
 

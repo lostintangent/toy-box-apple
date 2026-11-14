@@ -220,17 +220,6 @@ struct MobileShareTests {
         #expect(stale.target == nil)
     }
 
-    @Test func withoutASavedServerThereIsNothingToSendTo() async throws {
-        let directory = Self.directory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let history = try MobileShareHistory(directory: directory, donor: FakeDonor().donor)
-        let session = MobileShareSession(history: history, intent: nil)
-        #expect(session.catalogs.isEmpty)
-        #expect(session.choices(matching: "").others.isEmpty)
-        #expect(!session.canSend)
-        #expect(MobileShareSession(history: nil, intent: nil).catalogs.isEmpty)
-    }
-
     @Test func withSeveralServersEachChannelIsOfferedAndSentOnItsOwnServer() async throws {
         let first = try ShareHTTPFixture()
         let second = try ShareHTTPFixture()

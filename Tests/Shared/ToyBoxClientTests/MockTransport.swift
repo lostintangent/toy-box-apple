@@ -10,7 +10,6 @@ struct MockResponse: Sendable {
     var contentType = "application/json"
     var body = Data()
     var keepOpen = false
-    var headers: [String: String] = [:]
 
     static func json<Value: Encodable>(_ value: Value, status: Int = 200) throws -> MockResponse {
         MockResponse(status: status, body: try JSONEncoder().encode(value))
@@ -146,14 +145,14 @@ final class MockTransport: Sendable {
         return try handler(request, count)
     }
 
-    func api(scheme: String = "http", port: Int? = nil) throws -> ChannelAPI {
-        try ChannelAPI(serverURL: address(scheme: scheme, port: port), session: Self.session())
+    func api() throws -> ChannelAPI {
+        try ChannelAPI(serverURL: address(), session: Self.session())
     }
 
     /// This transport's address, for code that connects by address through `session()`.
-    func address(scheme: String = "http", port: Int? = nil) -> String {
+    func address() -> String {
         MockURLProtocol.registry.withLock { $0[host] = self }
-        return "\(scheme)://\(host)" + (port.map { ":\($0)" } ?? "")
+        return "http://\(host)"
     }
 
     /// A session that reaches every transport by its host, and fails for any other host.
@@ -181,7 +180,7 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
             let value = try transport.response(for: request)
             let response = HTTPURLResponse(url: url, statusCode: value.status,
                                            httpVersion: "HTTP/1.1",
-                                           headerFields: value.headers.merging(["Content-Type": value.contentType]) { $1 })!
+                                           headerFields: ["Content-Type": value.contentType])!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             if !value.body.isEmpty {
                 client?.urlProtocol(self, didLoad: value.body)
@@ -229,8 +228,8 @@ func testState(revision: Int = 0, messages: [ChannelMessage] = []) -> ChannelSta
                  lead: .lead(id: "test", profile: testLeadProfile), messages: messages)
 }
 
-func testMessage(_ sequence: Int, id: String? = nil, text: String = "Progress") -> ChannelMessage {
-    .init(id: id ?? "m\(sequence)", sequence: sequence, timestamp: "2026-10-01T00:00:00Z",
+func testMessage(_ sequence: Int, text: String = "Progress") -> ChannelMessage {
+    .init(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-01T00:00:00Z",
           sender: .agent("test"), content: .text(text))
 }
 

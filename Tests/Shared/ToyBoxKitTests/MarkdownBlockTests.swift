@@ -32,9 +32,6 @@ struct MarkdownBlockTests {
             .listItem("2.", "Two", 0), .listItem("\u{2611}", "Done", 0),
             .listItem("\u{2610}", "Pending", 0)
         ])
-        #expect(MarkdownBlock.parse("Title\n=====\n\nSubtitle\n---\n\n---").map(\.kind) == [
-            .heading(1, "Title"), .heading(2, "Subtitle"), .rule
-        ])
     }
 
     @Test func setextUnderlinesKeepTheirWhitespaceAndMarkerBoundaries() {

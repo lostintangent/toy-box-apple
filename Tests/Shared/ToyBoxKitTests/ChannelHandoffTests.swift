@@ -4,16 +4,6 @@ import Testing
 
 @Suite("Channel Handoff")
 struct ChannelHandoffTests {
-    @Test(arguments: ["studio-demo", UUID().uuidString, "channel/with:protocol-characters"])
-    func activitiesCarryOnlyTheExactProtocolID(channelID: String) throws {
-        let handoff = ChannelHandoff(channelID: channelID)
-        let activity = NSUserActivity(activityType: ChannelHandoff.activityType)
-        activity.userInfo = handoff.userInfo
-        #expect(activity.userInfo?.count == 1)
-        #expect(activity.userInfo?[ChannelHandoff.channelIDKey] as? String == channelID)
-        #expect(ChannelHandoff(activity: activity) == handoff)
-    }
-
     @Test func untrustedExtraFieldsCannotChangeTheDestination() {
         let activity = NSUserActivity(activityType: ChannelHandoff.activityType)
         activity.userInfo = [

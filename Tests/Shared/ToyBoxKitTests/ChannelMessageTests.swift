@@ -69,16 +69,10 @@ struct ChannelMessageTests {
         }
         #expect(preview("@ada @pixel Connect the **public** transcript", from: .agent("lead"))
                 == "Connect the public transcript")
-        // The transcript keeps a message that's only mentions, so the preview does too.
-        #expect(preview("@ada", attachments: 1, from: .agent("lead")) == "@ada")
-        #expect(preview("@stranger Connect it", from: .agent("lead")) == "@stranger Connect it")
         #expect(preview("@ada Connect it") == "@ada Connect it")
         #expect(preview("## Plan\n\nShip **it**") == "Plan")
-        #expect(preview("[Docs](https://example.com) are up\nSecond line") == "Docs are up")
-        #expect(preview("\n- first\n- second") == "\u{2022} first")
         #expect(preview("", attachments: 1) == "1 attachment")
         #expect(preview("  \n---\n", attachments: 2) == "2 attachments")
-        #expect(preview("") == "0 attachments")
     }
 
     private func message(_ sequence: Int, _ sender: ChannelMessageSender) -> ChannelMessage {

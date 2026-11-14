@@ -4,45 +4,51 @@ import Testing
 
 @Suite("Shared agent status")
 struct ChannelAgentStatusTests {
-    @Test func absentAndDisconnectedPresenceNeverInventIdleOrKeepAnActivityCue() {
-        let missing = ChannelAgent.StatusLine(presence: nil, isAvailable: true)
-        #expect(missing.text == "Status unavailable" && missing.spoken == missing.text && missing.cue == .none)
-        let presences: [ChannelAgentPresence?] = [nil, .init(state: "working", text: "Compiling"),
-                                                .init(state: "waiting", text: "Review")]
-        for presence in presences {
-            let stale = ChannelAgent.StatusLine(presence: presence, isAvailable: false)
-            #expect(stale.text == "Status unavailable while disconnected")
-            #expect(stale.spoken == stale.text && stale.cue == .none)
+    private struct PresenceCase: Sendable, CustomTestStringConvertible {
+        let state: String?
+        let message: String?
+        let isAvailable: Bool
+        let text: String
+        let spoken: String
+        let cue: ChannelAgent.StatusLine.Cue
+
+        init(_ state: String?, _ message: String? = nil, available: Bool = true, text: String, spoken: String? = nil,
+             cue: ChannelAgent.StatusLine.Cue) {
+            self.state = state
+            self.message = message
+            self.isAvailable = available
+            self.text = text
+            self.spoken = spoken ?? text
+            self.cue = cue
+        }
+
+        var testDescription: String {
+            "\(state ?? "absent")\(message.map { " \($0.debugDescription)" } ?? "")\(isAvailable ? "" : ", disconnected")"
         }
     }
 
-    @Test func workingKeepsTheMessageAndSpeaksItsStateExactlyOnce() {
-        let emptyMessages: [String?] = [nil, "", "  \n"]
-        for message in emptyMessages {
-            let status = ChannelAgent.StatusLine(presence: .init(state: "working", text: message), isAvailable: true)
-            #expect(status.text == "Working" && status.spoken == "Working" && status.cue == .working)
-        }
-        let working = ChannelAgent.StatusLine(presence: .init(state: "working", text: "Compiling"), isAvailable: true)
-        #expect(working.text == "Compiling" && working.spoken == "Working, Compiling")
-        let prefixed = ChannelAgent.StatusLine(presence: .init(state: "working", text: "Working on layout"),
-                                                     isAvailable: true)
-        #expect(prefixed.spoken == "Working on layout")
-    }
-
-    @Test func waitingPreservesAnExistingPrefixAndIdleHasNoCue() {
-        let emptyMessages: [String?] = [nil, ""]
-        for message in emptyMessages {
-            let status = ChannelAgent.StatusLine(presence: .init(state: "waiting", text: message), isAvailable: true)
-            #expect(status.text == "Waiting" && status.spoken == "Waiting" && status.cue == .waiting)
-        }
-        let reason = ChannelAgent.StatusLine(presence: .init(state: "waiting", text: "Moss's review"),
-                                                   isAvailable: true)
-        #expect(reason.text == "Waiting for Moss's review" && reason.spoken == reason.text)
-        let prefixed = ChannelAgent.StatusLine(presence: .init(state: "waiting", text: "Waiting on a test"),
-                                                     isAvailable: true)
-        #expect(prefixed.text == "Waiting on a test" && prefixed.spoken == prefixed.text)
-        let idle = ChannelAgent.StatusLine(presence: .init(state: "idle", text: "Old message"), isAvailable: true)
-        #expect(idle.text == "Idle" && idle.spoken == "Idle" && idle.cue == .none)
+    @Test(arguments: [
+        PresenceCase(nil, text: "Status unavailable", cue: .none),
+        PresenceCase(nil, available: false, text: "Status unavailable while disconnected", cue: .none),
+        PresenceCase("working", "Compiling", available: false, text: "Status unavailable while disconnected", cue: .none),
+        PresenceCase("waiting", "Review", available: false, text: "Status unavailable while disconnected", cue: .none),
+        PresenceCase("working", nil, text: "Working", cue: .working),
+        PresenceCase("working", "", text: "Working", cue: .working),
+        PresenceCase("working", "  \n", text: "Working", cue: .working),
+        PresenceCase("working", "Compiling", text: "Compiling", spoken: "Working, Compiling", cue: .working),
+        PresenceCase("working", "Working on layout", text: "Working on layout", cue: .working),
+        PresenceCase("waiting", nil, text: "Waiting", cue: .waiting),
+        PresenceCase("waiting", "", text: "Waiting", cue: .waiting),
+        PresenceCase("waiting", "Moss's review", text: "Waiting for Moss's review", cue: .waiting),
+        PresenceCase("waiting", "Waiting on a test", text: "Waiting on a test", cue: .waiting),
+        PresenceCase("idle", "Old message", text: "Idle", cue: .none),
+    ])
+    private func statusLinesNeverInventIdleAndSpeakTheirStateExactlyOnce(_ expected: PresenceCase) {
+        let presence = expected.state.map { ChannelAgentPresence(state: $0, text: expected.message) }
+        let status = ChannelAgent.StatusLine(presence: presence, isAvailable: expected.isAvailable)
+        #expect(status.text == expected.text)
+        #expect(status.spoken == expected.spoken)
+        #expect(status.cue == expected.cue)
     }
 
     @Test func wakeCountdownRoundsUpAndKeepsHoursMinutesAndDueSemantics() {

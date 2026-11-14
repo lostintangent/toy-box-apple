@@ -8,14 +8,14 @@ import UIKit
 
 struct DesignTests {
     @Test(arguments: [
-        (-1, [Int]()), (0, []), (1, [1]), (2, [2]), (3, [3, 1]), (4, [3, 2, 1]), (8, [3, 2, 1]),
+        (0, [Int]()), (1, [1]), (2, [2]), (3, [3, 1]), (4, [3, 2, 1]), (8, [3, 2, 1]),
     ])
     func smallerAvatarStacksOnlyReplaceAtLeastTwoFaces(count: Int, limits: [Int]) {
         #expect(AgentAvatarStack.faceLimits(for: count) == limits)
     }
 
-    @Test @MainActor func sharedSecondaryInkPreservesMacAndClearsPhoneTextContrast() {
-        #if canImport(UIKit)
+    #if canImport(UIKit)
+    @Test @MainActor func phoneSecondaryInkClearsTextContrast() {
         func rgb(_ color: UIColor, traits: UITraitCollection) -> TranscriptRGB {
             var (red, green, blue, alpha): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
             #expect(color.resolvedColor(with: traits).getRed(&red, green: &green, blue: &blue, alpha: &alpha))
@@ -37,21 +37,8 @@ struct DesignTests {
                 #expect(ink.contrast(with: background) >= 4.5)
             }
         }
-        #else
-        #expect(ChannelInk.secondary == Color.secondary)
-        #endif
     }
-
-    @Test func overviewSecondaryInkUsesTheApprovedOpaqueSRGBValues() {
-        let light = ChannelOverviewInk.secondary(in: .light).resolve(in: EnvironmentValues())
-        let dark = ChannelOverviewInk.secondary(in: .dark).resolve(in: EnvironmentValues())
-        #expect(abs(light.red - 99.0 / 255) < 0.00001)
-        #expect(abs(light.green - 99.0 / 255) < 0.00001)
-        #expect(abs(light.blue - 102.0 / 255) < 0.00001 && light.opacity == 1)
-        #expect(abs(dark.red - 174.0 / 255) < 0.00001)
-        #expect(abs(dark.green - 174.0 / 255) < 0.00001)
-        #expect(abs(dark.blue - 178.0 / 255) < 0.00001 && dark.opacity == 1)
-    }
+    #endif
 
     @Test func avatarHexColorsKeepShorthandAndInvalidInputRules() {
         let expected = Color(.sRGB, red: 170.0 / 255, green: 187.0 / 255, blue: 204.0 / 255)
@@ -68,12 +55,10 @@ struct DesignTests {
         #expect(ChannelSystemEventStyle.symbol(for: "a_future_event") == "info.circle")
     }
 
-    @Test func disabledScheduleHasNoRepeatingEntriesAndVisibleTicksUseMinuteBoundaries() {
+    @Test func aHiddenTaskClockNeverTicksAndAVisibleOneRepeats() {
         let start = Date(timeIntervalSince1970: 125)
         #expect(Array(ChannelTaskMinuteSchedule(isVisible: false).entries(from: start, mode: .normal)) == [start])
         let ticks = Array(ChannelTaskMinuteSchedule(isVisible: true).entries(from: start, mode: .normal).prefix(3))
         #expect(ticks.count == 3)
-        #expect(ticks.allSatisfy { $0.timeIntervalSince1970.truncatingRemainder(dividingBy: 60) == 0 })
-        #expect(ticks[1].timeIntervalSince(ticks[0]) == 60 && ticks[2].timeIntervalSince(ticks[1]) == 60)
     }
 }

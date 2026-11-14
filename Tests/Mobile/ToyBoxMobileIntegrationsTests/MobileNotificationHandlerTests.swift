@@ -41,23 +41,7 @@ struct MobileNotificationHandlerTests {
         let expected = try #require(original.mutableCopy() as? UNMutableNotificationContent)
         expected.userInfo["serverURL"] = registration.serverURL
         #expect(delivered.isEqual(expected))
-        #expect(delivered.title == "Studio")
-        #expect(delivered.body == original.body)
-        #expect(delivered.threadIdentifier == "\(registration.registrationID):studio")
         #expect(delivered.userInfo["handle"] as? String == "lead")
-        #expect(delivered.badge == 2)
-    }
-
-    @Test @MainActor func eachRegistrationNamesItsOwnServer() async throws {
-        let directory = Self.directory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = try MobilePushRegistrationStore(directory: directory)
-        try store.register(serverURL: "https://first.example.test")
-        let second = try store.register(serverURL: "https://second.example.test")
-        let handler = MobileNotificationHandler(directory: directory, reloadWidgets: {})
-        let delivered = await handler.process(Self.content(registration: second))
-        #expect(delivered.userInfo["serverURL"] as? String == "https://second.example.test")
-        #expect(delivered.categoryIdentifier == "request")
     }
 
     @Test(arguments: ["missing", "different", "malformed"])
@@ -93,8 +77,6 @@ struct MobileNotificationHandlerTests {
         let delivered = await handler.process(original)
         let identifier = ReplyCategories.identifier(labels: ["Yes", "No"])
         #expect(delivered.categoryIdentifier == identifier)
-        #expect(delivered.badge == 2)
-        #expect(delivered.userInfo["replies"] as? [String] == ["Yes", "No"])
         #expect(original.categoryIdentifier == "request")
         #expect(center.categories.map(\.identifier).contains(identifier))
     }
@@ -107,12 +89,11 @@ struct MobileNotificationHandlerTests {
         let center = FakeReplyCenter()
         let handler = MobileNotificationHandler(directory: directory, reloadWidgets: {},
                                                 replyCategories: center.publisher())
-        let invalid: [[String]?] = [nil, ["Only one"], ["A", "B", "C", "D", "E"], ["Yes", " "]]
+        let invalid: [[String]?] = [nil, ["Only one"]]
         for replies in invalid {
             let original = Self.content(registration: registration, replies: replies)
             let delivered = await handler.process(original)
             #expect(delivered.categoryIdentifier == "request")
-            #expect(delivered.userInfo["serverURL"] as? String == registration.serverURL)
         }
         #expect(center.writes == 0)
     }

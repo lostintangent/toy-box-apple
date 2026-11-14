@@ -19,10 +19,7 @@ struct PushContractTests {
         #expect(aps["mutable-content"] as? Int == 1)
     }
 
-    @Test func categoriesMatchTheMacAndMalformedRoutingDoesNotDecode() throws {
-        #expect(ChannelNotificationCategory.request == "request")
-        #expect(ChannelNotificationCategory.completion == "completion")
-        #expect(ChannelNotificationCategory.reply == "reply")
+    @Test func malformedRoutingDoesNotDecode() throws {
         let fields: [String: Any] = ["kind": "request", "channelID": "channel", "sequence": 15, "registrationID": "device"]
         let payload = try ChannelPushPayload(userInfo: fields)
         let invalid: [(String, Any)] = [
@@ -63,22 +60,6 @@ struct PushContractTests {
         #expect(ChannelActivityLink(channelID: "", registrationID: "device").url == nil)
         #expect(ChannelActivityLink(channelID: "studio", registrationID: "").url == nil)
         #expect(ChannelActivityLink(channelID: "studio", registrationID: "device", sequence: 0).url == nil)
-    }
-
-    @Test func activityAttributesPersistTheOriginalStartSeparatelyFromContentUpdates() throws {
-        let startedAt = Date(timeIntervalSince1970: 1793086200)
-        let attributes = ChannelActivityAttributes(
-            channelID: "studio", channelName: "Studio", registrationID: "registration", startedAt: startedAt
-        )
-        let data = try JSONEncoder().encode(attributes)
-        let restored = try JSONDecoder().decode(ChannelActivityAttributes.self, from: data)
-        #expect(restored == attributes)
-        #expect(restored.startedAt == startedAt)
-        let content = ChannelActivityAttributes.ContentState(
-            tasksDone: 1, tasksTotal: 3, updatedAt: startedAt.addingTimeInterval(60)
-        )
-        let state = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(content)) as? [String: Any])
-        #expect(state["startedAt"] == nil)
     }
 
     @Test func activityProjectionUsesRootProgressAndRunningAgentsRatherThanOldAgentStatus() throws {

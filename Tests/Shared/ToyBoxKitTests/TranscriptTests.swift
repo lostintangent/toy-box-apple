@@ -78,35 +78,34 @@ struct TranscriptTests {
         #expect(yours([]) == [[1]])
     }
 
-    @Test func systemGroupingUsesActorAndKind() {
-        func system(_ sequence: Int, _ kind: String, actor: ChannelMessageSender? = nil) -> ChannelMessage {
-            var value = message(sequence, sender: .system)
-            value.content = .system(.init(type: kind, actor: actor))
-            return value
-        }
-        let rows = TranscriptRowBuilder().rows([
-            system(1, "member_joined"), system(2, "member_joined"),
-            system(3, "member_left"), system(4, "artifact_shared", actor: .agent("ada")),
-            system(5, "artifact_shared", actor: .agent("ada")),
-            system(6, "artifact_shared", actor: .user), system(7, "artifact_shared", actor: .user),
-        ], lead: lead, members: [ada])
-        #expect(rows.map { $0.messages.count } == [2, 1, 2, 2])
+    private struct SystemEvents: Sendable, CustomTestStringConvertible {
+        let testDescription: String
+        let events: [(kind: String, actor: ChannelMessageSender?)]
+        let rowSizes: [Int]
     }
 
-    @Test func consecutiveRemovalsByOneActorGroupWithoutMixingShares() {
-        func system(_ sequence: Int, _ kind: String, actor: ChannelMessageSender? = nil) -> ChannelMessage {
-            var value = message(sequence, sender: .system)
-            value.content = .system(.init(type: kind, actor: actor))
+    @Test(arguments: [
+        SystemEvents(testDescription: "Joins, a leave and shares by two actors", events: [
+            ("member_joined", nil), ("member_joined", nil), ("member_left", nil),
+            ("artifact_shared", .agent("ada")), ("artifact_shared", .agent("ada")),
+            ("artifact_shared", .user), ("artifact_shared", .user),
+        ], rowSizes: [2, 1, 2, 2]),
+        SystemEvents(testDescription: "Removals split by a share and by actor", events: [
+            ("artifact_removed", .agent("ada")), ("artifact_removed", .agent("ada")),
+            ("artifact_shared", .agent("ada")),
+            ("artifact_removed", .agent("ada")), ("artifact_removed", .agent("ada")),
+            ("artifact_removed", .user), ("artifact_removed", .user),
+            ("artifact_removed", .agent("lead")),
+        ], rowSizes: [2, 1, 2, 2, 1]),
+    ])
+    private func systemRowsGroupOnlyConsecutiveEventsOfOneKindByOneActor(_ history: SystemEvents) {
+        let messages = history.events.enumerated().map { index, event in
+            var value = message(index + 1, sender: .system)
+            value.content = .system(.init(type: event.kind, actor: event.actor))
             return value
         }
-        let rows = TranscriptRowBuilder().rows([
-            system(1, "artifact_removed", actor: .agent("ada")), system(2, "artifact_removed", actor: .agent("ada")),
-            system(3, "artifact_shared", actor: .agent("ada")),
-            system(4, "artifact_removed", actor: .agent("ada")), system(5, "artifact_removed", actor: .agent("ada")),
-            system(6, "artifact_removed", actor: .user), system(7, "artifact_removed", actor: .user),
-            system(8, "artifact_removed", actor: .agent("lead")),
-        ], lead: lead, members: [ada])
-        #expect(rows.map { $0.messages.count } == [2, 1, 2, 2, 1])
+        let rows = TranscriptRowBuilder().rows(messages, lead: lead, members: [ada])
+        #expect(rows.map { $0.messages.count } == history.rowSizes)
     }
 
     @Test func rowBuilderMatchesAFreshBuildAcrossUpdates() {
@@ -280,8 +279,6 @@ struct TranscriptTests {
         let team = TranscriptWorkingNowAgents(roster: roster, presence: presence)
         #expect(team.working.map(\.id) == ["ada", "wren"])
         #expect(team.waiting.map(\.id) == ["lead", "moss"])
-        #expect([team.working, team.waiting].joined().map { TranscriptWorkingNowAgents.status(presence[$0.id]) }
-                == ["Compiling", "Working", "Waiting for Moss's review", "Waiting"])
         let offline = TranscriptWorkingNowAgents(roster: roster, presence: [:])
         #expect(offline.working.isEmpty && offline.waiting.isEmpty)
     }

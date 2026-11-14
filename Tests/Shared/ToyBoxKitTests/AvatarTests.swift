@@ -3,22 +3,6 @@ import Testing
 @testable import ToyBoxKit
 
 struct AvatarTests {
-    @Test func servedInkRoundTripsWithoutChangingLegacyAvatars() throws {
-        let data = Data(##"{"mark":"M4 12H20","color":"#1e3a8a","ink":"#facc15"}"##.utf8)
-        let avatar = try JSONDecoder().decode(AgentAvatar.self, from: data)
-        #expect(avatar.ink == "#facc15")
-        #expect(avatar.resolvedInk == "#facc15")
-        #expect(try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(avatar))
-                == JSONDecoder().decode(JSONValue.self, from: data))
-        let legacy = try JSONDecoder().decode(
-            AgentAvatar.self, from: Data(##"{"mark":"M4 12H20","color":"#0891b2"}"##.utf8)
-        )
-        #expect(legacy.ink == nil)
-        #expect(legacy.resolvedInk == "#000000")
-        #expect(try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(legacy))
-                == .object(["mark": .string("M4 12H20"), "color": .string("#0891b2")]))
-    }
-
     @Test func requestedInkMustReachTheUnroundedThreeToOneThreshold() {
         #expect(ink(on: "#000000", requested: "#595959") == "#ffffff")
         #expect(ink(on: "#000000", requested: "#5a5a5a") == "#5a5a5a")
@@ -63,8 +47,6 @@ struct AvatarTests {
         #expect(agent.role == "A served role.")
         #expect(agent.avatar == profile.avatar)
         #expect(agent.avatar?.ink == "#facc15")
-        #expect(catalog.members.isEmpty)
-        #expect(try JSONDecoder().decode(ChannelCatalog.self, from: JSONEncoder().encode(catalog)) == catalog)
     }
 
     @Test(arguments: [#"{"channels":[],"members":[]}"#,

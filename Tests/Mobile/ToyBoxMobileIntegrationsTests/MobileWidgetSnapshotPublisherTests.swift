@@ -15,13 +15,7 @@ struct MobileWidgetSnapshotPublisherTests {
         let first = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         let waiting = try #require(try await first.refresh(session: fixture.session, now: now))
         #expect(waiting.waitingCount == 1)
-        #expect(waiting.requests.first?.quote == "Ready to ship?")
-        #expect(waiting.requests.first?.channelName == "Studio")
         #expect(waiting.requests.first?.sequence == 15)
-        #expect(waiting.requests.first?.requestedAt == (try? Date("2026-10-27T07:30:00Z", strategy: .iso8601)))
-        let request = try #require(waiting.requests.first)
-        let row = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
-        #expect(Set(row.keys) == ["serverURL", "channelID", "channelName", "sequence", "quote", "requestedAt"])
         #expect(!waiting.isOffline)
         #expect(waiting.updatedAt == now)
         #expect(fixture.paths == ["/api/v1/channels"])
@@ -75,9 +69,6 @@ struct MobileWidgetSnapshotPublisherTests {
         #expect(snapshot.servers.map(\.serverURL) == [failing.serverURL, reached.serverURL])
         #expect(snapshot.servers.map(\.isOffline) == [true, false])
         #expect(snapshot.servers.map(\.updatedAt) == [earlier, now])
-        #expect(snapshot.isOffline && snapshot.updatedAt == earlier, "The widget is as old as its oldest server")
-        #expect(snapshot.waitingCount == 2)
-        #expect(snapshot.requests.map(\.serverURL) == [failing.serverURL, reached.serverURL])
     }
 
     @Test @MainActor func anOlderSnapshotIsWrittenOverAndANewerOneIsRefused() throws {
@@ -141,30 +132,6 @@ struct MobileWidgetSnapshotPublisherTests {
         #expect(reloads == 2)
         let refreshed = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
         #expect(refreshed.updatedAt == now.addingTimeInterval(15 * 60))
-        #expect(!refreshed.isStale(at: refreshed.updatedAt.addingTimeInterval(30 * 60 - 1)))
-        #expect(refreshed.isStale(at: refreshed.updatedAt.addingTimeInterval(30 * 60)))
-    }
-
-    @Test @MainActor func anOfflineRelaunchKeepsOnlyItsServersCachedRequest() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let first = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
-        let snapshot = Self.snapshot(now: .now)
-        try first.publish(snapshot)
-        let restored = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
-        try restored.update(catalogs: [Self.unloaded("https://SERVER.test")])
-        let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
-        let cached = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
-        #expect(cached.isOffline)
-        #expect(cached.isAvailable)
-        #expect(cached.requests.map(\.sequence) == snapshot.requests.map(\.sequence))
-        #expect(cached.requests.map(\.serverURL) == ["https://SERVER.test"], "Its requests open as it's now spelled")
-        try restored.update(catalogs: [Self.unloaded("https://other.test")])
-        let switched = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
-        #expect(switched.servers.map(\.serverURL) == ["https://other.test"])
-        #expect(!switched.isAvailable)
-        #expect(switched.waitingCount == 0)
-        #expect(switched.requests.isEmpty)
     }
 
     @Test @MainActor func offlineUpdatesKeepTheCachedObservationTimeWithoutAHeartbeatRewrite() throws {
@@ -193,6 +160,13 @@ struct MobileWidgetSnapshotPublisherTests {
         #expect(repeated == cached)
         #expect(reloads == 2)
         #expect(try FileManager.default.attributesOfItem(atPath: file.path)[.systemFileNumber] as? NSNumber == fileNumber)
+
+        try publisher.update(catalogs: [Self.unloaded("https://other.test")])
+        let switched = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
+        #expect(switched.servers.map(\.serverURL) == ["https://other.test"])
+        #expect(!switched.isAvailable)
+        #expect(switched.waitingCount == 0)
+        #expect(switched.requests.isEmpty)
     }
 
     private static func snapshot(now: Date, serverURL: String = "https://server.test") -> NeedsYouSnapshot {

@@ -2,50 +2,75 @@ import ToyBoxKit
 import Testing
 
 struct ChannelNavigationTests {
-    @Test func adjacentSelectionRetainsCatalogOrderAndWrapsInBothDirections() {
-        let ids = ["third", "first", "second"]
-        #expect(ChannelNavigation.adjacent(in: ids, from: "third", direction: .next) == "first")
-        #expect(ChannelNavigation.adjacent(in: ids, from: "second", direction: .next) == "third")
-        #expect(ChannelNavigation.adjacent(in: ids, from: "first", direction: .previous) == "third")
-        #expect(ChannelNavigation.adjacent(in: ids, from: "third", direction: .previous) == "second")
+    private struct Move: Sendable, CustomTestStringConvertible {
+        let ids: [String]
+        let selection: String?
+        let direction: ChannelNavigation.Direction
+        let target: String?
+
+        init(_ ids: [String], from selection: String?, _ direction: ChannelNavigation.Direction, to target: String?) {
+            self.ids = ids
+            self.selection = selection
+            self.direction = direction
+            self.target = target
+        }
+
+        var testDescription: String { "\(direction) from \(selection ?? "no selection") in \(ids)" }
     }
 
-    @Test func missingSelectionsStartAtTheFirstOrLastChannel() {
-        let ids = ["third", "first", "second"]
-        for selection in [nil, "missing"] {
-            #expect(ChannelNavigation.adjacent(in: ids, from: selection, direction: .next) == "third")
-            #expect(ChannelNavigation.adjacent(in: ids, from: selection, direction: .previous) == "second")
-            #expect(ChannelNavigation.nextAttention(in: ids, from: selection,
-                                                    attentionIDs: ["first", "second"]) == "first")
+    private struct AttentionMove: Sendable, CustomTestStringConvertible {
+        let ids: [String]
+        let selection: String?
+        let attention: Set<String>
+        let target: String?
+
+        init(_ ids: [String], from selection: String?, marked attention: Set<String>, to target: String?) {
+            self.ids = ids
+            self.selection = selection
+            self.attention = attention
+            self.target = target
+        }
+
+        var testDescription: String {
+            "from \(selection ?? "no selection") in \(ids), marking \(attention.sorted())"
         }
     }
 
-    @Test func attentionSelectionSkipsUnmarkedIDsAndWrapsWithoutReordering() {
-        let ids = ["third", "first", "second", "fourth"]
-        let attention: Set<String> = ["third", "second", "outside-the-catalog"]
-        #expect(ChannelNavigation.nextAttention(in: ids, from: "third", attentionIDs: attention) == "second")
-        #expect(ChannelNavigation.nextAttention(in: ids, from: "second", attentionIDs: attention) == "third")
-        #expect(ChannelNavigation.nextAttention(in: ids, from: "fourth", attentionIDs: attention) == "third")
-        #expect(ChannelNavigation.nextAttention(in: ids, from: "third", attentionIDs: []) == nil)
-        #expect(ChannelNavigation.nextAttention(in: ids, from: nil,
-                                                attentionIDs: ["outside-the-catalog"]) == nil)
+    @Test(arguments: [
+        Move(["third", "first", "second"], from: "third", .next, to: "first"),
+        Move(["third", "first", "second"], from: "second", .next, to: "third"),
+        Move(["third", "first", "second"], from: "first", .previous, to: "third"),
+        Move(["third", "first", "second"], from: "third", .previous, to: "second"),
+        Move(["third", "first", "second"], from: nil, .next, to: "third"),
+        Move(["third", "first", "second"], from: "missing", .next, to: "third"),
+        Move(["third", "first", "second"], from: nil, .previous, to: "second"),
+        Move(["third", "first", "second"], from: "missing", .previous, to: "second"),
+        Move(["only"], from: "only", .next, to: "only"),
+        Move(["only"], from: "only", .previous, to: "only"),
+        Move([], from: "missing", .next, to: nil),
+        Move([], from: "missing", .previous, to: nil),
+    ])
+    private func adjacentSelectionWrapsInCatalogOrderAndStartsAtAnEndWithoutOne(_ move: Move) {
+        #expect(ChannelNavigation.adjacent(in: move.ids, from: move.selection, direction: move.direction) == move.target)
     }
 
-    @Test func aFullCycleCanReturnTheCurrentChannelAndSingletonsStaySelected() {
-        #expect(ChannelNavigation.nextAttention(in: ["first", "second"], from: "first",
-                                                attentionIDs: ["first"]) == "first")
-        for direction in [ChannelNavigation.Direction.next, .previous] {
-            #expect(ChannelNavigation.adjacent(in: ["only"], from: "only", direction: direction) == "only")
-        }
-        #expect(ChannelNavigation.nextAttention(in: ["only"], from: "only",
-                                                attentionIDs: ["only"]) == "only")
-    }
-
-    @Test func anEmptyCatalogHasNoNavigationTarget() {
-        for direction in [ChannelNavigation.Direction.next, .previous] {
-            #expect(ChannelNavigation.adjacent(in: [], from: "missing", direction: direction) == nil)
-        }
-        #expect(ChannelNavigation.nextAttention(in: [], from: "missing",
-                                                attentionIDs: ["missing"]) == nil)
+    @Test(arguments: [
+        AttentionMove(["third", "first", "second", "fourth"], from: "third",
+                      marked: ["third", "second", "outside-the-catalog"], to: "second"),
+        AttentionMove(["third", "first", "second", "fourth"], from: "second",
+                      marked: ["third", "second", "outside-the-catalog"], to: "third"),
+        AttentionMove(["third", "first", "second", "fourth"], from: "fourth",
+                      marked: ["third", "second", "outside-the-catalog"], to: "third"),
+        AttentionMove(["third", "first", "second", "fourth"], from: "third", marked: [], to: nil),
+        AttentionMove(["third", "first", "second", "fourth"], from: nil, marked: ["outside-the-catalog"], to: nil),
+        AttentionMove(["third", "first", "second"], from: nil, marked: ["first", "second"], to: "first"),
+        AttentionMove(["third", "first", "second"], from: "missing", marked: ["first", "second"], to: "first"),
+        AttentionMove(["first", "second"], from: "first", marked: ["first"], to: "first"),
+        AttentionMove(["only"], from: "only", marked: ["only"], to: "only"),
+        AttentionMove([], from: "missing", marked: ["missing"], to: nil),
+    ])
+    private func nextAttentionSkipsUnmarkedChannelsAndWrapsWithoutReordering(_ move: AttentionMove) {
+        #expect(ChannelNavigation.nextAttention(in: move.ids, from: move.selection, attentionIDs: move.attention)
+                == move.target)
     }
 }

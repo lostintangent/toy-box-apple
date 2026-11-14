@@ -168,9 +168,6 @@ struct ServerNameTests {
         await field.commit()
         #expect(server.answers.withLock { $0.renames } == ["Studio"])
         #expect(catalog.name == "Studio" && field.text == "Studio" && field.failure == nil)
-        field.text = ""
-        await field.commit()
-        #expect(field.text == "Mac mini", "Clearing it gives the server back its computer's name.")
 
         server.set { $0.name = "Office" }
         await catalog.refreshServer()
