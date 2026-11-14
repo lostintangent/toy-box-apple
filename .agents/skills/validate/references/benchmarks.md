@@ -16,8 +16,8 @@ so any reference to it goes inside `#if TOY_BOX_BENCHMARK`. Prove a change that 
   line is.
 - `key` runs only when named. It takes focus for about 45 seconds and measures key-window CPU with
   4, then 20, working agents to expose continuous animation. Warn the user first.
-- `place` runs only when named. With `paging` and `scroll`, it reports whether the reader's place
-  holds, as information lines without budgets: page inserts, reading up, resizes, a reveal two
+- `place` runs only when named. With `messages`, `paging` and `scroll`, it reports whether the reader's place
+  holds, as information lines without budgets: arrivals, page inserts, reading up, resizes, a reveal two
   pages back and the sequence the read rule counts as seen.
 - Catch-up summaries stay off unless you pass `--summaries`.
 - Only one benchmark runs at a time on this Mac. Others wait for it, so never poll for one yourself.

@@ -42,10 +42,11 @@ import QuartzCore
 ///   visible row's movement with wheel deltas delivered since the preceding sample, with a 1-point
 ///   drift budget.
 ///
-/// `paging`, `scroll` and `place` also report whether the reader's place holds, as information
-/// rather than budgets. `paging` reports where the first visible row settles after each older page
-/// is inserted, and `scroll` the last sequence the read rule counts as seen once reading up stops,
-/// then where the rows sit after the window narrows and widens, following and mid-transcript.
+/// `messages`, `paging`, `scroll` and `place` also report whether the reader's place holds, as
+/// information rather than budgets. `messages` reports how far from the end each arrival leaves the
+/// transcript, `paging` where the first visible row settles after each older page is inserted, and
+/// `scroll` the last sequence the read rule counts as seen once reading up stops, then where the
+/// rows sit after the window narrows and widens, following and mid-transcript.
 /// - `place`: reveals a message a page and a half older than the first page, through the request a
 ///   bookmark makes, and reports its time, scroll writes, settle passes, where it centers and what
 ///   the read rule counts as seen.
@@ -249,6 +250,7 @@ final class PerformanceBenchmark {
         let pointer = notePointer(over: scroll, at: loaded)
         let place = pointer.label
         var costs: [Double] = []
+        var widestGap = 0.0
         // The first two warm up anything a new row builds once.
         for index in 0..<12 {
             try? await Task.sleep(for: .milliseconds(100))
@@ -258,6 +260,7 @@ final class PerformanceBenchmark {
             await arrival(of: last, in: store)
             _ = await settled(quiet: 0.3)
             if index >= 2 { costs.append(meter.busy * 1000) }
+            widestGap = max(widestGap, gapToEnd(scroll))
         }
         let sorted = costs.sorted()
         check("Each message at \(loaded) loaded\(place)", "\(format(median(sorted))) median busy, "
@@ -274,6 +277,9 @@ final class PerformanceBenchmark {
               "\(format(meter.longestGap * 1000)) longest frame gap, \(format(meter.longestSpan * 1000)) longest "
               + "saturated span, \(format(meter.busy * 1000)) busy",
               value: meter.longestGap * 1000, budget: Budget.burstFrameGap)
+        info("Place following arrivals at \(before) loaded\(place)",
+             String(format: "%.1f pt from the end at most after one message, %.1f pt after the burst, ",
+                    widestGap, gapToEnd(scroll)) + describeRead(placeSnapshot()))
         requireStill(pointer, over: scroll)
     }
 
