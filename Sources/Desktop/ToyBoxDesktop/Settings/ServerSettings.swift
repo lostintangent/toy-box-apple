@@ -2,12 +2,13 @@ import ChannelClient
 import SwiftUI
 import ToyBoxUI
 
-/// The Servers tab: the list, then the selected server's name, address, status and release.
+/// The Servers tab: the list, then the selected server's name, address, status and release, then
+/// Disconnect….
 struct ServerSettings: View {
     @Environment(AppModel.self) private var model
     /// The selected server's address.
     @ViewState private var selection: String?
-    @ViewState private var addsServer = false
+    @ViewState private var confirmsDisconnect = false
 
     /// The form insets its rows by this much, and a list's rows inset their content by the same.
     private static let formInset: CGFloat = 10
@@ -18,53 +19,60 @@ struct ServerSettings: View {
             VStack(spacing: 0) {
                 // Spans the card, so its rows' own inset lines the dots up with the labels below.
                 list.padding(.horizontal, -Self.formInset)
-                Divider()
-                HStack(spacing: 2) {
-                    Button("Add Server", systemImage: "plus") { addsServer = true }
-                    Spacer()
-                    if model.catalogs.offersUpdateCheck {
-                        Button("Check for Updates") { Task { await model.catalogs.checkForUpdates() } }
+                if model.servers.shown.offersUpdateCheck {
+                    Divider()
+                    HStack {
+                        Spacer()
+                        Button("Check for Updates") { Task { await model.servers.shown.checkForUpdates() } }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
-                            .disabled(model.catalogs.isCheckingForUpdates)
+                            .disabled(model.servers.shown.isCheckingForUpdates)
                     }
+                    .padding(.horizontal, 4)
+                    .frame(height: Self.rowHeight)
                 }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .padding(.horizontal, 4)
-                .frame(height: Self.rowHeight)
             }
         }
-        .onAppear { if selected == nil { select(model.catalogs.first) } }
-        // A first server added from the sidebar while this is open shows its details too.
-        .onChange(of: model.catalogs.isEmpty) { _, isEmpty in if !isEmpty, selected == nil { select(model.catalogs.first) } }
-        .sheet(isPresented: $addsServer) { AddServerSheet(added: select) }
+        .onAppear { if selected == nil { select(model.servers.shown.first) } }
+        // A first server connected from the sidebar while this is open shows its details too.
+        .onChange(of: model.servers.shown.isEmpty) { _, isEmpty in if !isEmpty, selected == nil { select(model.servers.shown.first) } }
         // Every server again as one connects, so one that was down when Settings opened shows.
-        .task(id: model.catalogs.filter { $0.phase == .connected }.map(\.api.baseURL)) {
-            await model.catalogs.refreshServers()
+        .task(id: model.servers.shown.filter { $0.phase == .connected }.map(\.api.baseURL)) {
+            await model.servers.shown.refreshServers()
         }
         if let selected {
             ServerDetails(catalog: selected)
                 .id(Self.address(selected))
         }
+        if !model.servers.shown.isEmpty {
+            Section {} footer: {
+                Button("Disconnect…") { confirmsDisconnect = true }
+            }
+            .alert("Disconnect from your servers?", isPresented: $confirmsDisconnect) {
+                Button("Disconnect", role: .destructive) { model.servers.disconnect() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Toy Box forgets every server on this Mac. Connect to any one of your Macs to see them all again.")
+            }
+        }
     }
 
     private var selected: ChannelCatalogStore? {
-        model.catalogs.first { Self.address($0) == selection }
+        model.servers.shown.first { Self.address($0) == selection }
     }
 
     private var list: some View {
         List(selection: $selection) {
-            ForEach(model.catalogs, id: \.api.baseURL) { catalog in
+            ForEach(model.servers.shown, id: \.api.baseURL) { catalog in
                 row(catalog).tag(Self.address(catalog))
             }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .scrollDisabled(true)
-        .frame(height: CGFloat(max(model.catalogs.count, 1)) * Self.rowHeight)
+        .frame(height: CGFloat(max(model.servers.shown.count, 1)) * Self.rowHeight)
         .overlay {
-            if model.catalogs.isEmpty { Text("No Servers").foregroundStyle(.secondary) }
+            if model.servers.shown.isEmpty { Text("No Servers").foregroundStyle(.secondary) }
         }
     }
 
@@ -145,7 +153,7 @@ private struct ServerUpdateStatus: View {
 
 /// One server's name, address, status and release. Each server gets its own, so a name being typed is
 /// saved to the server it was typed for. The address is only how this Mac reaches the server, so it
-/// can be copied but not edited, and adding the server at another address moves it there.
+/// can be copied but not edited.
 private struct ServerDetails: View {
     let catalog: ChannelCatalogStore
 
@@ -216,92 +224,6 @@ private struct ServerNameRows: View {
     private func commit() {
         guard model.catalogs.contains(where: { $0 === field.catalog }) else { return }
         Task { await field.commit() }
-    }
-}
-
-/// Add Server: an address, tested if you like, then added and selected. An address already listed
-/// selects that server.
-struct AddServerSheet: View {
-    let added: (ChannelCatalogStore) -> Void
-    @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
-    @ViewState private var connection = ServerConnectionProbe()
-    @ViewState private var failure: String?
-
-    var body: some View {
-        Form {
-            Section("Add a Toy Box Server") {
-                ServerAddressFields(connection: connection, failure: failure, prompt: "machine.tail1234.ts.net")
-                    .onSubmit(add)
-            }
-        }
-        .formStyle(.grouped)
-        .scrollDisabled(true)
-        .frame(width: 460)
-        .fixedSize(horizontal: false, vertical: true)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("Cancel", role: .cancel) { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Add Server", action: add).disabled(connection.validationError != nil)
-            }
-        }
-        .onChange(of: connection.address) { _, _ in failure = nil }
-        .onDisappear { connection.cancel() }
-    }
-
-    private func add() {
-        guard connection.validationError == nil else { return }
-        do {
-            added(try model.servers.add(connection.address))
-            dismiss()
-        } catch {
-            failure = error.localizedDescription
-        }
-    }
-}
-
-/// Add Server's URL with Test Connection and what the test found.
-private struct ServerAddressFields: View {
-    @Bindable var connection: ServerConnectionProbe
-    let failure: String?
-    var prompt: String?
-
-    var body: some View {
-        TextField("Server URL", text: $connection.address, prompt: prompt.map { Text($0) })
-            .textContentType(.URL)
-        Text("Use your server's address, including its port and any path prefix.")
-            .font(.caption).foregroundStyle(.secondary)
-        HStack {
-            Button(connection.isConnecting ? "Connecting..." : "Test Connection") { connection.start() }
-                .disabled(connection.isConnecting || connection.validationError != nil)
-            if connection.isConnecting { ProgressView().controlSize(.small) }
-            Spacer()
-        }
-        if let error = connection.validationError, !connection.address.isEmpty {
-            errorLabel(error)
-        }
-        switch connection.phase {
-        case .connected(let url, let count)?:
-            Label(SettingsView.connectionSummary(serverURL: url.absoluteString, channelCount: count),
-                  systemImage: "checkmark.circle")
-                .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-        case .failed(let address, let error)?:
-            errorLabel("Couldn't connect to \(address): \(error.localizedDescription)")
-        case .connecting?, nil:
-            EmptyView()
-        }
-        if let failure {
-            errorLabel(failure)
-        }
-    }
-
-    private func errorLabel(_ error: String) -> some View {
-        Label {
-            Text(error).foregroundStyle(.primary)
-        } icon: {
-            Image(systemName: "exclamationmark.circle").foregroundStyle(.red)
-        }
-        .font(.caption).textSelection(.enabled)
     }
 }
 

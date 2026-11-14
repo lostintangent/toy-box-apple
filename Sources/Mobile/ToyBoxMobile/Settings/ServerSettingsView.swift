@@ -4,69 +4,18 @@ import SwiftUI
 import ToyBoxUI
 
 /// One server in Settings: its name, then its address and status, then its release. The address is
-/// only how this iPhone reaches the server, so it can be copied but not edited. Without a server,
-/// this is Add Server: Welcome's Server URL card, whose test adds the server and then shows it.
+/// only how this iPhone reaches the server, so it can be copied but not edited.
 struct ServerSettingsView: View {
-    @Environment(AppModel.self) private var model
-    @Environment(\.scenePhase) private var scenePhase
-    /// The server this page shows, once Add Server's test adds one.
-    @ViewState private var catalog: ChannelCatalogStore?
-    @ViewState private var connection: ServerConnectionProbe
-    @ViewState private var failure: String?
-    @ViewState private var isAdding = false
-
-    init(catalog: ChannelCatalogStore?, connection: ServerConnectionProbe = ServerConnectionProbe()) {
-        _catalog = ViewState(initialValue: catalog)
-        _connection = ViewState(initialValue: connection)
-    }
+    let catalog: ChannelCatalogStore
 
     var body: some View {
         Form {
-            if let catalog {
-                Group {
-                    ServerNameSection(catalog: catalog)
-                    ServerAddressSection(catalog: catalog)
-                    ServerVersionSection(update: catalog.update)
-                }
-                .id(ObjectIdentifier(catalog))
-            } else {
-                ServerConnectionSection(
-                    connection: connection, placeholder: "machine.tail1234.ts.net",
-                    footer: "Use your server's address, including its port and any path prefix. Toy Box adds it once the test connects.",
-                    isSwitching: isAdding, failure: $failure)
-                    .disabled(isAdding)
-            }
+            ServerNameSection(catalog: catalog)
+            ServerAddressSection(catalog: catalog)
+            ServerVersionSection(update: catalog.update)
         }
-        .navigationTitle(catalog?.name ?? "Add Server")
+        .navigationTitle(catalog.name)
         .navigationBarTitleDisplayMode(.inline)
-        .interactiveDismissDisabled(isAdding)
-        .onDisappear { connection.cancel() }
-        .onChange(of: scenePhase) { _, phase in
-            if phase != .active { connection.cancel() }
-        }
-        .onChange(of: connectedServer) { _, server in
-            if let server { add(server) }
-        }
-    }
-
-    private var connectedServer: URL? {
-        guard catalog == nil, case .connected(let url, _)? = connection.phase else { return nil }
-        return url
-    }
-
-    /// A successful test is the add, and the page then shows the server it added.
-    private func add(_ server: URL) {
-        guard !isAdding else { return }
-        isAdding = true
-        failure = nil
-        Task {
-            defer { isAdding = false }
-            do {
-                let added = try model.addServer(server.absoluteString)
-                await added.refresh()
-                catalog = added
-            } catch { failure = error.localizedDescription }
-        }
     }
 }
 

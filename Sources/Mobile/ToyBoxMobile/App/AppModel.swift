@@ -14,7 +14,7 @@ final class AppModel {
     let following: ChannelFollowController
     /// The first server's address, or a launch address the app can't use.
     private(set) var serverURL = ""
-    /// Every server, in Settings order.
+    /// Every server opened this run, the one connected through first.
     let servers: ChannelServers
     var catalogs: [ChannelCatalogStore] { servers.catalogs }
     /// Every message the user sends until its server confirms it, in the shared container so the
@@ -108,7 +108,7 @@ final class AppModel {
         restoring = catalog
     }
 
-    /// The first server in Settings order.
+    /// The server the user connected through.
     var catalog: ChannelCatalogStore? { catalogs.first }
 
     var api: ChannelAPI? { catalog?.api }
@@ -172,6 +172,14 @@ final class AppModel {
         let catalog = try servers.add(address)
         if wasEmpty { restoring = catalog }
         return catalog
+    }
+
+    /// Connects through the server at `address`, from Welcome, then opens the channel last opened
+    /// there once it loads.
+    func connect(_ address: String) async throws {
+        let catalog = try await servers.connect(address)
+        restoring = catalog
+        await refreshCatalog(catalog)
     }
 
     /// Closes a server's channels wherever they're open, as it leaves the list.

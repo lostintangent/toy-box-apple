@@ -34,10 +34,10 @@ struct ChannelEditor: View {
 
     var body: some View {
         Form {
-            if channel == nil, app.catalogs.count > 1 {
+            if channel == nil, app.servers.shown.count > 1 {
                 Section {
                     Picker("Server", selection: serverSelection) {
-                        ForEach(app.catalogs, id: \.api.baseURL) { catalog in
+                        ForEach(app.servers.shown, id: \.api.baseURL) { catalog in
                             Text(catalog.name).tag(catalog.api.baseURL.absoluteString)
                         }
                     }

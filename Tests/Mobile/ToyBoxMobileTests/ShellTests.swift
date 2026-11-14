@@ -134,50 +134,9 @@ struct ShellTests {
         }
     }
 
-    @Test func serverCardKeepsTwoNativeRowsThroughATest() async throws {
-        let connection = ServerConnectionProbe(address: "https://another.example/prefix", session: fixtureSession())
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
-        let host = UIHostingController(rootView: Form {
-            ServerConnectionSection(connection: connection, placeholder: "Required", footer: "Footer",
-                                    failure: .constant(nil))
-        })
-        window.rootViewController = host
-        window.isHidden = false
-        defer { window.isHidden = true }
-        host.view.frame = window.bounds
-        func rows() -> (heights: [CGFloat], test: MobileAutomationTree.Element?, labels: [String]) {
-            host.view.setNeedsLayout()
-            host.view.layoutIfNeeded()
-            let cells = collectionCells(in: host.view)
-            let tree = MobileAutomationTree(windows: [window])
-            let button = tree.elements.first { $0.identifier == "server-test" }
-            let test = button.flatMap { button in cells.first { $0.contains(CGPoint(x: button.frame.midX, y: button.frame.midY)) } }
-            // The address field exposes no element in a test host, so its row is the cell right above Test Connection.
-            let address = test.flatMap { test in cells.first { abs($0.maxY - test.minY) < 0.5 } }
-            return ([address, test].compactMap { $0?.height }, button, tree.elements.map(\.label))
-        }
-        let idle = rows()
-        #expect(idle.heights.count == 2, "\(idle.heights)")
-        #expect((idle.heights.max() ?? 0) - (idle.heights.min() ?? 0) < 0.5, "\(idle.heights)")
-        #expect((idle.heights.first ?? 0) >= 44, "\(idle.heights)")
-        #expect(idle.test?.label == "Test Connection", "\(idle.labels)")
-        #expect(idle.test?.value == "", "\(String(describing: idle.test))")
-        let operation = try #require(connection.start())
-        let connecting = rows()
-        #expect(connecting.test?.label.hasPrefix("Connecting") == true, "\(connecting.labels)")
-        #expect(connecting.heights == idle.heights, "\(connecting.heights) \(idle.heights)")
-        await operation.value
-        let connected = rows()
-        #expect(connected.test?.label == "Test Connection", "\(connected.labels)")
-        #expect(connected.test?.value == "Connected", "\(String(describing: connected.test))")
-        #expect(connected.heights == idle.heights, "\(connected.heights) \(idle.heights)")
-        connection.address = "https://another.example/other"
-        #expect(rows().test?.value == "", "Editing the address clears the checkmark.")
-    }
-
-    /// Continue is pinned at default sizes and follows the card at accessibility sizes, where a bar would cover it.
+    /// Connect is pinned at default sizes and follows the card at accessibility sizes, where a bar would cover it.
     @Test(arguments: [DynamicTypeSize.large, .accessibility5])
-    func welcomeKeepsContinueOnTheCardEdgesUntilATestPasses(size: DynamicTypeSize) async throws {
+    func welcomeKeepsConnectOnTheCardEdgesAndOffWhileTheAddressIsEmpty(size: DynamicTypeSize) async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: [], environment: [:], defaults: defaults, session: fixtureSession())
             // Tall enough that the inline row is laid out at accessibility sizes.
@@ -189,22 +148,23 @@ struct ShellTests {
             defer { window.isHidden = true }
             host.view.frame = window.bounds
             host.view.layoutIfNeeded()
-            // Continue's insets come from the card's measured frame, which lands on the next pass.
+            // Connect's insets come from the card's measured frame, which lands on the next pass.
             await Task.yield()
             host.view.setNeedsLayout()
             host.view.layoutIfNeeded()
             let tree = MobileAutomationTree(windows: [window])
             let labels = tree.elements.map(\.label)
-            let proceed = try #require(tree.elements.first { $0.identifier == "server-use" }, "\(labels)")
-            let test = try #require(tree.elements.first { $0.identifier == "server-test" }, "\(labels)")
+            let proceed = try #require(tree.elements.first { $0.identifier == "server-connect" }, "\(labels)")
             let cells = collectionCells(in: host.view)
-            let card = try #require(cells.first { $0.contains(CGPoint(x: test.frame.midX, y: test.frame.midY)) })
+            // The address field exposes no element in a test host, so its card is the last cell above Connect.
+            let top = proceed.frame.minY
+            let above = cells.filter { $0.maxY <= top }.max { $0.maxY < $1.maxY }
+            let card = try #require(above)
             #expect(labels.contains("Welcome to Toy\u{00A0}Box\u{00A0}👋"), "\(labels)")
-            #expect(proceed.label == "Continue")
+            #expect(proceed.label == "Connect")
             #expect(!proceed.isEnabled)
             #expect(abs(proceed.frame.minX - card.minX) < 1, "\(proceed.frame) \(card)")
             #expect(abs(proceed.frame.maxX - card.maxX) < 1, "\(proceed.frame) \(card)")
-            #expect(proceed.frame.minY > card.maxY, "\(proceed.frame) \(card)")
             let isInline = cells.contains { $0.contains(CGPoint(x: proceed.frame.midX, y: proceed.frame.midY)) }
             #expect(isInline == size.isAccessibilitySize, "\(proceed.frame) \(cells)")
             if !size.isAccessibilitySize {
@@ -1821,29 +1781,6 @@ struct ShellTests {
             #expect(secondDraft.text == "Draft for the second server")
             #expect(defaults.dictionary(forKey: "lastChannelByServer")?[secondAddress] as? String == "second")
         }
-    }
-
-    @Test func theCardTestsOnlyAValidIdleAddressAndMarksOnlyItsOwnSuccess() async throws {
-        let connection = ServerConnectionProbe(address: "http://127.0.0.1:3100/prefix", session: fixtureSession())
-        let section = ServerConnectionSection(connection: connection, placeholder: "", footer: "",
-                                              failure: .constant(nil))
-        #expect(section.canTest)
-        #expect(!section.isConnected)
-        let operation = try #require(connection.start())
-        #expect(!section.canTest)
-        #expect(!section.isConnected)
-        await operation.value
-        #expect(section.canTest)
-        #expect(section.isConnected)
-        let switching = ServerConnectionSection(connection: connection, placeholder: "", footer: "",
-                                                isSwitching: true, failure: .constant(nil))
-        #expect(!switching.canTest)
-        #expect(!switching.isConnected)
-        connection.address = "http://127.0.0.1:3100/another-prefix"
-        #expect(section.canTest)
-        #expect(!section.isConnected)
-        connection.address = "ftp://not-a-server"
-        #expect(!section.canTest)
     }
 
     @Test func settingsFailuresKeepTheirRealCategoryAndPhoneAvailabilityReason() {

@@ -12,11 +12,12 @@ struct SettingsView: View {
     @AppStorage(IntelligenceSettings.summarizesNewMessages) private var summarizesNewMessages = true
     @AppStorage(IntelligenceSettings.describesImages) private var describesImages = true
     @ViewState private var availability: IntelligenceAvailability?
-    @ViewState private var addsServer = false
+    @ViewState private var confirmsDisconnect = false
 
     var body: some View {
         Form {
             servers
+            disconnect
             Section("Appearance") {
                 Picker("Appearance", selection: $appearance) {
                     ForEach(AppAppearance.allCases) { value in Text(value.title).tag(value) }
@@ -38,7 +39,6 @@ struct SettingsView: View {
         .accessibilityIdentifier("settings-form")
         .navigationTitle("Settings")
         .navigationDestination(for: ServerRoute.self) { ServerSettingsView(catalog: $0.catalog) }
-        .navigationDestination(isPresented: $addsServer) { ServerSettingsView(catalog: nil) }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(role: .close) { model.cover = nil }
@@ -51,15 +51,15 @@ struct SettingsView: View {
         }
         .task { await model.notifications.refreshAuthorization() }
         // Every server again as one connects, so one that was down when Settings opened shows.
-        .task(id: model.catalogs.filter { $0.phase == .connected }.map(\.api.baseURL)) {
-            await model.catalogs.refreshServers()
+        .task(id: model.servers.shown.filter { $0.phase == .connected }.map(\.api.baseURL)) {
+            await model.servers.shown.refreshServers()
         }
     }
 
-    /// Each server with its dot and name.
+    /// Each server with its dot and name, in the order the list shows them, then Check for Updates.
     private var servers: some View {
         Section {
-            ForEach(model.catalogs, id: \.api.baseURL) { catalog in
+            ForEach(model.servers.shown, id: \.api.baseURL) { catalog in
                 NavigationLink(value: ServerRoute(catalog: catalog)) { ServerRow(catalog: catalog) }
                     // No items, so no menu, while the server can't restart.
                     .contextMenu {
@@ -70,11 +70,10 @@ struct SettingsView: View {
                         }
                     }
             }
-            Button("Add Server", systemImage: "plus") { addsServer = true }
-            if model.catalogs.offersUpdateCheck {
-                let isChecking = model.catalogs.isCheckingForUpdates
+            if model.servers.shown.offersUpdateCheck {
+                let isChecking = model.servers.shown.isCheckingForUpdates
                 Button("Check for Updates", systemImage: "arrow.triangle.2.circlepath") {
-                    Task { await model.catalogs.checkForUpdates() }
+                    Task { await model.servers.shown.checkForUpdates() }
                 }
                 .disabled(isChecking)
                 // A disabled Form button keeps its tinted icon, so it dims the whole row itself.
@@ -82,6 +81,20 @@ struct SettingsView: View {
             }
         } header: {
             Text("Servers")
+        }
+    }
+
+    /// Forgets every server once the user confirms, and Welcome takes over from Settings.
+    private var disconnect: some View {
+        Section {
+            Button("Disconnect", role: .destructive) { confirmsDisconnect = true }
+                .accessibilityIdentifier("settings-disconnect")
+        }
+        .alert("Disconnect from your servers?", isPresented: $confirmsDisconnect) {
+            Button("Disconnect", role: .destructive) { model.servers.disconnect() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Toy Box forgets every server on this iPhone. Connect to any one of your Macs to see them all again.")
         }
     }
 

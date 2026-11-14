@@ -557,13 +557,6 @@ struct ShellTests {
         #expect(AppModel.attentionCount(channels: [], openChannelIDs: []) == 0)
     }
 
-    @MainActor @Test(arguments: [0, 1, 2])
-    func connectionSummaryPluralizesChannelCount(_ count: Int) {
-        let quantities = ["0 channels", "1 channel", "2 channels"]
-        #expect(SettingsView.connectionSummary(serverURL: "https://example.test", channelCount: count)
-                == "Connected to https://example.test. \(quantities[count]) available.")
-    }
-
     @Test(arguments: [
         ("http://localhost:3100", true), ("http://toy.localhost:3100", true),
         ("http://127.0.0.1:3210", true), ("http://[::1]:3100", true),

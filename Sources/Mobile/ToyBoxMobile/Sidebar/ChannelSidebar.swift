@@ -81,7 +81,7 @@ struct ChannelSidebar: View {
     }
 
     /// Every row the list shows, through each expanded server in order.
-    private var listed: [Listed] { model.catalogs.filter(isExpanded).flatMap(listed(in:)) }
+    private var listed: [Listed] { model.servers.shown.filter(isExpanded).flatMap(listed(in:)) }
 
     /// How far a card reaches past its row's trailing side. A folded list ends where its rows do, so
     /// the card's content steps in there instead.
@@ -95,7 +95,7 @@ struct ChannelSidebar: View {
     /// column already shows.
     private var waiting: [ChannelCatalogStore.WaitingRequest] {
         let shown = isCollapsed ? nil : model.selection
-        return model.catalogs.filter(isExpanded).waitingRequests(open: model.openChannels).filter { $0.target != shown }
+        return model.servers.shown.filter(isExpanded).waitingRequests(open: model.openChannels).filter { $0.target != shown }
     }
 
     private func channelList(now: Date) -> some View {
@@ -114,7 +114,7 @@ struct ChannelSidebar: View {
             // Every server has its section, even one, so the list always says whose channels it
             // shows and adding a second never reshapes it.
             List(selection: $model.selection) {
-                ForEach(model.catalogs, id: \.api.baseURL) { catalog in
+                ForEach(model.servers.shown, id: \.api.baseURL) { catalog in
                     Section(isExpanded: expansion(of: catalog)) {
                         section(catalog, items: listed.filter { $0.catalog === catalog }, rows: rows)
                     } header: {
@@ -381,7 +381,7 @@ struct ChannelSidebar: View {
 
     /// The empty state waits until every server has answered with nothing.
     private var isEmpty: Bool {
-        model.catalogs.allSatisfy { $0.phase == .connected && listed(in: $0).isEmpty }
+        model.servers.shown.allSatisfy { $0.phase == .connected && listed(in: $0).isEmpty }
     }
 
     @ViewBuilder private var emptyState: some View {
