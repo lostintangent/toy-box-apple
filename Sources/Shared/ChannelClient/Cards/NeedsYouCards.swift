@@ -2,11 +2,12 @@ import ChannelKit
 import Foundation
 import Observation
 
-/// The Needs You cards in the phone's channel list: a waiting channel's row shows its question, one
-/// card opens at a time, and a choice or a typed reply answers it without opening the channel. A
-/// reply goes to the outbox, so the card closes with its check at once, and a reply that ends Not
-/// sent brings its request back as a waiting row. It holds the cards' rules, and the app draws them
-/// and supplies their motion. See Needs You in the list in docs/spec.md.
+/// The Needs You cards in the phone's channel list: a waiting channel's row shows its question, a tap
+/// opens its card, one at a time, and a choice or a typed reply answers it without opening the
+/// channel. Nothing opens on its own. A reply goes to the outbox, so the card closes with its check
+/// at once, and a reply that ends Not sent brings its request back as a waiting row. It holds the
+/// cards' rules, and the app draws them and supplies their motion. See Needs You in the list in
+/// docs/spec.md.
 @MainActor @Observable
 package final class NeedsYouCards {
     package enum Phase: Equatable {
@@ -39,8 +40,6 @@ package final class NeedsYouCards {
     package var words = ""
     /// The card the person opened, which stays open while its request waits.
     package private(set) var opened: ChannelCatalogStore.WaitingRequest.ID?
-    /// The request answered here last, so the card that opens after it scrolls into view.
-    private var answered: ChannelCatalogStore.WaitingRequest.ID?
     /// A sent typed reply's card while it shrinks from above the list back into its row.
     package private(set) var landing: ChannelCatalogStore.WaitingRequest?
     @ObservationIgnored private let checks: CardChecks
@@ -73,22 +72,11 @@ package final class NeedsYouCards {
     /// True while a typed reply holds the list, with its card lifted and every other row dimmed.
     package var isLifted: Bool { answer?.isLifted == true }
 
-    /// The open card among every server's waiting requests, newest first: the one being answered, otherwise
-    /// the one the person opened while it waits, otherwise the newest. A request opens only once its
-    /// words are known.
+    /// The open card among every server's waiting requests: the one being answered, otherwise the
+    /// one the person opened while it waits. A request opens only once its words are known.
     package func open(in waiting: [ChannelCatalogStore.WaitingRequest]) -> ChannelCatalogStore.WaitingRequest? {
         if let replying { return waiting.first { $0.id == replying.id } ?? replying }
-        let known = waiting.filter { $0.request != nil }
-        return known.first { $0.id == opened } ?? known.first
-    }
-
-    /// True when the open card changed from `previous` to `card` because of the person: a tap on
-    /// its row, or their answer to the card before it. Only those scroll the list, so a request
-    /// arriving never moves it under someone reading.
-    package func reveals(_ card: ChannelCatalogStore.WaitingRequest.ID?,
-                         after previous: ChannelCatalogStore.WaitingRequest.ID?) -> Bool {
-        guard let card else { return false }
-        return card == opened || (previous != nil && previous == answered)
+        return waiting.first { $0.id == opened && $0.request != nil }
     }
 
     /// What each waiting row shows, by channel on its server. A request whose words aren't known yet
@@ -109,10 +97,16 @@ package final class NeedsYouCards {
         return Set([open] + order[..<index].suffix(1))
     }
 
-    /// Opens a compact row's card, closing the others.
+    /// Opens a waiting row's card, closing any other.
     package func open(_ request: ChannelCatalogStore.WaitingRequest.ID) {
         guard answer == nil, opened != request else { return }
         animate(.open) { opened = request }
+    }
+
+    /// Folds the open card back into its row. A reply holds its card until the reply ends.
+    package func fold() {
+        guard opened != nil else { return }
+        animate(.open) { opened = nil }
     }
 
     /// Sends a choice at once as written.
@@ -156,13 +150,12 @@ package final class NeedsYouCards {
         // The request stops waiting as the outbox takes the reply, and the card holds until it's saved.
         await outbox.send(content, to: entry.channel.id, on: answer.store.api.baseURL, answering: entry.sequence)
         guard self.answer?.entry.id == entry.id, self.answer?.phase == .sending else { return }
-        // The card shrinks straight back into its row, which wears the check, as the next opens.
-        // Each row's check settles on its own, so answering the next card leaves this one's in place.
+        // The card shrinks straight back into its row, which wears the check, and nothing else opens.
+        // Each row's check settles on its own, so answering another card leaves this one's in place.
         // A typed reply's words fade with its card rather than blanking as it lands.
         animate(.sent) {
-            answered = entry.id
-            // The card the person opened ends with its answer, so if the reply ends Not sent, its
-            // request comes back without opening itself or moving the list.
+            // The card ends with its answer, so if the reply ends Not sent, its request comes back
+            // as a waiting row without opening or moving the list.
             opened = nil
             if let target = entry.target { checks.sent(target) }
             if answer.isLifted {

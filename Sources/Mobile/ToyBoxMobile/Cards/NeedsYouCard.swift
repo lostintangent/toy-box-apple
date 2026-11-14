@@ -68,6 +68,9 @@ struct NeedsYouCard: View {
                                    baseURL: catalog?.api.baseURL, surface: .pendingAgent)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { questionHeight = $0 }
+                        // Tapping the words folds the card back into its row, and its links keep their own taps.
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: fold)
                 }
                 .scrollBounceBehavior(.basedOnSize)
                 .onScrollGeometryChange(for: Edge.Set.self) { geometry in
@@ -104,6 +107,14 @@ struct NeedsYouCard: View {
             CardSurface(surface: .pendingAgent, tint: Channel.Attention.waiting.color(in: colorScheme))
         }
         .accessibilityElement(children: .contain)
+        .accessibilityAction(.escape) {
+            if isLifted { cards.cancel() } else { fold() }
+        }
+    }
+
+    /// Folds the card, unless a reply holds it.
+    private func fold() {
+        if !isLifted, cards.phase == nil { cards.fold() }
     }
 
     private var heading: some View {
@@ -195,9 +206,10 @@ extension View {
 
     /// Lifts the open card's typed reply, drawn by `lifted`, above the list from the card's row at
     /// `card` in global space, and rises above the keyboard. Once the reply sends, the card shrinks
-    /// back into its row, drawn by `row`. Holds the list while lifted, and ends the reply as a draft
-    /// when anything in `context` changes or the channel leaves `targets`. Reports the list's
-    /// visible area in global space to `bounds` while no reply holds the list.
+    /// back into its row, drawn by `row`. Holds the list while lifted, and closes the open card and
+    /// ends the reply as a draft when anything in `context` changes, or ends the reply when the
+    /// channel leaves `targets`. Reports the list's visible area in global space to `bounds` while
+    /// no reply holds the list.
     func needsYouList<Card: View, Row: View>(
         _ cards: NeedsYouCards, card: CGRect?, targets: [ChannelTarget], bounds: Binding<CGRect>,
         endsWhenChanging context: [AnyHashable?],
@@ -239,6 +251,8 @@ private struct NeedsYouList<Card: View, Row: View>: ViewModifier {
                     }
                 }
             }
+            // Going anywhere from the list closes the open card too, though not leaving the app.
+            .onChange(of: context) { cards.fold() }
             .onChange(of: card) { _, card in
                 if let card { cardRow = card }
             }
