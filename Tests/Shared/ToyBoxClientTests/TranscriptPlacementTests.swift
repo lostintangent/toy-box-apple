@@ -197,13 +197,21 @@ struct TranscriptPlacementTests {
         let landed = Model.reduce(.following, .land(.row("m17", order: 17)), rows: frames(), viewport: viewport, origin: 0)
         #expect(landed == .init(intent: target, origin: 1_566))
         // The content's end can already include the arrival before its row reports a frame.
-        let arriving = Model.reduce(target, .arrived, layout: layout(frames(), origin: 1_566, documentEnd: 2_116))
+        let arriving = Model.reduce(target, .arrived(pinsLanding: false),
+                                    layout: layout(frames(), origin: 1_566, documentEnd: 2_116))
         #expect(arriving == .init(intent: .following, origin: nil))
         let followed = Model.reduce(arriving.intent, .layoutChanged, rows: frames(21), viewport: viewport, origin: 1_566)
         #expect(followed.origin == 1_666)
         // A landing that holds New at the top leaves the arrival below.
         let held = Model.Intent.landing(.row("m14", order: 14))
-        #expect(Model.reduce(held, .arrived, rows: frames(), viewport: viewport, origin: 1_350).intent == held)
+        #expect(Model.reduce(held, .arrived(pinsLanding: false), rows: frames(), viewport: viewport,
+                             origin: 1_350).intent == held)
+        // A landing that stopped short of the end, with the last row below the composer, isn't held by it.
+        #expect(Model.reduce(target, .arrived(pinsLanding: false), rows: frames(), viewport: viewport,
+                             origin: 1_200).intent == target)
+        // A catch-up card keeps its top while its summary grows, so it keeps landing.
+        #expect(Model.reduce(target, .arrived(pinsLanding: true), rows: frames(), viewport: viewport,
+                             origin: 1_566).intent == target)
     }
 
     @Test func aLandedRowThatOutgrowsTheEndKeepsItsTopInView() {
