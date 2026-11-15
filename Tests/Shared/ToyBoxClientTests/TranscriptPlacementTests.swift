@@ -169,7 +169,7 @@ struct TranscriptPlacementTests {
         let small = Model.Viewport(width: 400, height: 200, topInset: 50, bottomInset: 50)
         for rows in geometries {
             for viewport in [viewport, small] {
-                let projected = Model.placement(for: intent, rows: rows, viewport: viewport)
+                let projected = Model.placement(for: intent, layout: Model.complete(rows, viewport: viewport, origin: 0))
                 let reduced = Model.reduce(intent, .layoutChanged, rows: rows, viewport: viewport, origin: 400)
                 #expect(projected == reduced)
             }
@@ -259,7 +259,8 @@ struct TranscriptPlacementTests {
         #expect(resumed.intent == intent)
         #expect(resumed.origin == nil)
         #expect(resumed.unavailableTarget == nil)
-        #expect(Model.layoutEvent(from: rows, viewport: viewport, to: rows, viewport: viewport) == nil)
+        #expect(Model.layoutEvent(from: Model.complete(rows, viewport: viewport, origin: y),
+                                 to: Model.complete(rows, viewport: viewport, origin: y)) == nil)
         let arrival = Model.reduce(resumed.intent, .layoutChanged, rows: frames(21), viewport: viewport, origin: y)
         #expect(arrival.origin == afterArrival)
     }
@@ -525,7 +526,8 @@ struct TranscriptPlacementTests {
         let reader = Model.reduce(.landing(.end), .readerScrolled(to: y),
                                   rows: rows, viewport: viewport, origin: 1_566)
         #expect(reader.origin == nil)
-        let unchanged = Model.layoutEvent(from: rows, viewport: viewport, to: rows, viewport: viewport)
+        let unchanged = Model.layoutEvent(from: Model.complete(rows, viewport: viewport, origin: y),
+                                          to: Model.complete(rows, viewport: viewport, origin: y))
         #expect(unchanged == nil)
         let unchangedPlacement = unchanged.map {
             Model.reduce(reader.intent, $0, rows: rows, viewport: viewport, origin: y)
@@ -533,7 +535,8 @@ struct TranscriptPlacementTests {
         #expect(unchangedPlacement?.origin == nil)
         if reader.intent == .following {
             let appended = frames(21)
-            let event = Model.layoutEvent(from: rows, viewport: viewport, to: appended, viewport: viewport)
+            let event = Model.layoutEvent(from: Model.complete(rows, viewport: viewport, origin: y),
+                                          to: Model.complete(appended, viewport: viewport, origin: y))
             #expect(event == .layoutChanged)
             let placed = event.map {
                 Model.reduce(reader.intent, $0, rows: appended, viewport: viewport, origin: y)
@@ -546,7 +549,28 @@ struct TranscriptPlacementTests {
     @Test func widthChangesAreRealLayoutEvenWhenTheRowsKeepTheSameHeights() {
         let rows = frames()
         let wider = Model.Viewport(width: 732, height: 600, topInset: 50, bottomInset: 150)
-        #expect(Model.layoutEvent(from: rows, viewport: viewport, to: rows, viewport: wider) == .layoutChanged)
+        #expect(Model.layoutEvent(from: Model.complete(rows, viewport: viewport, origin: 1_536),
+                                 to: Model.complete(rows, viewport: wider, origin: 1_536)) == .layoutChanged)
         #expect(Model.reduce(.following, .layoutChanged, rows: rows, viewport: wider, origin: 1_536).origin == 1_566)
+    }
+}
+
+/// Complete geometry, every row measured, with the document ending one clearance below the last row.
+private extension TranscriptPlacement {
+    static func end(_ rows: [RowFrame]) -> CGFloat {
+        (rows.last?.bottom ?? 0) + endClearance
+    }
+
+    static func complete(_ rows: [RowFrame], viewport: Viewport, origin: CGFloat) -> Layout {
+        Layout(rows: rows.map { .init(id: $0.id, order: $0.order, isAnchorable: $0.isAnchorable) },
+               frames: rows, viewport: viewport, origin: origin, documentEnd: end(rows))
+    }
+
+    /// Reader input reports the origin it scrolled to, so the layout takes that origin.
+    static func reduce(_ intent: Intent, _ event: Event, rows: [RowFrame],
+                       viewport: Viewport, origin: CGFloat) -> TranscriptPlacement {
+        var origin = origin
+        if case .readerScrolled(let y) = event { origin = y }
+        return reduce(intent, event, layout: complete(rows, viewport: viewport, origin: origin))
     }
 }

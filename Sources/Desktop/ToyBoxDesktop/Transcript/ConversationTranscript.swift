@@ -972,12 +972,6 @@ struct TranscriptRestoringHistory: PreferenceKey {
     static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
 }
 
-/// The keys a row's messages measure their frames under.
-extension TranscriptRow {
-    /// The IDs whose frames the transcript tracks for this row: its messages, the row and its system group.
-    var frameIDs: [String] { messages.map(\.id) + [id, "system-group-\(id)"] }
-}
-
 /// Scroll geometry changes on every frame of a scroll. Kept out of SwiftUI's tracking, it lets a
 /// scroll run without re-running the transcript's body and diffing every loaded row. Only what a
 /// frame actually changes, like the visible message or reaching the bottom, is published as state.

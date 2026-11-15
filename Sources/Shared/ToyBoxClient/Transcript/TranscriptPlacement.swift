@@ -150,14 +150,6 @@ public struct TranscriptPlacement: Equatable, Sendable {
         case toggledExpansion(RowID, expanded: Bool)
     }
 
-    public static func reduce(_ intent: Intent, _ event: Event, rows: [RowFrame],
-                              viewport: Viewport, origin: CGFloat) -> TranscriptPlacement {
-        precondition(origin.isFinite)
-        let currentOrigin: CGFloat
-        if case .readerScrolled(let y) = event { currentOrigin = y } else { currentOrigin = origin }
-        return reduce(intent, event, layout: completeLayout(rows, viewport: viewport, origin: currentOrigin))
-    }
-
     public static func reduce(_ intent: Intent, _ event: Event, layout: Layout) -> TranscriptPlacement {
         switch event {
         case .readerScrolled(let y):
@@ -202,11 +194,6 @@ public struct TranscriptPlacement: Equatable, Sendable {
         }
     }
 
-    /// Projects an existing intent onto current geometry without reducing an event.
-    public static func placement(for intent: Intent, rows: [RowFrame], viewport: Viewport) -> TranscriptPlacement {
-        place(intent, layout: completeLayout(rows, viewport: viewport, origin: 0))
-    }
-
     public static func placement(for intent: Intent, layout: Layout) -> TranscriptPlacement {
         place(intent, layout: layout)
     }
@@ -222,22 +209,6 @@ public struct TranscriptPlacement: Equatable, Sendable {
 
     public static func distanceToEnd(in layout: Layout) -> CGFloat {
         return max(0, layout.documentEnd - layout.origin - layout.viewport.height + layout.viewport.bottomInset)
-    }
-
-    /// Repeated native layout passes and content-only changes must not undo a reader's position.
-    public static func layoutEvent(from oldRows: [RowFrame], viewport oldViewport: Viewport,
-                                   to rows: [RowFrame], viewport: Viewport) -> Event? {
-        oldViewport != viewport || oldRows != rows ? .layoutChanged : nil
-    }
-
-    /// The sole end clearance. The container's document height is this value, without extra padding.
-    public static func end(_ rows: [RowFrame]) -> CGFloat {
-        (rows.last?.bottom ?? 0) + endClearance
-    }
-
-    public static func distanceToEnd(_ origin: CGFloat, rows: [RowFrame], viewport: Viewport) -> CGFloat {
-        precondition(origin.isFinite)
-        return max(0, end(rows) - origin - viewport.height + viewport.bottomInset)
     }
 
     /// Preserves read eligibility: at least 24 unobscured points, or half of a shorter row.
@@ -262,11 +233,6 @@ public struct TranscriptPlacement: Equatable, Sendable {
         let starting = rows.first { $0.isAnchorable && $0.height > 0 && $0.top >= top && $0.top < bottom }
         let covering = rows.first { $0.isAnchorable && $0.top < top && $0.bottom > top }
         return (starting ?? covering).map { Anchor(row: $0.id, order: $0.order, offset: $0.top - top) }
-    }
-
-    private static func completeLayout(_ rows: [RowFrame], viewport: Viewport, origin: CGFloat) -> Layout {
-        Layout(rows: rows.map { .init(id: $0.id, order: $0.order, isAnchorable: $0.isAnchorable) },
-               frames: rows, viewport: viewport, origin: origin, documentEnd: end(rows))
     }
 
     private static func intentForPosition(_ layout: Layout, allowsFollowing: Bool) -> Intent? {

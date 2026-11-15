@@ -2,11 +2,6 @@ import ToyBoxKit
 import Foundation
 
 public enum TranscriptLanding {
-    public enum Target: Equatable {
-        case latest
-        case unread(String)
-    }
-
     public struct Opening: Equatable {
         public var rowID: String
         public var unreadAfter: Int
@@ -24,11 +19,6 @@ public enum TranscriptLanding {
         case placeColdOpening
         case correctPosition
         case settled
-    }
-
-    public static func target(unreadAfter: Int?, rows: [TranscriptRow]) -> Target {
-        guard let index = unreadIndex(after: unreadAfter, in: rows) else { return .latest }
-        return .unread(rows[index].id)
     }
 
     public static func opening(unreadAfter: Int?, oldestSequence: Int?, hasOlderMessages: Bool,
