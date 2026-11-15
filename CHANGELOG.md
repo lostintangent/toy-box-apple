@@ -6,6 +6,7 @@
 
 - Pressing Send while dictation is still getting ready sends what you typed and leaves the microphone off, instead of it starting to listen in your next message.
 - Closing Bookmarks before it finishes finding an older message no longer leaves the conversation stuck on "Couldn't load older messages", so scrolling back keeps loading earlier history.
+- When a channel opens with a summary of what you missed, the New divider stays where it first appears instead of jumping up a moment later, so you start reading in the right place.
 
 ## iPhone 0.1.40
 

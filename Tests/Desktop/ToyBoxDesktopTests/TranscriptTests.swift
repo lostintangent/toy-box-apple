@@ -427,7 +427,8 @@ struct TranscriptTests {
         try await harness.waitUntil { !log.drawn.isEmpty }
         try await harness.settled()
 
-        #expect(log.hiddenTurns > 0)
+        // Only a summary card, which lays out a pass after the rows, holds them back.
+        #expect(log.hiddenTurns <= (summarizes ? 1 : 0), "The rows hid for \(log.hiddenTurns) passes")
         let first = try #require(log.drawn.first ?? nil, "The first frame drawn has no divider")
         if !opensAtBottom {
             #expect(first.minY >= -0.5 && first.minY < 120, "The first frame drew the divider at \(first)")
@@ -441,7 +442,8 @@ struct TranscriptTests {
             try await harness.waitUntil { (harness.capture.frames["divider-m31"]?.rect.height ?? 0) > first.height + 40 }
             try await harness.settled()
         }
-        #expect(log.drawn.allSatisfy { $0.map { abs($0.minY - first.minY) < 0.5 } == true },
+        // Ending the bottom anchor after a short tail lands can leave SwiftUI's scroll one pixel short.
+        #expect(log.drawn.allSatisfy { $0.map { abs($0.minY - first.minY) <= 0.5 } == true },
                 "The divider moved after the first frame: \(log.drawn.map { $0?.minY })")
         #expect(harness.readRequests == 0)
 
