@@ -1835,7 +1835,9 @@ catch-up summary. Scrolling up loads the real unread boundary in its original pl
 When a catch-up summary is eligible, land on its card instead (see Catch-up summaries).
 Older pages load only through reader paging, Find navigation or Reveal.
 Follow incoming messages only while within
-48 points of the end, or immediately after the user's own successful post. If scrolled away, a
+48 points of the end, or immediately after the user's own successful post. A landing the end stopped
+short of its row is at the end, so a message arriving below it follows, while a catch-up card's
+landing keeps its top pinned (see Catch-up summaries). If scrolled away, a
 small glass Jump to Latest capsule appears in the floating activity row above the composer.
 It shares that row with the working summary when present. On the phone, those pills and the transient notices use plain regular glass with no tint, like the toolbar. They and the composer float over the transcript like Messages: the conversation keeps the system's default bottom scroll edge, so rows pass behind the glass right to the screen edge with no band or hairline. Never add `.hard`, a band or a fill behind them. In Dark over a bright image, the placeholder and Find's result count read faintly. That is the deliberate cost of floating plain glass. Preserve the visible top message and its offset while prepending history. While reading above the end, rows only move when the reader scrolls: when a row above the viewport changes height, or the lazy stack corrects its estimate for rows it hasn't built yet, the first row starting in the viewport keeps its place, and a row starting in the viewport grows downward. One mechanism holds the reader's place while reading, never two correcting the same change. Following the end, landing, jumps, reveals and paging own the position instead. A window change keeps the reading position, or the end while following. During a live resize drag, the reader's row only has to stay on screen, and its exact place returns when the drag ends. At the top,
 show Load Older Messages when more history is available, a small loading row while fetching, or
