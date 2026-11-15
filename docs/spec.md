@@ -1455,7 +1455,7 @@ changes and the band never blinks off and on. It still ignores taps.
 | --- | --- | --- | --- |
 | Surface | None | An opaque card: `systemBackground`, then the phone's 7% neutral lift and accent at 9%, so the dimmed rows never show through. 20-point continuous corners, with the sides under Edges. A 0.5-point edge of accent at 30%, or the Increased Contrast edge when that's on, and a shadow of black at 30% in Dark or 12% in Light, 24-point radius, 8 points down | Starts on the row's frame. Folded, the `systemBackground` base is solid from the first frame, since it matches the list's background under the row, and the lift, accent, edge and shadow fade in over 0.2 seconds as the card grows with the spring. On the glass sidebar, the base, wash and edge are all there from the first frame and only the shadow fades in |
 | Mark | The channel's 28-point avatar | The avatar's 28-point rounded square in accent at 15%, with an accent `mic.fill`. Never a solid fill, because Send is the only filled control | The avatar, mic and check share one 28-point tile with the avatar's continuous corners, so the mark keeps one shape and only its face changes. The avatar fades as the symbol scales in from 50%, and the way back runs in reverse. The mic and the check swap with `.contentTransition(.symbolEffect(.replace))`. With Reduce Motion, every swap is a crossfade |
-| Time and chevron | Last activity, then the folded `chevron.forward` | The elapsed time, "0:06", in caption, secondary and tabular, on the time's exact baseline and trailing edge. The chevron's space stays empty, so nothing on the top line shifts | The time leaves with a 2-point blur and fade over 0.15 seconds, then the counter fades in over 0.15 seconds, so the two never show together. Every later swap in this slot, to Offline or back to the time, works the same way, except at the settle. The chevron and attention mark fade out with the time. The counter's digits change in place, with no transition |
+| Time and chevron | Last activity, then the folded `chevron.forward` | The elapsed time, "0:06", in caption, secondary and tabular, on the time's exact baseline and trailing edge. The chevron's space stays empty, so nothing on the top line shifts | The time leaves with a 2-point blur and fade over 0.15 seconds, then the counter fades in over 0.15 seconds, so the two never show together. Every later swap in this slot, to Offline or back to the time, works the same way. The chevron and attention mark fade out with the time. The counter's digits change in place, with no transition |
 | Line 2 | Folder or purpose, working stack, attention | The waveform, 24 high | Line 2 fades out with a 2-point blur over 0.15 seconds as the bars rise from 20% of their height |
 | Words | None | Body text 8 points below the waveform, up to five lines, then the oldest line scrolls under a 12-point top fade. "Listening…" in secondary until the first word. Tentative words are secondary and settle to primary as they finalize | Each new line grows the card with `.smooth(duration: 0.25)`. Up to five lines, the lines already shown hold still and the new one appears beneath them, while the controls and the card's bottom edge move down together in that one transaction. Once the card holds its bottom near the end of the list, the heading, the lines and the top edge move up together instead. Only from the sixth line does the text move, as the oldest line slides up under the fade |
 | Controls | None | A trailing pair 10 points below the words: Cancel, a 32-point circle of primary at 12% with `xmark`, then 12 points, then Send, the composer's 32-point accent circle with a white `arrow.up`. Both have 44-point hit targets. Send keeps the quaternary fill until the first word shows, tentative or finalized | Fade in and scale from 90%, 0.06 seconds behind the spring |
@@ -1504,19 +1504,17 @@ disabled.
      corners, because a solid bright square reads larger than the avatar beside it. The surface
      beneath shows through the check. Nothing rings or pulses around it.
      `.sensoryFeedback(.success)` plays as it arrives.
-   - The counter gives way to the time the note was sent, in the row's ordinary format, through
-     the slot's swap. No word says Sent, because the check does.
+   - The counter gives way to the row's own time through the slot's swap, as on Cancel. No word
+     says Sent, because the check does.
    - The card's fill, edge and shadow fade out as it lands, as on Cancel, since the check alone
      says the note went.
 4. As the card lands, it hands back to the list's own row, which carries the rest of the beat
-   in its own slots and ink: the check in place of its mark and the note's time as its time.
-   The chevron and attention mark fade back, so the row looks ordinary except that it wears the
-   check in place of its mark.
+   in its own slots and ink. The chevron and attention mark fade back, so the row looks ordinary
+   except that it wears the check in place of its mark.
 5. Two seconds after the card lands, the check fades back into the channel's avatar,
    as the Mark row describes. That's the settle, and the row is an ordinary row with no preview
-   of the note. The note's time becomes the row's own time without a swap, since both read the
-   same. Swiping the row again before the settle starts a new note, and the check swaps straight
-   to the mic.
+   of the note. Swiping the row again before the settle starts a new note, and the check swaps
+   straight to the mic.
 
 On the open channel's row, the selection band returns as the card lands. The row's ink is the list's own throughout, so it always matches the band, and the
 check stays green on it.
