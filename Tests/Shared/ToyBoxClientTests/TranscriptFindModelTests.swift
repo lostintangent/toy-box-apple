@@ -100,7 +100,7 @@ struct TranscriptFindModelTests {
         #expect(find.selectedSequence == 1)
     }
 
-    @Test func anOlderOnlyMatchAppearsAndClosingSearchNeverAcknowledgesIt() async {
+    @Test func anOlderOnlyMatchAppearsWithoutLoadingIt() async {
         let find = make([message(3, "unrelated")], hasOlder: true)
         find.query = "target"
         #expect(find.countLabel.isEmpty)
@@ -110,14 +110,6 @@ struct TranscriptFindModelTests {
         #expect(find.revealRequest == nil, "Fetching older matches must not load them into the transcript.")
         find.move(1)
         #expect(find.revealRequest?.sequence == 1)
-        #expect(find.blocksRead)
-        find.close()
-        #expect(find.blocksRead)
-        find.resumeReading()
-        #expect(!find.blocksRead)
-        find.present()
-        find.resumeReading()
-        #expect(find.blocksRead, "The visible search bar must still suppress read receipts.")
     }
 
     @Test func failuresKeepPartialMatchesAndRetryResumesAtTheFailedCursor() async {

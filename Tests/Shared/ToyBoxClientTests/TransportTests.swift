@@ -400,7 +400,7 @@ struct TransportTests {
         #expect(store.historyError == nil && !store.isLoadingOlder)
     }
 
-    @Test @MainActor func unreadBoundaryRemainsStableWhileReadAdvances() async throws {
+    @Test @MainActor func unreadBoundaryRemainsStableWhileReadAndArrivalsAdvance() async throws {
         var initial = testState(revision: 10, messages: [testMessage(1), testMessage(2)])
         initial.channel.seenThrough = 1
         let snapshot = initial
@@ -419,6 +419,8 @@ struct TransportTests {
         #expect(store.unreadAfter == 1)
         await store.markRead(through: 1)
         #expect(mock.requests.filter { $0.httpMethod == "POST" }.count == 1)
+        _ = try store.apply(.init(type: "message", revision: 11, message: testMessage(3)))
+        #expect(store.unreadAfter == 1, "An arrival during the visit leaves New where it opened")
     }
 
     /// Transcript's read task is cancelled whenever the visible sequence moves, which used to cancel
