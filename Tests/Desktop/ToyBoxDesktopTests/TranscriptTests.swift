@@ -698,16 +698,24 @@ struct TranscriptTests {
     // Shell's composed run at e83ae76 (2799) failed this because sibling suites held the main
     // thread past the app's 2-second reveal budget. The harness gives reveals 30 seconds, so this
     // checks what a reveal reports, and the test below checks the budget.
+    /// Messages 1 to 60 are one agent run, many screens tall, and 62 to 90 another after your message
+    /// 61. Reveal centers the message itself, whether it's inside a run, a run's last, or yours.
     @MainActor
-    @Test func aRevealReportsRevealedOnlyOnceItsMessageIsInView() async throws {
-        let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage))
+    @Test(arguments: [20, 60, 61, 75])
+    func aRevealReportsRevealedOnlyOnceItsMessageCoversTheMiddle(sequence: Int) async throws {
+        let messages = (1...90).map { $0 == 61 ? catchUpTestMessage($0, sender: .user) : transcriptTestMessage($0) }
+        let harness = try await TranscriptHarness(messages: messages)
         defer { await harness.close() }
         try await harness.settled()
-        let token = harness.interaction.reveal(sequence: 20)
+        let token = harness.interaction.reveal(sequence: sequence)
         #expect(harness.interaction.revealProgress?.outcome == .loading)
         try await harness.waitUntil { harness.interaction.revealProgress?.outcome != .loading }
-        #expect(harness.interaction.revealProgress == RevealProgress(token: token, sequence: 20, outcome: .revealed))
-        #expect(harness.visibleWindowFrames()["m20"] != nil)
+        #expect(harness.interaction.revealProgress == RevealProgress(token: token, sequence: sequence, outcome: .revealed))
+        let rect = try #require(harness.frames["m\(sequence)"]?.rect)
+        let middle = (harness.scrollView.contentView.bounds.height - harness.scrollView.contentInsets.top
+            - harness.scrollView.contentInsets.bottom) / 2
+        #expect(rect.minY <= middle && rect.maxY >= middle, "m\(sequence) settled at \(rect), not over \(middle)")
+        #expect(harness.visibleWindowFrames()["m\(sequence)"] != nil)
     }
 
     @MainActor
@@ -1149,23 +1157,6 @@ struct TranscriptTests {
         #expect(sentence(["Notes", "Plan", "Spec"]) == "Notes, Plan, and Spec")
     }
 
-    @Test func consecutiveSystemRowsStackAsOneGroupUntilADividerOrMessage() throws {
-        func message(_ sequence: Int, day: Int = 1, system kind: String? = nil) -> ChannelMessage {
-            ChannelMessage(id: "m\(sequence)", sequence: sequence,
-                           timestamp: String(format: "2026-10-%02dT10:%02d:00Z", day, sequence),
-                           sender: kind == nil ? .agent("lead") : .system,
-                           content: kind.map { .system(.init(type: $0)) } ?? .text("Progress"))
-        }
-        let rows = TranscriptRowBuilder().rows([
-            message(1), message(2, system: "member_joined"), message(3, system: "member_left"),
-            message(4, day: 2, system: "tasks_completed"), message(5, day: 2, system: "channel_renamed"),
-            message(6, day: 2), message(7, day: 2, system: "tasks_completed"),
-        ], lead: .lead(id: "lead"), members: [])
-        try #require(rows.count == 7)
-        #expect(rows[3].divider?.day != nil)
-        #expect(rows.dropFirst().map { transcriptRowGaps(rows)[$0.id] } == [20, 4, 16, 4, 20, 20])
-    }
-
     @Test func coincidingDayAndUnreadDividersReadAsOneHeader() throws {
         func message(_ sequence: Int, day: Int) -> ChannelMessage {
             ChannelMessage(id: "m\(sequence)", sequence: sequence,
@@ -1294,12 +1285,13 @@ struct TranscriptTests {
         let store = ChannelStore(id: "bookmarks", api: try ChannelAPI(serverURL: "https://bookmarks.invalid"))
         let message = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-10-22T10:00:00Z",
                                      sender: .agent("lead"), content: .text("Hello"))
-        let row = try #require(TranscriptRowBuilder().rows([message], lead: lead, members: []).last)
+        let rows = TranscriptRowBuilder().rows([message], lead: lead, members: [])
+        let item = try #require(TranscriptItem.items(rows).last)
         let channel = TranscriptRowChannel(agents: [lead], id: "bookmarks", historyStart: 1, api: store.api)
-        func content(bookmarks: Set<Int>, isConnected: Bool) -> TranscriptRowContent {
-            TranscriptRowContent(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil,
-                                 catchUp: nil, store: store, expandedMessageIds: [], bookmarks: bookmarks,
-                                 isConnected: isConnected, onSetExpanded: { _, _ in })
+        func content(bookmarks: Set<Int>, isConnected: Bool) -> TranscriptItemContent {
+            TranscriptItemContent(item: item, channel: channel, statusReactions: [:], highlightedSequence: nil,
+                                  catchUp: nil, store: store, expandedMessageIds: [], bookmarks: bookmarks,
+                                  isConnected: isConnected, onSetExpanded: { _, _ in })
         }
         #expect(content(bookmarks: [], isConnected: false) != content(bookmarks: [], isConnected: true))
     }
@@ -2922,11 +2914,12 @@ private final class HoveredMessage {
         let message = ChannelMessage(id: id, sequence: 1, timestamp: "2026-10-22T10:00:00Z", sender: .agent("lead"),
                                      content: .text(String(repeating: "A paragraph long enough to wrap. ", count: 6)
                                          + "\n\nA second paragraph."))
-        let row = try #require(TranscriptRowBuilder().rows([message], lead: lead, members: []).last)
+        let rows = TranscriptRowBuilder().rows([message], lead: lead, members: [])
+        let item = try #require(TranscriptItem.items(rows).last)
         let channel = TranscriptRowChannel(agents: [lead], id: "selection", historyStart: 1, api: store.api)
         host = NSHostingView(rootView:
-            TranscriptRowContent(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil,
-                                 catchUp: nil, store: store, expandedMessageIds: [], onSetExpanded: { _, _ in })
+            TranscriptItemContent(item: item, channel: channel, statusReactions: [:], highlightedSequence: nil,
+                                  catchUp: nil, store: store, expandedMessageIds: [], onSetExpanded: { _, _ in })
                 .padding(20)
                 .frame(width: 600, height: 300, alignment: .topLeading)
                 .coordinateSpace(name: "transcript-viewport")

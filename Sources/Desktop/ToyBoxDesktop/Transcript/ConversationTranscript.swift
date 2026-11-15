@@ -321,7 +321,7 @@ struct ConversationTranscript: View {
 
     private func conversationRows(proxy: ScrollViewProxy) -> some View {
         let rows = rows
-        let gaps = transcriptRowGaps(rows)
+        let items = TranscriptItem.items(rows)
         let channel = TranscriptRowChannel(agents: store.roster, id: store.id,
                                            historyStart: store.messages.first?.sequence ?? 0, api: store.api)
         let statusReactions = statusReactions
@@ -332,8 +332,8 @@ struct ConversationTranscript: View {
                                                       isConnected: store.phase.isConnected)
         return LazyVStack(alignment: .leading, spacing: 0) {
             historyHeader
-            ForEach(rows) { row in
-                TranscriptRowContent(row: row, channel: channel, statusReactions: statusReactions,
+            ForEach(items) { item in
+                TranscriptItemContent(item: item, channel: channel, statusReactions: statusReactions,
                                      highlightedSequence: highlightedSequence, catchUp: catchUp, store: store,
                                      requestChoices: requestChoices,
                                      expandedMessageIds: expandedMessageIds,
@@ -356,7 +356,7 @@ struct ConversationTranscript: View {
                                          }
                                      })
                     .equatable()
-                    .padding(.top, gaps[row.id] ?? TranscriptSpacing.run)
+                    .padding(.top, item.spacing)
             }
             let outgoing = store.sending
             let sendingDividers = TranscriptRowBuilder.pendingDividers(outgoing.map(\.message),
@@ -680,8 +680,8 @@ struct ConversationTranscript: View {
         let individualSystem = ChannelArtifactGroup.Verb(systemType: message.system?.type) != nil
             || (membership && row.messages.contains(where: { expandedMessageIds.contains($0.id) }))
         let targetID = message.isSystem && !individualSystem ? row.id : message.id
-        guard let outcome = await settleReveal(targetID: targetID, rowID: row.id, token: token,
-                                               findToken: findToken, using: proxy) else { return nil }
+        guard let outcome = await settleReveal(targetID: targetID, itemID: message.isSystem ? row.id : message.id,
+                                               token: token, findToken: findToken, using: proxy) else { return nil }
         interaction.finishReveal(token, outcome)
         guard outcome == .revealed else { return outcome }
         highlightedSequence = find.isPresented ? nil : sequence
@@ -709,7 +709,7 @@ struct ConversationTranscript: View {
     }
 
     /// Nil when another reveal, Find or the artifact viewer superseded this one.
-    private func settleReveal(targetID: String, rowID: String, token: UUID, findToken: UUID?,
+    private func settleReveal(targetID: String, itemID: String, token: UUID, findToken: UUID?,
                               using proxy: ScrollViewProxy) async -> RevealProgress.Outcome? {
         let turns = TranscriptLayoutTurns()
         let deadline = ContinuousClock.now + revealTimeout
@@ -726,7 +726,7 @@ struct ConversationTranscript: View {
                 viewport: viewport, nativeTop: window.viewportTop) else {
                 _ = reveal.receive(nil, isAligned: false)
                 if !materialized {
-                    proxy.scrollTo(rowID, anchor: .center)
+                    proxy.scrollTo(itemID, anchor: .center)
                     materialized = true
                     #if TOY_BOX_BENCHMARK
                     BenchmarkReveal.wrote()
@@ -835,8 +835,8 @@ struct ConversationTranscript: View {
             } else {
                 alignedSince = nil
                 if !requestedMaterialization {
-                    let row = rows.first { $0.messages.contains { $0.id == anchor.id } }
-                    proxy.scrollTo(row?.id ?? anchor.id, anchor: .top)
+                    let item = TranscriptItem.items(rows).first { $0.messages.contains { $0.id == anchor.id } }
+                    proxy.scrollTo(item?.id ?? anchor.id, anchor: .top)
                     requestedMaterialization = true
                 }
             }

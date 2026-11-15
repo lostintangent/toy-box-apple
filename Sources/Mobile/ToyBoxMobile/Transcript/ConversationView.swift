@@ -251,7 +251,7 @@ struct ConversationView: View {
         let rows = rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
                                    unreadAfter: capturedArrival ? arrivalUnreadAfter : store.unreadAfter,
                                    filter: interaction.messageView, bookmarks: store.bookmarks)
-        return transcriptItems(rows)
+        return TranscriptItem.items(rows)
     }
 
     var body: some View {
