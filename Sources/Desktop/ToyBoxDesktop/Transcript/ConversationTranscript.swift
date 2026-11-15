@@ -16,8 +16,6 @@ struct ConversationTranscript: View {
     @Environment(\.channelIntelligence) private var intelligence
     @ViewState var window = TranscriptWindowObserver()
     @ViewState private var geometry = TranscriptScrollGeometry()
-    /// The newest message a reader can see, published only when it changes rather than on every frame.
-    @ViewState private var visibleSequence: Int?
     @ViewState var hasLanded = false
     @ViewState private var isOpeningPlaced = false
     @ViewState var isAtBottom = true
@@ -90,11 +88,10 @@ struct ConversationTranscript: View {
     }
 
     private var read: TranscriptRead {
-        .init(visibleThrough: visibleSequence,
+        .init(latestSequence: store.state?.channel.latestSequence,
               isLooking: !snapshot.isActive && window.isKeyWindow && scenePhase == .active,
               isCovered: viewer?.session != nil || interaction.isArtifactViewerPresented,
-              hasLanded: hasLanded, isMoving: isRevealing || pagingAnchor != nil,
-              isFinding: find.blocksRead, isConnected: store.phase.isConnected)
+              hasLanded: hasLanded, isConnected: store.phase.isConnected)
     }
 
     private var pagingRestoreTarget: PagingRestoreTarget? {
@@ -188,7 +185,9 @@ struct ConversationTranscript: View {
                     interaction.consumeRevealRequest(request.token)
                     await reveal(sequence: request.sequence, using: proxy)
                 }
-                .task(id: read) { await read.mark(in: store) }
+                .onChange(of: read.sequence, initial: true) { _, sequence in
+                    if let sequence { Task { await store.markRead(through: sequence) } }
+                }
                 .task(id: hidesOpening) {
                     guard hidesOpening, (try? await Task.sleep(for: .seconds(1))) != nil, hidesOpening else { return }
                     logBlank("hid its rows for over a second")
@@ -209,7 +208,6 @@ struct ConversationTranscript: View {
             .onChange(of: followsLatest, initial: true) { window.pinsToBottom = followsLatest }
             .onChange(of: interaction.jumpToLatestRequest) {
                 find.close()
-                find.resumeReading()
                 catchUp?.isPinned = false
                 pagingAnchor = nil
                 isAtBottom = true
@@ -280,7 +278,6 @@ struct ConversationTranscript: View {
             geometry.viewport = new
             showPlacedOpening()
             followReaderWhilePaging()
-            publishVisibleSequence()
             pointer.contentDidMove(byReader: isUserScrolling || !isAtBottom || !update.isAtBottom)
             if isAtBottom != update.isAtBottom { isAtBottom = update.isAtBottom }
             let jump = pendingJump
@@ -306,7 +303,6 @@ struct ConversationTranscript: View {
             holdReadingPlace(in: new)
             geometry.frames = new
             showPlacedOpening()
-            publishVisibleSequence()
             followReaderWhilePaging()
             restorePagingAnchor(using: new)
         }
@@ -316,11 +312,9 @@ struct ConversationTranscript: View {
             let scrolling = phase == .tracking || phase == .interacting || phase == .decelerating
             if isUserScrolling != scrolling { isUserScrolling = scrolling }
             if phase == .tracking || phase == .interacting { catchUp?.isPinned = false }
-            if phase == .tracking || phase == .interacting { find.resumeReading() }
             // Before the page lands, the anchor follows the reader instead.
             if (phase == .tracking || phase == .interacting) && pagingRestoreTarget != nil {
                 pagingAnchor = nil
-                publishVisibleSequence()
             }
         }
     }
@@ -424,12 +418,6 @@ struct ConversationTranscript: View {
                 .font(.caption)
             }
         }
-    }
-
-    private func publishVisibleSequence() {
-        guard pagingAnchor == nil else { return }
-        let sequence = viewport.visibleThrough(frames, nativeViewportTop: window.viewportTop ?? viewport.top)
-        if sequence != visibleSequence { visibleSequence = sequence }
     }
 
     func prepareFind() {
@@ -796,7 +784,6 @@ struct ConversationTranscript: View {
             await store.loadOlder()
             if store.historyError != nil || store.state?.messages.first?.sequence == before {
                 pagingAnchor = nil
-                publishVisibleSequence()
                 break
             }
         } while rows.isEmpty && store.hasOlderMessages && !Task.isCancelled
@@ -884,7 +871,6 @@ struct ConversationTranscript: View {
         }
         guard !Task.isCancelled, pagingRestoreTarget == target else { return }
         pagingAnchor = nil
-        publishVisibleSequence()
     }
 }
 

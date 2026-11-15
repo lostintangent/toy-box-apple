@@ -17,7 +17,6 @@ public final class TranscriptFind {
     public private(set) var revealRequest: (sequence: Int, token: UUID)?
     public private(set) var isSearching = false
     public private(set) var error: String?
-    private(set) var ownsReadingPosition = false
     private(set) var retry = UUID()
     @ObservationIgnored private var messages: [String: ChannelMessage] = [:]
     @ObservationIgnored private var rendered: [String: String] = [:]
@@ -27,7 +26,6 @@ public final class TranscriptFind {
     @ObservationIgnored private var hasSeededHistory = false
     @ObservationIgnored private var generation = UUID()
 
-    public var blocksRead: Bool { isPresented || ownsReadingPosition }
     package var selectedIndex: Int? { matches.firstIndex { $0.sequence == selectedSequence } }
     public var countLabel: String {
         if let selectedIndex { return "\(selectedIndex + 1) of \(matches.count)" }
@@ -37,7 +35,6 @@ public final class TranscriptFind {
 
     public func present() {
         isPresented = true
-        ownsReadingPosition = true
     }
 
     public func close() {
@@ -45,8 +42,6 @@ public final class TranscriptFind {
         generation = UUID()
         isSearching = false
     }
-
-    public func resumeReading() { ownsReadingPosition = false }
 
     public func prepare(messages loaded: [ChannelMessage], agents: [ChannelAgent], hasOlder: Bool) {
         loadedSequences = Set(loaded.map(\.sequence))
@@ -96,7 +91,6 @@ public final class TranscriptFind {
             selectedSequence = matches[index].sequence
         }
         if let selectedSequence { revealRequest = (selectedSequence, UUID()) }
-        ownsReadingPosition = true
     }
 
     /// Reads history into this search only. Selection reveals through the channel's normal path.

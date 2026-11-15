@@ -81,7 +81,7 @@ public struct TranscriptViewport: Equatable, Sendable {
         return resized || bottomGap > old.bottomGap ? false : wasAtBottom
     }
 
-    /// The newest message the reader can see, for `TranscriptRead`. Visibility is
+    /// The newest message the reader can see, which the benchmark reports with each place. Visibility is
     /// `TranscriptPlacement.visibleRows`, the one rule on both apps.
     public func visibleThrough(_ frames: [String: TranscriptMessageFrame], nativeViewportTop: CGFloat? = nil) -> Int? {
         // Read in content coordinates when native clipping has outpaced frame preferences.

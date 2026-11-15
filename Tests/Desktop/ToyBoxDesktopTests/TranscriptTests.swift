@@ -351,7 +351,6 @@ struct TranscriptTests {
         let landed = try #require(gaps.values.firstIndex { abs($0) < 2 })
         #expect(gaps.values[landed...].allSatisfy { $0 <= 48 }, "Gaps after the jump: \(gaps.values[landed...])")
         #expect(abs(harness.bottomGap) < 2)
-        #expect(harness.readRequests == 0)
     }
 
     /// Rule 4. A message on its way is drawn exactly as it will be once sent, with the same bubble and
@@ -445,7 +444,6 @@ struct TranscriptTests {
         // Ending the bottom anchor after a short tail lands can leave SwiftUI's scroll one pixel short.
         #expect(log.drawn.allSatisfy { $0.map { abs($0.minY - first.minY) <= 0.5 } == true },
                 "The divider moved after the first frame: \(log.drawn.map { $0?.minY })")
-        #expect(harness.readRequests == 0)
 
         harness.interaction.jumpToLatest()
         try await harness.waitUntil { abs(harness.bottomGap) < 2 }
@@ -525,7 +523,6 @@ struct TranscriptTests {
             let divider = try #require(harness.frames["divider-m31"]?.rect.minY)
             #expect(divider >= -0.5 && divider < 120, "Landed with the divider at \(divider)")
         }
-        #expect(harness.readRequests == 0)
         guard transcriptTimingTestsEnabled else { return }
         func landed(_ pass: TranscriptReopenLog.Pass) -> Bool {
             if readElsewhere { return abs(pass.bottomGap) < 2 && pass.last == 90 }
@@ -559,7 +556,6 @@ struct TranscriptTests {
         #expect(service.catchUpCount == 0)
         let rows = TranscriptRowBuilder().rows(harness.store.messages, lead: .lead(id: "lead"), members: [], unreadAfter: 180)
         #expect(rows.allSatisfy { $0.divider?.unread != true })
-        #expect(harness.readRequests == 0)
     }
 
     @MainActor
@@ -582,7 +578,6 @@ struct TranscriptTests {
                 #expect(abs(after.minY - rect.minY) < 1, "\(id) moved from \(rect) to \(after)")
             }
             #expect(harness.bottomGap > 300)
-            #expect(harness.readRequests == 0)
             return
         }
         // One size per display frame, as a live resize does: taller and back, shorter and back, then a zoom.
@@ -602,7 +597,6 @@ struct TranscriptTests {
         let worst = gaps.max { max(abs($0.drawn), abs($0.nextFrame)) < max(abs($1.drawn), abs($1.nextFrame)) }
         #expect(gaps.allSatisfy { abs($0.drawn) < 1 && abs($0.nextFrame) < 1 },
                 "Worst step: \(String(describing: worst))")
-        #expect(harness.readRequests == 0)
     }
 
     @MainActor
@@ -643,7 +637,6 @@ struct TranscriptTests {
         try await expectInPlace("Clearing")
         find.close()
         try await expectInPlace("Closing")
-        #expect(harness.readRequests == 0)
     }
 
     @MainActor
@@ -664,9 +657,8 @@ struct TranscriptTests {
             let after = harness.windowFrames[id] ?? .null
             #expect(abs(after.minY - rect.minY) < 0.5, "Arrival moved \(id) from \(rect) to \(after)")
         }
-        #expect(harness.readRequests == 0)
         harness.interaction.jumpToLatest()
-        try await harness.waitUntil { !find.blocksRead && abs(harness.bottomGap) < 2 }
+        try await harness.waitUntil { abs(harness.bottomGap) < 2 }
     }
 
     @MainActor
@@ -688,7 +680,6 @@ struct TranscriptTests {
         try await harness.settled()
         #expect(!find.isPresented && harness.findField == nil)
         #expect(harness.interaction.revealRequestToken == revealToken)
-        #expect(harness.readRequests == 0)
 
         harness.interaction.isArtifactViewerPresented = false
         harness.interaction.findInChannel()
@@ -782,7 +773,7 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test func closingFindAtTheBottomRestoresFollowingButKeepsReadSuspended() async throws {
+    @Test func closingFindAtTheBottomRestoresFollowing() async throws {
         let find = TranscriptFind()
         let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), find: find)
         defer { await harness.close() }
@@ -791,10 +782,8 @@ struct TranscriptTests {
         try await harness.waitUntil { find.isPresented && harness.findField != nil }
         find.close()
         try await harness.settled()
-        #expect(find.blocksRead && !find.isPresented)
         harness.push(transcriptTestMessage(91), revision: 2)
         try await harness.waitUntil { harness.store.messages.last?.sequence == 91 && abs(harness.bottomGap) < 2 }
-        #expect(find.blocksRead && harness.readRequests == 0)
     }
 
     @MainActor
@@ -826,7 +815,6 @@ struct TranscriptTests {
         }
         #expect(find.highlights(TranscriptFindHighlight.mac).isEmpty)
         #expect(memberships.allSatisfy { harness.capture.frames[$0.id]?.sequence == $0.sequence })
-        #expect(harness.readRequests == 0)
     }
 
     @MainActor
@@ -857,12 +845,10 @@ struct TranscriptTests {
         try await harness.waitUntil { !find.isSearching && find.countLabel == "1 of 1" }
         try await harness.settled()
         #expect(harness.store.messages.map(\.sequence) == Array(61...90))
-        #expect(harness.readRequests == 0)
 
         harness.interaction.findNext(1)
         try await harness.waitUntil { harness.store.messages.first?.sequence == 1 && harness.isVisible("m2") }
         #expect(harness.interaction.messageView == .all)
-        #expect(harness.readRequests == 0)
     }
 
     @MainActor
@@ -911,7 +897,6 @@ struct TranscriptTests {
             #expect(harness.scrollView.contentView.bounds.minY > 400)
         }
         #expect(!harness.store.hasOlderMessages)
-        #expect(harness.readRequests == 0)
     }
 
     @MainActor
@@ -2330,7 +2315,6 @@ struct TranscriptCatchUpTests {
             let after = harness.capture.frames[id]?.rect ?? .null
             #expect(abs(after.minY - rect.minY) < 1, "\(id) moved from \(rect) to \(after)")
         }
-        #expect(harness.readRequests == 0)
     }
 }
 
@@ -2602,10 +2586,6 @@ private final class TranscriptHarness {
     var bottomGap: CGFloat {
         (scrollView.documentView?.bounds.height ?? 0) - scrollView.contentView.bounds.maxY
             + scrollView.contentInsets.bottom
-    }
-
-    var readRequests: Int {
-        TranscriptServerProtocol.fixtures.withLock { $0[host]?.requests.filter { $0.hasSuffix("/read") }.count ?? 0 }
     }
 
     var streamRequests: Int {

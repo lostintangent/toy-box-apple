@@ -279,7 +279,8 @@ struct TranscriptTests {
         scroll.metrics?.origin = 3750
         _ = scroll.update()
         #expect(scroll.finishedReveal()! == (token, true))
-        #expect(scroll.visibleRows.contains("p40") && !scroll.visibleRows.contains("r10"))
+        let visible = scroll.layout.map(TranscriptPlacement.visibleRows(in:)) ?? []
+        #expect(visible.contains("p40") && !visible.contains("r10"))
     }
 
     /// A store that's already loaded can route its reveal at first appearance, so the conversation
