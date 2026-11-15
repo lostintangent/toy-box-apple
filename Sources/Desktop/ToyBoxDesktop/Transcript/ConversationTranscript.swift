@@ -302,7 +302,6 @@ struct ConversationTranscript: View {
         }
         .onPreferenceChange(TranscriptMessageFrames.self) { new in
             layoutTurns.moved = true
-            holdReadingPlace(in: new)
             geometry.frames = new
             showPlacedOpening()
             publishVisibleSequence()
@@ -352,11 +351,6 @@ struct ConversationTranscript: View {
                                      findHighlights: findHighlights, bookmarks: bookmarks,
                                      isConnected: store.phase.isConnected,
                                      onSetExpanded: { id, expands in
-                                         // The message changes height below its own top, even when
-                                         // that top is above the viewport.
-                                         if let frame = frames[id] {
-                                             geometry.readingAnchor = .init(id: id, contentTop: frame.contentTop)
-                                         }
                                          if expands {
                                              expandedMessageIds.insert(id)
                                              return
@@ -808,31 +802,6 @@ struct ConversationTranscript: View {
         if current != anchor { pagingAnchor = current }
     }
 
-    /// LazyVStack estimates the heights of rows it hasn't built and corrects them as it builds rows
-    /// above the viewport, without moving the offset, so scrolling up moved the reader's rows by
-    /// hundreds of points at a time. In the same pass, the viewport now scrolls by however far the
-    /// first row starting in it moved through the content, so only scrolling moves what's on screen,
-    /// while rows starting in the viewport still grow downward. Each correction costs a second layout
-    /// pass, so a frame or two, but only while rows above change height.
-    private func holdReadingPlace(in frames: [String: TranscriptMessageFrame]) {
-        // Anything else that moves the scroll position owns it outright, so the hold stands down while
-        // following the bottom, landing, paging, jumping or revealing. New code that scrolls the
-        // transcript needs to switch it off here too.
-        let holds = hasLanded && pagingAnchor == nil && pendingJump == nil && !isRevealing
-            && (!isAtBottom || catchUp?.holdsLanding == true)
-        var shift: CGFloat = 0
-        if holds, let anchor = geometry.readingAnchor, let frame = frames[anchor.id] {
-            shift = frame.contentTop - anchor.contentTop
-        } else if holds, geometry.readingAnchor != nil,
-                  let common = viewport.readingAnchor(in: frames.filter { geometry.frames[$0.key] != nil }),
-                  let previous = geometry.frames[common.id] {
-            // The pass that moved the anchor out of the built rows still moved the rows that stayed.
-            shift = common.contentTop - previous.contentTop
-        }
-        if abs(shift) > 0.25 { window.scroll(by: shift) } else { shift = 0 }
-        geometry.readingAnchor = holds ? viewport.readingAnchor(in: frames, scrolledBy: shift) : nil
-    }
-
     @discardableResult
     private func restorePagingAnchor(using frames: [String: TranscriptMessageFrame]) -> Bool {
         guard let anchor = pagingAnchor, !store.isLoadingOlder,
@@ -985,7 +954,6 @@ extension TranscriptRow {
 private final class TranscriptScrollGeometry {
     var viewport = TranscriptViewport()
     var frames: [String: TranscriptMessageFrame] = [:]
-    var readingAnchor: TranscriptReadingAnchor?
 }
 
 struct PagingAnchor: Equatable {

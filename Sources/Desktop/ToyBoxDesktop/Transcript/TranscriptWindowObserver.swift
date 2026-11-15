@@ -107,16 +107,6 @@ final class TranscriptWindowObserver {
         scrollView.reflectScrolledClipView(clip)
     }
 
-    func scroll(by delta: CGFloat) {
-        guard let scrollView, let document = scrollView.documentView, delta.isFinite else { return }
-        let clip = scrollView.contentView
-        let maximum = max(0, document.bounds.height - clip.bounds.height)
-        let target = CGPoint(x: clip.bounds.origin.x,
-                             y: min(maximum, max(0, clip.bounds.origin.y + (document.isFlipped ? delta : -delta))))
-        clip.scroll(to: target)
-        scrollView.reflectScrolledClipView(clip)
-    }
-
     func restoreReadingBottom(_ bottom: CGFloat, of frame: TranscriptMessageFrame) -> Bool {
         guard let scrollView, let document = scrollView.documentView,
               document.isFlipped else { return false }
