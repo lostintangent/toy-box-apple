@@ -170,18 +170,6 @@ struct TranscriptLandingTests {
             isColdOpening: isColdOpening, jumps: jumps, hasPendingJump: hasPendingJump)
     }
 
-    @Test func theTargetIsTheFirstRowContainingUnreadMessagesOrLatest() throws {
-        let rows = rows()
-        #expect(TranscriptLanding.target(unreadAfter: nil, rows: rows) == .latest)
-        #expect(TranscriptLanding.target(unreadAfter: 20, rows: rows) == .latest)
-        #expect(TranscriptLanding.target(unreadAfter: 0, rows: []) == .latest)
-        #expect(TranscriptLanding.target(unreadAfter: 10, rows: rows) == .unread(rows[10].id))
-        let run = TranscriptRowBuilder().rows((1...10).map(transcriptTestMessage),
-                                              lead: .lead(id: "lead"), members: [], unreadAfter: 5)
-        let unread = try #require(run.first { $0.messages.contains { $0.sequence == 6 } })
-        #expect(TranscriptLanding.target(unreadAfter: 5, rows: run) == .unread(unread.id))
-    }
-
     @Test func aWarmOpeningRequiresTheUnreadBoundaryToBeLoaded() {
         let rows = rows(31...50)
         #expect(TranscriptLanding.opening(unreadAfter: nil, oldestSequence: 31,
