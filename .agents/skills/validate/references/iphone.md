@@ -98,7 +98,7 @@ servers for any script that writes. Never skip or retry actions.
 | Script | What it checks |
 | --- | --- |
 | `scripts/mobile/dogfood/drives/posture.json` | Folded, unfolded, then folded, without sending or editing a draft |
-| `scripts/mobile/dogfood/drives/reply.json` | A real reply and send with both display captures. It needs message-row identifiers and baseline request sequence 15, sends on every run, and needs the same live Device Hub posture actions |
+| `scripts/mobile/dogfood/drives/reply.json` | A real reply and send with both display captures. Its first tap opens the request's card, and a second on the card's heading opens the channel. It needs message-row identifiers and baseline request sequence 15, sends on every run, and needs the same live Device Hub posture actions |
 
 ## On a real iPhone
 

@@ -3,6 +3,7 @@
   { "back": true, "ifPresent": true },
   { "tap": "Studio demo" },
   { "wait": "Where should the shared library sit" },
+  { "tap": "Studio demo" },
   { "action": "Reply", "on": "message-15" },
   { "wait": "@Lead" },
   { "type": "Driver t331: place the shared library beside the team desks." },
