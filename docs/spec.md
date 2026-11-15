@@ -1446,8 +1446,8 @@ The row steps once to the card's color as the swipe closes and never dips darker
 own-message fill, a little darker and bluer than the glass, like the user's bubbles in the
 conversation beside it, and its edge and shadow lift it. The open channel's row wears the glass
 selection, a gray band with the row's standard ink. When the note is for that channel, the band
-hides on the card's first frame, so none of it shows around the card, and returns as the Sent
-wash fades or as Cancel's card lands. When the note is for another channel, the open channel's
+hides on the card's first frame, so none of it shows around the card, and returns as the card
+lands. When the note is for another channel, the open channel's
 row keeps its band while its content dims with the rest of the list, so where you are never
 changes and the band never blinks off and on. It still ignores taps.
 
@@ -1496,7 +1496,7 @@ disabled.
      the cell's frame, its top returning to the row if it rose. The rows it covered reappear
      as it shrinks.
    - Line 2's folder or purpose crossfades back in over the second half. Its attention mark
-     waits for the wash to fade.
+     waits for the card to land.
    - The rest of the list returns to full opacity over 0.25 seconds.
    - The mic becomes the done check through `.replace`: a semibold `checkmark` knocked out of the
      mark's rounded square, filled in `ChannelTaskColors.changes(in:).added`, the color a
@@ -1506,20 +1506,19 @@ disabled.
      `.sensoryFeedback(.success)` plays as it arrives.
    - The counter gives way to the time the note was sent, in the row's ordinary format, through
      the slot's swap. No word says Sent, because the check does.
-   - The card's shadow and edge fade out as it lands.
+   - The card's fill, edge and shadow fade out as it lands, as on Cancel, since the check alone
+     says the note went.
 4. As the card lands, it hands back to the list's own row, which carries the rest of the beat
-   in its own slots and ink: the check in place of its mark, the note's time as its time, and
-   the card's fill as a wash in the row highlight's frame and corners. The wash fades over 0.4
-   seconds with `.easeOut`, and the chevron and attention mark fade back. The row now looks
-   ordinary except that it wears the check in place of its mark.
+   in its own slots and ink: the check in place of its mark and the note's time as its time.
+   The chevron and attention mark fade back, so the row looks ordinary except that it wears the
+   check in place of its mark.
 5. Two seconds after the card lands, the check fades back into the channel's avatar,
    as the Mark row describes. That's the settle, and the row is an ordinary row with no preview
    of the note. The note's time becomes the row's own time without a swap, since both read the
    same. Swiping the row again before the settle starts a new note, and the check swaps straight
    to the mic.
 
-On the open channel's row, the wash sits over the selection band, so the band returns as the
-wash fades. The row's ink is the list's own throughout, so it always matches the band, and the
+On the open channel's row, the selection band returns as the card lands. The row's ink is the list's own throughout, so it always matches the band, and the
 check stays green on it.
 
 **Not sent.** The card never waits on the server or reports a failure. A note the outbox can't
