@@ -120,7 +120,7 @@ if (import.meta.main) await main(async () => {
         console.log(`Running on ${simulator.udid}, server ${server}`);
         console.log(`App data: ${data}`);
         if (drive) {
-            await runMobileDrive(drive, simulatorDriveHost(simulator.udid, mobileEnvironment), interruption.signal, {
+            await runMobileDrive(drive, simulatorDriveHost(simulator.udid, mobileEnvironment, server), interruption.signal, {
                 ...(launch.contentSize ? { contentSizeCategory: launch.contentSize } : {}),
                 ...(launch.appearance ? { interfaceStyle: launch.appearance } : {}),
             });

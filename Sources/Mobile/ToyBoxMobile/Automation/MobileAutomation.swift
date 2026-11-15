@@ -37,6 +37,8 @@ struct MobileAutomationStep: Decodable, Equatable {
         case zoom(Double, on: String)
         case posture(MobileAutomationPosture)
         case menuAction(String)
+        /// The host sends the app away for this many seconds and brings it back.
+        case background(Double)
     }
 
     let action: Action
@@ -53,12 +55,13 @@ struct MobileAutomationStep: Decodable, Equatable {
         let values = try decoder.container(keyedBy: Key.self)
         let names = Set(values.allKeys.map(\.stringValue))
         let actions = names.intersection(["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "zoom",
-                                          "posture", "menuAction"])
-        guard actions.count == 1, names.isSubset(of: actions.union(["display", "timeout", "ifPresent", "on", "absent"])),
+                                          "posture", "menuAction", "background"])
+        guard actions.count == 1, names.isSubset(of: actions.union(["display", "timeout", "ifPresent", "on", "absent", "post"])),
               let name = actions.first, let key = Key(stringValue: name),
               (!names.contains("display") || name == "screenshot"),
               (!names.contains("ifPresent") || name == "back"),
               (!names.contains("absent") || name == "wait"),
+              (!names.contains("post") || name == "background"),
               (!names.contains("on") || ["action", "scroll", "drag", "zoom"].contains(name)) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
                                                     debugDescription: "Each step needs exactly one supported action."))
@@ -120,6 +123,14 @@ struct MobileAutomationStep: Decodable, Equatable {
             action = .zoom(scale, on: target)
         case "posture":
             action = .posture(try values.decode(MobileAutomationPosture.self, forKey: key))
+        case "background":
+            // The host owns `post` and the return, so the app only needs the time away.
+            let seconds = try values.decode(Double.self, forKey: key)
+            guard seconds.isFinite, seconds > 0, seconds <= timeout - 4 else {
+                throw DecodingError.dataCorruptedError(forKey: key, in: values,
+                                                      debugDescription: "background must be greater than 0 and at least 4 seconds less than the step timeout.")
+            }
+            action = .background(seconds)
         default:
             action = .fold(try values.decode(Bool.self, forKey: key))
         }
@@ -645,6 +656,11 @@ final class MobileAutomationRun {
                               + "but measured \(currentTree().viewport). \(error)")
             }
             return
+        case .background:
+            try await hostAction(timeout: step.timeout)
+            _ = try await wait(timeout: step.timeout) {
+                UIApplication.shared.applicationState == .active ? true : nil
+            }
         case .fold:
             let before = currentTree().viewport
             try await hostAction(timeout: step.timeout)

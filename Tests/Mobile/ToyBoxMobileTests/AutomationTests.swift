@@ -122,14 +122,16 @@ struct AutomationTests {
              {"action":"Reply","on":"message-12"},{"back":true,"ifPresent":true},
              {"wait":"@Lead","absent":true},{"scroll":"down","on":"overview-form"},
              {"drag":"up","on":"conversation-transcript"},{"posture":"folded"},{"posture":"unfolded","timeout":60},
-             {"menuAction":"Edit Channel"},{"zoom":2.5,"on":"screen-canvas"}]
+             {"menuAction":"Edit Channel"},{"zoom":2.5,"on":"screen-canvas"},
+             {"background":3,"post":"/demo/reaction","timeout":10}]
             """.utf8))
         #expect(steps.map(\.action) == [.tap("Studio demo"), .type("Hello"), .wait("Needs you", absent: false),
                                        .screenshot("reply", "3"), .back(ifPresent: false), .fold(false),
                                        .customAction("Reply", on: "message-12"), .back(ifPresent: true),
                                        .wait("@Lead", absent: true), .scroll(.down, on: "overview-form"),
                                        .drag(.up, on: "conversation-transcript"), .posture(.folded), .posture(.unfolded),
-                                       .menuAction("Edit Channel"), .zoom(2.5, on: "screen-canvas")])
+                                       .menuAction("Edit Channel"), .zoom(2.5, on: "screen-canvas"),
+                                       .background(3)])
         #expect(steps[0].timeout == 12 && steps[2].timeout == 20)
         for invalid in [#"{"tap":"x","wait":"x"}"#, #"{"type":""}"#, #"{"back":false}"#,
                         #"{"fold":1}"#, #"{"tap":"x","display":"1"}"#,
@@ -147,7 +149,8 @@ struct AutomationTests {
                         #"{"menuAction":""}"#, #"{"menuAction":"Edit","on":"menu"}"#,
                         #"{"menuAction":"Edit","tap":"Edit"}"#, #"{"zoom":2}"#, #"{"zoom":2,"on":""}"#,
                         #"{"zoom":0,"on":"canvas"}"#, #"{"zoom":"2","on":"canvas"}"#,
-                        #"{"zoom":2,"on":"canvas","display":"1"}"#] {
+                        #"{"zoom":2,"on":"canvas","display":"1"}"#, #"{"background":0}"#,
+                        #"{"background":9}"#, #"{"tap":"x","post":"/demo/reaction"}"#] {
             #expect(throws: DecodingError.self) {
                 try JSONDecoder().decode(MobileAutomationStep.self, from: Data(invalid.utf8))
             }

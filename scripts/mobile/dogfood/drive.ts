@@ -1,6 +1,8 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { isMissing, root } from "../../shared/lib/index.ts";
+import { mobileBundleID } from "../bundle/index.ts";
 
 type Timed = { timeout?: number };
 export type MobileDriveStep = Timed & (
@@ -11,6 +13,7 @@ export type MobileDriveStep = Timed & (
     | { zoom: number; on: string }
     | { posture: "folded" | "unfolded" }
     | { menuAction: string }
+    | { background: number; post?: string }
 );
 export type MobileDriveTraits = { contentSizeCategory: string; interfaceStyle: string };
 type Status = { state: "running" | "ready" | "completed" | "failed"; step: number;
@@ -26,13 +29,13 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
         const fail = (message: string): never => { throw new Error(`Drive step ${index + 1}: ${message}`); };
         if (!record(step)) return fail("expected an action object.");
         const actions = ["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "zoom", "posture",
-            "menuAction"]
+            "menuAction", "background"]
             .filter(key => key in step);
         if (actions.length !== 1) return fail("expected one supported action.");
         const action = actions[0]!;
         const allowed = new Set([action, "timeout", ...(action === "screenshot" ? ["display"] : []),
             ...(action === "back" ? ["ifPresent"] : []), ...(["action", "scroll", "drag", "zoom"].includes(action) ? ["on"] : []),
-            ...(action === "wait" ? ["absent"] : [])]);
+            ...(action === "wait" ? ["absent"] : []), ...(action === "background" ? ["post"] : [])]);
         if (Object.keys(step).some(key => !allowed.has(key))) return fail("unknown action option.");
         const timeout = step.timeout;
         if (timeout !== undefined && (typeof timeout !== "number" || !Number.isFinite(timeout)
@@ -53,6 +56,17 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
             }
             if (typeof step.on !== "string" || !step.on.length) return fail("zoom needs a nonempty on identifier.");
             return { zoom: step.zoom, on: step.on, ...timed };
+        }
+        if (action === "background") {
+            // The host bounds the whole step, away time and return, by its timeout.
+            if (typeof step.background !== "number" || !Number.isFinite(step.background) || step.background <= 0
+                || step.background > (timeout ?? 12) - 4) {
+                return fail("background must be greater than 0 and at least 4 seconds less than the step timeout.");
+            }
+            if (step.post !== undefined && (typeof step.post !== "string" || !step.post.startsWith("/"))) {
+                return fail("post must be a path on the launch server.");
+            }
+            return { background: step.background, ...timed, ...(step.post === undefined ? {} : { post: step.post }) };
         }
         if (action === "posture") {
             if (step.posture !== "folded" && step.posture !== "unfolded") return fail("posture must be folded or unfolded.");
@@ -131,6 +145,7 @@ export type DriveHost = {
     // Abort must terminate and reap the operation's child before its promise settles.
     capture(path: string, display: string, signal: AbortSignal): Promise<void>;
     fold(closed: boolean, signal: AbortSignal): Promise<void>;
+    background(seconds: number, post: string | undefined, signal: AbortSignal): Promise<void>;
 };
 
 type DriveProcess = {
@@ -194,11 +209,11 @@ export class MobileDriveSession {
         if (!step) throw driveFailure(status, "The app reported an unknown step.");
         if (status.state === "failed") throw driveFailure(status, status.error ?? "The app failed.");
         const required = this.drive.steps.slice(0, status.step).findIndex((step, index) =>
-            ("screenshot" in step || "fold" in step) && !this.acknowledged.has(index));
+            hostAcknowledges(step) && !this.acknowledged.has(index));
         if (required !== -1) throw driveFailure(status, `The app skipped host acknowledgement for step ${required + 1}.`);
         if (status.state === "completed") {
             if (status.step !== this.drive.steps.length - 1
-                || (("screenshot" in step || "fold" in step) && !this.acknowledged.has(status.step))) {
+                || (hostAcknowledges(step) && !this.acknowledged.has(status.step))) {
                 throw driveFailure(status, "The app completed before every scripted action finished.");
             }
             if (this.hostError !== undefined) throw driveFailure(status, this.hostError);
@@ -226,6 +241,9 @@ export class MobileDriveSession {
                 console.log(`Captured ${basename(path)}, display ${step.display}.`);
             } else if ("fold" in step) {
                 await this.host.fold(step.fold, operation);
+                operation.throwIfAborted();
+            } else if ("background" in step) {
+                await this.host.background(step.background, step.post, operation);
                 operation.throwIfAborted();
             } else {
                 throw new Error("The app requested a host action for an app-only step.");
@@ -293,7 +311,11 @@ function driveFailure(status: Status, reason: string) {
         + (status.labels.length ? status.labels.map(label => `  ${label}`).join("\n") : "  (none)"));
 }
 
-export function simulatorDriveHost(udid: string, env: NodeJS.ProcessEnv): DriveHost {
+function hostAcknowledges(step: MobileDriveStep) {
+    return "screenshot" in step || "fold" in step || "background" in step;
+}
+
+export function simulatorDriveHost(udid: string, env: NodeJS.ProcessEnv, server: string): DriveHost {
     return {
         async capture(path, display, signal) {
             await mkdir(resolve(path, ".."), { recursive: true });
@@ -307,6 +329,23 @@ export function simulatorDriveHost(udid: string, env: NodeJS.ProcessEnv): DriveH
                 + "and is not a native posture control. No fold continuity proof was produced. "
                 + "Use a posture step and Device Hub's native hinge control for a measured check.\n"
                 + `Native display-control help:\n${help}`);
+        },
+        // Opening Settings sends the app to the background, and launching it again brings back the same process.
+        // An optional POST to the launch server lands halfway through, while the app is away.
+        async background(seconds, post, signal) {
+            const open = async (bundle: string) => {
+                const result = await runMobileSimulatorCommand(["launch", udid, bundle], env, signal);
+                if (result.exitCode) throw new Error(`Opening ${bundle} failed: ${result.stderr.trim()}`);
+            };
+            await open("com.apple.Preferences");
+            await sleep(seconds * 500, undefined, { signal });
+            if (post) {
+                const response = await fetch(new URL(post, server), { method: "POST", signal });
+                if (!response.ok) throw new Error(`POST ${post} failed: ${response.status} ${await response.text()}`);
+                console.log(`Posted ${post} while the app was away.`);
+            }
+            await sleep(seconds * 500, undefined, { signal });
+            await open(mobileBundleID);
         },
     };
 }

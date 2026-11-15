@@ -301,6 +301,23 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
       json(response, 201, message);
       return;
     }
+    // An agent reacts to a message, as a working agent's status does. Without `reaction`, it removes its reaction.
+    if (request.method === 'POST' && pathname === '/demo/reaction') {
+      const sequence = Number(url.searchParams.get('sequence') ?? snapshot.channel.latestSequence);
+      const agentId = url.searchParams.get('agentId') ?? snapshot.lead.id;
+      const reaction = url.searchParams.get('reaction') ?? undefined;
+      const message = snapshot.messages.find((candidate: Snapshot) => candidate.sequence === sequence);
+      if (!message || message.sender.type === 'system') {
+        json(response, 422, { error: 'React to a loaded user or agent message.' }); return;
+      }
+      const reactions = (message.reactions ?? []).filter((existing: Snapshot) => existing.agentId !== agentId);
+      if (reaction) reactions.push({ agentId, reaction });
+      if (reactions.length) message.reactions = reactions; else delete message.reactions;
+      snapshot.revision++;
+      publish({ type: 'reaction', revision: snapshot.revision, sequence, agentId, ...(reaction ? { reaction } : {}) });
+      json(response, 200, { sequence, reactions });
+      return;
+    }
     const bookmarkPath = `${channelPath}/bookmarks/`;
     if ((request.method === 'PUT' || request.method === 'DELETE') && pathname.startsWith(bookmarkPath)) {
       const segment = pathname.slice(bookmarkPath.length);
