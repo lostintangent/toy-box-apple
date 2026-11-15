@@ -102,7 +102,7 @@ struct OverviewTaskNode: View {
     private var expanded: Bool {
         session.taskDisclosure.isExpanded(task, key: task.id)
     }
-    private var owner: ChannelAgent? { task.ownerId.map { ChannelAgent(id: $0, in: store.roster) } }
+    private var owner: ChannelTask.Owner? { task.owner(in: store.roster) }
     private var diff: DiffStats? { task.status == "pending" ? nil : [task].diff }
     private var artifact: ChannelArtifact? { store.artifacts.first { $0.id == task.artifactId } }
 
@@ -218,8 +218,7 @@ struct OverviewTaskNode: View {
     @ViewBuilder
     private var ownerAvatar: some View {
         if let owner {
-            AgentAvatarView(agent: owner, size: layout.ownerWidth)
-                .accessibilityHidden(true)
+            ChannelTaskOwnerAvatar(owner: owner, size: layout.ownerWidth)
         }
     }
 

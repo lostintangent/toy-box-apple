@@ -55,7 +55,4 @@ public struct ChannelTask: Codable, Equatable, Identifiable, Sendable {
     private enum LegacyCodingKeys: String, CodingKey {
         case ownerId
     }
-
-    @available(*, deprecated, message: "Read the owner with owner(in:).")
-    public var ownerId: String? { owner?.agentId }
 }
