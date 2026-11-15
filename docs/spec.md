@@ -1831,7 +1831,7 @@ Older pages load only through reader paging, Find navigation or Reveal.
 Follow incoming messages only while within
 48 points of the end, or immediately after the user's own successful post. If scrolled away, a
 small glass Jump to Latest capsule appears in the floating activity row above the composer.
-It shares that row with the working summary when present. On the phone, those pills and the transient notices use plain regular glass with no tint, like the toolbar. They and the composer float over the transcript like Messages: the conversation keeps the system's default bottom scroll edge, so rows pass behind the glass right to the screen edge with no band or hairline. Never add `.hard`, a band or a fill behind them. In Dark over a bright image, the placeholder and Find's result count read faintly. That is the deliberate cost of floating plain glass. Preserve the visible top message and its offset while prepending history. While reading above the end, rows only move when the reader scrolls: when a row above the viewport changes height, or the lazy stack corrects its estimate for rows it hasn't built yet, the first row starting in the viewport keeps its place, and a row starting in the viewport grows downward. Following the end, landing, jumps, reveals and paging own the position instead. A window change keeps the reading position, or the end while following. During a live resize drag, the reader's row only has to stay on screen, and its exact place returns when the drag ends. At the top,
+It shares that row with the working summary when present. On the phone, those pills and the transient notices use plain regular glass with no tint, like the toolbar. They and the composer float over the transcript like Messages: the conversation keeps the system's default bottom scroll edge, so rows pass behind the glass right to the screen edge with no band or hairline. Never add `.hard`, a band or a fill behind them. In Dark over a bright image, the placeholder and Find's result count read faintly. That is the deliberate cost of floating plain glass. Preserve the visible top message and its offset while prepending history. While reading above the end, rows only move when the reader scrolls: when a row above the viewport changes height, or the lazy stack corrects its estimate for rows it hasn't built yet, the first row starting in the viewport keeps its place, and a row starting in the viewport grows downward. One mechanism holds the reader's place while reading, never two correcting the same change. Following the end, landing, jumps, reveals and paging own the position instead. A window change keeps the reading position, or the end while following. During a live resize drag, the reader's row only has to stay on screen, and its exact place returns when the drag ends. At the top,
 show Load Older Messages when more history is available, a small loading row while fetching, or
 "Couldn't load older messages" with Retry on failure. Once all history is loaded, show no
 "Beginning of conversation" label and reserve no empty header space. A filtered view must
@@ -3973,6 +3973,18 @@ The key-window CPU measurement requires an active app and a visible, uncovered, 
 window. It fails before or during measurement if that state is lost, rather than reporting a low CPU
 result from a window that is not drawing. Activation diagnostics include the native state and the
 window's WindowServer registration.
+
+The reader's place has budgets too, so a change that loses it fails the run like a slow one:
+
+| Place | Budget |
+| --- | --- |
+| Following arrivals | Each arrival leaves the end within 1 point of the bottom |
+| Each older page | The first visible row settles within 0.5 point of where it was |
+| Reveal a page and a half older | The message settles centered within 1 point |
+| Window narrows and widens while following | The end is back within 1 point of the bottom |
+
+Resizing mid-read is reported beside them without a budget until it keeps the reader's row on
+screen and restores its place within 1 point, as the transcript requires.
 
 Scroll also reports actual main-thread CPU ms per 1,000 native points, and paging reports CPU ms
 per older page. These are informational, not budgets. Compare CPU work when the Mac is
