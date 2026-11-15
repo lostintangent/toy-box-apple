@@ -1440,9 +1440,9 @@ hide, so the card never crosses a line. All three return as the card starts shri
 on Cancel, so they're already in place beneath it as it pulls away.
 
 **The glass sidebar.** Unfolded, the sidebar is Liquid Glass, so no opaque base can match a row
-the way the list's background does folded. There the card's whole surface, base and wash, is
-solid from the first frame, and only the edge and shadow fade in. The row steps once to the
-card's color as the swipe closes and never dips darker on the way. The card keeps the user's
+the way the list's background does folded. There the card's whole surface, base, wash and edge,
+is there from the first frame, so the row becomes the card at once, and only the shadow fades in.
+The row steps once to the card's color as the swipe closes and never dips darker on the way. The card keeps the user's
 own-message fill, a little darker and bluer than the glass, like the user's bubbles in the
 conversation beside it, and its edge and shadow lift it. The open channel's row wears the glass
 selection, a gray band with the row's standard ink. When the note is for that channel, the band
@@ -1453,7 +1453,7 @@ changes and the band never blinks off and on. It still ignores taps.
 
 | Part | Row | Recorder | Transition |
 | --- | --- | --- | --- |
-| Surface | None | An opaque card: `systemBackground`, then the phone's 7% neutral lift and accent at 9%, so the dimmed rows never show through. 20-point continuous corners, with the sides under Edges. A 0.5-point edge of accent at 30%, or the Increased Contrast edge when that's on, and a shadow of black at 30% in Dark or 12% in Light, 24-point radius, 8 points down | Starts on the row's frame. Folded, the `systemBackground` base is solid from the first frame, since it matches the list's background under the row, and the lift, accent, edge and shadow fade in over 0.2 seconds as the card grows with the spring. On the glass sidebar, the base and wash are both solid from the first frame and only the edge and shadow fade in |
+| Surface | None | An opaque card: `systemBackground`, then the phone's 7% neutral lift and accent at 9%, so the dimmed rows never show through. 20-point continuous corners, with the sides under Edges. A 0.5-point edge of accent at 30%, or the Increased Contrast edge when that's on, and a shadow of black at 30% in Dark or 12% in Light, 24-point radius, 8 points down | Starts on the row's frame. Folded, the `systemBackground` base is solid from the first frame, since it matches the list's background under the row, and the lift, accent, edge and shadow fade in over 0.2 seconds as the card grows with the spring. On the glass sidebar, the base, wash and edge are all there from the first frame and only the shadow fades in |
 | Mark | The channel's 28-point avatar | The avatar's 28-point rounded square in accent at 15%, with an accent `mic.fill`. Never a solid fill, because Send is the only filled control | The avatar, mic and check share one 28-point tile with the avatar's continuous corners, so the mark keeps one shape and only its face changes. The avatar fades as the symbol scales in from 50%, and the way back runs in reverse. The mic and the check swap with `.contentTransition(.symbolEffect(.replace))`. With Reduce Motion, every swap is a crossfade |
 | Time and chevron | Last activity, then the folded `chevron.forward` | The elapsed time, "0:06", in caption, secondary and tabular, on the time's exact baseline and trailing edge. The chevron's space stays empty, so nothing on the top line shifts | The time leaves with a 2-point blur and fade over 0.15 seconds, then the counter fades in over 0.15 seconds, so the two never show together. Every later swap in this slot, to Offline or back to the time, works the same way, except at the settle. The chevron and attention mark fade out with the time. The counter's digits change in place, with no transition |
 | Line 2 | Folder or purpose, working stack, attention | The waveform, 24 high | Line 2 fades out with a 2-point blur over 0.15 seconds as the bars rise from 20% of their height |
