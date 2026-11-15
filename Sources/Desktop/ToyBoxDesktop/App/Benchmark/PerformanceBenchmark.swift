@@ -56,7 +56,7 @@ import QuartzCore
 @MainActor
 final class PerformanceBenchmark {
     enum Scenario: String, CaseIterable, Sendable {
-        case messages, paging, scroll, place, key
+        case messages, paging, scroll, place, resize, key
         case switching = "switch"
     }
 
@@ -122,6 +122,7 @@ final class PerformanceBenchmark {
             case .paging: await paging()
             case .scroll: await scrolling()
             case .place: await placing()
+            case .resize: await resizing()
             case .key: await keyWindow()
             }
             exit(EXIT_SUCCESS)
@@ -361,6 +362,24 @@ final class PerformanceBenchmark {
         header()
         info("Read on opening", describeRead(placeSnapshot()))
         await measureReveal(in: store)
+    }
+
+    /// Drags the window's edge with every message loaded, once following the latest message and once
+    /// reading mid-transcript.
+    private func resizing() async {
+        await load(channelID)
+        guard let store = store(channelID) else { return }
+        while store.hasOlderMessages {
+            await store.loadOlder()
+            _ = await settled(quiet: 0.3)
+        }
+        let gap = await scrollToEnd()
+        guard gap < 2 else { fail("the transcript stayed \(Int(gap)) pt from the latest message") }
+        header()
+        await measureLiveResize(following: true, loaded: store.messages.count)
+        guard let scroll = transcriptScrollView() else { fail("there's no transcript to resize") }
+        await scrollSteadily(scroll, toTopOffset: offsetFromTop(scroll) / 2)
+        await measureLiveResize(following: false, loaded: store.messages.count)
     }
 
     /// Scrolls again from the latest message with the transcript under the still pointer, where a
@@ -604,6 +623,46 @@ final class PerformanceBenchmark {
                  + describeHold(of: reader?.id, expectedTop: reader?.top, in: settledPlace))
         }
     }
+
+    /// Drags the window's right edge in and back out twice, one step a display frame, through
+    /// AppKit's own live resize.
+    private func measureLiveResize(following: Bool, loaded: Int) async {
+        guard let window, let meter, let scroll = transcriptScrollView(),
+              let source = BenchmarkScrollGeometry.source(in: scroll) else { fail("there's no transcript to resize") }
+        _ = await settled()
+        let original = window.frame
+        let reader = source.benchmarkPlaceSnapshot()?.firstVisible
+        meter.reset()
+        let cpuStart = Self.mainThreadCPU()
+        let drag = LiveResizeDrag(window: window, over: scroll, steps: Self.liveResizeSteps) { [unowned self] in
+            following ? gapToEnd(scroll) : 0
+        }
+        let frames = await drag.run()
+        let cpu = (Self.mainThreadCPU() - cpuStart) * 1000
+        let busy = meter.busy * 1000, longestGap = meter.longestGap * 1000
+        guard frames.liveFrames >= Self.liveResizeSteps.count else {
+            fail("the drag resized the window live on only \(frames.liveFrames) of \(Self.liveResizeSteps.count) steps")
+        }
+        guard abs(window.frame.width - original.width) < 1 else {
+            fail("the drag left the window \(Int(window.frame.width)) pt wide, not \(Int(original.width))")
+        }
+        _ = await settled()
+        let place = following
+            ? String(format: "%.1f pt from the end at most, %.1f pt once settled, ", frames.widestGap,
+                     gapToEnd(scroll)) + describeRead(source.benchmarkPlaceSnapshot())
+            : describeHold(of: reader?.id, expectedTop: reader?.top, in: source.benchmarkPlaceSnapshot())
+        info("Live resize \(following ? "following" : "reading") at \(loaded) loaded",
+             "\(frames.dropped) of \(frames.count) frames dropped, \(format(frames.longest * 1000)) longest frame, "
+             + "\(format(longestGap)) longest main-thread gap, \(format(busy)) busy over \(format(frames.seconds * 1000)), "
+             + "\(format(busy / Double(Self.liveResizeSteps.count))) busy a drag step, \(format(cpu)) main-thread CPU, \(place)")
+    }
+
+    /// Points the right edge moves inward, then back, once a frame. A person's drag runs about
+    /// 4 pt a frame.
+    static let liveResizeSteps: [CGFloat] = {
+        let inward = (1...80).map { -CGFloat($0) * 4 }
+        return inward + inward.reversed().dropFirst() + [0] + inward + inward.reversed().dropFirst() + [0]
+    }()
 
     /// Moves to `offset` until lazy row layout stops moving it.
     private func scrollSteadily(_ scroll: NSScrollView, toTopOffset offset: Double) async {
@@ -1358,6 +1417,83 @@ private final class WheelGesture: NSObject {
         frames.delivery.postedEvents += 1
         frames.delivery.postedDelta += posted.scrollingDeltaY
         NSApp.postEvent(posted, atStart: false)
+    }
+}
+
+/// Presses the window's right edge and drags it through `steps` from the app-local event queue, one
+/// step a display frame, so AppKit runs its own live-resize tracking. The real pointer never moves.
+@MainActor
+private final class LiveResizeDrag: NSObject {
+    struct Frames {
+        var count = 0
+        var dropped = 0
+        var longest: CFTimeInterval = 0
+        var seconds: CFTimeInterval = 0
+        var liveFrames = 0
+        var widestGap = 0.0
+    }
+
+    private weak var window: NSWindow?
+    private weak var scroll: NSScrollView?
+    private let steps: [CGFloat]
+    private let gap: @MainActor () -> Double
+    private var frames = Frames()
+    private var next = 0
+    private var first: CFTimeInterval?
+    private var last: CFTimeInterval?
+    private var anchor = NSPoint.zero
+    private var finished: CheckedContinuation<Frames, Never>?
+
+    init(window: NSWindow, over scroll: NSScrollView, steps: [CGFloat], gap: @escaping @MainActor () -> Double) {
+        self.window = window
+        self.scroll = scroll
+        self.steps = steps
+        self.gap = gap
+    }
+
+    func run() async -> Frames {
+        guard let window, let scroll else { return frames }
+        anchor = NSPoint(x: window.frame.width - 1, y: window.frame.height / 2)
+        post(.leftMouseDown, at: anchor)
+        let link = scroll.displayLink(target: self, selector: #selector(tick(_:)))
+        link.add(to: .main, forMode: .common)
+        let frames = await withCheckedContinuation { finished = $0 }
+        link.invalidate()
+        return frames
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        guard let finished else { return }
+        let now = link.timestamp
+        let duration = link.targetTimestamp - link.timestamp
+        if let last {
+            let spanned = max(1, Int(((now - last) / duration).rounded()))
+            frames.count += spanned
+            frames.dropped += spanned - 1
+            frames.longest = max(frames.longest, now - last)
+            frames.seconds = now - (first ?? now)
+        } else {
+            first = now
+        }
+        last = now
+        if window?.inLiveResize == true { frames.liveFrames += 1 }
+        frames.widestGap = max(frames.widestGap, gap())
+        guard next < steps.count else {
+            post(.leftMouseUp, at: NSPoint(x: anchor.x + (steps.last ?? 0), y: anchor.y))
+            self.finished = nil
+            finished.resume(returning: frames)
+            return
+        }
+        post(.leftMouseDragged, at: NSPoint(x: anchor.x + steps[next], y: anchor.y))
+        next += 1
+    }
+
+    private func post(_ type: NSEvent.EventType, at location: NSPoint) {
+        guard let window, let event = NSEvent.mouseEvent(
+            with: type, location: location, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+            pressure: type == .leftMouseUp ? 0 : 1) else { return }
+        NSApp.postEvent(event, atStart: false)
     }
 }
 

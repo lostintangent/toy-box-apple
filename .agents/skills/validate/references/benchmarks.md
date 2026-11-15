@@ -1,6 +1,6 @@
 # Benchmarks
 
-`SCRATCH_PATH=/tmp/tbm-<you> bun run benchmark [--summaries] [switch|messages|paging|scroll|place|key ...]`
+`SCRATCH_PATH=/tmp/tbm-<you> bun run benchmark [--summaries] [switch|messages|paging|scroll|place|resize|key ...]`
 builds the release `dev.toybox.desktop.benchmark` app, runs each scenario on a fresh
 `bun run demo:perf`, prints each result against its budget and exits 1 if any is over. The spec's
 Performance budgets define busy time, saturated spans and frame gaps.
@@ -19,6 +19,9 @@ so any reference to it goes inside `#if TOY_BOX_BENCHMARK`. Prove a change that 
 - `place` runs only when named. With `messages`, `paging` and `scroll`, it reports whether the reader's place
   holds, as information lines without budgets: arrivals, page inserts, reading up, resizes, a reveal two
   pages back and the sequence the read rule counts as seen.
+- `resize` runs only when named. It loads all of `scroll-demo`'s history and drags the window's right
+  edge in and out through AppKit's live resize, one step a frame, once following and once mid-read. It
+  reports dropped frames, busy time a drag step and where the rows ended, without budgets.
 - Catch-up summaries stay off unless you pass `--summaries`.
 - Only one benchmark runs at a time on this Mac. Others wait for it, so never poll for one yourself.
 - Under load, compare main-thread CPU. Scroll's CPU ms per 1,000 native points and paging's CPU ms
