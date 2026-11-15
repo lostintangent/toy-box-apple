@@ -1564,7 +1564,8 @@ shape, and the Edges and Room rules apply within it. Its Mac sizes: a 30-point m
 words at 13, and Cancel and Send as the composer's 28-point circles 8 points apart. At the
 sidebar's 220-point minimum the words still get a 132-point column. The card takes key focus, so
 Return sends and Escape cancels, and the dimmed rows ignore clicks and hover and never open a
-request popover. The window resigning key, a click outside the card or opening another channel
+request popover. When it closes, on Send or Cancel, key focus returns to the sidebar, so the open
+channel's selection keeps its accent. The window resigning key, a click outside the card or opening another channel
 keeps the words as a draft, the way leaving does on the phone. The rest of this section holds as
 written for the phone's glass sidebar, and the card's view is shared by both apps.
 
