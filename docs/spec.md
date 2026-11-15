@@ -669,6 +669,8 @@ title-bar plate that steps against the sidebar, and do not draw a band or rule u
 toolbar. The active and inactive window must each read as one window. Custom glass is limited
 to the floating composer, the activity row, Jump to Latest, transient notices and the stale
 banner. Reduce Transparency makes glass and material backgrounds opaque. Increase Contrast strengthens separators and control outlines, not saturation alone.
+On the phone, every swipe action is the system's circle with only its symbol, through
+`.labelStyle(.iconOnly)`, and keeps its name for VoiceOver, as the channel list's Delete does.
 Small status, action and diff-count text must reach 4.5:1 against its actual background in both
 appearances. Green additions and red removals need contrast-safe adaptive text colors, not raw
 system green/red that can fail on a light inspector or popover background.
@@ -2842,8 +2844,8 @@ two-line rhythm: body title and footnote date, 4-point title/date gap, 24-point 
 12-point icon/text gap. Team's name/status gap is 2 points. There is no 64-point content minimum.
 Add exactly 6 points of native vertical row inset above and below the minimum-44 label, for both
 short and two-line titles. Rows keep readable content and the full target and are never squeezed to
-60. Rows grow for wrapping or larger text. Phone artifact rows also offer a trailing swipe labelled
-"Remove", hidden under VoiceOver. Swiping all the way across removes the artifact without tapping
+60. Rows grow for wrapping or larger text. Phone artifact rows also offer a trailing Remove swipe,
+`trash` in red, hidden under VoiceOver. Swiping all the way across removes the artifact without tapping
 the button, like Mail. Team and Routines swipes keep full swipe off. The row stays in place with its
 "Removing from channel" spinner until the server's event arrives, so a full swipe must not animate
 it away and bring it back. Its context menu and accessibility action say "Remove from Channel". All
