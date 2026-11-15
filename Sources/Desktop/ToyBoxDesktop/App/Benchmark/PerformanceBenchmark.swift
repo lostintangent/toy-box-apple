@@ -42,14 +42,15 @@ import QuartzCore
 ///   visible row's movement with wheel deltas delivered since the preceding sample, with a 1-point
 ///   drift budget.
 ///
-/// `messages`, `paging`, `scroll` and `place` also report whether the reader's place holds, as
-/// information rather than budgets. `messages` reports how far from the end each arrival leaves the
-/// transcript, `paging` where the first visible row settles after each older page is inserted, and
-/// `scroll` the last sequence the read rule counts as seen once reading up stops, then where the
-/// rows sit after the window narrows and widens, following and mid-transcript.
+/// `messages`, `paging`, `scroll` and `place` also check that the reader's place holds, against
+/// budgets in points. `messages` checks how far from the end each arrival leaves the transcript,
+/// `paging` where the first visible row settles after each older page is inserted, and `scroll`
+/// where the end settles after the window narrows and widens while following. `scroll` also reports
+/// the last sequence the read rule counts as seen once reading up stops, and where a mid-transcript
+/// reader's row sits after the same resize, without a budget.
 /// - `place`: reveals a message a page and a half older than the first page, through the request a
-///   bookmark makes, and reports its time, scroll writes, settle passes, where it centers and what
-///   the read rule counts as seen.
+///   bookmark makes, checks that it settles centered, and reports its time, scroll writes, settle
+///   passes and what the read rule counts as seen.
 /// - `key`: makes the window key, which a person's window is, and measures the whole process's CPU
 ///   while it sits there, first with the channel's own working agents and then with 20 working.
 ///   Animations that run only in the key window, like the working ellipsis, show up here.
@@ -60,7 +61,8 @@ final class PerformanceBenchmark {
         case switching = "switch"
     }
 
-    /// The performance pass's budgets, in milliseconds, at both 100 and 500 messages loaded.
+    /// The performance pass's budgets, in milliseconds or the points they name, at both 100 and 500
+    /// messages loaded.
     enum Budget {
         static let message = 16.0
         static let burstFrameGap = 100.0
@@ -71,6 +73,10 @@ final class PerformanceBenchmark {
         static let scrollDrift = 1.0
         /// Percent of one core, for a key window that's only showing working agents.
         static let keyWindowCPU = 3.0
+        static let arrivalGapPoints = 1.0
+        static let olderPagePlacePoints = 0.5
+        static let revealCenterPoints = 1.0
+        static let resizeGapPoints = 1.0
     }
 
     static let keyWindowSeconds = 15.0
@@ -278,9 +284,11 @@ final class PerformanceBenchmark {
               "\(format(meter.longestGap * 1000)) longest frame gap, \(format(meter.longestSpan * 1000)) longest "
               + "saturated span, \(format(meter.busy * 1000)) busy",
               value: meter.longestGap * 1000, budget: Budget.burstFrameGap)
-        info("Place following arrivals at \(before) loaded\(place)",
-             String(format: "%.1f pt from the end at most after one message, %.1f pt after the burst, ",
-                    widestGap, gapToEnd(scroll)) + describeRead(placeSnapshot()))
+        let burstGap = gapToEnd(scroll)
+        check("Place following arrivals at \(before) loaded\(place)",
+              String(format: "%.1f pt from the end at most after one message, %.1f pt after the burst, ",
+                     widestGap, burstGap) + describeRead(placeSnapshot()),
+              value: max(widestGap, burstGap), budget: Budget.arrivalGapPoints, unit: " pt")
         requireStill(pointer, over: scroll)
     }
 
@@ -320,7 +328,9 @@ final class PerformanceBenchmark {
                   + "\(format(cpuMilliseconds)) main-thread CPU",
                   value: meter.busy * 1000, budget: Budget.olderPage)
             let place = source?.benchmarkPlaceSnapshot()
-            info("Place after older page \(page)", describeHold(of: reader?.id, expectedTop: expected, in: place))
+            check("Place after older page \(page)", describeHold(of: reader?.id, expectedTop: expected, in: place),
+                  value: drift(of: reader?.id, expectedTop: expected, in: place),
+                  budget: Budget.olderPagePlacePoints, unit: " pt")
         }
         guard page > 0 else {
             fail("\(channelID) has no older messages. Measure paging on history-demo from bun run demo:perf.")
@@ -552,6 +562,12 @@ final class PerformanceBenchmark {
             + describeRead(place)
     }
 
+    /// How far `id` settled from where it should be, or infinity when the place is lost.
+    private func drift(of id: String?, expectedTop: CGFloat?, in place: BenchmarkPlace?) -> Double {
+        guard let id, let expectedTop, let top = place?.rows[id]?.minY else { return .infinity }
+        return Double(abs(top - expectedTop))
+    }
+
     /// Reveals a message about a page and a half older than the oldest loaded, through the same
     /// request a bookmark makes, and reports how many scroll writes and settle passes it took.
     private func measureReveal(in store: ChannelStore) async {
@@ -573,21 +589,22 @@ final class PerformanceBenchmark {
         let counts = BenchmarkReveal.counts
         _ = await settled()
         let place = source.benchmarkPlaceSnapshot()
-        let landing: String
+        var offCenter = Double.infinity
         if let id = store.messages.first(where: { $0.sequence == sequence })?.id,
            let rect = place?.rows[id], let place {
-            landing = String(format: "center %.1f pt from the viewport's", Double(abs(rect.midY - place.viewportHeight / 2)))
-        } else {
-            landing = "not built once settled"
+            offCenter = Double(abs(rect.midY - place.viewportHeight / 2))
         }
+        let landing = offCenter.isFinite
+            ? String(format: "center %.1f pt from the viewport's", offCenter) : "not built once settled"
         let result = switch outcome {
         case .revealed: "revealed"
         case .failed(let reason): "failed: \(reason)"
         case .loading, nil: "superseded"
         }
-        info("Reveal \(sequence) from \(oldest) loaded",
-             "\(result) in \(format(seconds * 1000)), \(counts.writes) scroll writes over \(counts.turns) settle passes, "
-             + "\(landing), \(describeRead(place))")
+        check("Reveal \(sequence) from \(oldest) loaded",
+              "\(result) in \(format(seconds * 1000)), \(counts.writes) scroll writes over \(counts.turns) settle passes, "
+              + "\(landing), \(describeRead(place))",
+              value: outcome == .revealed ? offCenter : .infinity, budget: Budget.revealCenterPoints, unit: " pt")
     }
 
     /// Narrows the window and widens it back, once following the latest message and once reading
@@ -605,9 +622,11 @@ final class PerformanceBenchmark {
             _ = await meter.passEnd()
             let next = gapToEnd(scroll)
             _ = await settled()
-            info("Place following, resized to \(Int(frame.width)) pt",
-                 String(format: "%.1f pt from the end on the next pass, %.1f pt once settled, ", Double(next),
-                        Double(gapToEnd(scroll))) + describeRead(source.benchmarkPlaceSnapshot()))
+            let gap = gapToEnd(scroll)
+            check("Place following, resized to \(Int(frame.width)) pt",
+                  String(format: "%.1f pt from the end on the next pass, %.1f pt once settled, ", Double(next),
+                         Double(gap)) + describeRead(source.benchmarkPlaceSnapshot()),
+                  value: Double(gap), budget: Budget.resizeGapPoints, unit: " pt")
         }
         await scrollSteadily(scroll, toTopOffset: offsetFromTop(scroll) / 2)
         for frame in [narrow, original] {
@@ -966,7 +985,7 @@ final class PerformanceBenchmark {
     }
 
     private func check(_ name: String, _ detail: String, value: Double, budget: Double, unit: String = " ms") {
-        emit("  \(name): \(detail) (budget \(Int(budget))\(unit)) \(value <= budget ? "ok" : "OVER")")
+        emit("  \(name): \(detail) (budget \(String(format: "%g", budget))\(unit)) \(value <= budget ? "ok" : "OVER")")
     }
 
     private func info(_ name: String, _ detail: String) {
