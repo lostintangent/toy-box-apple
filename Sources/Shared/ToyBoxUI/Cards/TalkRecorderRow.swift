@@ -4,8 +4,8 @@ import SwiftUI
 
 // The recorder is a card over the list. It opens on the held row's cell and draws the row's own
 // content in the same places, so its mark, time and second line swap in their own slots, then it
-// grows over the dimmed rows. As it lands, it hands back to the list's own row, which carries the
-// check in its own ink. The cell itself never changes height.
+// grows over the dimmed rows. As it lands, its fill and then its row fade over the list's own row,
+// which carries the check in its own ink. The cell itself never changes height.
 // Both apps share it, the Mac at its own sizes. See Talk to the Lead in docs/spec.md.
 
 extension View {
@@ -79,10 +79,11 @@ extension EnvironmentValues {
     }
 }
 
-/// Where the row's text ends, the time's trailing edge or nil when the time leads its own line, and
-/// where its second line ends.
+/// Where the row's mark ends, where its text ends, the time's trailing edge or nil when the time
+/// leads its own line, and where its second line ends.
 private struct TalkEndsKey: PreferenceKey {
     struct Ends {
+        var mark: Anchor<CGPoint>?
         var text: Anchor<CGPoint>?
         var line: Anchor<CGPoint>?
     }
@@ -90,7 +91,7 @@ private struct TalkEndsKey: PreferenceKey {
     static let defaultValue = Ends()
     static func reduce(value: inout Ends, nextValue: () -> Ends) {
         let next = nextValue()
-        value = Ends(text: value.text ?? next.text, line: value.line ?? next.line)
+        value = Ends(mark: value.mark ?? next.mark, text: value.text ?? next.text, line: value.line ?? next.line)
     }
 }
 
@@ -116,6 +117,7 @@ private struct TalkEndsKey: PreferenceKey {
 
         var target: ChannelTarget
         var frame: CGRect
+        var markEnd: CGFloat
         var textInset: CGFloat
         var lineInset: CGFloat
     }
@@ -142,6 +144,8 @@ private struct TalkCard<Row: View>: View {
     let hold: TalkHold
     /// The held row's content, in the card's space.
     let cell: CGRect
+    /// How far past the cell's leading edge the row's mark ends.
+    let markEnd: CGFloat
     /// How far before the cell's trailing edge the row's text ends.
     let textInset: CGFloat
     /// How far before the cell's trailing edge the row's second line ends.
@@ -167,6 +171,9 @@ private struct TalkCard<Row: View>: View {
 
     /// The room the card keeps from the visible area's ends.
     private static var inset: CGFloat { 8 }
+
+    /// How far past the row's frame its content draws, as the mic's 64-point halo does.
+    private static var reach: CGFloat { 32 }
 
     /// Where the channel's name starts in its row.
     #if os(macOS)
@@ -197,6 +204,19 @@ private struct TalkCard<Row: View>: View {
         let card = VStack(alignment: .leading, spacing: 0) {
             row
                 .frame(width: cell.width, height: cell.height)
+                // Its text fades over the list's own row as the fill finishes fading, so the card's
+                // ink eases into the sidebar's, never stepping at the hand-back or dimming through
+                // the fill. The opaque mark stays until the card leaves, so its check never doubles
+                // with the row's own.
+                .mask(alignment: .leading) {
+                    HStack(spacing: 0) {
+                        Rectangle().frame(width: markEnd + Self.reach)
+                        Rectangle().animation(recorder.isLifted ? nil : .easeOut(duration: 0.15).delay(0.3)) {
+                            $0.opacity(recorder.isLifted ? 1 : 0)
+                        }
+                    }
+                    .padding(-Self.reach)
+                }
                 .environment(\.cardMarkTaps, false)
                 .accessibilityActions {
                     if recorder.canResume { Button("Resume", action: recorder.resume) }
@@ -231,7 +251,7 @@ private struct TalkCard<Row: View>: View {
         .environment(\.talkGrown, grown)
         .environment(\.talkTrailingInset, cell.maxX - lineInset - contentEnd)
         .allowsHitTesting(recorder.isLifted)
-        // Hands back to the list's own row, which draws the same frame beneath it, in one frame.
+        // Leaves once its fill and row have faded over the list's own row.
         .animation(nil) { $0.opacity(landed ? 0 : 1) }
         .accessibilityHidden(landed)
         .accessibilityElement(children: .contain)
@@ -453,6 +473,9 @@ private struct TalkSlot: ViewModifier {
                 avatar.transition(.identity)
             }
         }
+        .transformAnchorPreference(key: TalkEndsKey.self, value: .trailing) { ends, anchor in
+            if recorder != nil { ends.mark = anchor }
+        }
     }
 
     private func glyph(_ recorder: TalkRecorder) -> CardMark.Glyph {
@@ -636,8 +659,10 @@ private struct TalkRow: ViewModifier {
     func body(content: Content) -> some View {
         let isHeld = recorder.target == target
         let isGrown = isHeld && hold?.isGrown(target) == true
-        // The card draws this row until it lands, so the cell's own content hides beneath it.
-        let isCovered = isHeld && hold?.cell?.target == target && recorder.phase != .landed
+        // The card draws this row until it lands. The cell's own content hides beneath it while
+        // it's lifted, then shows beneath its fading fill and row as it lands.
+        let isDrawn = isHeld && hold?.cell?.target == target && recorder.phase != .landed
+        let isCovered = isDrawn && recorder.isLifted
         // Dims with the card's growth, since rows don't animate in the swipe action's transaction.
         let isDimmed = recorder.isLifted && hold?.isGrown(recorder.target) == true && !isHeld
         let offersTalk = offered && recorder.isAvailable && !recorder.isLifted
@@ -654,7 +679,7 @@ private struct TalkRow: ViewModifier {
             // Only the held row hides its selection, which returns beneath the card's fading fill
             // as it lands. The open channel's row keeps its band while it dims.
             .selectionDisabled(isHeld && recorder.isLifted)
-            .accessibilityHidden(isCovered)
+            .accessibilityHidden(isDrawn)
             .accessibilityFocused($focused)
             .backgroundPreferenceValue(TalkEndsKey.self) { ends in
                 // Only the held row reports its frame, which it does as soon as the recorder holds it.
@@ -662,6 +687,7 @@ private struct TalkRow: ViewModifier {
                     Color.clear.onGeometryChange(for: TalkHold.Cell.self) { proxy in
                         let inset = { (end: Anchor<CGPoint>?) in end.map { max(proxy.size.width - proxy[$0].x, 0) } ?? 0 }
                         return TalkHold.Cell(target: target, frame: proxy.frame(in: .global),
+                                             markEnd: ends.mark.map { max(proxy[$0].x, 0) } ?? 0,
                                              textInset: inset(ends.text), lineInset: inset(ends.line))
                     } action: { cell in
                         hold?.cell = cell
@@ -700,7 +726,7 @@ private struct TalkList<Row: View>: ViewModifier {
                       endsWhenChanging: context, end: recorder.leave) { list in
                 if let target = recorder.target, let cell = hold.cell, cell.target == target {
                     TalkCard(recorder: recorder, hold: hold, cell: cell.frame.offsetBy(dx: -list.minX, dy: -list.minY),
-                             textInset: cell.textInset, lineInset: cell.lineInset,
+                             markEnd: cell.markEnd, textInset: cell.textInset, lineInset: cell.lineInset,
                              bounds: CGRect(origin: .zero, size: list.size),
                              onGlass: onGlass) {
                         row(target)
