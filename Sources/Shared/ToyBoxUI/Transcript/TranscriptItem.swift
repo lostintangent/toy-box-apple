@@ -4,7 +4,7 @@ import CoreGraphics
 /// One lazy stack child: a user message, one entry of an agent run, or a system group. Splitting
 /// runs into entries keeps a long run lazy and lets reveal, landing and reads target one message.
 public struct TranscriptItem: Equatable, Identifiable, Sendable {
-    public enum Content: Equatable, Sendable {
+    public indirect enum Content: Equatable, Sendable {
         case user(ChannelMessage)
         case agent(agentId: String, entry: AgentRunEntry, startsRow: Bool)
         case system([ChannelMessage])
