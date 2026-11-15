@@ -1,6 +1,5 @@
 [
   { "wait": "Studio demo", "timeout": 30 },
-  { "back": true, "ifPresent": true },
   { "tap": "Studio demo" },
   { "wait": "Where should the shared library sit" },
   { "tap": "Studio demo" },

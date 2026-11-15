@@ -7,7 +7,7 @@ import { mobileBundleID } from "../bundle/index.ts";
 type Timed = { timeout?: number };
 export type MobileDriveStep = Timed & (
     { tap: string } | { type: string } | { wait: string; absent?: boolean } | { screenshot: string; display: string }
-    | { back: true; ifPresent?: boolean } | { fold: boolean } | { action: string; on: string }
+    | { back: true } | { fold: boolean } | { action: string; on: string }
     | { scroll: "up" | "down" | "left" | "right"; on: string }
     | { drag: "up" | "down" | "left" | "right"; on: string }
     | { zoom: number; on: string }
@@ -34,7 +34,7 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
         if (actions.length !== 1) return fail("expected one supported action.");
         const action = actions[0]!;
         const allowed = new Set([action, "timeout", ...(action === "screenshot" ? ["display"] : []),
-            ...(action === "back" ? ["ifPresent"] : []), ...(["action", "scroll", "drag", "zoom"].includes(action) ? ["on"] : []),
+            ...(["action", "scroll", "drag", "zoom"].includes(action) ? ["on"] : []),
             ...(action === "wait" ? ["absent"] : []), ...(action === "background" ? ["post"] : [])]);
         if (Object.keys(step).some(key => !allowed.has(key))) return fail("unknown action option.");
         const timeout = step.timeout;
@@ -43,8 +43,7 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
         const timed: Timed = timeout === undefined ? {} : { timeout };
         if (action === "back") {
             if (step.back !== true) return fail("back must be true.");
-            if (step.ifPresent !== undefined && typeof step.ifPresent !== "boolean") return fail("ifPresent must be a boolean.");
-            return { back: true, ...timed, ...(step.ifPresent === undefined ? {} : { ifPresent: step.ifPresent }) };
+            return { back: true, ...timed };
         }
         if (action === "fold") {
             if (typeof step.fold !== "boolean") return fail("fold must be a boolean.");

@@ -30,7 +30,7 @@ struct MobileAutomationStep: Decodable, Equatable {
     }
 
     enum Action: Equatable {
-        case tap(String), type(String), wait(String, absent: Bool), screenshot(String, String), back(ifPresent: Bool), fold(Bool)
+        case tap(String), type(String), wait(String, absent: Bool), screenshot(String, String), back, fold(Bool)
         case customAction(String, on: String)
         case scroll(ScrollDirection, on: String)
         case drag(ScrollDirection, on: String)
@@ -56,10 +56,9 @@ struct MobileAutomationStep: Decodable, Equatable {
         let names = Set(values.allKeys.map(\.stringValue))
         let actions = names.intersection(["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "zoom",
                                           "posture", "menuAction", "background"])
-        guard actions.count == 1, names.isSubset(of: actions.union(["display", "timeout", "ifPresent", "on", "absent", "post"])),
+        guard actions.count == 1, names.isSubset(of: actions.union(["display", "timeout", "on", "absent", "post"])),
               let name = actions.first, let key = Key(stringValue: name),
               (!names.contains("display") || name == "screenshot"),
-              (!names.contains("ifPresent") || name == "back"),
               (!names.contains("absent") || name == "wait"),
               (!names.contains("post") || name == "background"),
               (!names.contains("on") || ["action", "scroll", "drag", "zoom"].contains(name)) else {
@@ -108,7 +107,7 @@ struct MobileAutomationStep: Decodable, Equatable {
             guard try values.decode(Bool.self, forKey: key) else {
                 throw DecodingError.dataCorruptedError(forKey: key, in: values, debugDescription: "back must be true.")
             }
-            action = .back(ifPresent: try values.decodeIfPresent(Bool.self, forKey: Key(stringValue: "ifPresent")!) ?? false)
+            action = .back
         case "zoom":
             let scale = try values.decode(Double.self, forKey: key)
             guard scale.isFinite, scale > 0 else {
@@ -312,6 +311,13 @@ struct MobileAutomationTree {
     }
 
     var labels: [String] { elements.map(\.description) }
+    var isTransitioning: Bool {
+        func transitioning(_ controller: UIViewController) -> Bool {
+            controller.transitionCoordinator != nil || controller.children.contains(where: transitioning)
+                || controller.presentedViewController.map(transitioning) == true
+        }
+        return windows.contains { $0.rootViewController.map(transitioning) == true }
+    }
     var primaryWindow: UIWindow? { windows.first(where: \.isKeyWindow) ?? windows.first }
     var viewport: [Double] {
         guard let window = primaryWindow else { return [] }
@@ -613,13 +619,12 @@ final class MobileAutomationRun {
         case .zoom(let scale, let target):
             let view = try await wait(timeout: step.timeout) { try currentTree().scrollView(target) }
             try await MobileAutomationTree.zoom(view, to: scale, deadline: deadline, clock: clock)
-        case .back(let ifPresent):
+        case .back:
             let tree = try await wait(timeout: step.timeout) {
                 let tree = currentTree()
                 return tree.viewport.isEmpty ? nil : tree
             }
             let back = tree.matching("BackButton").first
-            if back == nil && ifPresent { break }
             guard tree.activateBack(back) else {
                 let details = back.map { " Back target: \(type(of: $0.object))." } ?? ""
                 throw Failure("No visible window handled the accessibility escape action.\(details)")
@@ -715,15 +720,17 @@ final class MobileAutomationRun {
         return nil
     }
 
+    /// Waits for four matching readings with no push or presentation in flight. It never forces layout,
+    /// which mid-push makes SwiftUI end the pushed screen's appearance while it stays on screen.
     private func settle(timeout: TimeInterval, posture: MobileAutomationPosture? = nil) async throws {
         var previous: [String] = []
         var stable = 0
         _ = try await wait(timeout: timeout) {
             let tree = currentTree()
-            for window in tree.windows { window.layoutIfNeeded() }
             let measured = tree.elements.map { "\($0.description) \($0.frame)" } + [String(describing: tree.viewport)]
             let expected = posture?.matches(tree.viewport) ?? true
-            stable = measured == previous && !tree.viewport.isEmpty && expected ? stable + 1 : 0
+            stable = measured == previous && !tree.viewport.isEmpty && expected && !tree.isTransitioning
+                ? stable + 1 : 0
             previous = measured
             return stable >= 4 ? true : nil
         }

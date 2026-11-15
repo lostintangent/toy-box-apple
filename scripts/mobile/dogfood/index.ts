@@ -110,9 +110,11 @@ if (import.meta.main) await main(async () => {
         const drive = values.drive ? await prepareMobileDrive(values.drive, data,
             join(scratchPath(), "mobile-drive", crypto.randomUUID())) : undefined;
         interruption.signal.throwIfAborted();
+        // A drive starts at the channel list. An empty remembered channel in the volatile argument domain
+        // skips launch restoring the last one, so no step races its push or has to undo it.
         const result = await runMobileSimulatorCommand([
             "launch", "--terminate-running-process", simulator.udid, mobileBundleID,
-            "--server", server, ...launch.arguments,
+            "--server", server, ...launch.arguments, ...(drive ? ["-lastChannelByServer", "{}"] : []),
         ], { ...mobileEnvironment, ...(drive ? { SIMCTL_CHILD_TOY_BOX_AUTOMATION_SCRIPT: drive.script } : {}) },
         AbortSignal.any([interruption.signal, AbortSignal.timeout(30_000)]));
         if (result.exitCode) throw new Error(`Mobile launch failed: ${result.stderr.trim()}`);
