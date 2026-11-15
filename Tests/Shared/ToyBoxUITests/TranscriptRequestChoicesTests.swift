@@ -111,8 +111,8 @@ struct ChoiceFlowLayoutTests {
 }
 
 /// Read Aloud waits while dictation listens, since the phone would lose its microphone and the Mac would
-/// transcribe the reader's voice.
-@MainActor struct TranscriptReadAloudTests {
+/// transcribe the reader's voice. Serialized, since every microphone shares the one reader.
+@Suite(.serialized) @MainActor struct TranscriptReadAloudTests {
     private final class Source: DictationAudioSource, @unchecked Sendable {
         var fails = false
         func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) throws {
@@ -121,17 +121,49 @@ struct ChoiceFlowLayoutTests {
         func stop() {}
     }
 
-    @Test func theMicrophoneHoldsReadAloudOffOnlyWhileItListens() throws {
+    /// Holds a stop in flight, like a microphone whose audio is still winding down on its queue.
+    @MainActor private final class StoppingSource: DictationAudioSource {
+        private var stopping: CheckedContinuation<Void, Never>?
+        var isStopping: Bool { stopping != nil }
+
+        func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) {}
+        func stop() async { await withCheckedContinuation { stopping = $0 } }
+
+        func finishStopping() {
+            stopping?.resume()
+            stopping = nil
+        }
+    }
+
+    @Test func theMicrophoneHoldsReadAloudOffOnlyWhileItListens() async throws {
         let reader = TranscriptReadAloud.shared
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
         let source = Source()
         let microphone = TranscriptReadAloud.Microphone(source)
-        try microphone.start(format: format) { _ in }
+        try await microphone.start(format: format) { _ in }
         #expect(reader.isMicrophoneOpen)
-        microphone.stop()
+        await microphone.stop()
         #expect(!reader.isMicrophoneOpen)
         source.fails = true
-        #expect(throws: CancellationError.self) { try microphone.start(format: format) { _ in } }
+        await #expect(throws: CancellationError.self) { try await microphone.start(format: format) { _ in } }
+        #expect(!reader.isMicrophoneOpen)
+    }
+
+    @Test func readAloudWaitsUntilEveryMicrophoneHasStopped() async throws {
+        let reader = TranscriptReadAloud.shared
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let ending = StoppingSource()
+        let first = TranscriptReadAloud.Microphone(ending)
+        try await first.start(format: format) { _ in }
+        let stopping = Task.immediate { await first.stop() }
+        #expect(ending.isStopping)
+        #expect(reader.isMicrophoneOpen, "A stop in flight still holds Read Aloud off")
+        let second = TranscriptReadAloud.Microphone(Source())
+        try await second.start(format: format) { _ in }
+        ending.finishStopping()
+        await stopping.value
+        #expect(reader.isMicrophoneOpen, "One microphone closing doesn't release one that's opening")
+        await second.stop()
         #expect(!reader.isMicrophoneOpen)
     }
 }

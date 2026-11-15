@@ -26,7 +26,10 @@ import OSLog
 
     public private(set) var reading: Request?
     /// Dictation is listening, so Read Aloud waits rather than speak into the microphone.
-    public private(set) var isMicrophoneOpen = false
+    public var isMicrophoneOpen: Bool { openMicrophones > 0 }
+    /// Each microphone counts until its audio has stopped, so one closing never lets Read Aloud take
+    /// the audio session from one opening.
+    private var openMicrophones = 0
     @ObservationIgnored private let synthesizer = AVSpeechSynthesizer()
     @ObservationIgnored private let delegate = Delegate()
     @ObservationIgnored private var utterance: AVSpeechUtterance?
@@ -97,34 +100,41 @@ import OSLog
         #endif
     }
 
-    /// Dictation's microphone, which stops reading as it opens and holds Read Aloud off until it closes.
-    /// `releasingAudio` is false when the source takes the audio session itself. Dictation starts and
-    /// stops its source on the main actor.
-    package final class Microphone: DictationAudioSource, @unchecked Sendable {
+    /// Dictation's microphone, which stops reading as it opens and holds Read Aloud off until its audio
+    /// has stopped. `releasingAudio` is false when the source takes the audio session itself.
+    @MainActor package final class Microphone: DictationAudioSource {
         private let source: DictationAudioSource
         private let releasesAudio: Bool
+        private var isOpen = false
 
         package init(_ source: DictationAudioSource, releasingAudio: Bool = true) {
             self.source = source
             releasesAudio = releasingAudio
         }
 
-        package func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) throws {
-            MainActor.assumeIsolated {
-                TranscriptReadAloud.shared.stop(releasingAudio: releasesAudio)
-                TranscriptReadAloud.shared.isMicrophoneOpen = true
+        package func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) async throws {
+            TranscriptReadAloud.shared.stop(releasingAudio: releasesAudio)
+            if !isOpen {
+                isOpen = true
+                TranscriptReadAloud.shared.openMicrophones += 1
             }
             do {
-                try source.start(format: format, handler: handler)
+                try await source.start(format: format, handler: handler)
             } catch {
-                MainActor.assumeIsolated { TranscriptReadAloud.shared.isMicrophoneOpen = false }
+                close()
                 throw error
             }
         }
 
-        package func stop() {
-            source.stop()
-            MainActor.assumeIsolated { TranscriptReadAloud.shared.isMicrophoneOpen = false }
+        package func stop() async {
+            await source.stop()
+            close()
+        }
+
+        private func close() {
+            guard isOpen else { return }
+            isOpen = false
+            TranscriptReadAloud.shared.openMicrophones -= 1
         }
     }
 

@@ -364,6 +364,20 @@ struct DictationTests {
         #expect(target.begins == 1)
         downloaded.commitNow()
     }
+
+    /// The microphone works on its own queue, so a note's stop has to reach it as the note ends, or a
+    /// note started right after could open the microphone before the last one lets go of it.
+    @Test func aStopReachesTheMicrophoneBeforeAQuickStart() async throws {
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let log = MicrophoneLog()
+        let ending = DictationRecognizer(locale: Locale(identifier: "en-US"), contextualStrings: [],
+                                         source: TranscriptReadAloud.Microphone(LoggingSource("first", log)))
+        ending.cancel()
+        let next = TranscriptReadAloud.Microphone(LoggingSource("second", log))
+        try await next.start(format: format) { _ in }
+        await next.stop()
+        #expect(log.events == ["first stop", "second start", "second stop"])
+    }
 }
 
 extension DictationSystem {
@@ -439,4 +453,24 @@ extension DictationSystem {
     var value = DictationMicrophoneAccess.denied
     var grants = false
     var requests = 0
+}
+
+@MainActor private final class MicrophoneLog {
+    var events: [String] = []
+}
+
+@MainActor private final class LoggingSource: DictationAudioSource {
+    private let name: String
+    private let log: MicrophoneLog
+
+    init(_ name: String, _ log: MicrophoneLog) {
+        self.name = name
+        self.log = log
+    }
+
+    func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) {
+        log.events.append("\(name) start")
+    }
+
+    func stop() { log.events.append("\(name) stop") }
 }
