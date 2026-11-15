@@ -150,12 +150,12 @@ Use Bun 1.4.4: run `bun install --frozen-lockfile`, then the root `package.json`
 
 | To | Run |
 | --- | --- |
-| Build, bundle and open the Mac app | `SCRATCH_PATH=/tmp/tbm-<you> bun run build` |
+| Build and bundle the Mac app | `SCRATCH_PATH=/tmp/tbm-<you> bun run build --no-open` |
 | Run the Mac tests | `SCRATCH_PATH=/tmp/tbm-<you> bun run test`, never bare `bun test` or `swift test` |
 | Run the iPhone tests | `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` |
-| Run the phone on the shared simulator | `SCRATCH_PATH=/tmp/tbm-<you> bun run simulator` |
-| Validate the running Mac app | `SCRATCH_PATH=/tmp/tbm-<you> bun run validate` |
-| Serve sample channels for writes and screenshots | `bun run demo` on 3210, or the validate skill's other servers |
+| Run the shared simulator | `SCRATCH_PATH=/tmp/tbm-<you> bun run simulator` |
+| Launch Toy Box Test | `SCRATCH_PATH=/tmp/tbm-<you> bun run validate` |
+| Serve sample channels | `bun run demo` on 3210, or the validate skill's other servers |
 
 - **Use the `bun run` commands,** never `xcodebuild`, `xcresulttool` or `devicectl`, and never
   download simulator runtimes.
@@ -173,17 +173,17 @@ Use Bun 1.4.4: run `bun install --frozen-lockfile`, then the root `package.json`
 - **A change made for speed proves it against main** with its benchmark before it merges.
 - **Test each promise once,** at the lowest layer that proves it, so shared code is tested in its
   own module and only native behavior in an app's tests. A test that only restates a constant, a
-  default or the code it calls proves nothing, so leave it out.
+  default or the code it calls proves nothing.
 - **Drive scripts, snapshot states and benchmarks stand in for XCUITest,** which SwiftPM can't
   host. Add to them only for a check nothing else can make.
 
 ### The running app
 
-The validate skill says how to capture and drive either app, within these limits:
+The validate skill says how to drive either app, within these limits:
 
-- **Mac:** act with Computer Use only in Toy Box Test (`dev.toybox.desktop.test`) showing
-  `studio-demo`, never in the user's `dev.toybox.desktop` or a window listing live channels, and
-  `kill <pid>` your instance when you finish.
+- **Mac:** launch and drive only Toy Box Test (`dev.toybox.desktop.test`) showing `studio-demo`,
+  never the user's `dev.toybox.desktop`, which bare `bun run build` opens, or a window listing
+  live channels, and `kill <pid>` your instance when you finish.
 - **iPhone:** use the shared simulator under its lease, and a real phone only through TestFlight,
   so development never replaces the user's app or its data.
 

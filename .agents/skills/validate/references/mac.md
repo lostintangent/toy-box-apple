@@ -48,16 +48,20 @@ in a real window.
 
 ## Launching your own build
 
+Launch only Toy Box Test, through `bun run validate`. Never `open` the bundle `bun run build`
+makes: it's the user's `dev.toybox.desktop`, so it shares their permissions, settings, drafts and
+outbox, and macOS asks the user about it.
+
 ```sh
-open -n -g "/tmp/tbm-<you>/Toy Box.app" --args --server http://127.0.0.1:3210 -ApplePersistenceIgnoreState YES
+SERVER_URL=http://127.0.0.1:3211 SCRATCH_PATH=/tmp/tbm-<you> bun run validate
 ```
 
-Use the bundle `bun run build` makes, which carries the real SDK stamp, never SwiftPM's unstamped
-executable. `-g` avoids taking focus. `--server` and `TOY_BOX_SERVER_URL` are session-only. For
+It defaults to the demo on 3210, launches in the background without taking focus, passes later
+arguments to the app and adds `-ApplePersistenceIgnoreState YES`, so test instances neither
+restore nor overwrite the shared saved window state. The server it's given is session-only. For
 several servers, start the demo with `TOY_BOX_DEMO_PEERS`, which lists the others as its peers
-(see [scripts/README.md](../../../../scripts/README.md)). Keep `-ApplePersistenceIgnoreState YES`
-even with the restored-zero-window fallback, so test instances neither restore nor overwrite the
-shared saved window state.
+(see [scripts/README.md](../../../../scripts/README.md)). Each run re-signs Toy Box Test, which
+resets its microphone grant, so hold it while another agent's microphone check is running.
 
 ## Development-signed build
 
