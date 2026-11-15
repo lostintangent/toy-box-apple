@@ -1814,9 +1814,11 @@ shows, unless that message is the user's own. The user's post means they've caug
 every unread message is hidden in Your Messages, posting shows no divider. A reopened store that disconnected while the channel was closed waits for its
 reconnect, rather than capturing from the state it cached. Looking back at a channel after looking
 away, when its Mac window becomes key again or the phone's scene becomes active, recaptures the
-boundary the same way, as the web does, so New marks the first message that arrived while you were
-away, or goes away if none did. Recapturing moves only the divider, never where the conversation is
-scrolled. This boundary is not an extra synthetic message. Reference renders of day labels, the New divider, system rows and both request states:
+boundary the same way if messages arrived meanwhile, as the web does, so New moves to the first of
+them. If none did, New stays where it was, because a Mac window loses key, and a phone scene goes
+inactive, far more often than a browser tab hides. Recapturing moves only the divider, never where
+the conversation is scrolled, and drops the catch-up summary, which covered the span it replaced.
+This boundary is not an extra synthetic message. Reference renders of day labels, the New divider, system rows and both request states:
 `docs/transcript-events.png`.
 
 Opening uses only the latest 100 messages supplied by the snapshot and never fetches older pages.
