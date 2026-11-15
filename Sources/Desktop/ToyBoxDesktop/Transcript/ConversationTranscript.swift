@@ -356,7 +356,8 @@ struct ConversationTranscript: View {
                                          }
                                      })
                     .equatable()
-                    .padding(.top, item.spacing)
+                    // The Mac keeps the run gap above the first item too, under the history header.
+                    .padding(.top, item.order == 0 ? TranscriptSpacing.run : item.spacing)
             }
             let outgoing = store.sending
             let sendingDividers = TranscriptRowBuilder.pendingDividers(outgoing.map(\.message),
