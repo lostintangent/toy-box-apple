@@ -34,7 +34,9 @@ Hub (`com.apple.dt.Devices`). Select that device there to use its native hinge-p
 completion or failure. Release builds have neither the startup hook nor the driver, and no script
 runs without the explicit per-launch environment. It drives accessibility activation, native
 control primary actions and text insertion, not finger touch. Reruns repeat sends, so use demo
-servers for any script that writes. Never skip or retry actions.
+servers for any script that writes. Never skip or retry actions. Every drive starts at the channel
+list, because its launch skips restoring the last channel, and each step settles only once no push
+or presentation is in flight.
 
 | Step | Contract |
 | --- | --- |
@@ -42,7 +44,7 @@ servers for any script that writes. Never skip or retry actions.
 | `{"type":"text"}` | Text insertion |
 | `{"wait":"label or value fragment"}` | `absent: true` waits for disappearance |
 | `{"screenshot":"name","display":1}` | Captures only after settled accessibility and layout |
-| `{"back":true}` | Native Back, including the restored stack's trait-less Back control through its primary action, then public window accessibility escape only if activation is unhandled. Disabled Back never falls through. `ifPresent: true` allows an explicitly optional initial return from restored navigation. Wait for the channel name, then optional Back, before tapping its row |
+| `{"back":true}` | Native Back, including a trait-less Back control through its primary action, then public window accessibility escape only if activation is unhandled. Disabled Back never falls through |
 | `{"action":"Reply","on":"message-12"}` | A named accessibility custom action on one exact label or identifier |
 | `{"posture":"unfolded","timeout":60}` | Waits for the measured scene, not hinge movement |
 | `{"menuAction":"Edit Channel"}` | Visible-menu action dispatch, not a tap. See below |
