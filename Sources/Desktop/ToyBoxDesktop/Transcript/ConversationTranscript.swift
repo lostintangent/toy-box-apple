@@ -536,14 +536,16 @@ struct ConversationTranscript: View {
     }
 
     /// Hides the rows of a transcript opening on its first unread message until the first layout
-    /// pass puts that message in place, so the first frame drawn never shows the bottom. Later
-    /// corrections move rows in view, so streaming or a busy run loop can't keep them hidden.
+    /// pass puts that message in place with its summary card, if it has one, so the first frame drawn
+    /// never shows the bottom and a short tail's card never pushes the divider up after it's drawn.
+    /// Later corrections move rows in view, so streaming or a busy run loop can't keep them hidden.
     private var hidesOpening: Bool {
         opening.hidesRows && !isOpeningPlaced && !hasLanded && !isRevealing && store.phase.isConnected
     }
 
     private func showPlacedOpening() {
-        guard hidesOpening, let rowID = opening.rowID, let row = rows.first(where: { $0.id == rowID }),
+        guard hidesOpening, opening.decidedCatchUp, let rowID = opening.rowID,
+              let row = rows.first(where: { $0.id == rowID }),
               TranscriptLanding.isPlaced(row, frames: frames, viewport: viewport) else { return }
         isOpeningPlaced = true
     }
@@ -559,6 +561,8 @@ struct ConversationTranscript: View {
             unreadAfter: store.unreadAfter, oldestSequence: store.messages.first?.sequence,
             hasOlderMessages: store.hasOlderMessages, rows: rows)
         opening.hidesRows = opening.plan != nil && frames.isEmpty
+        // Without a card to wait for, the first pass that places the row shows it.
+        opening.decidedCatchUp = opening.plan.map { makeCatchUp(unreadAfter: $0.unreadAfter) == nil } ?? true
     }
 
     /// Lands on the row, moving only if it isn't in place already. A jump converges over several
@@ -613,6 +617,9 @@ struct ConversationTranscript: View {
             hasOlderMessages: store.hasOlderMessages, rows: rows) {
             guard !Task.isCancelled, !isRevealing else { return }
             prepareCatchUp(unreadAfter: plan.unreadAfter)
+            opening.decidedCatchUp = true
+            // A card lays out before its rows show. Without one, the rows may already be in place.
+            if catchUp == nil { showPlacedOpening() }
             if let first = rows.first(where: { $0.id == plan.rowID }) {
                 await settleLanding(on: first, using: proxy)
                 guard !Task.isCancelled, !isRevealing else { return }
@@ -628,14 +635,16 @@ struct ConversationTranscript: View {
     /// The summary exists only when this landing is eligible, so an ineligible one reserves no space.
     /// Snapshots never show it, so they stay deterministic.
     private func prepareCatchUp(unreadAfter: Int) {
-        guard catchUp == nil, let state = store.state,
-              !snapshot.isActive,
-              let made = TranscriptCatchUp.make(
-                  server: store.api.baseURL, state: state, unreadAfter: unreadAfter, filter: interaction.messageView,
-                  availability: intelligence.availability,
-                  isOn: IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages))
-        else { return }
+        guard catchUp == nil, let made = makeCatchUp(unreadAfter: unreadAfter) else { return }
         catchUp = made
+    }
+
+    private func makeCatchUp(unreadAfter: Int) -> TranscriptCatchUp? {
+        guard let state = store.state, !snapshot.isActive else { return nil }
+        return TranscriptCatchUp.make(
+            server: store.api.baseURL, state: state, unreadAfter: unreadAfter, filter: interaction.messageView,
+            availability: intelligence.availability,
+            isOn: IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages))
     }
 
     /// Nil when the reveal was superseded.
@@ -846,6 +855,9 @@ struct TranscriptJump: Equatable {
 private final class TranscriptOpening {
     var isResolved = false
     var plan: TranscriptLanding.Opening?
+
+    /// Whether the landing has made its summary card, or found it has none.
+    var decidedCatchUp = false
 
     /// Until its row is first in place, when nothing's drawn yet. Rows already on screen move in the update that resolves it.
     var hidesRows = false
