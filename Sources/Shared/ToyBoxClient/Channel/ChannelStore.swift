@@ -108,7 +108,6 @@ public final class ChannelStore {
     @ObservationIgnored private var arrivals: StreamArrivals?
     @ObservationIgnored private let sleep: @Sendable (TimeInterval) async throws -> Void
     @ObservationIgnored private var capturedUnread = false
-    @ObservationIgnored private var lookedAway = false
     @ObservationIgnored private var historyGeneration = UUID()
     @ObservationIgnored private var olderPage: Task<Void, Never>?
     @ObservationIgnored private var readWrite: Task<Void, Never>?
@@ -295,21 +294,16 @@ public final class ChannelStore {
     public func captureUnreadBoundary() {
         unreadAfter = state.flatMap { $0.channel.unreadAfter }
         capturedUnread = state != nil && phase.isConnected
-        lookedAway = false
     }
 
-    /// The reader looked away from the landed conversation: its Mac window lost key, or the phone's
-    /// scene left active.
-    public func lookAway() { lookedAway = true }
-
-    /// Looking back moves New to the first message that arrived while the reader looked away, as the
+    /// Looking back after looking away moves New to the first message that arrived meanwhile, as the
     /// web does, and returns whether it moved. If none arrived, New stays, because a window loses key
-    /// far more often than a browser tab hides. Call it before each read, so a phone that disconnected
-    /// in the background answers once its reconnect has brought what arrived.
+    /// far more often than a browser tab hides. Each window tracks its own look-away, since windows
+    /// share this store, and calls this at its next read, once a phone back from the background has
+    /// reconnected and brought what arrived.
     public func lookBack() -> Bool {
-        guard lookedAway, phase.isConnected, let channel = state?.channel else { return false }
-        lookedAway = false
-        let read = max(channel.seenThrough, acknowledgedRead)
+        guard phase.isConnected, let channel = state?.channel else { return false }
+        let read = max(channel.seenThrough, acknowledgedRead, pendingRead)
         guard channel.latestSequence > read, unreadAfter != read else { return false }
         unreadAfter = read
         return true

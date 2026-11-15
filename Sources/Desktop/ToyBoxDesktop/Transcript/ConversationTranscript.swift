@@ -27,6 +27,8 @@ struct ConversationTranscript: View {
     @ViewState private var scrollPosition: String?
     @ViewState private var arrivalUnreadAfter: Int?
     @ViewState private var capturedArrivalBoundary = false
+    /// This transcript's own visit ended, so its next read may move New to what arrived meanwhile.
+    @ViewState private var lookedAway = false
     @ViewState private var isUserScrolling = false
     @ViewState var pendingJump: TranscriptJump?
     @ViewState private var requestAnnouncements = TranscriptRequestAnnouncements()
@@ -186,14 +188,17 @@ struct ConversationTranscript: View {
                     await reveal(sequence: request.sequence, using: proxy)
                 }
                 .onChange(of: read.isLooking) { _, looking in
-                    if !looking, hasLanded { store.lookAway() }
+                    if !looking, hasLanded { lookedAway = true }
                 }
                 .onChange(of: read.sequence, initial: true) { _, sequence in
                     guard let sequence else { return }
                     // The catch-up summary covered the span New replaced, so it ends with it.
-                    if store.lookBack() {
-                        capturedArrivalBoundary = false
-                        catchUp = nil
+                    if lookedAway {
+                        lookedAway = false
+                        if store.lookBack() {
+                            capturedArrivalBoundary = false
+                            catchUp = nil
+                        }
                     }
                     Task { await store.markRead(through: sequence) }
                 }

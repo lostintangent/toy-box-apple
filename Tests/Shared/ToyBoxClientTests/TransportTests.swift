@@ -435,13 +435,10 @@ struct TransportTests {
         store.captureUnreadBoundary()
         await store.markRead(through: 3)
 
-        store.lookAway()
         #expect(!store.lookBack())
         #expect(store.unreadAfter == 1, "Nothing arrived, so New stays where the open put it")
 
         _ = try store.apply(.init(type: "message", revision: 11, message: testMessage(4)))
-        #expect(!store.lookBack(), "Only looking away starts a new visit")
-        store.lookAway()
         #expect(store.lookBack())
         #expect(store.unreadAfter == 3, "New sits above the message that arrived while away")
     }
