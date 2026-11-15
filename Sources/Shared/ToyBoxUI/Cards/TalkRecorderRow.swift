@@ -367,18 +367,19 @@ private struct TalkCard<Row: View>: View {
         // Once Cancel's card is back on the row, the cell's own background, separator or selection
         // shows through it again.
         let based = recorder.phase != .cancelled
-        // Glass can't be matched, so there the row steps once to the card's own color.
+        // Glass can't be matched, so there the row steps once to the card's own color, edge and all.
         let filled = (grown || onGlass) && based
+        let edged = onGlass ? recorder.isLifted : lifted
         // The card lands about 0.2 seconds into its shrink, so the edge and shadow, and Cancel's
         // fill, fade from there.
         let lands = Animation.easeOut(duration: 0.2).delay(0.2)
         let lift: Animation = lifted ? .easeInOut(duration: 0.2) : lands
         // Folded, the base matches the list's own background, so it's solid from the first frame
         // and the dimmed rows never show through. Only the wash fades in.
-        return CardSurface(surface: .user, tint: .accentColor, base: based, wash: filled, edge: lifted, shadow: lifted,
+        return CardSurface(surface: .user, tint: .accentColor, base: based, wash: filled, edge: edged, shadow: lifted,
                            animations: .init(base: based ? nil : lands,
                                              wash: filled ? (onGlass ? nil : .easeInOut(duration: 0.2)) : lands,
-                                             edge: lift, shadow: lift))
+                                             edge: onGlass && edged ? nil : lift, shadow: lift))
     }
 }
 
