@@ -90,6 +90,22 @@ struct DictationTests {
         #expect(await starting.stop(.send))
         #expect(starting.phase == .idle, "Send stops a mic that's still starting")
 
+        let waking = ManualDictationRecognizer()
+        waking.wakes = false
+        var wakingSystem = DictationSystem.manual(waking)
+        wakingSystem.finalizeTimeout = .milliseconds(150)
+        let warming = Dictation(system: wakingSystem)
+        let warmingTarget = RecordingDictationTarget()
+        warming.target = warmingTarget
+        await warming.refresh()
+        warming.toggle()
+        try await eventually { warming.isSessionActive }
+        let sending = Task.immediate { await warming.stop(.send) }
+        #expect(!warming.holdsSend, "Send never waits on a microphone that's still waking")
+        #expect(warming.phase == .idle)
+        #expect(await sending.value)
+        #expect(waking.isCancelled)
+
         let finishing = AsyncStream<Void>.makeStream()
         system.installAssets = { _, progress in
             progress(0.5)
@@ -395,8 +411,11 @@ extension DictationSystem {
     /// The final pass that stopping waits for.
     var finalWords: [(String, Bool)] = []
     var hangs = false
+    /// False holds the start before listening until cancelled, like a microphone still waking.
+    var wakes = true
     private(set) var isCancelled = false
     private var onResult: (@MainActor (String, Bool) -> Void)?
+    private var waking: CheckedContinuation<Void, any Error>?
     private var finishing: CheckedContinuation<Void, any Error>?
 
     func start(onListening: @escaping @MainActor () -> Void,
@@ -408,6 +427,7 @@ extension DictationSystem {
         hangs = false
         finalWords = []
         self.onResult = onResult
+        if !wakes { try await withCheckedThrowingContinuation { waking = $0 } }
         onListening()
         for (text, isFinal) in firstWords { onResult(text, isFinal) }
     }
@@ -415,7 +435,8 @@ extension DictationSystem {
     func send(_ text: String, isFinal: Bool) { onResult?(text, isFinal) }
 
     func finish() async throws {
-        if hangs, !isCancelled {
+        // An analyzer that never started has nothing to finalize, so it waits until cancelled.
+        if hangs || waking != nil, !isCancelled {
             try await withCheckedThrowingContinuation { finishing = $0 }
         }
         if isCancelled { throw CancellationError() }
@@ -424,6 +445,8 @@ extension DictationSystem {
 
     func cancel() {
         isCancelled = true
+        waking?.resume(throwing: CancellationError())
+        waking = nil
         finishing?.resume(throwing: CancellationError())
         finishing = nil
     }

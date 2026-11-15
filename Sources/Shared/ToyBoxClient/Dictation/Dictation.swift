@@ -408,13 +408,14 @@ package final class Dictation {
             // A first-use download keeps going, then returns to Ready instead of listening in the next draft.
             sentDuringDownload = true
             finalized = true
-        case .preparing where !isSessionActive, .downloading:
-            // A mic still starting stops, even for Send, so listening never begins in the next draft.
+        case .preparing, .downloading:
+            // Nothing is heard before listening, so a mic still starting stops at once, even for Send,
+            // and listening never begins in the next draft.
             cancelPreparation()
             finalized = true
         case .idle: finalized = true
         case .finishing: finalized = await finishing?.value ?? true
-        case .preparing, .listening: finalized = await finish(failure: nil, reason: reason)
+        case .listening: finalized = await finish(failure: nil, reason: reason)
         }
         if finalized, reason == .send, case .unsent? = notice { notice = nil }
         return finalized
