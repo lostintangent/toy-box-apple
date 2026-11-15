@@ -57,6 +57,24 @@ struct TranscriptTests {
         #expect(firstUnread[0].divider?.unread == false)
     }
 
+    @Test func newNeverSitsAboveTheUsersOwnMessage() {
+        let messages = [
+            message(17, sender: .user, text: "Can you check the stairs?"),
+            message(18, text: "On it", minute: 1),
+            message(19, sender: .agent("ada"), text: "@lead: Stairs built.", minute: 2),
+            message(20, sender: .user, text: "Thanks", minute: 3),
+            message(21, text: "Next up is the roof.", minute: 4),
+        ]
+        func unread(_ messages: [ChannelMessage], filter: TranscriptFilter) -> [Int] {
+            TranscriptRowBuilder().rows(messages, lead: lead, members: [ada], unreadAfter: 18, filter: filter)
+                .filter { $0.divider?.unread == true }.flatMap { $0.messages.map(\.sequence) }
+        }
+        // Your Messages hides Ada's message, so your post comes first after the boundary, and nothing follows it.
+        #expect(unread(messages, filter: .yours) == [])
+        #expect(unread([message(18, sender: .user, text: "Can you check the stairs?"),
+                        message(19, text: "Stairs are done.", minute: 1)], filter: .all) == [19])
+    }
+
     @Test func yoursViewBuildsRunsAfterFiltering() {
         let coordination = message(2, sender: .agent("ada"), text: "For @lead", minute: 1)
         let rows = TranscriptRowBuilder().rows([message(1), coordination, message(3, minute: 2)],

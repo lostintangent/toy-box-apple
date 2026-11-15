@@ -8,6 +8,7 @@
 - Closing Bookmarks before it finishes finding an older message no longer leaves the conversation stuck on "Couldn't load older messages", so scrolling back keeps loading earlier history.
 - When a channel opens with a summary of what you missed, the New divider stays where it first appears instead of jumping up a moment later, so you start reading in the right place.
 - A task that's waiting on you now shows you as its owner instead of "Deleted agent", so you can see at a glance what's yours to do.
+- The New divider no longer appears above a message you just sent, so it only ever marks what others wrote that you haven't read.
 
 ## iPhone 0.1.40
 
@@ -18,6 +19,7 @@
 - Closing Bookmarks before it finishes finding an older message no longer stops the conversation from loading earlier history as you scroll back.
 - A task that's waiting on you now shows you as its owner instead of "Deleted agent", so you can see at a glance what's yours to do.
 - Coming back to Toy Box no longer leaves a conversation blank until you scroll, so you always see where you left off.
+- The New divider no longer appears above a message you just sent, so it only ever marks what others wrote that you haven't read.
 
 ## Mac 0.1.41
 

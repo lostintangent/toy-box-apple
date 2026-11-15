@@ -139,7 +139,8 @@ public final class TranscriptRowBuilder {
             if let day = info.day, let previousDay = previousInfo?.day { differentDay = day != previousDay }
             else { differentDay = false }
             let startsDay = previous == nil || differentDay
-            let unread = previous.map { prior in
+            // The user's own post means they've caught up, so New never sits above it, nor after it.
+            let unread = message.sender.type != "user" && previous.map { prior in
                 settings.unreadAfter.map { prior.sequence <= $0 && message.sequence > $0 } ?? false
             } ?? false
             let divider: TranscriptDivider? = startsDay || unread
