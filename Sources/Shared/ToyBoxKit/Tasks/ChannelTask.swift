@@ -35,24 +35,4 @@ public struct ChannelTask: Codable, Equatable, Identifiable, Sendable {
         self.startedAt = startedAt
         self.checkInAt = checkInAt
     }
-
-    public init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        title = try container.decode(String.self, forKey: .title)
-        status = try container.decode(String.self, forKey: .status)
-        // A server from before `owner` sends the owning agent's ID instead.
-        owner = try container.decodeIfPresent(ChannelMessageSender.self, forKey: .owner)
-            ?? decoder.container(keyedBy: LegacyCodingKeys.self)
-                .decodeIfPresent(String.self, forKey: .ownerId).map(ChannelMessageSender.agent)
-        artifactId = try container.decodeIfPresent(String.self, forKey: .artifactId)
-        diff = try container.decodeIfPresent(DiffStats.self, forKey: .diff)
-        children = try container.decodeIfPresent([ChannelTask].self, forKey: .children)
-        startedAt = try container.decodeIfPresent(String.self, forKey: .startedAt)
-        checkInAt = try container.decodeIfPresent(String.self, forKey: .checkInAt)
-    }
-
-    private enum LegacyCodingKeys: String, CodingKey {
-        case ownerId
-    }
 }

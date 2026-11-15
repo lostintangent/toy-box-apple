@@ -19,18 +19,15 @@ struct ChannelTaskTests {
         #expect(tasks.unassigning(agentId: "user")[0].owner == .user)
     }
 
-    @Test func ownerReadsTheActorOrAnOlderServersAgentIDAndYouIsNeverLookedUp() throws {
+    @Test func ownerReadsTheActorAndYouIsNeverLookedUp() throws {
         let json = """
             [{"id": "ask", "title": "Choose", "status": "blocked", "owner": {"type": "user"}},
-             {"id": "build", "title": "Build", "status": "in_progress", "owner": {"type": "agent", "agentId": "ada"},
-              "children": [{"id": "review", "title": "Review", "status": "done", "ownerId": "ada"}]},
+             {"id": "build", "title": "Build", "status": "in_progress", "owner": {"type": "agent", "agentId": "ada"}},
              {"id": "old", "title": "Old", "status": "pending", "owner": {"type": "agent", "agentId": "gone"}},
              {"id": "open", "title": "Open", "status": "pending"}]
             """
         let tasks = try JSONDecoder().decode([ChannelTask].self, from: Data(json.utf8))
         #expect(tasks.map(\.owner) == [.user, .agent("ada"), .agent("gone"), nil])
-        #expect(tasks[1].children?[0].owner == .agent("ada"))
-        #expect(try JSONDecoder().decode([ChannelTask].self, from: JSONEncoder().encode(tasks)) == tasks)
 
         let ada = ChannelAgent(id: "ada", name: "Ada")
         let team = [ada, ChannelAgent(id: "user", name: "Impostor")]
