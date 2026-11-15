@@ -1490,8 +1490,8 @@ disabled.
    so Send waits for the final result. Cancel disables. If no word finalizes, nothing is sent and
    the card stays open.
 2. The note goes to the outbox with its own UUID, and the card holds only while it's saved.
-3. Once the outbox has it, the recorder closes into the Sent beat in one
-   `.smooth(duration: 0.35)` transaction, while the note may still be sending:
+3. Once the outbox has it, the recorder closes into the Sent beat with the open spring in
+   reverse, exactly as Cancel closes, while the note may still be sending:
    - The words, waveform and controls fade out over 0.15 seconds while the card shrinks back to
      the cell's frame, its top returning to the row if it rose. The rows it covered reappear
      as it shrinks.
