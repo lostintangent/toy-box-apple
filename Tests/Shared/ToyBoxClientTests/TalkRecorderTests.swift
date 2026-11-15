@@ -146,8 +146,14 @@ struct TalkRecorderTests {
         defer { recorder.deactivate() }
         recognizer.send("Put the library", isFinal: true)
         recognizer.send("by the desks", isFinal: false)
+        try await eventually { recorder.listeningSince != nil }
+        let shown = recorder.elapsed(at: .now)
         if leaves { recorder.leave() } else { recorder.cancel() }
         #expect(!recorder.isLifted)
+        if !leaves {
+            let counter = recorder.elapsed(at: .now + 60)
+            #expect(counter >= shown && counter > 0 && counter < 60, "Cancel's counter keeps its last time while it leaves")
+        }
         #expect(recognizer.isCancelled)
         let kept = leaves ? "An earlier draft\n\nPut the library by the desks" : "An earlier draft"
         #expect(draft.text == kept)

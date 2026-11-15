@@ -228,6 +228,8 @@ package final class TalkRecorder: DictationTextTarget {
         guard phase == .recording else { return }
         following?.cancel()
         sampling?.cancel()
+        // The counter keeps its last time while it leaves.
+        listened = elapsed(at: .now)
         listeningSince = nil
         dictation.leaveDraft()
         checks.animate(.open) { phase = .cancelled }
