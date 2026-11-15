@@ -9,6 +9,7 @@
 - When a channel opens with a summary of what you missed, the New divider stays where it first appears instead of jumping up a moment later, so you start reading in the right place.
 - A task that's waiting on you now shows you as its owner instead of "Deleted agent", so you can see at a glance what's yours to do.
 - The New divider no longer appears above a message you just sent, so it only ever marks what others wrote that you haven't read.
+- Opening a channel where you left off shows the conversation right away, instead of a blank moment while it finds your place.
 
 ## iPhone 0.1.40
 

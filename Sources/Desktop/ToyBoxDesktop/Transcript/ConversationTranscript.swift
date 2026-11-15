@@ -77,6 +77,12 @@ struct ConversationTranscript: View {
         return probe
     }
 
+    /// Rows placed by their content position under the scroll geometry's top. After a cold opening's
+    /// long `scrollTo`, SwiftUI can leave each row's viewport frame where it was until the reader scrolls.
+    private var placedFrames: [String: TranscriptMessageFrame] {
+        frames.mapValues { TranscriptCoordinates.viewportFrame($0, top: viewport.top) }
+    }
+
     var pagingFrames: [String: TranscriptMessageFrame] {
         let top = window.viewportTop ?? viewport.top
         return frames.mapValues { TranscriptCoordinates.viewportFrame($0, top: top) }
@@ -546,7 +552,7 @@ struct ConversationTranscript: View {
     private func showPlacedOpening() {
         guard hidesOpening, opening.decidedCatchUp, let rowID = opening.rowID,
               let row = rows.first(where: { $0.id == rowID }),
-              TranscriptLanding.isPlaced(row, frames: frames, viewport: viewport) else { return }
+              TranscriptLanding.isPlaced(row, frames: placedFrames, viewport: viewport) else { return }
         isOpeningPlaced = true
     }
 
@@ -572,7 +578,7 @@ struct ConversationTranscript: View {
     private func settleLanding(on row: TranscriptRow, using proxy: ScrollViewProxy) async {
         var jumps = 0
         landing: while await layoutTurns.settled() {
-            let step = TranscriptLanding.step(on: row, frames: frames, viewport: viewport,
+            let step = TranscriptLanding.step(on: row, frames: placedFrames, viewport: viewport,
                                              isColdOpening: opening.rowID == nil, jumps: jumps,
                                              hasPendingJump: pendingJump != nil)
             switch step {

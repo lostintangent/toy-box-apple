@@ -451,6 +451,39 @@ struct TranscriptTests {
         try await harness.waitUntil { abs(harness.bottomGap) < 2 }
     }
 
+    /// A channel opening cold at its first unread message hides its rows only until the landing places
+    /// them, then draws the divider at the top on that pass and never moves it. SwiftUI can leave each
+    /// row's viewport frame stale after the long `scrollTo`, so only content positions show it placed.
+    @MainActor
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func aColdChannelFirstDrawsItsFirstUnreadMessageWhereItLands() async throws {
+        let messages = (1...60).map { catchUpTestMessage($0, sender: $0.isMultiple(of: 2) ? .user : .agent("lead")) }
+        let service = StubChannelIntelligence(availability: .unavailable(.deviceNotEligible))
+        let log = TranscriptOpeningLog()
+        let harness = try await TranscriptHarness(messages: messages, seenThrough: 30, intelligence: service) {
+            harness in
+            guard let scrollView = harness.scrollViewIfReady,
+                  let frame = harness.capture.frames["divider-m31"] else { return }
+            let top = scrollView.contentView.bounds.minY + scrollView.contentInsets.top
+            let divider = TranscriptCoordinates.viewportFrame(frame, top: top).rect
+            if harness.rowsOpacity > 0 {
+                log.drawn.append(divider)
+            } else if divider.minY >= -0.5 && divider.minY < 120 {
+                log.hiddenTurns += 1
+            }
+        }
+        defer { await harness.close() }
+        try await harness.waitUntil { !log.drawn.isEmpty }
+        try await harness.settled()
+
+        // Showing the rows takes the pass after the one that places them.
+        #expect(log.hiddenTurns <= 1, "The rows hid for \(log.hiddenTurns) passes after landing")
+        let first = try #require(log.drawn.first ?? nil)
+        #expect(first.minY >= -0.5 && first.minY < 120, "The first frame drew the divider at \(first)")
+        #expect(log.drawn.allSatisfy { $0.map { abs($0.minY - first.minY) <= 0.5 } == true },
+                "The divider moved after the first frame: \(log.drawn.map { $0?.minY })")
+    }
+
     /// Reopening a channel that moved far ahead replays everything it missed, one event at a time, before
     /// `resumed`, and lands on the New divider or, once read elsewhere, the end. With timing tests on,
     /// every pass drawn shows either the cached conversation where it was left or the landing. None
@@ -2534,6 +2567,8 @@ private final class TranscriptHarness {
             try await settled()
         }
     }
+
+    var scrollViewIfReady: NSScrollView? { Self.findScrollView(in: window.contentView ?? NSView()) }
 
     private static func findScrollView(in view: NSView) -> NSScrollView? {
         view as? NSScrollView ?? view.subviews.lazy.compactMap(findScrollView(in:)).first
