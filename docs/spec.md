@@ -1840,9 +1840,9 @@ continue paging even when a page contains no visible rows.
 `ToyBoxClient.TranscriptPlacement` defines container-independent placement from ordered row frames
 and the viewport's width, height and glass insets. Its adapter sends `layoutChanged` only when
 `layoutEvent` detects changed geometry, never just because another native layout pass ran.
-The pure `placement(for:rows:viewport:)` function projects an existing intent against current
-frames for adapter-owned animation, using the same fallback, clamping and end clearance
-without inventing a layout event.
+The pure `placement(for:layout:)` function projects an existing intent against the current
+layout for adapter-owned animation, using the same fallback and clamping without inventing a
+layout event.
 Reader input updates intent without returning an origin. Opening Find uses `holdCurrentPosition`
 to capture reading even at the end without moving. With no anchorable rows it preserves the existing intent.
 After the Find bar's closing geometry settles, `resumeFromCurrentPosition` restores the normal
@@ -1857,7 +1857,7 @@ they still contribute document height, but are never reading anchors, fallback t
 candidates. Explicit row-target actions reject accessories. With only accessory geometry remaining,
 a layout-time target loss falls back to the document end.
 
-Lazy containers use the model's `Layout` entry points. A layout separates all canonical
+Adapters use the model's `Layout` entry points, its only ones. A layout separates all canonical
 `RowIdentity` values in conversation order from the subset of measured `RowFrame` values,
 and supplies the viewport, native origin and native `documentEnd`. That extent already
 includes the 16-point clearance. Following, threshold classification and clamping
@@ -1877,8 +1877,7 @@ because a known row is unmeasured.
 Violations of those live-input requirements assert in debug builds and leave the intent and
 position unchanged in release builds, never crashing a release app for delayed geometry.
 `layoutEvent(from:to:)` compares membership, measured geometry, viewport and document extent,
-not reader-only origin changes. Complete-frame entry points are also available and use the
-same reducer and placement logic.
+not reader-only origin changes.
 
 Long histories must stay as fast as short ones. Build rows incrementally: derive each message's
 audience, display text and reactions once, and when messages only append, rebuild from the last
