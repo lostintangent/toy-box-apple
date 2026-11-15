@@ -5,7 +5,7 @@ import Darwin
 import Observation
 import QuartzCore
 
-/// `--benchmark switch|messages|paging|scroll|key` measures one scenario in the first window,
+/// `--benchmark switch|messages|paging|scroll|place|key` measures one scenario in the first window,
 /// prints each result beside its budget and exits. `bun run benchmark` builds a release bundle and
 /// runs the scenarios against `bun run demo:perf`, whose `/perf/messages` route streams the agent
 /// messages that `messages` measures.
@@ -41,13 +41,22 @@ import QuartzCore
 ///   scrolls it, so hover runs as it does for them. Late-run-loop samples compare the first
 ///   visible row's movement with wheel deltas delivered since the preceding sample, with a 1-point
 ///   drift budget.
+///
+/// `messages`, `paging`, `scroll` and `place` also report whether the reader's place holds, as
+/// information rather than budgets. `messages` reports how far from the end each arrival leaves the
+/// transcript, `paging` where the first visible row settles after each older page is inserted, and
+/// `scroll` the last sequence the read rule counts as seen once reading up stops, then where the
+/// rows sit after the window narrows and widens, following and mid-transcript.
+/// - `place`: reveals a message a page and a half older than the first page, through the request a
+///   bookmark makes, and reports its time, scroll writes, settle passes, where it centers and what
+///   the read rule counts as seen.
 /// - `key`: makes the window key, which a person's window is, and measures the whole process's CPU
 ///   while it sits there, first with the channel's own working agents and then with 20 working.
 ///   Animations that run only in the key window, like the working ellipsis, show up here.
 @MainActor
 final class PerformanceBenchmark {
     enum Scenario: String, CaseIterable, Sendable {
-        case messages, paging, scroll, key
+        case messages, paging, scroll, place, key
         case switching = "switch"
     }
 
@@ -112,6 +121,7 @@ final class PerformanceBenchmark {
             case .messages: await messages()
             case .paging: await paging()
             case .scroll: await scrolling()
+            case .place: await placing()
             case .key: await keyWindow()
             }
             exit(EXIT_SUCCESS)
@@ -240,6 +250,7 @@ final class PerformanceBenchmark {
         let pointer = notePointer(over: scroll, at: loaded)
         let place = pointer.label
         var costs: [Double] = []
+        var widestGap = 0.0
         // The first two warm up anything a new row builds once.
         for index in 0..<12 {
             try? await Task.sleep(for: .milliseconds(100))
@@ -249,6 +260,7 @@ final class PerformanceBenchmark {
             await arrival(of: last, in: store)
             _ = await settled(quiet: 0.3)
             if index >= 2 { costs.append(meter.busy * 1000) }
+            widestGap = max(widestGap, gapToEnd(scroll))
         }
         let sorted = costs.sorted()
         check("Each message at \(loaded) loaded\(place)", "\(format(median(sorted))) median busy, "
@@ -265,6 +277,9 @@ final class PerformanceBenchmark {
               "\(format(meter.longestGap * 1000)) longest frame gap, \(format(meter.longestSpan * 1000)) longest "
               + "saturated span, \(format(meter.busy * 1000)) busy",
               value: meter.longestGap * 1000, budget: Budget.burstFrameGap)
+        info("Place following arrivals at \(before) loaded\(place)",
+             String(format: "%.1f pt from the end at most after one message, %.1f pt after the burst, ",
+                    widestGap, gapToEnd(scroll)) + describeRead(placeSnapshot()))
         requireStill(pointer, over: scroll)
     }
 
@@ -284,6 +299,10 @@ final class PerformanceBenchmark {
             await scrollNearTop(scroll)
             let first = store.messages.first?.sequence ?? 0
             let loaded = store.messages.count
+            let source = BenchmarkScrollGeometry.source(in: scroll)
+            let reader = source?.benchmarkPlaceSnapshot()?.firstVisible
+            // Moving to the top carries every row down by the distance moved.
+            let expected = reader.map { $0.top + CGFloat(offsetFromTop(scroll)) }
             meter.reset()
             let cpuStart = Self.mainThreadCPU()
             move(scroll, toTopOffset: 0)
@@ -299,6 +318,8 @@ final class PerformanceBenchmark {
                   + "\(format(meter.longestSpan * 1000)) longest saturated span, "
                   + "\(format(cpuMilliseconds)) main-thread CPU",
                   value: meter.busy * 1000, budget: Budget.olderPage)
+            let place = source?.benchmarkPlaceSnapshot()
+            info("Place after older page \(page)", describeHold(of: reader?.id, expectedTop: expected, in: place))
         }
         guard page > 0 else {
             fail("\(channelID) has no older messages. Measure paging on history-demo from bun run demo:perf.")
@@ -312,6 +333,7 @@ final class PerformanceBenchmark {
         try? await Task.sleep(for: .seconds(1))
         _ = await settled()
         header()
+        info("Read on opening", describeRead(placeSnapshot()))
         info("Wheel driver", "unphased precise input through the app-local event queue")
         await verifyWheelDriver()
         await verifyTranscriptInput()
@@ -329,6 +351,16 @@ final class PerformanceBenchmark {
         guard gap < 2 else { fail("the transcript stayed \(Int(gap)) pt from the latest message") }
         await measureScrolling(in: store)
         await measureScrollingUnderPointer(in: store)
+        await measureResize()
+    }
+
+    private func placing() async {
+        await load(channelID)
+        guard let store = store(channelID) else { return }
+        _ = await settled()
+        header()
+        info("Read on opening", describeRead(placeSnapshot()))
+        await measureReveal(in: store)
     }
 
     /// Scrolls again from the latest message with the transcript under the still pointer, where a
@@ -435,6 +467,7 @@ final class PerformanceBenchmark {
         for up in [true, false] {
             try? await Task.sleep(for: .milliseconds(300))
             _ = await settled()
+            if !up { info("Read after reading up \(place)", describeRead(geometry.benchmarkPlaceSnapshot())) }
             let start = offsetFromTop(scroll)
             let gesture = WheelGesture(window: window, over: scroll, geometry: geometry,
                                        speed: up ? Self.scrollSpeed : -Self.scrollSpeed, distance: distance) { [weak self] in
@@ -475,6 +508,112 @@ final class PerformanceBenchmark {
                            frames.drift.maximum, frames.drift.total),
                   value: frames.drift.maximum, budget: Budget.scrollDrift, unit: " pt")
         }
+    }
+
+    // MARK: Place
+
+    private func placeSnapshot() -> BenchmarkPlace? {
+        transcriptScrollView().flatMap { BenchmarkScrollGeometry.source(in: $0)?.benchmarkPlaceSnapshot() }
+    }
+
+    private func describeRead(_ place: BenchmarkPlace?) -> String {
+        guard let place else { return "no transcript geometry" }
+        return place.readThrough.map { "read through \($0)" }
+            ?? "nothing counted as read, with \(place.rows.count) rows built"
+    }
+
+    /// How far `id` settled from where it should be, with the read rule's sequence.
+    private func describeHold(of id: String?, expectedTop: CGFloat?, in place: BenchmarkPlace?) -> String {
+        guard let id, let expectedTop else { return "no first visible row before, \(describeRead(place))" }
+        guard let top = place?.rows[id]?.minY else {
+            let now = place?.firstVisible.map { String(format: "%@ at %.1f pt", $0.id, Double($0.top)) } ?? "nothing"
+            return "\(id) is no longer built and \(now) is first visible, \(describeRead(place))"
+        }
+        return String(format: "%@ settled %.1f pt from its place, ", id, Double(abs(top - expectedTop)))
+            + describeRead(place)
+    }
+
+    /// Reveals a message about a page and a half older than the oldest loaded, through the same
+    /// request a bookmark makes, and reports how many scroll writes and settle passes it took.
+    private func measureReveal(in store: ChannelStore) async {
+        guard let scroll = transcriptScrollView(), let source = BenchmarkScrollGeometry.source(in: scroll),
+              let interaction = source.benchmarkInteraction else { fail("the transcript has no reveal source") }
+        guard let oldest = store.messages.first?.sequence, oldest > 150 else {
+            fail("\(channelID) has too little older history to reveal. Measure place on history-demo.")
+        }
+        let sequence = oldest - 150
+        _ = await settled()
+        BenchmarkReveal.reset()
+        let start = CACurrentMediaTime()
+        let token = interaction.reveal(sequence: sequence)
+        await until("revealing \(sequence) didn't finish", timeout: 20) {
+            interaction.revealProgress?.token != token || interaction.revealProgress?.outcome != .loading
+        }
+        let seconds = CACurrentMediaTime() - start
+        let outcome = interaction.revealProgress?.token == token ? interaction.revealProgress?.outcome : nil
+        let counts = BenchmarkReveal.counts
+        _ = await settled()
+        let place = source.benchmarkPlaceSnapshot()
+        let landing: String
+        if let id = store.messages.first(where: { $0.sequence == sequence })?.id,
+           let rect = place?.rows[id], let place {
+            landing = String(format: "center %.1f pt from the viewport's", Double(abs(rect.midY - place.viewportHeight / 2)))
+        } else {
+            landing = "not built once settled"
+        }
+        let result = switch outcome {
+        case .revealed: "revealed"
+        case .failed(let reason): "failed: \(reason)"
+        case .loading, nil: "superseded"
+        }
+        info("Reveal \(sequence) from \(oldest) loaded",
+             "\(result) in \(format(seconds * 1000)), \(counts.writes) scroll writes over \(counts.turns) settle passes, "
+             + "\(landing), \(describeRead(place))")
+    }
+
+    /// Narrows the window and widens it back, once following the latest message and once reading
+    /// mid-transcript, and reports where the rows sit on the next pass and once settled. These are
+    /// programmatic resizes, not a live drag.
+    private func measureResize() async {
+        guard let window, let meter, let scroll = transcriptScrollView(),
+              let source = BenchmarkScrollGeometry.source(in: scroll) else { fail("there's no transcript to resize") }
+        let original = window.frame
+        let narrow = NSRect(x: original.minX, y: original.minY, width: original.width - 160, height: original.height)
+        let gap = await scrollToEnd()
+        guard gap < 2 else { fail("the transcript stayed \(Int(gap)) pt from the latest message") }
+        for frame in [narrow, original] {
+            window.setFrame(frame, display: true)
+            _ = await meter.passEnd()
+            let next = gapToEnd(scroll)
+            _ = await settled()
+            info("Place following, resized to \(Int(frame.width)) pt",
+                 String(format: "%.1f pt from the end on the next pass, %.1f pt once settled, ", Double(next),
+                        Double(gapToEnd(scroll))) + describeRead(source.benchmarkPlaceSnapshot()))
+        }
+        await scrollSteadily(scroll, toTopOffset: offsetFromTop(scroll) / 2)
+        for frame in [narrow, original] {
+            let reader = source.benchmarkPlaceSnapshot()?.firstVisible
+            window.setFrame(frame, display: true)
+            _ = await meter.passEnd()
+            let next = source.benchmarkPlaceSnapshot()
+            _ = await settled()
+            let settledPlace = source.benchmarkPlaceSnapshot()
+            let moved = reader.flatMap { reader in next?.rows[reader.id].map { abs($0.minY - reader.top) } }
+            info("Place reading, resized to \(Int(frame.width)) pt",
+                 (moved.map { String(format: "%.1f pt on the next pass, ", Double($0)) } ?? "not built on the next pass, ")
+                 + describeHold(of: reader?.id, expectedTop: reader?.top, in: settledPlace))
+        }
+    }
+
+    /// Moves to `offset` until lazy row layout stops moving it.
+    private func scrollSteadily(_ scroll: NSScrollView, toTopOffset offset: Double) async {
+        var steady = 0
+        for _ in 0..<40 where steady < 2 {
+            move(scroll, toTopOffset: offset)
+            _ = await settled(quiet: 0.3)
+            steady = abs(offsetFromTop(scroll) - offset) < 2 ? steady + 1 : 0
+        }
+        guard steady == 2 else { fail("the transcript didn't stay at \(Int(offset)) pt") }
     }
 
     /// Moves the window to the corner of its screen farthest from the parked pointer when it would
@@ -896,6 +1035,30 @@ struct BenchmarkScrollGeometry: Equatable, Sendable {
     }
 }
 
+/// Every built message's frame in viewport coordinates, and the last sequence the read rule counts
+/// as seen there.
+struct BenchmarkPlace: Sendable {
+    var rows: [String: CGRect]
+    var viewportHeight: CGFloat
+    var readThrough: Int?
+
+    var firstVisible: (id: String, top: CGFloat)? {
+        rows.filter { $0.value.maxY > 0 && $0.value.minY < viewportHeight }
+            .min { ($0.value.minY, $0.key) < ($1.value.minY, $1.key) }
+            .map { ($0.key, $0.value.minY) }
+    }
+}
+
+/// What a reveal did between its request and its outcome.
+@MainActor
+enum BenchmarkReveal {
+    private(set) static var counts = (writes: 0, turns: 0)
+
+    static func reset() { counts = (0, 0) }
+    static func wrote() { counts.writes += 1 }
+    static func turned() { counts.turns += 1 }
+}
+
 struct BenchmarkScrollDelivery: Equatable, Sendable {
     var postedEvents = 0
     var deliveredEvents = 0
@@ -917,6 +1080,13 @@ struct BenchmarkScrollDelivery: Equatable, Sendable {
 @MainActor
 protocol BenchmarkScrollGeometrySource: AnyObject {
     func benchmarkScrollGeometry() -> BenchmarkScrollGeometry?
+    func benchmarkPlaceSnapshot() -> BenchmarkPlace?
+    var benchmarkInteraction: ChannelInteraction? { get }
+}
+
+extension BenchmarkScrollGeometrySource {
+    func benchmarkPlaceSnapshot() -> BenchmarkPlace? { nil }
+    var benchmarkInteraction: ChannelInteraction? { nil }
 }
 
 @MainActor

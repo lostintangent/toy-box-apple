@@ -22,8 +22,8 @@ if (import.meta.main) await main(async () => {
         options: { summaries: { type: "boolean", default: false } } });
     const scenarios = positionals.length ? positionals : ["switch", "messages", "paging", "scroll"];
     for (const scenario of scenarios) {
-        if (!["switch", "messages", "paging", "scroll", "key"].includes(scenario)) {
-            throw new Error(`Unknown scenario: ${scenario}. Use switch, messages, paging, scroll or key.`);
+        if (!["switch", "messages", "paging", "scroll", "place", "key"].includes(scenario)) {
+            throw new Error(`Unknown scenario: ${scenario}. Use switch, messages, paging, scroll, place or key.`);
         }
     }
     const build = resolve(required("SCRATCH_PATH").replace(/\/$/, "") + "-benchmark");
