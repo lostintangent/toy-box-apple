@@ -1810,7 +1810,9 @@ before the row it introduces.
 The phone uses the same leading layout in caption semibold: 8 points from the label to a hairline
 rule. When unread, the rule and "New" turn blue, with "New" 6 points after the rule's trailing end.
 It has 26 points above the line and 26 below. Capture the unread boundary only after snapshot or replay completes, and never move it as
-the user reads. A reopened store that disconnected while the channel was closed waits for its
+the user reads. New goes above the first message after the boundary that the current Message View
+shows, unless that message is the user's own. The user's post means they've caught up, so when
+every unread message is hidden in Your Messages, posting shows no divider. A reopened store that disconnected while the channel was closed waits for its
 reconnect, rather than capturing from the state it cached. This boundary is not an extra synthetic
 message. Reference renders of day labels, the New divider, system rows and both request states:
 `docs/transcript-events.png`.
