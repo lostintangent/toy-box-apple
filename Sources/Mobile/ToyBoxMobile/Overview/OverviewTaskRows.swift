@@ -50,7 +50,7 @@ struct OverviewTaskListRow: Identifiable {
             rows.append(.init(task: task, depth: depth, layout: layout))
             let children = visibleChildren(of: task, showsOnlyInProgress: showsOnlyInProgress)
             guard !children.isEmpty, disclosure.isExpanded(task, key: task.id) else { return }
-            guard layout.canInlineChildren(ofDepth: depth, haveOwner: children.contains { $0.ownerId != nil }) else {
+            guard layout.canInlineChildren(ofDepth: depth, haveOwner: children.contains { $0.owner != nil }) else {
                 rows.append(.init(task: task, depth: depth, layout: layout, isSubtasks: true, subtaskCount: children.count))
                 return
             }
@@ -88,7 +88,7 @@ struct OverviewTaskRows: View {
             OverviewTaskReadingLayout(
                 contentWidth: width, statusWidth: min(24, statusWidth), titleGap: min(8, titleGap),
                 ownerWidth: min(28, ownerWidth), scaledReadingWidth: readingWidth,
-                accessibility: typeSize.isAccessibilitySize, rootHasOwner: root.ownerId != nil)
+                accessibility: typeSize.isAccessibilitySize, rootHasOwner: root.owner != nil)
         }
         ForEach(rows) { row in
             rowContent(row)

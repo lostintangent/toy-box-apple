@@ -119,7 +119,7 @@ struct OverviewTaskRow: View {
     private var visibleChildren: [ChannelTask] {
         children.filter { OverviewTaskList.keeps($0, showsOnlyInProgress: showsOnlyInProgress) }
     }
-    private var owner: ChannelAgent? { task.ownerId.map { ChannelAgent(id: $0, in: agents) } }
+    private var owner: ChannelTask.Owner? { task.owner(in: agents) }
     private var progress: (done: Int, total: Int)? {
         guard task.showsChildProgress else { return nil }
         let progress = children.progress
@@ -179,8 +179,7 @@ struct OverviewTaskRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if let owner {
-                        AgentAvatarView(agent: owner, size: 16)
-                            .help("Owned by \(owner.name)")
+                        ChannelTaskOwnerAvatar(owner: owner, size: 16)
                     }
                 }
                 if timing != nil || diff != nil {
