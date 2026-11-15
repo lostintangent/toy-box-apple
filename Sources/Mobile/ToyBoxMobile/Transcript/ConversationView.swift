@@ -38,7 +38,7 @@ final class TranscriptScroll {
 
     /// Adopts the transcript's current rows once. A reveal syncs before placing, because it can
     /// resume after a page lands but before SwiftUI reports the change.
-    func sync(_ current: [Model.RowIdentity]) {
+    func sync(_ current: [Model.RowIdentity], pinsLanding: Bool = false) {
         guard current != rows else { return }
         if let anchor = rows.first?.id, current.first?.id != anchor, current.contains(where: { $0.id == anchor }),
            hasLanded {
@@ -47,6 +47,9 @@ final class TranscriptScroll {
             holdsPlacementThroughInput = true
             // The page moved every row down, so the old frames would hold the anchor at the top.
             frames.removeAll()
+        }
+        if let last = rows.last?.id, current.last?.id != last, current.contains(where: { $0.id == last }), hasLanded {
+            _ = update(.arrived(pinsLanding: pinsLanding))
         }
         rows = current
     }
@@ -386,7 +389,8 @@ struct ConversationView: View {
             }
         }
         .onChange(of: items.map(\.id), initial: true) {
-            scroll.sync(rowIdentities)
+            // A catch-up card holds its landing's top while its summary grows.
+            scroll.sync(rowIdentities, pinsLanding: interaction.messageView == .all && catchUp != nil)
             land(items)
         }
         .onChange(of: store.phase.isConnected) { land(items) }

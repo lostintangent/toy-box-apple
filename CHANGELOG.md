@@ -17,6 +17,7 @@
 - A long request's card now stays compact and scrolls, so the rest of your channels stay in view.
 - Sitting in a channel now keeps it read as new messages arrive, so it no longer shows up as unread when you go back to your channels.
 - Coming back to the app on a channel now moves New to what arrived while you were away, so you can see at a glance what you missed.
+- Opening a channel at New now keeps up with the conversation, so a message that arrives a moment later comes into view instead of staying below.
 - When you talk to the Lead, Send is ready as soon as your words appear, so you can send the moment you finish speaking.
 - After you send a note to the Lead, the card settles back into its row as smoothly as Cancel, with just a check to show it went.
 
