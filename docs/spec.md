@@ -1458,7 +1458,7 @@ changes and the band never blinks off and on. It still ignores taps.
 | Time and chevron | Last activity, then the folded `chevron.forward` | The elapsed time, "0:06", in caption, secondary and tabular, on the time's exact baseline and trailing edge. The chevron's space stays empty, so nothing on the top line shifts | The time leaves with a 2-point blur and fade over 0.15 seconds, then the counter fades in over 0.15 seconds, so the two never show together. Every later swap in this slot, to Offline or back to the time, works the same way, except at the settle. The chevron and attention mark fade out with the time. The counter's digits change in place, with no transition |
 | Line 2 | Folder or purpose, working stack, attention | The waveform, 24 high | Line 2 fades out with a 2-point blur over 0.15 seconds as the bars rise from 20% of their height |
 | Words | None | Body text 8 points below the waveform, up to five lines, then the oldest line scrolls under a 12-point top fade. "Listening…" in secondary until the first word. Tentative words are secondary and settle to primary as they finalize | Each new line grows the card with `.smooth(duration: 0.25)`. Up to five lines, the lines already shown hold still and the new one appears beneath them, while the controls and the card's bottom edge move down together in that one transaction. Once the card holds its bottom near the end of the list, the heading, the lines and the top edge move up together instead. Only from the sixth line does the text move, as the oldest line slides up under the fade |
-| Controls | None | A trailing pair 10 points below the words: Cancel, a 32-point circle of primary at 12% with `xmark`, then 12 points, then Send, the composer's 32-point accent circle with a white `arrow.up`. Both have 44-point hit targets. Send keeps the quaternary fill until there's a finalized word | Fade in and scale from 90%, 0.06 seconds behind the spring |
+| Controls | None | A trailing pair 10 points below the words: Cancel, a 32-point circle of primary at 12% with `xmark`, then 12 points, then Send, the composer's 32-point accent circle with a white `arrow.up`. Both have 44-point hit targets. Send keeps the quaternary fill until the first word shows, tentative or finalized | Fade in and scale from 90%, 0.06 seconds behind the spring |
 
 **Alive while you talk.** Your voice drives the recorder through the dictation level, smoothed
 and updated about 12 times a second. Each update applies with `.linear(duration: 0.08)`, and
@@ -1487,7 +1487,8 @@ disabled.
 
 **Send.** Tapping Send runs these steps in order:
 1. Listening stops and the waveform eases flat over 0.2 seconds. Only finalized words are sent,
-   so Send waits for the final result. Cancel disables.
+   so Send waits for the final result. Cancel disables. If no word finalizes, nothing is sent and
+   the card stays open.
 2. The note goes to the outbox with its own UUID, and the card holds only while it's saved.
 3. Once the outbox has it, the recorder closes into the Sent beat in one
    `.smooth(duration: 0.35)` transaction, while the note may still be sending:
