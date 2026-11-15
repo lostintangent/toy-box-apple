@@ -124,9 +124,10 @@ package final class TalkRecorder: DictationTextTarget {
 
     package var isOffline: Bool { catalog?.phase.failure != nil }
 
+    /// Send turns on with the first word shown, even a guess, and its send waits for the final result.
     package var canSend: Bool {
         phase == .recording && dictation.phase != .finishing && !isOffline && store?.outbox != nil
-            && !finalizedWords.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !(finalizedWords + tentativeWords).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// The mic offers Resume once listening stops, after silence, a failure or with access off.
