@@ -1605,9 +1605,10 @@ opens the channel at the request. The
 whole request follows without an attention mark, in the transcript's own body, so its Markdown,
 mentions and mention ink read exactly as in its bubble. The choices and Reply follow at the
 bubble's 10-point gap, in the phone's layout under Suggested replies. The waiting row and the
-widget keep the one-line plain question. The card grows to fit the whole request, which scrolls
-only once the card would run past the visible list, fading at whichever edge it continues past, so
-the choices and Reply always stay in view. The lines above and below the card hide, and it offers no
+widget keep the one-line plain question. The card shows up to 20 lines of the request, fewer if it
+would otherwise run past the visible list, and past that the request scrolls, fading at whichever
+edge it continues past, so the choices and Reply always stay in view. The Mac's popover keeps the
+same cap and fade. The lines above and below the card hide, and it offers no
 Talk swipe.
 
 **Choices.** A choice goes at once as written to the outbox with its own UUID, answering the
