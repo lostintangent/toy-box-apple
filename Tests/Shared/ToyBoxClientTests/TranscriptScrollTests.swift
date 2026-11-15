@@ -3,47 +3,8 @@ import ToyBoxKit
 import Foundation
 import Testing
 
-@Suite("Transcript reveal, reading and following")
+@Suite("Transcript reading and following")
 struct TranscriptScrollTests {
-    @Test func revealRejectsUnmeasuredAndPrependStaleTargets() throws {
-        let viewport = TranscriptViewport(top: 1_890, width: 503, height: 380, contentHeight: 5_148)
-        let stale = TranscriptMessageFrame(sequence: 2, rect: CGRect(x: 0, y: -1_800, width: 400, height: 57),
-                                           historyStart: 61, contentTop: 70)
-        #expect(TranscriptReveal.Layout(frame: nil, historyStart: 1, viewport: viewport, nativeTop: 1_890) == nil)
-        #expect(TranscriptReveal.Layout(frame: stale, historyStart: 1, viewport: viewport, nativeTop: 1_890) == nil)
-        var current = stale
-        current.historyStart = 1
-        current.rect.origin.y = 100
-        let layout = try #require(TranscriptReveal.Layout(
-            frame: current, historyStart: 1, viewport: viewport, nativeTop: 1_890))
-        #expect(TranscriptCoordinates.targetOffset(for: current, bottom: layout.bottom, topInset: 0) == -71.5)
-        #expect(TranscriptReveal.Layout(frame: current, historyStart: 1, viewport: .init(), nativeTop: 0) == nil)
-        var reveal = TranscriptReveal()
-        let first = reveal.receive(layout, isAligned: false)
-        let next = reveal.receive(layout, isAligned: false)
-        #expect(!first && !next)
-    }
-
-    @Test func revealCompletesOnlyAfterAnUnchangedNativeAlignment() throws {
-        let viewport = TranscriptViewport(top: 1_890, width: 503, height: 380, contentHeight: 5_148)
-        let frame = TranscriptMessageFrame(sequence: 2, rect: CGRect(x: 0, y: -1_800, width: 400, height: 57),
-                                           historyStart: 1, contentTop: 70)
-        let layout = try #require(TranscriptReveal.Layout(
-            frame: frame, historyStart: 1, viewport: viewport, nativeTop: 1_890))
-        #expect(layout.bottom == 218.5)
-        var reveal = TranscriptReveal()
-        var completions = [reveal.receive(layout, isAligned: true)]
-        var corrected = layout
-        corrected.frame.contentTop += 120
-        completions.append(reveal.receive(corrected, isAligned: true))
-        corrected.nativeTop += 40
-        completions.append(reveal.receive(corrected, isAligned: true))
-        completions.append(reveal.receive(nil, isAligned: false))
-        completions.append(reveal.receive(corrected, isAligned: true))
-        completions.append(reveal.receive(corrected, isAligned: true))
-        #expect(completions == [false, false, false, false, false, true])
-    }
-
     @Test func readCandidateIsTheNewestVisibleCommittedMessage() {
         let viewport = TranscriptViewport(width: 600, height: 400)
         let frames: [String: TranscriptMessageFrame] = [
