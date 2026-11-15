@@ -718,9 +718,20 @@ private struct TalkList<Row: View>: ViewModifier {
     let row: (ChannelTarget) -> Row
     @ViewState private var hold = TalkHold()
     @Environment(\.scenePhase) private var scenePhase
+    #if os(macOS)
+    @FocusState private var listFocused: Bool
+    #endif
 
     func body(content: Content) -> some View {
         content
+            #if os(macOS)
+            // Send and Cancel hand key focus back from the card, so the open channel's selection
+            // keeps its accent. Leaving doesn't, because focus is already going somewhere else.
+            .focused($listFocused)
+            .onChange(of: recorder.phase) { _, phase in
+                if phase == .sent || phase == .cancelled { listFocused = true }
+            }
+            #endif
             .environment(hold)
             .cardList(isLifted: recorder.isLifted, target: recorder.target, targets: targets,
                       endsWhenChanging: context, end: recorder.leave) { list in

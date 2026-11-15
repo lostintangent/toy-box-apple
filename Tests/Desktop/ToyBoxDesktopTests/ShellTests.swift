@@ -2018,3 +2018,52 @@ struct SiriOnScreenTests {
                                    send: { _ in Issue.record("Reading never sends") }, open: { _ in }, onScreen: onScreen))
     }
 }
+
+@MainActor
+@Suite("Sidebar talk card")
+struct SidebarTalkCardTests {
+    @Test func cancelHandsKeyFocusBackToTheList() async throws {
+        let api = try ChannelAPI(serverURL: "http://talk-focus.test")
+        let stores = ["a", "b", "c"].map { ChannelStore(id: $0, api: api) }
+        let targets = stores.compactMap(\.target)
+        let draft = ComposerDraft()
+        var system = DictationSystem.scripted()
+        system.refreshNotifications = []
+        let recorder = TalkRecorder(system: system, checks: CardChecks(), draft: { _ in draft }, announce: { _ in })
+        let view = NSHostingView(rootView: List(targets, id: \.self) { target in
+            Text(target.channelID).talkRow(target, recorder: recorder) {}
+        }
+        .listStyle(.sidebar)
+        .talkList(recorder, targets: targets, endsWhenChanging: []) { Text($0.channelID) })
+        // It counts as key without taking key from another test's window, which would end the note.
+        let window = TalkKeyWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 400),
+                                   styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        window.orderFrontRegardless()
+        defer {
+            recorder.deactivate()
+            window.close()
+        }
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        var list: NSTableView? { descendants(view).lazy.compactMap { $0 as? NSTableView }.first }
+        try await waitUntil("the list mounts", in: view) { list != nil }
+        window.makeFirstResponder(list)
+        await recorder.dictation.refreshLanguageSupport()
+        recorder.start(stores[1], name: "b", order: targets)
+        try await waitUntil("the card takes key focus", in: view) {
+            recorder.isLifted && !(window.firstResponder is NSTableView)
+        }
+        try #require(recorder.phase == .recording, "Nothing ended the note before Cancel")
+        recorder.cancel()
+        try await waitUntil("the list has key focus again once the card closes", in: view) {
+            recorder.phase == nil && window.firstResponder is NSTableView
+        }
+    }
+}
+
+private final class TalkKeyWindow: NSWindow {
+    override var isKeyWindow: Bool { true }
+    override var canBecomeKey: Bool { true }
+}
