@@ -42,6 +42,7 @@ final class TranscriptScroll {
     /// resume after a page lands but before SwiftUI reports the change.
     func sync(_ current: [Model.RowIdentity], pinsLanding: Bool = false) {
         guard current != rows else { return }
+        var paged = false
         if let anchor = rows.first?.id, current.first?.id != anchor, current.contains(where: { $0.id == anchor }),
            hasLanded {
             // Older history arrived above: keep the reader's row where it was.
@@ -49,11 +50,13 @@ final class TranscriptScroll {
             holdsPlacementThroughInput = true
             // The page moved every row down, so the old frames would hold the anchor at the top.
             frames.removeAll()
-            if case .reading(let anchor) = intent { settling = anchor.row }
+            paged = true
         }
         if let last = rows.last?.id, current.last?.id != last, current.contains(where: { $0.id == last }), hasLanded {
             _ = update(.arrived(pinsLanding: pinsLanding))
         }
+        // Set after any arrival, whose update would clear it.
+        if paged, case .reading(let anchor) = intent { settling = anchor.row }
         rows = current
     }
 
