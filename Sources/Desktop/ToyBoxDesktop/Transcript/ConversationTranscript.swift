@@ -531,10 +531,10 @@ struct ConversationTranscript: View {
     }
 
     /// A blank the scroll view never reported lasts until the reader scrolls or resizes, so check
-    /// whether AppKit's clip shows any built row as either begins.
+    /// whether AppKit's clip shows any built row as either begins. The lazy stack may have built none.
     private func logIfBlank(when start: String) {
         let top = window.viewportTop ?? viewport.top
-        guard !frames.isEmpty, !frames.values.contains(where: {
+        guard !rows.isEmpty, !frames.values.contains(where: {
             let rowTop = TranscriptCoordinates.contentTopPadding + $0.contentTop
             return rowTop < top + viewport.height && rowTop + $0.rect.height > top
         }) else { return }
