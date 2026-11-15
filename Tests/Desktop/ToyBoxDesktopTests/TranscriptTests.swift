@@ -2309,8 +2309,11 @@ struct TranscriptCatchUpTests {
         try await harness.waitUntil { harness.capture.hasLanded && service.catchUpCount == 1 }
         let divider = try #require(harness.capture.frames["divider-m10"]?.rect)
         try #require(divider.minY >= -0.5 && divider.minY < 120, "Landed with the divider at \(divider)")
-        let landed = clip.bounds.minY
-        try await harness.scrollDown(byWheel: false) { clip.bounds.minY > landed + 400 }
+        // Just past the card's top, so its row is still built when the summary grows it.
+        try await harness.scrollDown(byWheel: false) {
+            (harness.capture.frames["divider-m10"]?.rect.minY ?? -.infinity) < -1
+        }
+        try #require(harness.capture.frames["divider-m10"] != nil)
         let reading = harness.visibleFrames()
         try #require(reading.count >= 2)
         let height = harness.scrollView.documentView?.bounds.height ?? 0

@@ -837,6 +837,7 @@ struct ConversationTranscript: View {
                 alignedSince = nil
                 if !requestedMaterialization {
                     let item = TranscriptItem.items(rows).first { $0.messages.contains { $0.id == anchor.id } }
+                    scrollPosition = nil
                     proxy.scrollTo(item?.id ?? anchor.id, anchor: .top)
                     requestedMaterialization = true
                 }
