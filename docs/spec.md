@@ -1303,7 +1303,7 @@ switching channels. Resting the pointer on it for 0.5 s, or clicking its bubble,
 its trailing edge, 336 points wide with 12-point insets, in the transcript's pending-bubble wash.
 It holds only the request, since the row beside it already shows the channel's avatar, name and
 time: the whole question in the transcript's own body, then the transcript's own choices, Reply
-and Read Aloud. The question shows up to 20 lines, and past that it scrolls, fading at whichever
+and Read Aloud. The question shows up to 15 lines, and past that it scrolls, fading at whichever
 edge it continues past as the phone's card does, with the actions always in view.
 The row stays lit while it's open. Moving into it keeps it open, and leaving both, Escape or
 clicking elsewhere closes it, except that once the user clicks into it, only a send, Escape or a
@@ -1605,7 +1605,7 @@ opens the channel at the request. The
 whole request follows without an attention mark, in the transcript's own body, so its Markdown,
 mentions and mention ink read exactly as in its bubble. The choices and Reply follow at the
 bubble's 10-point gap, in the phone's layout under Suggested replies. The waiting row and the
-widget keep the one-line plain question. The card shows up to 20 lines of the request, fewer if it
+widget keep the one-line plain question. The card shows up to 15 lines of the request, fewer if it
 would otherwise run past the visible list, and past that the request scrolls, fading at whichever
 edge it continues past, so the choices and Reply always stay in view. The Mac's popover keeps the
 same cap and fade. The lines above and below the card hide, and it offers no
