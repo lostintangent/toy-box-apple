@@ -450,14 +450,17 @@ struct TranscriptTests {
     }
 
     /// Reopening a channel that moved far ahead replays everything it missed, one event at a time, before
-    /// `resumed`. Every pass drawn shows either the cached conversation where it was left or the landing,
-    /// on the New divider or, once read elsewhere, the end. None follows the replay on its way there.
+    /// `resumed`, and lands on the New divider or, once read elsewhere, the end. With timing tests on,
+    /// every pass drawn shows either the cached conversation where it was left or the landing. None
+    /// follows the replay on its way there.
     @MainActor
-    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
+    @Test(arguments: [false, true])
     func reopeningAChannelThatMovedFarAheadLandsInOneStep(readElsewhere: Bool) async throws {
         let log = TranscriptReopenLog()
-        let messages = (1...90).map {
-            catchUpTestMessage($0, sender: $0.isMultiple(of: 2) ? .user : .agent("lead"))
+        // Only agents post while the reader is away, because a message you post reads its channel.
+        let messages = (1...90).map { sequence in
+            let other: ChannelMessageSender = sequence <= 30 ? .user : .agent("helper")
+            return catchUpTestMessage(sequence, sender: sequence.isMultiple(of: 2) ? other : .agent("lead"))
         }
         let service = StubChannelIntelligence(availability: .unavailable(.deviceNotEligible))
         let harness = try await TranscriptHarness(messages: Array(messages.prefix(30)), intelligence: service) {
@@ -487,6 +490,8 @@ struct TranscriptTests {
             let divider = try #require(harness.frames["divider-m31"]?.rect.minY)
             #expect(divider >= -0.5 && divider < 120, "Landed with the divider at \(divider)")
         }
+        #expect(harness.readRequests == 0)
+        guard transcriptTimingTestsEnabled else { return }
         func landed(_ pass: TranscriptReopenLog.Pass) -> Bool {
             if readElsewhere { return abs(pass.bottomGap) < 2 && pass.last == 90 }
             guard let divider = pass.divider else { return false }
@@ -497,7 +502,6 @@ struct TranscriptTests {
         let firstLanded = try #require(log.drawn.firstIndex(where: landed))
         #expect(log.drawn[firstLanded...].allSatisfy(landed))
         #expect(log.hiddenTurns == 0, "Rows already on screen hid for \(log.hiddenTurns) passes")
-        #expect(harness.readRequests == 0)
     }
 
     @MainActor
