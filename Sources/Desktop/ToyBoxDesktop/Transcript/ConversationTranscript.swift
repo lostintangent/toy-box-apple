@@ -205,11 +205,11 @@ struct ConversationTranscript: View {
                 if rows.isEmpty && store.hasOlderMessages { Task { await loadOlder() } }
             }
             .onChange(of: store.messages.last?.id) {
-                guard hasLanded, pagingAnchor == nil, !isRevealing, !find.isPresented else { return }
-                if isAtBottom {
-                    catchUp?.isPinned = false
-                    scrollToLatest(using: proxy)
-                }
+                guard hasLanded, pagingAnchor == nil, !isRevealing, !find.isPresented, isAtBottom else { return }
+                // The bottom anchor follows arrivals once the catch-up card stops holding the landing.
+                let held = catchUp?.holdsLanding == true
+                catchUp?.isPinned = false
+                if held { scrollToLatest(using: proxy) }
             }
             .onChange(of: store.sending.map(\.id)) { old, new in
                 if isAtBottom && !find.isPresented && new.count > old.count { scrollToLatest(using: proxy) }
@@ -242,11 +242,13 @@ struct ConversationTranscript: View {
         .scrollEdgeEffectStyle(.soft, for: .vertical)
         .coordinateSpace(name: "transcript-viewport")
         .defaultScrollAnchor(opening.seededRowID == nil ? .bottom : .top, for: .initialOffset)
-        // Keeps the end in place in the same pass that draws a new size, where a follow lands a frame later.
+        // While following, arrivals, composer growth and resizes keep the end in place in the pass that draws them.
         .defaultScrollAnchor(followsLatest ? .bottom : nil, for: .sizeChanges)
         .scrollPosition(id: Binding {
+            // A row anchor left by an earlier scroll would hold that row instead of the end.
+            if followsLatest { return nil }
             // The seed holds the first unread row at the top until it lands, as the card appears above it.
-            scrollPosition ?? (hasLanded || isRevealing ? nil : opening.seededRowID)
+            return scrollPosition ?? (hasLanded || isRevealing ? nil : opening.seededRowID)
         } set: { scrollPosition = $0 }, anchor: .top)
         .preference(key: TranscriptLanded.self, value: hasLanded)
         .preference(key: TranscriptRestoringHistory.self, value: pagingAnchor != nil)
@@ -269,17 +271,7 @@ struct ConversationTranscript: View {
             if isAtBottom != update.isAtBottom { isAtBottom = update.isAtBottom }
             let jump = pendingJump
             if update.landsJump { pendingJump = nil }
-            switch update.follow {
-            case .latest:
-                // Floating controls and composer growth change only the unobscured height.
-                let animation: Animation? = reduceMotion || old.contentHeight != new.contentHeight
-                    ? nil : .easeOut(duration: 0.2)
-                scrollToLatest(using: proxy, animation: animation)
-            case .jump:
-                if let jump { proxy.scrollTo(jump.id, anchor: jump.anchor) }
-            case nil:
-                break
-            }
+            if update.follow == .jump, let jump { proxy.scrollTo(jump.id, anchor: jump.anchor) }
             if hasLanded && new.top < 32 && old.top >= 32 && !isRevealing {
                 Task { await loadOlder() }
             }
@@ -433,7 +425,7 @@ struct ConversationTranscript: View {
 
     private var showsJumpToLatest: Bool { !isAtBottom && hasLanded }
 
-    /// When a resize should keep the newest message in place, as the geometry action's follow does.
+    /// When arrivals and resizes keep the newest message in place.
     private var followsLatest: Bool {
         isAtBottom && hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling && pendingJump == nil
             && catchUp?.holdsLanding != true && !find.isPresented
@@ -514,10 +506,10 @@ struct ConversationTranscript: View {
 
     /// Programmatic scrolls never update the scroll position binding, so an anchor left by an earlier
     /// user scroll would pull the viewport back toward it whenever content changes size.
-    func scrollToLatest(using proxy: ScrollViewProxy, animation: Animation? = nil) {
+    func scrollToLatest(using proxy: ScrollViewProxy) {
         scrollPosition = nil
         pendingJump = nil
-        withAnimation(animation) { proxy.scrollTo("transcript-end", anchor: .bottom) }
+        proxy.scrollTo("transcript-end", anchor: .bottom)
     }
 
     /// A programmatic scroll applies on a later layout pass. A resize that arrives first while the
