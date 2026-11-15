@@ -83,6 +83,9 @@ final class TranscriptWindowObserver {
         return abs(clip.bounds.minY - bottom) <= 0.25
     }
 
+    /// How far AppKit's clip sits above the end of the document.
+    var endGap: CGFloat? { bottomOffset.flatMap { bottom in scrollOffset.map { bottom - $0 } } }
+
     private var bottomOffset: CGFloat? {
         guard let scrollView, let document = scrollView.documentView, document.isFlipped else { return nil }
         let clip = scrollView.contentView
