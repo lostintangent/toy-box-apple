@@ -35,11 +35,14 @@ final class TranscriptScroll {
     private var frames: [String: CGRect] = [:]
     private var column: CGFloat?
     private var lastLayout: Model.Layout?
+    /// The reader's row while a page above it settles, until its first frame on screen places it.
+    private var settling: String?
 
     /// Adopts the transcript's current rows once. A reveal syncs before placing, because it can
     /// resume after a page lands but before SwiftUI reports the change.
     func sync(_ current: [Model.RowIdentity], pinsLanding: Bool = false) {
         guard current != rows else { return }
+        var paged = false
         if let anchor = rows.first?.id, current.first?.id != anchor, current.contains(where: { $0.id == anchor }),
            hasLanded {
             // Older history arrived above: keep the reader's row where it was.
@@ -47,10 +50,13 @@ final class TranscriptScroll {
             holdsPlacementThroughInput = true
             // The page moved every row down, so the old frames would hold the anchor at the top.
             frames.removeAll()
+            paged = true
         }
         if let last = rows.last?.id, current.last?.id != last, current.contains(where: { $0.id == last }), hasLanded {
             _ = update(.arrived(pinsLanding: pinsLanding))
         }
+        // Set after any arrival, whose update would clear it.
+        if paged, case .reading(let anchor) = intent { settling = anchor.row }
         rows = current
     }
 
@@ -75,7 +81,7 @@ final class TranscriptScroll {
     var layout: Model.Layout? {
         guard let metrics, metrics.viewport.width > 0 else { return nil }
         return Model.Layout(rows: rows, frames: measured, viewport: metrics.viewport,
-                            origin: metrics.origin, documentEnd: max(0, metrics.documentEnd))
+                            origin: metrics.origin, documentEnd: max(0, metrics.documentEnd), settling: settling)
     }
 
     /// Reduces an explicit event, or derives reader input and geometry changes when there's none.
@@ -103,6 +109,7 @@ final class TranscriptScroll {
         }
         if capturesPosition(event), !hasViewportGeometry { return nil }
         let placement = Model.reduce(intent, event, layout: layout)
+        if placement.needsMeasurement != settling { settling = nil }
         intent = placement.intent
         switch event {
         case .land: hasLanded = true
@@ -535,7 +542,8 @@ struct ConversationView: View {
             } else {
                 scroll.holdsPlacementThroughInput = false
             }
-        } else if let id = placement?.needsMeasurement {
+        } else if let id = placement?.needsMeasurement, position.viewID(type: String.self) != id {
+            // Frames from the layout before the scroll lands ask again, and one scroll serves them all.
             position.scrollTo(id: id, anchor: .top)
         }
         if let away = scroll.showsJumpToLatest(after: placement), away != showsJumpToLatest {
