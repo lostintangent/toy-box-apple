@@ -685,37 +685,23 @@ struct ConversationTranscript: View {
         return findToken == nil || (find.isPresented && find.revealRequest?.token == findToken)
     }
 
-    /// Nil when another reveal, Find or the artifact viewer superseded this one.
+    /// Nil when another reveal, Find or the artifact viewer superseded this one. SwiftUI centers the
+    /// row, building what it needs on the way, so the reveal ends once the target is built.
     private func settleReveal(targetID: String, rowID: String, token: UUID, findToken: UUID?,
                               using proxy: ScrollViewProxy) async -> RevealProgress.Outcome? {
         let turns = TranscriptLayoutTurns()
         let deadline = ContinuousClock.now + revealTimeout
-        var reveal = TranscriptReveal()
-        var materialized = false
         scrollPosition = nil
+        proxy.scrollTo(rowID, anchor: .center)
+        #if TOY_BOX_BENCHMARK
+        BenchmarkReveal.wrote()
+        #endif
         while ContinuousClock.now < deadline {
             guard await turns.settled(), revealIsCurrent(token, findToken: findToken) else { return nil }
             #if TOY_BOX_BENCHMARK
             BenchmarkReveal.turned()
             #endif
-            guard let layout = TranscriptReveal.Layout(
-                frame: frames[targetID], historyStart: store.messages.first?.sequence,
-                viewport: viewport, nativeTop: window.viewportTop) else {
-                _ = reveal.receive(nil, isAligned: false)
-                if !materialized {
-                    proxy.scrollTo(rowID, anchor: .center)
-                    materialized = true
-                    #if TOY_BOX_BENCHMARK
-                    BenchmarkReveal.wrote()
-                    #endif
-                }
-                continue
-            }
-            let aligned = window.restoreReadingBottom(layout.bottom, of: layout.frame)
-            #if TOY_BOX_BENCHMARK
-            if !aligned { BenchmarkReveal.wrote() }
-            #endif
-            if reveal.receive(layout, isAligned: aligned) { return .revealed }
+            if frames[targetID]?.historyStart == store.messages.first?.sequence { return .revealed }
         }
         guard revealIsCurrent(token, findToken: findToken) else { return nil }
         let failure = "Couldn't reveal this message. Try Reveal again."
