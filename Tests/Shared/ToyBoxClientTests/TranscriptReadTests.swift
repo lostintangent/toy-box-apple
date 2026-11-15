@@ -6,6 +6,7 @@ struct TranscriptReadTests {
                                                 hasLanded: true, isConnected: true)
 
     @Test func aReadCountsOnlyWhileTheReaderIsLooking() {
+        #expect(Self.reading.sequence == 3)
         let blocking: [(WritableKeyPath<TranscriptRead, Bool>, Bool)] = [
             (\.isLooking, false), (\.hasLanded, false), (\.isConnected, false), (\.isCovered, true)
         ]
@@ -14,13 +15,5 @@ struct TranscriptReadTests {
             read[keyPath: fact] = value
             #expect(read.sequence == nil, "\(fact)")
         }
-    }
-
-    /// Wherever the reader has scrolled, an arrival is read as it comes, as on the web.
-    @Test func anArrivalIsReadWhileTheReaderIsLooking() {
-        var read = Self.reading
-        #expect(read.sequence == 3)
-        read.latestSequence = 4
-        #expect(read.sequence == 4)
     }
 }

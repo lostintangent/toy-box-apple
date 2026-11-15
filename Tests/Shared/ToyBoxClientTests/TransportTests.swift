@@ -443,8 +443,7 @@ struct TransportTests {
         #expect(store.unreadAfter == 3, "New sits above the message that arrived while away")
     }
 
-    /// Transcript's read task is cancelled whenever the visible sequence moves, which used to cancel
-    /// the write in flight.
+    /// Cancelling a caller mid-write never cancels the write, because the store owns it.
     @Test @MainActor func cancellingAReaderDoesNotDropItsRead() async throws {
         let (mock, store) = try heldReadStore()
         let reader = Task { await store.markRead(through: 2) }
@@ -457,7 +456,7 @@ struct TransportTests {
     }
 
     /// A later read that arrives during a write joins it, so cancelling the first reader can't strand
-    /// the later target until the next scroll.
+    /// the later target until the next change.
     @Test @MainActor func aLaterReadIsStillWrittenWhenTheFirstReaderIsCancelled() async throws {
         let (mock, store) = try heldReadStore()
         let first = Task { await store.markRead(through: 2) }
