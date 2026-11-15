@@ -312,6 +312,26 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
       json(response, 201, message);
       return;
     }
+    // An agent reacts to a message, as a working agent's status does. Without `reaction`, it removes its reaction.
+    if (request.method === 'POST' && pathname === '/demo/reaction') {
+      const sequence = Number(url.searchParams.get('sequence') ?? snapshot.channel.latestSequence);
+      const agentId = url.searchParams.get('agentId') ?? snapshot.lead.id;
+      const reaction = url.searchParams.get('reaction');
+      // The open request is its own copy of its message, so it changes with it.
+      const copies = [snapshot.request, ...snapshot.messages].filter((candidate: Snapshot) => candidate?.sequence === sequence);
+      if (!copies.length || copies[0].sender.type === 'system') {
+        json(response, 422, { error: 'React to a loaded user or agent message.' }); return;
+      }
+      const reactions = (copies[0].reactions ?? []).filter((existing: Snapshot) => existing.agentId !== agentId);
+      if (reaction) reactions.push({ agentId, reaction });
+      for (const copy of copies) {
+        if (reactions.length) copy.reactions = reactions; else delete copy.reactions;
+      }
+      snapshot.revision++;
+      publish({ type: 'reaction', revision: snapshot.revision, sequence, agentId, reaction: reaction || null });
+      json(response, 200, { sequence, reactions });
+      return;
+    }
     const bookmarkPath = `${channelPath}/bookmarks/`;
     if ((request.method === 'PUT' || request.method === 'DELETE') && pathname.startsWith(bookmarkPath)) {
       const segment = pathname.slice(bookmarkPath.length);
