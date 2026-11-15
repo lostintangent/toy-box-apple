@@ -2750,7 +2750,11 @@ The Composer's Tasks popover has no header and always shows every task.
 
 Rows have 5 points of vertical padding. The first line is the title (13 regular, wrapping, done
 titles in secondary, never struck through) with the owner's 16-point avatar at the trailing
-edge, centered on the first line and at least 8 points from the title.
+edge, centered on the first line and at least 8 points from the title. A task whose `ownerId` is
+the literal `"user"` waits on you. Its owner is you, drawn as your bookmarks draw you: a secondary
+`person.crop.circle.fill` named "You", with help "Owned by you" and VoiceOver "owner You". It's
+never looked up in the team, so it never shows as "Deleted agent". ToyBoxKit resolves a task's
+owner once for both apps.
 
 **Task facts have a dedicated home.** Start metadata 6 points below the final title/progress
 line, aligned with the title and extending to the row's trailing edge under the avatar column,
