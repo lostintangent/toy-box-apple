@@ -1,6 +1,7 @@
 import ToyBoxClient
 import ToyBoxIntelligence
 import ToyBoxKit
+import OSLog
 import SwiftUI
 import ToyBoxUI
 
@@ -188,6 +189,15 @@ struct ConversationTranscript: View {
                     await reveal(sequence: request.sequence, using: proxy)
                 }
                 .task(id: read) { await read.mark(in: store) }
+                .task(id: hidesOpening) {
+                    guard hidesOpening, (try? await Task.sleep(for: .seconds(1))) != nil, hidesOpening else { return }
+                    logBlank("hid its rows for over a second")
+                }
+                .task(id: hasLanded) {
+                    guard hasLanded, (try? await Task.sleep(for: .seconds(1))) != nil, followsLatest,
+                          let gap = window.endGap, gap > 1 else { return }
+                    logBlank("follows its newest message \(Int(gap)) pt above the end")
+                }
                 .task(id: pagingRestoreTarget) { await settlePagingRestore(using: proxy) }
                 // Owned here rather than by the card, which the lazy stack drops when it scrolls away.
                 .task(id: catchUp?.session.generation) { await catchUp?.session.run(using: intelligence) }
@@ -299,7 +309,9 @@ struct ConversationTranscript: View {
             followReaderWhilePaging()
             restorePagingAnchor(using: new)
         }
-        .onScrollPhaseChange { _, phase in
+        .onChange(of: window.liveResizeStarts) { logIfBlank(when: "a live resize") }
+        .onScrollPhaseChange { old, phase in
+            if old == .idle, phase == .tracking || phase == .interacting { logIfBlank(when: "a scroll") }
             let scrolling = phase == .tracking || phase == .interacting || phase == .decelerating
             if isUserScrolling != scrolling { isUserScrolling = scrolling }
             if phase == .tracking || phase == .interacting { catchUp?.isPinned = false }
@@ -516,6 +528,28 @@ struct ConversationTranscript: View {
             }
             .frame(minHeight: 32)
         }
+    }
+
+    /// A blank the scroll view never reported lasts until the reader scrolls or resizes, so check
+    /// whether AppKit's clip shows any built row as either begins. The lazy stack may have built none.
+    private func logIfBlank(when start: String) {
+        let top = window.viewportTop ?? viewport.top
+        guard !rows.isEmpty, !frames.values.contains(where: {
+            let rowTop = TranscriptCoordinates.contentTopPadding + $0.contentTop
+            return rowTop < top + viewport.height && rowTop + $0.rect.height > top
+        }) else { return }
+        logBlank("showed no row when \(start) began")
+    }
+
+    /// One line for a transcript the reader may have seen blank, so the next one reads as rows that
+    /// were hidden, a scroll parked away from them, or neither.
+    private func logBlank(_ reason: String) {
+        let tops = frames.values.map { TranscriptCoordinates.contentTopPadding + $0.contentTop }
+        let ends = zip(tops, frames.values).map { $0 + $1.rect.height }
+        let line = "Transcript \(reason): hidden \(hidesOpening), landed \(hasLanded), "
+            + "SwiftUI top \(Int(viewport.top)), clip top \(Int(window.viewportTop ?? -1)), "
+            + "end gap \(Int(window.endGap ?? -1)), rows \(Int(tops.min() ?? -1)) to \(Int(ends.max() ?? -1))"
+        Logger(subsystem: "dev.toybox.desktop", category: "Transcript").notice("\(line, privacy: .public)")
     }
 
     /// Programmatic scrolls never update the scroll position binding, so an anchor left by an earlier

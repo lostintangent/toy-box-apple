@@ -7,6 +7,8 @@ import ToyBoxUI
 @MainActor @Observable
 final class TranscriptWindowObserver {
     private(set) var isKeyWindow = false
+    /// Counts live resizes as they begin.
+    private(set) var liveResizeStarts = 0
     @ObservationIgnored private weak var scrollView: NSScrollView?
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private var notifications: [NSObjectProtocol] = []
@@ -30,6 +32,10 @@ final class TranscriptWindowObserver {
             }
             notifications.append(token)
         }
+        notifications.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.willStartLiveResizeNotification, object: view.window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.liveResizeStarts += 1 }
+        })
         if let scroll { observeResizes(of: scroll) }
     }
 
@@ -82,6 +88,9 @@ final class TranscriptWindowObserver {
               let bottom = bottomOffset, let clip = scrollView?.contentView else { return false }
         return abs(clip.bounds.minY - bottom) <= 0.25
     }
+
+    /// How far AppKit's clip sits above the end of the document.
+    var endGap: CGFloat? { bottomOffset.flatMap { bottom in scrollOffset.map { bottom - $0 } } }
 
     private var bottomOffset: CGFloat? {
         guard let scrollView, let document = scrollView.documentView, document.isFlipped else { return nil }
