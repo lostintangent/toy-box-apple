@@ -1,5 +1,17 @@
 # Changelog
 
+## Mac 0.1.44
+
+### Bugs/Polish
+
+- A long request in the sidebar now stays a comfortable size and scrolls, instead of stretching to fill the screen.
+
+## iPhone 0.1.41
+
+### Bugs/Polish
+
+- A long request's card now stays compact and scrolls, so the rest of your channels stay in view.
+
 ## Mac 0.1.43
 
 ### Bugs/Polish
