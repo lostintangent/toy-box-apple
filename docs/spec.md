@@ -816,17 +816,15 @@ activity row and the composer stay legible and only lightly faded. That is the s
 working, not a gap. Never patch it with a mask, a fill or `.hard`, which draws its divider flush
 against the capsules.
 
-Glass covers part of the scroll view, so visibility excludes it. Read marking, first-unread
-landing, Reveal, follow-at-bottom (within 48 points of the end) and paging anchors all measure
-against the unobscured viewport between the toolbar and the floating controls. A message hidden
-under the composer or toolbar is not visible and must not be marked read.
+Glass covers part of the scroll view, so visibility excludes it. First-unread landing, Reveal,
+follow-at-bottom (within 48 points of the end) and paging anchors all measure against the
+unobscured viewport between the toolbar and the floating controls.
 
-A message is seen when at least 24 points of it, or half of a shorter one, show in that viewport,
-so a message taller than the window still reads. Both apps mark read through the newest seen
-message once the conversation has held still for a quarter second while the reader is looking at
-it (the key window on the Mac, the active scene showing the channel on the phone), nothing covers
-it, it has landed and nothing is moving it, Find isn't holding the position, and the channel is
-connected. Any change starts the quarter second over, so flicking past a message never reads it.
+Both apps mark a channel read through its newest message whenever the reader is looking at it (the
+key window on the Mac, the active scene showing the channel on the phone), nothing covers it, it
+has landed and it's connected, as the web does. Where it's scrolled, Find and Message View don't
+matter, and a message that arrives while those hold is read as it arrives. Landing captures the New
+divider first, so marking read never moves it.
 
 **Floating composer.** Shell attaches the composer with `safeAreaBar(edge: .bottom, spacing: 0)`
 instead of `safeAreaInset`, including in the offline placeholder state. The bar has no
@@ -968,9 +966,8 @@ overflows first, and the title and Overview stay. Keep
 working status in the floating activity row, not duplicated beside the window title.
 
 Opening a channel selects it in the current window. Command-click or Open in New Window creates a
-separate window for that channel and leaves the current window's channel and selection unchanged. Windows share the same channel store and draft. Only a key,
-visible conversation actively acknowledges reading. Restoring a window must not send a message or
-silently mark its unseen content as read.
+separate window for that channel and leaves the current window's channel and selection unchanged. Windows share the same channel store and draft. Only the key
+window marks its channel read, and restoring a window never sends a message.
 
 **Phone folds.** Folding and unfolding the Duo keep whether the list is open, so the user carries
 on where they were. A channel open folded unfolds without the list, which the sidebar toggle brings
@@ -1905,9 +1902,7 @@ a filled or circled variant, and a standalone phone Message View item keeps its 
 and `.glassProminent`, and a Button with a popover would trade the one-tap menu for a cosmetic
 fill. Its accessibility value is "Your Messages". Where Message View sits in the phone's title menu, the "Your Messages" subtitle
 carries the state and the title stays untinted. It does not change the composer
-audience or channel-wide read policy. Read only committed visible sequences in the active window.
-Opening an inspector, reading a preview popover or watching a background window does not mark
-unseen messages read.
+audience or channel-wide read policy.
 
 Attachments appear below their own message, with 8-point spacing and corners. Images form an
 inline horizontal filmstrip, scrolling horizontally when needed rather than stacking into a
@@ -2110,9 +2105,7 @@ field's width or the conversation anchor. Changing the query dismisses its obsol
 popover. Changing the query, closing Find or switching server cancels obsolete work, delayed
 progress and announcements.
 
-Opening Find, fetching history and revealing results never mark messages read or answer a
-request. Read marking remains suspended after search navigation until the reader explicitly
-resumes normal scrolling or Jump to Latest. Closing the bar alone is not a read action.
+Opening Find, fetching history and revealing results never answer a request.
 VoiceOver gets "Find in [channel]", named Previous Match and Next Match controls, the result
 position and, on the Mac, a "Done" button with "Close Find" help, or the phone's "Close Find" button. Give one delayed "Searching older messages"
 announcement and one polite completion or error announcement per current query, never per
