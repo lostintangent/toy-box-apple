@@ -1303,7 +1303,8 @@ switching channels. Resting the pointer on it for 0.5 s, or clicking its bubble,
 its trailing edge, 336 points wide with 12-point insets, in the transcript's pending-bubble wash.
 It holds only the request, since the row beside it already shows the channel's avatar, name and
 time: the whole question in the transcript's own body, then the transcript's own choices, Reply
-and Read Aloud. A question taller than the screen allows scrolls, with the actions always in view.
+and Read Aloud. The popover grows with its question up to 480 points tall, and past that the
+question scrolls, with the actions always in view.
 The row stays lit while it's open. Moving into it keeps it open, and leaving both, Escape or
 clicking elsewhere closes it, except that once the user clicks into it, only a send, Escape or a
 click elsewhere does. It answers exactly as Needs You in the list does on the phone, through the
