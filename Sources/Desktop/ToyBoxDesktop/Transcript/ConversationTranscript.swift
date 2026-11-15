@@ -277,7 +277,6 @@ struct ConversationTranscript: View {
                                         && catchUp?.holdsLanding != true && !find.isPresented,
                                     isJumping: pendingJump != nil)
             geometry.viewport = new
-            noteBlank()
             showPlacedOpening()
             followReaderWhilePaging()
             publishVisibleSequence()
@@ -309,9 +308,10 @@ struct ConversationTranscript: View {
             publishVisibleSequence()
             followReaderWhilePaging()
             restorePagingAnchor(using: new)
-            noteBlank()
         }
-        .onScrollPhaseChange { _, phase in
+        .onChange(of: window.liveResizeStarts) { logIfBlank(when: "a live resize") }
+        .onScrollPhaseChange { old, phase in
+            if old == .idle, phase == .tracking || phase == .interacting { logIfBlank(when: "a scroll") }
             let scrolling = phase == .tracking || phase == .interacting || phase == .decelerating
             if isUserScrolling != scrolling { isUserScrolling = scrolling }
             if phase == .tracking || phase == .interacting { catchUp?.isPinned = false }
@@ -530,18 +530,15 @@ struct ConversationTranscript: View {
         }
     }
 
-    /// Times a stretch where AppKit's clip shows none of the built rows, and logs one that lasted when it ends.
-    private func noteBlank() {
+    /// A blank the scroll view never reported lasts until the reader scrolls or resizes, so check
+    /// whether AppKit's clip shows any built row as either begins.
+    private func logIfBlank(when start: String) {
         let top = window.viewportTop ?? viewport.top
-        if !frames.isEmpty, !frames.values.contains(where: {
+        guard !frames.isEmpty, !frames.values.contains(where: {
             let rowTop = TranscriptCoordinates.contentTopPadding + $0.contentTop
             return rowTop < top + viewport.height && rowTop + $0.rect.height > top
-        }) {
-            if geometry.blank == nil { geometry.blank = (.now, top) }
-        } else if let blank = geometry.blank {
-            geometry.blank = nil
-            if ContinuousClock.now - blank.since > .milliseconds(500) { logBlank("showed no row from clip top \(Int(blank.top)) for over half a second") }
-        }
+        }) else { return }
+        logBlank("showed no row when \(start) began")
     }
 
     /// One line for a transcript the reader may have seen blank, so the next one reads as rows that
@@ -989,7 +986,6 @@ private final class TranscriptScrollGeometry {
     var viewport = TranscriptViewport()
     var frames: [String: TranscriptMessageFrame] = [:]
     var readingAnchor: TranscriptReadingAnchor?
-    var blank: (since: ContinuousClock.Instant, top: CGFloat)?
 }
 
 struct PagingAnchor: Equatable {
