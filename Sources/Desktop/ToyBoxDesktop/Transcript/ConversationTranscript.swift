@@ -190,7 +190,6 @@ struct ConversationTranscript: View {
 
     private func observedScroll(proxy: ScrollViewProxy) -> some View {
         scrollViewport(proxy: proxy)
-            .onChange(of: followsLatest, initial: true) { window.pinsToBottom = followsLatest }
             .onChange(of: interaction.jumpToLatestRequest) {
                 find.close()
                 find.resumeReading()
@@ -243,6 +242,8 @@ struct ConversationTranscript: View {
         .scrollEdgeEffectStyle(.soft, for: .vertical)
         .coordinateSpace(name: "transcript-viewport")
         .defaultScrollAnchor(opening.seededRowID == nil ? .bottom : .top, for: .initialOffset)
+        // Keeps the end in place in the same pass that draws a new size, where a follow lands a frame later.
+        .defaultScrollAnchor(followsLatest ? .bottom : nil, for: .sizeChanges)
         .scrollPosition(id: Binding {
             // The seed holds the first unread row at the top until it lands, as the card appears above it.
             scrollPosition ?? (hasLanded || isRevealing ? nil : opening.seededRowID)
@@ -270,7 +271,6 @@ struct ConversationTranscript: View {
             if update.landsJump { pendingJump = nil }
             switch update.follow {
             case .latest:
-                if window.holdsResizePin { break }
                 // Floating controls and composer growth change only the unobscured height.
                 let animation: Animation? = reduceMotion || old.contentHeight != new.contentHeight
                     ? nil : .easeOut(duration: 0.2)
