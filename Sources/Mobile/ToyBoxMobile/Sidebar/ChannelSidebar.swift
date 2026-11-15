@@ -261,8 +261,9 @@ struct ChannelSidebar: View {
                 .padding(.trailing, -reach)
                 .onResize(in: .global) { cardFrame = $0 }
         case .question(let entry):
+            // A plain button answers only on what it draws, so the whole row takes the tap.
             Button { cards.open(entry.id) } label: {
-                row(item, now: now, question: entry.question)
+                row(item, now: now, question: entry.question).contentShape(.rect)
             }
             .buttonStyle(.plain)
             .accessibilityHint("Shows the request")
