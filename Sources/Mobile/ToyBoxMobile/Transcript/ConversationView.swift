@@ -508,6 +508,9 @@ struct ConversationView: View {
     }
 
     private func place(_ placement: TranscriptPlacement?) {
+        // An explicit event while the scene isn't active, like a post confirmed in the background,
+        // still sets the intent, and the one placement on return carries it out.
+        guard scroll.isSceneActive else { return }
         let isMoving = scroll.moves(placement)
         if let origin = placement?.origin {
             if isMoving, let metrics = scroll.metrics {
