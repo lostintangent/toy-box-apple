@@ -66,12 +66,13 @@ package final class CardChecks {
 
     package subscript(target: ChannelTarget) -> Check? { rows[target] }
 
-    /// Puts the check on the row, in the card's own `sent` beat, and settles it 2.35 seconds later.
-    package func sent(_ target: ChannelTarget) {
+    /// Puts the check on the row as its card starts closing, and settles it `hold` later, two
+    /// seconds after the card lands. Needs You's card lands in 0.35 seconds.
+    package func sent(_ target: ChannelTarget, settlingAfter hold: Duration = .seconds(2.35)) {
         settles[target]?.cancel()
         rows[target] = .sent
         settles[target] = Task { [weak self] in
-            await self?.pause(.seconds(2.35))
+            await self?.pause(hold)
             guard let self, !Task.isCancelled else { return }
             animate(.settle) { rows[target] = .settling }
             await pause(.seconds(0.45))
