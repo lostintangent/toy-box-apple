@@ -80,7 +80,7 @@ import Speech
         let (stream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
         self.continuation = continuation
         // Capture starts first and buffers into the stream, so words spoken while the model loads aren't lost.
-        try source.start(format: format) { event in
+        try await source.start(format: format) { event in
             switch event {
             case .audio(let input, let level):
                 continuation.yield(input)
@@ -89,6 +89,7 @@ import Speech
                 Task { @MainActor in onInterruption() }
             }
         }
+        guard !isStopped else { throw CancellationError() }
         onListening()
         let transcriber = transcriber
         results = Task { @MainActor in
@@ -109,7 +110,7 @@ import Speech
 
     package func finish() async throws {
         isStopped = true
-        source.stop()
+        stopSource()
         continuation?.finish()
         try await analyzer.finalizeAndFinishThroughEndOfInput()
         try await results?.value
@@ -117,11 +118,16 @@ import Speech
 
     package func cancel() {
         isStopped = true
-        source.stop()
+        stopSource()
         continuation?.finish()
         results?.cancel()
         let analyzer = analyzer
         Task { await analyzer.cancelAndFinishNow() }
+    }
+
+    /// Asks the source to stop now, so a note started right after can't open the microphone first.
+    private func stopSource() {
+        Task.immediate { [source] in await source.stop() }
     }
 }
 

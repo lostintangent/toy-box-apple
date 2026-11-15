@@ -1,5 +1,11 @@
 # Changelog
 
+## Mac 0.1.45
+
+### Bugs/Polish
+
+- Clicking the mic now opens the talk card right away, with no pause while the microphone gets ready.
+
 ## Mac 0.1.44
 
 ### Bugs/Polish

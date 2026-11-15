@@ -90,6 +90,22 @@ struct DictationTests {
         #expect(await starting.stop(.send))
         #expect(starting.phase == .idle, "Send stops a mic that's still starting")
 
+        let waking = ManualDictationRecognizer()
+        waking.wakes = false
+        var wakingSystem = DictationSystem.manual(waking)
+        wakingSystem.finalizeTimeout = .milliseconds(150)
+        let warming = Dictation(system: wakingSystem)
+        let warmingTarget = RecordingDictationTarget()
+        warming.target = warmingTarget
+        await warming.refresh()
+        warming.toggle()
+        try await eventually { warming.isSessionActive }
+        let sending = Task.immediate { await warming.stop(.send) }
+        #expect(!warming.holdsSend, "Send never waits on a microphone that's still waking")
+        #expect(warming.phase == .idle)
+        #expect(await sending.value)
+        #expect(waking.isCancelled)
+
         let finishing = AsyncStream<Void>.makeStream()
         system.installAssets = { _, progress in
             progress(0.5)
@@ -364,6 +380,20 @@ struct DictationTests {
         #expect(target.begins == 1)
         downloaded.commitNow()
     }
+
+    /// The microphone works on its own queue, so a note's stop has to reach it as the note ends, or a
+    /// note started right after could open the microphone before the last one lets go of it.
+    @Test func aStopReachesTheMicrophoneBeforeAQuickStart() async throws {
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let log = MicrophoneLog()
+        let ending = DictationRecognizer(locale: Locale(identifier: "en-US"), contextualStrings: [],
+                                         source: TranscriptReadAloud.Microphone(LoggingSource("first", log)))
+        ending.cancel()
+        let next = TranscriptReadAloud.Microphone(LoggingSource("second", log))
+        try await next.start(format: format) { _ in }
+        await next.stop()
+        #expect(log.events == ["first stop", "second start", "second stop"])
+    }
 }
 
 extension DictationSystem {
@@ -381,8 +411,11 @@ extension DictationSystem {
     /// The final pass that stopping waits for.
     var finalWords: [(String, Bool)] = []
     var hangs = false
+    /// False holds the start before listening until cancelled, like a microphone still waking.
+    var wakes = true
     private(set) var isCancelled = false
     private var onResult: (@MainActor (String, Bool) -> Void)?
+    private var waking: CheckedContinuation<Void, any Error>?
     private var finishing: CheckedContinuation<Void, any Error>?
 
     func start(onListening: @escaping @MainActor () -> Void,
@@ -394,6 +427,7 @@ extension DictationSystem {
         hangs = false
         finalWords = []
         self.onResult = onResult
+        if !wakes { try await withCheckedThrowingContinuation { waking = $0 } }
         onListening()
         for (text, isFinal) in firstWords { onResult(text, isFinal) }
     }
@@ -401,7 +435,8 @@ extension DictationSystem {
     func send(_ text: String, isFinal: Bool) { onResult?(text, isFinal) }
 
     func finish() async throws {
-        if hangs, !isCancelled {
+        // An analyzer that never started has nothing to finalize, so it waits until cancelled.
+        if hangs || waking != nil, !isCancelled {
             try await withCheckedThrowingContinuation { finishing = $0 }
         }
         if isCancelled { throw CancellationError() }
@@ -410,6 +445,8 @@ extension DictationSystem {
 
     func cancel() {
         isCancelled = true
+        waking?.resume(throwing: CancellationError())
+        waking = nil
         finishing?.resume(throwing: CancellationError())
         finishing = nil
     }
@@ -439,4 +476,24 @@ extension DictationSystem {
     var value = DictationMicrophoneAccess.denied
     var grants = false
     var requests = 0
+}
+
+@MainActor private final class MicrophoneLog {
+    var events: [String] = []
+}
+
+@MainActor private final class LoggingSource: DictationAudioSource {
+    private let name: String
+    private let log: MicrophoneLog
+
+    init(_ name: String, _ log: MicrophoneLog) {
+        self.name = name
+        self.log = log
+    }
+
+    func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) {
+        log.events.append("\(name) start")
+    }
+
+    func stop() { log.events.append("\(name) stop") }
 }

@@ -8,7 +8,7 @@ extension DictationSystem {
     static var live: DictationSystem {
         var system = DictationSystem.device(
             // The microphone takes the audio session itself, so the reader leaves it active.
-            makeSource: { TranscriptReadAloud.Microphone(MobileDictationAudioSource(), releasingAudio: false) },
+            makeSource: { TranscriptReadAloud.Microphone(MicrophoneDictationSource(), releasingAudio: false) },
             announce: { UIAccessibility.post(notification: .announcement, argument: $0) },
             openSettings: { _ in
                 guard let url = URL(string: UIApplication.openSettingsURLString) else {
@@ -94,41 +94,5 @@ extension DictationAccess {
         self == .microphone
             ? "Allow Toy Box to use the microphone in Settings. Keyboard dictation still works."
             : "Allow Toy Box to use speech recognition in Settings. Keyboard dictation still works."
-    }
-}
-
-private final class MobileDictationAudioSource: DictationAudioSource, @unchecked Sendable {
-    private static let logger = Logger(subsystem: "dev.toybox.mobile", category: "Dictation")
-    private let source = MicrophoneDictationSource()
-    private var deactivation: (any NSObjectProtocol)?
-    private var isActive = false
-
-    func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) throws {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement, options: .duckOthers)
-        try session.setActive(true)
-        isActive = true
-        deactivation = NotificationCenter.default.addObserver(
-            forName: AVAudioSession.didBecomeInactiveNotification, object: session, queue: .main
-        ) { _ in handler(.unavailable) }
-        do {
-            try source.start(format: format, handler: handler)
-        } catch {
-            stop()
-            throw error
-        }
-    }
-
-    func stop() {
-        if let deactivation { NotificationCenter.default.removeObserver(deactivation) }
-        deactivation = nil
-        source.stop()
-        guard isActive else { return }
-        isActive = false
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        } catch {
-            Self.logger.error("Dictation audio session could not deactivate: \(error.localizedDescription)")
-        }
     }
 }
