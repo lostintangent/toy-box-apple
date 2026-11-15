@@ -61,7 +61,12 @@ arguments to the app and adds `-ApplePersistenceIgnoreState YES`, so test instan
 restore nor overwrite the shared saved window state. The server it's given is session-only. For
 several servers, start the demo with `TOY_BOX_DEMO_PEERS`, which lists the others as its peers
 (see [scripts/README.md](../../../../scripts/README.md)). Each run re-signs Toy Box Test, which
-resets its microphone grant, so hold it while another agent's microphone check is running.
+resets its microphone grant, so hold it while another agent's microphone check is running. A check
+that needs a cold process with its grants kept relaunches the installed copy without rebuilding:
+
+```sh
+open -n -g "<main checkout>/.build/agents/Toy Box Test.app" --args --server http://127.0.0.1:3210 -ApplePersistenceIgnoreState YES
+```
 
 ## Development-signed build
 
