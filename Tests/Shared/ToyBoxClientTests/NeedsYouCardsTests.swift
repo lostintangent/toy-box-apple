@@ -238,9 +238,9 @@ struct NeedsYouCardsTests {
 
     /// `waiting` is each waiting channel and its request's sequence, newest first, a minute apart
     /// from `newestAt` past ten, and `channels` any others. `answer` takes each post and its number,
-    /// and accepts it by default. The outbox stamps each message `now`.
+    /// and accepts it by default.
     static func start(waiting: [(channel: String, sequence: Int)] = [], newestAt minute: Int = 59,
-                      channels: [String] = [], now: Date = .now,
+                      channels: [String] = [],
                       answer: (@Sendable (Post, Int) throws -> MockResponse)? = nil) async throws -> CardServer {
         var listed: [Channel] = []
         for (index, request) in waiting.enumerated() {
@@ -274,7 +274,7 @@ struct NeedsYouCardsTests {
         let catalog = ChannelCatalogStore(api: try mock.api())
         await catalog.refresh()
         let folder = FileManager.default.temporaryDirectory.appending(path: "tbm-cards-\(UUID())", directoryHint: .isDirectory)
-        let outbox = ChannelOutbox(folder: folder, retryWindow: 120, now: { now })
+        let outbox = ChannelOutbox(folder: folder, retryWindow: 120)
         catalog.outbox = outbox
         // An app's outbox has read its folder long before anyone replies.
         try await eventually { outbox.isLoaded }

@@ -23,8 +23,7 @@ struct TalkRecorderTests {
     }
 
     @Test func aNoteSendsOnlyItsFinishedWordsOnceAndTalkingAgainFromTheCheckKeepsTheCard() async throws {
-        let sentAt = Date(timeIntervalSince1970: 1_793_000_000)
-        let server = try await CardServer.start(channels: ["test"], now: sentAt) { post, number in
+        let server = try await CardServer.start(channels: ["test"]) { post, number in
             try CardServer.accepted(post, keepOpen: number == 1)
         }
         defer { server.end() }
@@ -54,42 +53,40 @@ struct TalkRecorderTests {
                 "Plain words go to the outbox with no mention")
         #expect(recorder.phase == .sent && !recorder.isLifted && recorder.hidesTrailingColumn,
                 "The card closes as soon as the outbox has the note, while it's still sending")
-        #expect(beats.motions.last == .sent && recorder.hiddenLines.isEmpty,
-                "The lines return as the card starts shrinking, not once it closes")
-        #expect(recorder.timeSlot == .noteTime)
-        #expect(recorder.sentAt == sentAt, "The row shows the time the note was sent")
+        #expect(beats.motions.last == .open && recorder.hiddenLines.isEmpty,
+                "The card closes with Cancel's spring, and the lines return as it starts shrinking")
+        #expect(recorder.timeSlot == nil, "The counter gives way to the row's own time, as on Cancel")
         #expect(recorder.isChecked)
         #expect(announcements == ["Sent to Lead in Studio"])
         #expect(draft.text == "My own draft")
         try await eventually(observing: server.mock) { server.mock.pendingResponseCount == 1 }
         server.mock.finishPendingResponses()
 
-        try await beats.end(.seconds(0.35))
+        try await beats.end(.seconds(0.45))
         try await eventually { recorder.phase == .landed }
         #expect(!recorder.hidesTrailingColumn)
         recorder.start(store, name: "Studio", order: order)
         #expect(recorder.phase == .recording)
         #expect(recorder.target == target("test") && checks[target("test")] == nil,
                 "The row stays held, so its card stays up and the check swaps straight to the mic")
-        #expect(recorder.finalizedWords.isEmpty && recorder.sentAt == nil)
+        #expect(recorder.finalizedWords.isEmpty)
         #expect(recorder.hiddenLines == Set(["a", "test", "b"].map(target)))
         try await eventually { beats.waiting.isEmpty }
 
         try await eventually { recorder.isListening }
         recognizer.send("And a lamp", isFinal: true)
         await recorder.send()
-        try await beats.end(.seconds(0.35))
+        try await beats.end(.seconds(0.45))
         try await eventually { recorder.phase == .landed }
-        try await beats.end(.seconds(2.35))
+        try await beats.end(.seconds(2.45))
         try await eventually { checks[target("test")] == .settling }
-        #expect(recorder.timeSlot == .noteTime && !recorder.isChecked,
-                "The note's time stays through the settle, since the row's own time reads the same")
+        #expect(!recorder.isChecked, "The check settles two seconds after the card lands")
         #expect(recorder.ordered(channels, on: baseURL).map(\.id) == ["a", "test", "b", "new", "newer"])
         try await beats.end(.seconds(0.45))
         try await eventually { recorder.phase == nil }
         #expect(recorder.target == nil)
         #expect(recorder.ordered(channels, on: baseURL).map(\.id) == channels.map(\.id), "Settling lets the row go")
-        #expect(beats.motions == [.open, .sent, .settle, .open, .sent, .settle, .settle])
+        #expect(beats.motions == [.open, .open, .settle, .open, .open, .settle, .settle])
         #expect(announcements.count == 2)
         try await eventually { server.outbox.messages(in: "test", on: server.catalog.api.baseURL).isEmpty }
         #expect(server.posts.map(\.content) == ["Put the library beside the desks", "And a lamp"])

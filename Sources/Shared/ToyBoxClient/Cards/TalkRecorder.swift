@@ -13,7 +13,7 @@ package final class TalkRecorder: DictationTextTarget {
         case recording
         /// The transcriber finishing its last words, then the outbox saving the note.
         case sending
-        /// The card shrinking back into the row as the mic becomes the done check.
+        /// The card shrinking back into the row like Cancel's, while the mic becomes the done check.
         case sent
         /// The card has landed, and stays on its row until the row's check settles.
         case landed
@@ -22,7 +22,7 @@ package final class TalkRecorder: DictationTextTarget {
     }
 
     package enum TimeSlot: Hashable {
-        case counter, offline, noteTime
+        case counter, offline
     }
 
     package let dictation: Dictation
@@ -36,8 +36,6 @@ package final class TalkRecorder: DictationTextTarget {
     /// The voice level, newest first, sampled about 12 times a second while listening.
     package private(set) var levels: [Double] = []
     package private(set) var listeningSince: Date?
-    /// When the note was sent, which the row shows as its time until the card hands back.
-    package private(set) var sentAt: Date?
     /// The list's order when the note began, held until the row settles so the sent note's
     /// activity can't move its row mid-beat.
     package private(set) var order: [ChannelTarget]?
@@ -52,6 +50,9 @@ package final class TalkRecorder: DictationTextTarget {
     @ObservationIgnored private let announce: @MainActor (String) -> Void
 
     package static let sampleCount = 64
+    /// How long the open spring takes to bring the card back down onto its row. The check settles
+    /// two seconds later.
+    private static let landing = Duration.seconds(0.45)
 
     /// - Parameters:
     ///   - checks: The list's done checks, which the row wears once its note sends, and the cards' motion.
@@ -84,14 +85,11 @@ package final class TalkRecorder: DictationTextTarget {
         return checks[target] == .sent
     }
 
-    /// What the row's time slot shows in place of the time. The note's time stays through the
-    /// settle, since the row's own time reads the same, so the card hands back without a swap.
+    /// What the row's time slot shows in place of the time while the card is lifted. As the card
+    /// closes, on Send or Cancel, the slot swaps back to the row's own time.
     package var timeSlot: TimeSlot? {
-        switch phase {
-        case .recording, .sending: isOffline ? .offline : .counter
-        case .sent, .landed: .noteTime
-        case .cancelled, nil: nil
-        }
+        guard isLifted else { return nil }
+        return isOffline ? .offline : .counter
     }
 
     /// The rows whose bottom line the open card covers: the held row, the row above it, whose line
@@ -165,7 +163,6 @@ package final class TalkRecorder: DictationTextTarget {
         self.store = store
         self.catalog = catalog
         self.order = order
-        sentAt = nil
         committed = ""
         transcript = .init()
         levels = Array(repeating: 0, count: Self.sampleCount)
@@ -202,12 +199,12 @@ package final class TalkRecorder: DictationTextTarget {
             phase = .recording
             return
         }
-        let id = await outbox.send(words, to: store.id, on: store.api.baseURL)
+        await outbox.send(words, to: store.id, on: store.api.baseURL)
         guard phase == .sending, self.store === store else { return }
-        sentAt = outbox.message(id)?.sentAt ?? .now
-        checks.animate(.sent) {
+        // The card closes with Cancel's spring, and lands as Cancel's does.
+        checks.animate(.open) {
             phase = .sent
-            checks.sent(target)
+            checks.sent(target, settlingAfter: .seconds(2.45))
         }
         announce("Sent to Lead in \(channelName)")
         land(target)
@@ -217,7 +214,7 @@ package final class TalkRecorder: DictationTextTarget {
     private func land(_ target: ChannelTarget) {
         closing?.cancel()
         closing = Task { [weak self] in
-            await self?.checks.pause(.seconds(0.35))
+            await self?.checks.pause(Self.landing)
             guard let self, !Task.isCancelled, phase == .sent else { return }
             checks.animate(.settle) { phase = .landed }
             for await check in Observations({ [checks] in checks[target] }) where check == nil { break }
@@ -236,7 +233,7 @@ package final class TalkRecorder: DictationTextTarget {
         checks.animate(.open) { phase = .cancelled }
         closing?.cancel()
         closing = Task { [weak self] in
-            await self?.checks.pause(.seconds(0.45))
+            await self?.checks.pause(Self.landing)
             guard let self, !Task.isCancelled, phase == .cancelled else { return }
             close()
         }
@@ -264,7 +261,6 @@ package final class TalkRecorder: DictationTextTarget {
         closing?.cancel()
         dictation.leaveDraft()
         store = nil
-        sentAt = nil
         committed = ""
         transcript = .init()
         listeningSince = nil

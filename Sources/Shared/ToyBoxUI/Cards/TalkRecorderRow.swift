@@ -5,7 +5,7 @@ import SwiftUI
 // The recorder is a card over the list. It opens on the held row's cell and draws the row's own
 // content in the same places, so its mark, time and second line swap in their own slots, then it
 // grows over the dimmed rows. As it lands, it hands back to the list's own row, which carries the
-// check, the note's time and the card's fill in its own ink. The cell itself never changes height.
+// check in its own ink. The cell itself never changes height.
 // Both apps share it, the Mac at its own sizes. See Talk to the Lead in docs/spec.md.
 
 extension View {
@@ -65,8 +65,8 @@ private struct TalkTrailingInsetKey: EnvironmentKey {
 
 extension EnvironmentValues {
     /// True once the card has grown from the row, so the card's first frame draws the ordinary row.
-    /// The list's own row follows from Send, so it already wears the card's check and time when the
-    /// card hands it back.
+    /// The list's own row follows from Send, so it already wears the card's check when the card
+    /// hands it back.
     fileprivate var talkGrown: Bool {
         get { self[TalkGrownKey.self] }
         set { self[TalkGrownKey.self] = newValue }
@@ -361,17 +361,17 @@ private struct TalkCard<Row: View>: View {
     }
 
     /// The card's surface: opaque, so the dimmed rows never show through, under the phone's
-    /// own-message fill. The edge and shadow show only while the card is lifted, and the fill stays
-    /// through Sent until the card hands its row back.
+    /// own-message fill. It shows only while the card is lifted, and fades as the card lands, on
+    /// Send as on Cancel.
     private func surface(grown: Bool, lifted: Bool) -> some View {
-        // Once Cancel's card is back on the row, the cell's own background, separator or selection
+        // Once the card is back on the row, the cell's own background, separator or selection
         // shows through it again.
-        let based = recorder.phase != .cancelled
+        let based = recorder.isLifted
         // Glass can't be matched, so there the row steps once to the card's own color, edge and all.
         let filled = (grown || onGlass) && based
-        let edged = onGlass ? recorder.isLifted : lifted
-        // The card lands about 0.2 seconds into its shrink, so the edge and shadow, and Cancel's
-        // fill, fade from there.
+        let edged = onGlass ? based : lifted
+        // The card lands about 0.2 seconds into its shrink, so its fill, edge and shadow fade from
+        // there.
         let lands = Animation.easeOut(duration: 0.2).delay(0.2)
         let lift: Animation = lifted ? .easeInOut(duration: 0.2) : lands
         // Folded, the base matches the list's own background, so it's solid from the first frame
@@ -463,8 +463,8 @@ private struct TalkSlot: ViewModifier {
         }
     }
 
-    /// The counter, Offline, or the note's time, in place of the row's time. Each face leaves with a
-    /// blur and fade, then the next fades in, so two never show together.
+    /// The counter or Offline in place of the row's time. Each face leaves with a blur and fade,
+    /// then the next fades in, so two never show together.
     private func time(_ content: Content) -> some View {
         let face = grown ? recorder?.timeSlot : nil
         let replaced = face != nil
@@ -484,9 +484,6 @@ private struct TalkSlot: ViewModifier {
                                 .monospacedDigit()
                         }
                     case .offline: Text("Offline")
-                    case .noteTime:
-                        // The note is the channel's new last activity, in the row's own format.
-                        Text(ChannelActivityTime.label(for: recorder.sentAt ?? .now, now: .now))
                     }
                 }
                 #if os(iOS)
@@ -514,7 +511,7 @@ private struct TalkSlot: ViewModifier {
         let shows = grown && recorder?.isLifted == true
         return content
             .modifier(TalkFaceExit(gone: shows))
-            // Line 2 leaves quickly, and returns over the second half of Sent's collapse.
+            // Line 2 leaves quickly, and returns over the second half of the card's shrink.
             .animation(shows ? .easeOut(duration: 0.15) : .easeIn(duration: 0.175).delay(0.175), value: shows)
             .frame(minHeight: shows ? 18 : nil)
             .transformAnchorPreference(key: TalkEndsKey.self, value: .trailing) { ends, anchor in
@@ -543,7 +540,8 @@ private struct TalkSlot: ViewModifier {
             }
     }
 
-    /// The chevron and attention mark, which fade out with the time, and back as the wash fades.
+    /// The chevron and attention mark, which fade out with the time, and back as Send's card lands
+    /// or as Cancel's starts to shrink.
     private func trailing(_ content: Content) -> some View {
         let fades = grown && recorder?.hidesTrailingColumn == true
         return content
@@ -645,28 +643,17 @@ private struct TalkRow: ViewModifier {
         let offersTalk = offered && recorder.isAvailable && !recorder.isLifted
         let hidesLine = recorder.hiddenLines.contains(target)
         content
-            // From Send, the row wears the card's check and time beneath it, and its surface in
-            // the card's frame, so it carries them on as the card lands. The surface then fades as
-            // a wash over the selection band.
+            // From Send, the row wears the card's check beneath it, so it carries it on as the
+            // card lands.
             .environment(\.talkGrown, isGrown && !recorder.isLifted)
-            .background {
-                if isGrown, let cell = hold?.cell {
-                    let washed = recorder.phase == .sent
-                    let fade: Animation? = washed ? nil : .easeOut(duration: 0.4)
-                    CardSurface(surface: .user, tint: .accentColor, base: washed, wash: washed, edge: false,
-                                animations: .init(base: fade, wash: fade))
-                        .padding(.leading, -TalkHold.Cell.cardLeading)
-                        .padding(.trailing, cell.textInset - TalkHold.Cell.cardMargin)
-                }
-            }
             .animation(nil) { $0.opacity(isCovered ? 0 : 1) }
             .opacity(isDimmed ? 0.4 : 1)
             .animation(.easeInOut(duration: 0.25), value: isDimmed)
-            // The note's time becomes the row's own time without a swap, since both read the same.
+            // By the time the recorder lets go, the row already looks like itself, so nothing moves.
             .transaction(value: isHeld) { if !isHeld { $0.disablesAnimations = true } }
-            // Only the held row hides its selection, which returns as the Sent wash fades or as
-            // Cancel's card lands. The open channel's row keeps its band while it dims.
-            .selectionDisabled(isHeld && (recorder.isLifted || recorder.phase == .sent))
+            // Only the held row hides its selection, which returns beneath the card's fading fill
+            // as it lands. The open channel's row keeps its band while it dims.
+            .selectionDisabled(isHeld && recorder.isLifted)
             .accessibilityHidden(isCovered)
             .accessibilityFocused($focused)
             .backgroundPreferenceValue(TalkEndsKey.self) { ends in
