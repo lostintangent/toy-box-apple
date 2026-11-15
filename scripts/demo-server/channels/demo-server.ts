@@ -305,16 +305,19 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
     if (request.method === 'POST' && pathname === '/demo/reaction') {
       const sequence = Number(url.searchParams.get('sequence') ?? snapshot.channel.latestSequence);
       const agentId = url.searchParams.get('agentId') ?? snapshot.lead.id;
-      const reaction = url.searchParams.get('reaction') ?? undefined;
-      const message = snapshot.messages.find((candidate: Snapshot) => candidate.sequence === sequence);
-      if (!message || message.sender.type === 'system') {
+      const reaction = url.searchParams.get('reaction');
+      // The open request is its own copy of its message, so it changes with it.
+      const copies = [snapshot.request, ...snapshot.messages].filter((candidate: Snapshot) => candidate?.sequence === sequence);
+      if (!copies.length || copies[0].sender.type === 'system') {
         json(response, 422, { error: 'React to a loaded user or agent message.' }); return;
       }
-      const reactions = (message.reactions ?? []).filter((existing: Snapshot) => existing.agentId !== agentId);
+      const reactions = (copies[0].reactions ?? []).filter((existing: Snapshot) => existing.agentId !== agentId);
       if (reaction) reactions.push({ agentId, reaction });
-      if (reactions.length) message.reactions = reactions; else delete message.reactions;
+      for (const copy of copies) {
+        if (reactions.length) copy.reactions = reactions; else delete copy.reactions;
+      }
       snapshot.revision++;
-      publish({ type: 'reaction', revision: snapshot.revision, sequence, agentId, ...(reaction ? { reaction } : {}) });
+      publish({ type: 'reaction', revision: snapshot.revision, sequence, agentId, reaction: reaction || null });
       json(response, 200, { sequence, reactions });
       return;
     }
