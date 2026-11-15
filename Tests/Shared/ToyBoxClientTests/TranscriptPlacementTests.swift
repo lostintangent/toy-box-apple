@@ -192,16 +192,27 @@ struct TranscriptPlacementTests {
         #expect(afterInput.origin == 700)
     }
 
-    @Test func landingThatTheEndHoldsFollowsArrivalsOnceTheRowsBelowAreMeasured() {
-        let target = Model.Event.land(.row("m18", order: 18))
-        let estimated = Model.reduce(.following, target, layout: layout([frames()[18]], origin: 0))
-        #expect(estimated.intent == .landing(.row("m18", order: 18)))
-        let landed = Model.reduce(.following, target, rows: frames(), viewport: viewport, origin: 0)
-        #expect(landed.intent == .following)
+    @Test func aLandingTheEndHoldsFollowsWhatArrivesBelowIt() {
+        let target = Model.Intent.landing(.row("m17", order: 17))
+        let landed = Model.reduce(.following, .land(.row("m17", order: 17)), rows: frames(), viewport: viewport, origin: 0)
+        #expect(landed == .init(intent: target, origin: 1_566))
+        // The content's end can already include the arrival before its row reports a frame.
+        let arriving = Model.reduce(target, .arrived, layout: layout(frames(), origin: 1_566, documentEnd: 2_116))
+        #expect(arriving == .init(intent: .following, origin: nil))
+        let followed = Model.reduce(arriving.intent, .layoutChanged, rows: frames(21), viewport: viewport, origin: 1_566)
+        #expect(followed.origin == 1_666)
+        // A landing that holds New at the top leaves the arrival below.
+        let held = Model.Intent.landing(.row("m14", order: 14))
+        #expect(Model.reduce(held, .arrived, rows: frames(), viewport: viewport, origin: 1_350).intent == held)
+    }
+
+    @Test func aLandedRowThatOutgrowsTheEndKeepsItsTopInView() {
+        let landed = Model.reduce(.following, .land(.row("m18", order: 18)), rows: frames(), viewport: viewport, origin: 0)
         #expect(landed.origin == 1_566)
-        let arrival = frames() + [.init(id: "m20", order: 20, top: 2_000, height: 300)]
-        let followed = Model.reduce(landed.intent, .layoutChanged, rows: arrival, viewport: viewport, origin: 1_566)
-        #expect(followed.origin == 1_866)
+        let grown = frames(18) + [.init(id: "m18", order: 18, top: 1_800, height: 400),
+                                  .init(id: "m19", order: 19, top: 2_200, height: 100)]
+        let placed = Model.reduce(landed.intent, .layoutChanged, rows: grown, viewport: viewport, origin: 1_566)
+        #expect(placed.origin == 1_750)
     }
 
     @Test func followingOwnsTheEndClearanceExactlyOnceAndKeepsArrivalsInView() {

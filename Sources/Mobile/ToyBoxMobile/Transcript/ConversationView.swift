@@ -48,6 +48,10 @@ final class TranscriptScroll {
             // The page moved every row down, so the old frames would hold the anchor at the top.
             frames.removeAll()
         }
+        if let last = rows.last?.id, current.last?.id != last, current.contains(where: { $0.id == last }), hasLanded {
+            // A row arrived below: a landing the end holds follows it.
+            _ = update(.arrived)
+        }
         rows = current
     }
 
