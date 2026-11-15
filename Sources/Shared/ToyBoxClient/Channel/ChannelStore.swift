@@ -358,8 +358,8 @@ public final class ChannelStore {
 
     /// Returns once the read through `sequence`, and any later read raised meanwhile, is written or a
     /// write fails. The store owns the write, so cancelling a caller doesn't interrupt it, and a later
-    /// caller joins it rather than leaving its read for the next scroll. A failed write shows nothing
-    /// and stays pending, so the next call sends it again.
+    /// caller, like an arrival's read, joins it rather than waiting for the next change. A failed write
+    /// shows nothing and stays pending, so the next call sends it again.
     public func markRead(through sequence: Int) async {
         guard phase.isConnected, let channel = state?.channel else { return }
         pendingRead = max(pendingRead, min(sequence, channel.latestSequence))
