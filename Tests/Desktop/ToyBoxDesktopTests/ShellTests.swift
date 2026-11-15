@@ -2023,6 +2023,31 @@ struct SiriOnScreenTests {
 @Suite("Sidebar talk card")
 struct SidebarTalkCardTests {
     @Test func cancelHandsKeyFocusBackToTheList() async throws {
+        try await withLiftedCard { recorder, window, _ in
+            recorder.cancel()
+            try await waitUntil("the list has key focus again once the card closes", in: window.contentView) {
+                recorder.phase == nil && window.firstResponder is NSTableView
+            }
+        }
+    }
+
+    @Test func cancelLeavesKeyFocusWhereTheUserMovedIt() async throws {
+        try await withLiftedCard { recorder, window, field in
+            // A click into the composer, which the window draws before the next click can land on Cancel.
+            window.makeFirstResponder(field)
+            try await waitUntil("the text view takes key focus", in: window.contentView) {
+                window.firstResponder === field
+            }
+            try #require(recorder.phase == .recording, "Moving focus ended the note before Cancel")
+            recorder.cancel()
+            try await waitUntil("the card closes", in: window.contentView) { recorder.phase == nil }
+            #expect(window.firstResponder === field)
+        }
+    }
+
+    /// Lifts a talk card from a sidebar list that has key focus, beside a text view in the detail
+    /// column, as the composer's is.
+    private func withLiftedCard(_ body: (TalkRecorder, NSWindow, NSTextView) async throws -> Void) async throws {
         let api = try ChannelAPI(serverURL: "http://talk-focus.test")
         let stores = ["a", "b", "c"].map { ChannelStore(id: $0, api: api) }
         let targets = stores.compactMap(\.target)
@@ -2030,13 +2055,18 @@ struct SidebarTalkCardTests {
         var system = DictationSystem.scripted()
         system.refreshNotifications = []
         let recorder = TalkRecorder(system: system, checks: CardChecks(), draft: { _ in draft }, announce: { _ in })
-        let view = NSHostingView(rootView: List(targets, id: \.self) { target in
-            Text(target.channelID).talkRow(target, recorder: recorder) {}
-        }
-        .listStyle(.sidebar)
-        .talkList(recorder, targets: targets, endsWhenChanging: []) { Text($0.channelID) })
+        let field = NSTextView()
+        let view = NSHostingView(rootView: NavigationSplitView {
+            List(targets, id: \.self) { target in
+                Text(target.channelID).talkRow(target, recorder: recorder) {}
+            }
+            .listStyle(.sidebar)
+            .talkList(recorder, targets: targets, endsWhenChanging: []) { Text($0.channelID) }
+        } detail: {
+            TalkTestField(view: field)
+        })
         // It counts as key without taking key from another test's window, which would end the note.
-        let window = TalkKeyWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 400),
+        let window = TalkKeyWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 400),
                                    styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = view
@@ -2053,14 +2083,17 @@ struct SidebarTalkCardTests {
         await recorder.dictation.refreshLanguageSupport()
         recorder.start(stores[1], name: "b", order: targets)
         try await waitUntil("the card takes key focus", in: view) {
-            recorder.isLifted && !(window.firstResponder is NSTableView)
+            recorder.isLifted && window.firstResponder !== list && window.firstResponder !== field
         }
         try #require(recorder.phase == .recording, "Nothing ended the note before Cancel")
-        recorder.cancel()
-        try await waitUntil("the list has key focus again once the card closes", in: view) {
-            recorder.phase == nil && window.firstResponder is NSTableView
-        }
+        try await body(recorder, window, field)
     }
+}
+
+private struct TalkTestField: NSViewRepresentable {
+    let view: NSTextView
+    func makeNSView(context: Context) -> NSTextView { view }
+    func updateNSView(_ view: NSTextView, context: Context) {}
 }
 
 private final class TalkKeyWindow: NSWindow {

@@ -153,6 +153,8 @@ private struct TalkCard<Row: View>: View {
     /// The list's visible area, inside the safe area and any bottom bar.
     let bounds: CGRect
     let onGlass: Bool
+    /// The list's key focus, which the card takes while it's lifted.
+    let focus: FocusState<TalkFocus?>.Binding
     @ViewBuilder let row: Row
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -165,9 +167,6 @@ private struct TalkCard<Row: View>: View {
     @ViewState private var wordsHeight: CGFloat?
     /// The height of five lines of the words' own text, as laid out.
     @ViewState private var fiveLines: CGFloat?
-    #if os(macOS)
-    @FocusState private var focused: Bool
-    #endif
 
     /// The room the card keeps from the visible area's ends.
     private static var inset: CGFloat { 8 }
@@ -269,14 +268,14 @@ private struct TalkCard<Row: View>: View {
         .onChange(of: recorder.isLifted, initial: true) { _, lifted in
             if lifted { wordsFocused = true }
             #if os(macOS)
-            focused = lifted
+            if lifted { focus.wrappedValue = .card }
             #endif
         }
         #if os(macOS)
         // Takes key focus, so the list's arrows and typing wait while Return sends and Escape cancels.
         .focusable(recorder.isLifted)
         .focusEffectDisabled()
-        .focused($focused)
+        .focused(focus, equals: .card)
         #endif
         CardLayout(placement: placement, x: left, isLifted: lifted) { card }
     }
@@ -710,6 +709,11 @@ private struct TalkRow: ViewModifier {
     }
 }
 
+/// Who holds the talk list's key focus on the Mac: the list, or the card lifted over it.
+private enum TalkFocus: Hashable {
+    case list, card
+}
+
 private struct TalkList<Row: View>: ViewModifier {
     let recorder: TalkRecorder
     let targets: [ChannelTarget]
@@ -718,18 +722,18 @@ private struct TalkList<Row: View>: ViewModifier {
     let row: (ChannelTarget) -> Row
     @ViewState private var hold = TalkHold()
     @Environment(\.scenePhase) private var scenePhase
-    #if os(macOS)
-    @FocusState private var listFocused: Bool
-    #endif
+    @FocusState private var focus: TalkFocus?
 
     func body(content: Content) -> some View {
         content
             #if os(macOS)
-            // Send and Cancel hand key focus back from the card, so the open channel's selection
-            // keeps its accent. Leaving doesn't, because focus is already going somewhere else.
-            .focused($listFocused)
-            .onChange(of: recorder.phase) { _, phase in
-                if phase == .sent || phase == .cancelled { listFocused = true }
+            // Send and Cancel hand key focus from the card back to the list, so the open channel's
+            // selection keeps its accent. Focus the user moved elsewhere meanwhile stays put, and
+            // leaving the card only lets go, because focus is already going somewhere else.
+            .focused($focus, equals: .list)
+            .onChange(of: recorder.isLifted) { _, lifted in
+                guard !lifted, focus == .card else { return }
+                focus = recorder.phase == .sent || recorder.phase == .cancelled ? .list : nil
             }
             #endif
             .environment(hold)
@@ -739,7 +743,7 @@ private struct TalkList<Row: View>: ViewModifier {
                     TalkCard(recorder: recorder, hold: hold, cell: cell.frame.offsetBy(dx: -list.minX, dy: -list.minY),
                              markEnd: cell.markEnd, textInset: cell.textInset, lineInset: cell.lineInset,
                              bounds: CGRect(origin: .zero, size: list.size),
-                             onGlass: onGlass) {
+                             onGlass: onGlass, focus: $focus) {
                         row(target)
                     }
                 }
