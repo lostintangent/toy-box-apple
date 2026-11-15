@@ -9,8 +9,8 @@ import UIKit
 
 /// The open card: the channel's heading, the whole question, then the choices and Reply, which
 /// hold while a choice is saved. Lifted above the dimmed list, a typed reply's field and its Cancel
-/// and Send take the choices' place. The question scrolls only once the card would run past
-/// `maxHeight`.
+/// and Send take the choices' place. The question scrolls past 15 lines, or sooner if the card
+/// would run past `maxHeight`.
 struct NeedsYouCard: View {
     /// How far the card's sides sit outside the row's content.
     static let margin: CGFloat = 12
@@ -28,16 +28,13 @@ struct NeedsYouCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @ViewState private var questionHeight: CGFloat?
     @ViewState private var chrome: CGFloat = 0
-    /// Whether the question runs on above or below what's shown.
-    @ViewState private var hidden: Edge.Set = []
 
     /// The request's own server, which its links resolve against and its reply waits for.
     private var catalog: ChannelCatalogStore? { model.catalogs.first(at: entry.target.serverURL) }
 
     var body: some View {
-        let lineHeight = UIFont.preferredFont(forTextStyle: .body).lineHeight
-        let limit = max(lineHeight * 2, maxHeight - chrome)
-        let shown = questionHeight.map { min($0, limit) }
+        let question = NeedsYouQuestion(words: questionHeight, lineHeight: UIFont.preferredFont(forTextStyle: .body).lineHeight,
+                                        limit: maxHeight - chrome)
         HStack(alignment: .cardMark, spacing: 12) {
             ChannelMark(channel.avatar, api: catalog?.api, size: 28)
                 .alignmentGuide(.cardMark) { $0[VerticalAlignment.center] }
@@ -58,25 +55,7 @@ struct NeedsYouCard: View {
                         .contentShape(Rectangle())
                         .onTapGesture(perform: fold)
                 }
-                .scrollBounceBehavior(.basedOnSize)
-                .onScrollGeometryChange(for: Edge.Set.self) { geometry in
-                    let visible = geometry.visibleRect
-                    return Edge.Set().union(visible.minY > 1 ? .top : [])
-                        .union(visible.maxY < geometry.contentSize.height - 1 ? .bottom : [])
-                } action: { hidden = $1 }
-                // A question that runs on fades out at the edge it continues past.
-                .mask {
-                    VStack(spacing: 0) {
-                        LinearGradient(colors: [.black.opacity(hidden.contains(.top) ? 0 : 1), .black],
-                                       startPoint: .top, endPoint: .bottom)
-                            .frame(height: lineHeight)
-                        Color.black
-                        LinearGradient(colors: [.black, .black.opacity(hidden.contains(.bottom) ? 0 : 1)],
-                                       startPoint: .top, endPoint: .bottom)
-                            .frame(height: lineHeight)
-                    }
-                }
-                .frame(height: shown)
+                .modifier(question)
                 .accessibilityIdentifier("needs-you-question")
                 // The bubble's gap between its body and the actions.
                 .padding(.bottom, 10)
@@ -87,7 +66,7 @@ struct NeedsYouCard: View {
         // and the time and chevron hold still as it opens and closes.
         .padding(Self.margin)
         // Everything but the question, which is what the question gives way to.
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chrome = max($0 - (shown ?? 0), 0) }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chrome = max($0 - (question.height ?? 0), 0) }
         // A lifted card's base and shadow come from the list, so they outlast its shrink into its row.
         .background {
             CardSurface(surface: .pendingAgent, tint: Channel.Attention.waiting.color(in: colorScheme))

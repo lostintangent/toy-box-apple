@@ -20,7 +20,7 @@ struct SidebarAnswers {
 
 /// The request alone, since the row beside it shows the channel: the whole question in the
 /// transcript's own body, then its choices, Reply and Read Aloud, or the typed reply's field in
-/// their place. The question scrolls once the popover would outgrow the screen.
+/// their place. The question scrolls past 15 lines.
 struct SidebarRequestPopover: View {
     let entry: ChannelWaitingRequest
     let answers: SidebarAnswers
@@ -28,7 +28,6 @@ struct SidebarRequestPopover: View {
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.colorScheme) private var colorScheme
     @ViewState private var questionHeight: CGFloat?
-    @ViewState private var chrome: CGFloat = 0
 
     private static let width: CGFloat = 336
     private static let inset: CGFloat = 12
@@ -39,10 +38,12 @@ struct SidebarRequestPopover: View {
     private var isReplying: Bool { cards.replying?.id == entry.id }
 
     var body: some View {
-        let limit = max(60, (NSScreen.main?.visibleFrame.height ?? 800) - chrome - 40)
+        let words = TranscriptMarkdown(content: entry.markdown, agents: entry.request?.agents ?? [], baseURL: catalog.api.baseURL)
+        let lineHeight = NSLayoutManager().defaultLineHeight(for: .systemFont(ofSize: words.bodySize * textScale))
+            + words.lineSpacing * textScale
         VStack(alignment: .leading, spacing: 10) {
             ScrollView {
-                TranscriptMarkdown(content: entry.markdown, agents: entry.request?.agents ?? [], baseURL: catalog.api.baseURL)
+                words
                     .environment(\.transcriptSurface, .pendingAgent)
                     // The sidebar's rows keep to one line, which the popover would inherit.
                     .lineLimit(nil)
@@ -53,16 +54,11 @@ struct SidebarRequestPopover: View {
                     .frame(width: Self.width - 2 * Self.inset, alignment: .leading)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { questionHeight = $0 }
             }
-            .scrollBounceBehavior(.basedOnSize)
-            .frame(height: questionHeight.map { min($0, limit) })
+            .modifier(NeedsYouQuestion(words: questionHeight, lineHeight: lineHeight))
             footer
         }
         .padding(Self.inset)
         .frame(width: Self.width)
-        // Everything but the question, which is what the question gives way to.
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
-            chrome = max($0 - min(questionHeight ?? 0, limit), 0)
-        }
         .background {
             ZStack {
                 ForEach(Array(TranscriptSurface.pendingAgent.fills(isDark: colorScheme == .dark).enumerated()),
