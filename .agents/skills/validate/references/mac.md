@@ -15,6 +15,9 @@ scene, disables restoration only in the volatile argument domain, refuses applic
 and restoration, and captures the window as the window server composites it, attached sheets
 included. Without Screen Recording the snapshot fails instead of writing a blank PNG.
 
+`composer-dictation-recording` needs `TOYBOX_DICTATION_AUDIO_FILE` set to a spoken recording, such
+as one from `say -o /tmp/tbm-<you>/dictation.aiff "Draft a reply"`, and fails right away without it.
+
 It's layout evidence only. It has no native interaction, WindowServer shadows or corner masks, or
 correct 27+ Liquid Glass and sidebar selection. Verify materials, selection and scroll-edge effects
 in a real window.
