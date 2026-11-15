@@ -12,13 +12,19 @@
         "id": "t1",
         "title": "Connect the team",
         "status": "done",
-        "ownerId": "ada-engineer"
+        "owner": {
+          "type": "agent",
+          "agentId": "ada-engineer"
+        }
       },
       {
         "id": "t2",
         "title": "Build the workshop",
         "status": "in_progress",
-        "ownerId": "pixel-designer",
+        "owner": {
+          "type": "agent",
+          "agentId": "pixel-designer"
+        },
         "artifactId": "session:pixel-designer:Workshop plan.md",
         "diff": {
           "added": 1180,
@@ -37,7 +43,10 @@
           {
             "id": "t4",
             "title": "Choose the library location",
-            "status": "blocked"
+            "status": "blocked",
+            "owner": {
+              "type": "user"
+            }
           }
         ]
       },
@@ -45,7 +54,10 @@
         "id": "t5",
         "title": "Verify reconnect behavior",
         "status": "in_progress",
-        "ownerId": "iris-systems",
+        "owner": {
+          "type": "agent",
+          "agentId": "iris-systems"
+        },
         "diff": {
           "added": 0,
           "removed": 0
@@ -55,7 +67,10 @@
         "id": "t6",
         "title": "Collect useful examples",
         "status": "pending",
-        "ownerId": "finch-researcher",
+        "owner": {
+          "type": "agent",
+          "agentId": "finch-researcher"
+        },
         "diff": {
           "added": 12,
           "removed": 0

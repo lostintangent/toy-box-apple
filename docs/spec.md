@@ -2753,8 +2753,7 @@ Rows have 5 points of vertical padding. The first line is the title (13 regular,
 titles in secondary, never struck through) with the owner's 16-point avatar at the trailing
 edge, centered on the first line and at least 8 points from the title. A task's `owner` is an
 actor, the same shape as a message's `sender`: `{"type":"user"}` or `{"type":"agent","agentId"}`.
-A server from before `owner` sends an agent's `ownerId` instead, read as that agent, so owners
-stay visible while your Macs update at different times. A task owned by the user waits on you.
+A task owned by the user waits on you.
 Its owner is you, drawn as your bookmarks draw you: a secondary `person.crop.circle.fill` named
 "You", with help "Owned by you" and VoiceOver "owner You". It's never looked up in the team, so it
 never shows as "Deleted agent". ToyBoxKit resolves a task's owner once for both apps.

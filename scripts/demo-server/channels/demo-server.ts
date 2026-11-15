@@ -62,10 +62,9 @@ function demoAvatar(channelID: string): Avatar | undefined {
   return chosen;
 }
 
-// The fixture stays byte-identical to the reference export, so the demo adds the replies its
-// library request would carry, task owners as the current server sends them, with the library
-// request's task owned by you, any avatar, and bookmarks the lead's handoff to two agents, which
-// only a bookmark keeps in the Yours view, and the request.
+// The fixture stays the contract snapshot, so the demo adds the replies its library request would
+// carry, any avatar, and bookmarks the lead's handoff to two agents, which only a bookmark keeps in
+// the Yours view, and the request.
 export function loadDemoFixture(): FixtureSnapshot {
   const snapshot: FixtureSnapshot = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
   const replies = demoReplies();
@@ -74,16 +73,6 @@ export function loadDemoFixture(): FixtureSnapshot {
     if (replies) message.replies = replies;
     else delete message.replies;
   }
-  const owning = (tasks: Snapshot[]): Snapshot[] => tasks.map(({ ownerId, children, ...task }) => ({
-    ...task,
-    ...(ownerId ? { owner: { type: 'agent', agentId: ownerId } } : {}),
-    ...(children ? { children: owning(children) } : {}),
-  }));
-  const tasks = owning(snapshot.channel.tasks);
-  const library = tasks.flatMap(task => task.children ?? []).find(task => task.id === 't4');
-  if (!library) throw new Error('Expected the fixture to track the library request as task t4.');
-  library.owner = { type: 'user' };
-  (snapshot.channel as Snapshot).tasks = tasks;
   snapshot.bookmarks = demoBookmarks([9, 15]);
   const avatar = demoAvatar(snapshot.channel.id);
   if (avatar) snapshot.channel.avatar = avatar;
