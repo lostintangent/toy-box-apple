@@ -261,8 +261,9 @@ struct ConversationTranscript: View {
         .defaultScrollAnchor(opening.seededRowID == nil ? .bottom : .top, for: .initialOffset)
         .scrollPosition(id: Binding {
             // The seed holds the first unread row at the top until it lands, as the card appears above it.
-            scrollPosition ?? (hasLanded || isRevealing ? nil : opening.seededRowID)
-        } set: { scrollPosition = $0 }, anchor: .top)
+            // After landing, `holdReadingPlace` alone holds the reader's place.
+            hasLanded ? nil : (scrollPosition ?? (isRevealing ? nil : opening.seededRowID))
+        } set: { if !hasLanded { scrollPosition = $0 } }, anchor: .top)
         .preference(key: TranscriptLanded.self, value: hasLanded)
         .preference(key: TranscriptRestoringHistory.self, value: pagingAnchor != nil)
         .onScrollGeometryChange(for: TranscriptViewport.self) { TranscriptViewport($0) } action: { old, new in
@@ -552,8 +553,7 @@ struct ConversationTranscript: View {
         Logger(subsystem: "dev.toybox.desktop", category: "Transcript").notice("\(line, privacy: .public)")
     }
 
-    /// Programmatic scrolls never update the scroll position binding, so an anchor left by an earlier
-    /// user scroll would pull the viewport back toward it whenever content changes size.
+    /// Before landing, clears an anchor a user scroll left, which would pull the viewport back toward it.
     func scrollToLatest(using proxy: ScrollViewProxy, animation: Animation? = nil) {
         scrollPosition = nil
         pendingJump = nil
