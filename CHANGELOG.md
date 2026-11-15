@@ -17,6 +17,7 @@
 - Sending a message while dictation downloads your language for the first time no longer cancels the download, so dictation is ready the next time you tap it.
 - Closing Bookmarks before it finishes finding an older message no longer stops the conversation from loading earlier history as you scroll back.
 - A task that's waiting on you now shows you as its owner instead of "Deleted agent", so you can see at a glance what's yours to do.
+- Coming back to Toy Box no longer leaves a conversation blank until you scroll, so you always see where you left off.
 
 ## Mac 0.1.41
 

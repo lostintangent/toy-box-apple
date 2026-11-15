@@ -22,6 +22,9 @@ final class TranscriptScroll {
     var metrics: Metrics?
     var isReaderScrolling = false
     var isScrollIdle = true
+    /// Geometry reported while the scene isn't active comes from the system's snapshot passes,
+    /// not the reader's layout, so nothing is placed from it until the scene is active again.
+    var isSceneActive = true
     /// Keeps the model's placement through reader scrolling until geometry holds it: an anchor
     /// through a page insertion, or the end after a move that stopped a flick still reporting frames.
     var holdsPlacementThroughInput = false
@@ -83,7 +86,7 @@ final class TranscriptScroll {
         let event: Model.Event
         if let explicit {
             event = explicit
-        } else if !hasLanded {
+        } else if !hasLanded || !isSceneActive {
             return nil
         } else if isReaderScrolling && !holdsPlacementThroughInput {
             event = .readerScrolled(to: layout.origin)
@@ -116,6 +119,12 @@ final class TranscriptScroll {
               let origin = Model.placement(for: intent, layout: layout).origin,
               abs(origin - layout.origin) > 0.5 else { return nil }
         return .layoutChanged
+    }
+
+    /// Places once for the geometry the scene came back with.
+    func sceneBecameActive() -> Model? {
+        isSceneActive = true
+        return hasLanded ? update(.layoutChanged) : nil
     }
 
     /// A new touch is the reader's own, unlike the frames of a flick that a jump stopped.
@@ -388,6 +397,9 @@ struct ConversationView: View {
             land(items)
         }
         .onChange(of: store.phase.isConnected) { land(items) }
+        .onChange(of: scenePhase, initial: true) {
+            if scenePhase == .active { place(scroll.sceneBecameActive()) } else { scroll.isSceneActive = false }
+        }
         .onChange(of: store.sending.map(\.id)) { old, _ in
             if startsOwnPost(after: old, in: store.sending) { place(scroll.update(.ownPostConfirmed)) }
         }
@@ -496,17 +508,19 @@ struct ConversationView: View {
     }
 
     private func place(_ placement: TranscriptPlacement?) {
+        // An explicit event while the scene isn't active, like a post confirmed in the background,
+        // still sets the intent, and the one placement on return carries it out.
+        guard scroll.isSceneActive else { return }
         let isMoving = scroll.moves(placement)
         if let origin = placement?.origin {
             if isMoving, let metrics = scroll.metrics {
-                let y = origin + metrics.viewport.topInset
                 let endOrigin = metrics.documentEnd - metrics.viewport.height + metrics.viewport.bottomInset
-                // SwiftUI ignores a position it already holds, as when a dropped request is
-                // placed again, so the end is asked for by edge instead.
-                if position.point?.y == y, origin >= endOrigin - 0.5 {
+                // The end is asked for by edge, which SwiftUI resolves against the rows it lays
+                // out. Our end comes from its content size, which can still be an estimate.
+                if origin >= endOrigin - 0.5 {
                     position.scrollTo(edge: .bottom)
                 } else {
-                    position.scrollTo(y: y)
+                    position.scrollTo(y: origin + metrics.viewport.topInset)
                 }
             } else {
                 scroll.holdsPlacementThroughInput = false
