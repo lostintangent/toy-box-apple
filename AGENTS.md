@@ -30,8 +30,9 @@ of truth for parity, protocol and design. Everything else loads when you need it
 - **Owners** each own one part of both apps: Core the shared foundation, and Shell, Transcript,
   Composer, Overview and Intelligence a surface each.
 
-Messages lead with the outcome, in plain words. Post before slow work, and after a restart, read
-everything before acting.
+Messages lead with the outcome, in plain words. A decision shows each option's cost, what it's
+causing now, what dropping it saves and what the user loses. Post before slow work, and after a
+restart, read everything before acting.
 
 ### Ownership
 
@@ -157,8 +158,7 @@ Use Bun 1.4.4: run `bun install --frozen-lockfile`, then the root `package.json`
 | Serve sample channels for writes and screenshots | `bun run demo` on 3210, or the validate skill's other servers |
 
 - **Use the `bun run` commands,** never `xcodebuild`, `xcresulttool` or `devicectl`, and never
-  download simulator runtimes. The Mac builds with Command Line Tools only, and the phone with
-  Xcode's toolchain through SwiftPM.
+  download simulator runtimes.
 - **The simulator and the benchmark run one at a time,** under a lease their commands take, so
   never boot another simulator, run `simctl` by hand or poll.
 
@@ -167,7 +167,7 @@ Use Bun 1.4.4: run `bun install --frozen-lockfile`, then the root `package.json`
 - **Done means demonstrated, scaled to the change.** A symbol, constant or spacing change needs a
   build, the touched suite and one capture of the result. Behavior, layout and concurrency changes
   get a full pass, and the release build covers the rest.
-- **Validate in Dark at the default text size,** which is how the user runs both apps. Add Light
+- **Validate in Dark at the default text size,** as the user runs both apps. Add Light
   only when a change touches color values, materials or contrast, and larger sizes only when it's
   about text sizing. Never hard-code a color or size that would break the others.
 - **A change made for speed proves it against main** with its benchmark before it merges.
@@ -179,7 +179,7 @@ Use Bun 1.4.4: run `bun install --frozen-lockfile`, then the root `package.json`
 
 ### The running app
 
-The validate skill says how to capture and drive either app. These limits always hold:
+The validate skill says how to capture and drive either app, within these limits:
 
 - **Mac:** act with Computer Use only in Toy Box Test (`dev.toybox.desktop.test`) showing
   `studio-demo`, never in the user's `dev.toybox.desktop` or a window listing live channels, and
