@@ -115,6 +115,28 @@ struct TalkRecorderTests {
     }
 
     @Test(arguments: [false, true])
+    func sendTurnsOnWithAGuessAndPostsOnlyWhatFinalizes(finalizes: Bool) async throws {
+        let server = try await CardServer.start(channels: ["test"]) { post, _ in try CardServer.accepted(post) }
+        defer { server.end() }
+        let store = server.catalog.channel(id: "test")
+        let recorder = try await start(on: store)
+        defer { recorder.deactivate() }
+        #expect(!recorder.canSend)
+        recognizer.send("Move the lamp", isFinal: false)
+        #expect(recorder.finalizedWords.isEmpty && recorder.canSend, "Send turns on with the first gray word")
+        recognizer.finalWords = [(finalizes ? "Move the lamp" : "", true)]
+        await recorder.send()
+        if finalizes {
+            #expect(recorder.phase == .sent)
+            #expect(server.outbox.messages(in: "test", on: server.catalog.api.baseURL).map(\.text) == ["Move the lamp"])
+        } else {
+            #expect(recorder.phase == .recording && recorder.isLifted && recorder.canResume && !recorder.canSend,
+                    "With no word finalized the card stays open, paused")
+            #expect(server.posts.isEmpty && server.outbox.messages(in: "test", on: server.catalog.api.baseURL).isEmpty)
+        }
+    }
+
+    @Test(arguments: [false, true])
     func endingANoteNeverPostsAndOnlyLeavingKeepsItsWords(leaves: Bool) async throws {
         let server = try await CardServer.start(channels: ["test"]) { _, _ in
             Issue.record("Ending a note must not post")

@@ -7,6 +7,7 @@
 - A long request in the sidebar now stays a comfortable size and scrolls, instead of stretching to fill the screen.
 - A channel you're looking at now stays read as new messages arrive, wherever you've scrolled, so it no longer shows up as unread in the sidebar while you're in it.
 - Coming back to a channel after you've been in another window or app now moves New to what arrived while you were away, so you can see at a glance what you missed.
+- When you talk to the Lead, Send is ready as soon as your words appear, so you can send the moment you finish speaking.
 
 ## iPhone 0.1.41
 
@@ -15,6 +16,7 @@
 - A long request's card now stays compact and scrolls, so the rest of your channels stay in view.
 - Sitting in a channel now keeps it read as new messages arrive, so it no longer shows up as unread when you go back to your channels.
 - Coming back to the app on a channel now moves New to what arrived while you were away, so you can see at a glance what you missed.
+- When you talk to the Lead, Send is ready as soon as your words appear, so you can send the moment you finish speaking.
 
 ## Mac 0.1.43
 
