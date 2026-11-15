@@ -420,8 +420,17 @@ struct ConversationView: View {
             startedReveal = request.token
             Task { await reveal(sequence: request.sequence, token: request.token) }
         }
+        .onChange(of: read.isLooking) { _, looking in
+            if !looking, scroll.hasLanded { store.lookAway() }
+        }
         .onChange(of: read.sequence, initial: true) { _, sequence in
-            if let sequence { Task { await store.markRead(through: sequence) } }
+            guard let sequence else { return }
+            // The catch-up summary covered the span New replaced, so it ends with it.
+            if store.lookBack() {
+                capturedArrival = false
+                catchUp = nil
+            }
+            Task { await store.markRead(through: sequence) }
         }
     }
 

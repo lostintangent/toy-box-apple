@@ -185,8 +185,17 @@ struct ConversationTranscript: View {
                     interaction.consumeRevealRequest(request.token)
                     await reveal(sequence: request.sequence, using: proxy)
                 }
+                .onChange(of: read.isLooking) { _, looking in
+                    if !looking, hasLanded { store.lookAway() }
+                }
                 .onChange(of: read.sequence, initial: true) { _, sequence in
-                    if let sequence { Task { await store.markRead(through: sequence) } }
+                    guard let sequence else { return }
+                    // The catch-up summary covered the span New replaced, so it ends with it.
+                    if store.lookBack() {
+                        capturedArrivalBoundary = false
+                        catchUp = nil
+                    }
+                    Task { await store.markRead(through: sequence) }
                 }
                 .task(id: hidesOpening) {
                     guard hidesOpening, (try? await Task.sleep(for: .seconds(1))) != nil, hidesOpening else { return }
