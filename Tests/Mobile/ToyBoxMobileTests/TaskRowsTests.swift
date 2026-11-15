@@ -45,8 +45,8 @@ struct TaskRowsTests {
 
     @Test(arguments: [263.99, 264, 264.01])
     func theActualReadingFloorControlsInlineRowsWithoutADeviceThreshold(width: CGFloat) {
-        let child = ChannelTask(id: "child", title: "Child", ownerId: "owner")
-        let parent = ChannelTask(id: "root", title: "Root", status: "in_progress", ownerId: "owner", children: [child])
+        let child = ChannelTask(id: "child", title: "Child", owner: .agent("owner"))
+        let parent = ChannelTask(id: "root", title: "Root", status: "in_progress", owner: .agent("owner"), children: [child])
         let rows = project([parent], width: width)
         if width < 264 {
             #expect(rows.map(\.id) == [.task("root"), .subtasks("root")])
@@ -129,11 +129,11 @@ struct TaskRowsTests {
     }
 
     @Test func eachRootKeepsItsOwnReadingBudgetAndTaskFactsRemainUnchanged() {
-        let child = ChannelTask(id: "child", title: "Child", ownerId: "owner", artifactId: "artifact",
+        let child = ChannelTask(id: "child", title: "Child", owner: .agent("owner"), artifactId: "artifact",
                                 diff: .init(added: 1522, removed: 114),
                                 startedAt: "2026-10-26T01:00:00Z", checkInAt: "2026-10-26T02:00:00Z")
         let parent = ChannelTask(id: "root", title: "Root", status: "in_progress", children: [child])
-        let rows = project([parent, .init(id: "owned", title: "Owned", ownerId: "owner")])
+        let rows = project([parent, .init(id: "owned", title: "Owned", owner: .agent("owner"))])
         #expect(rows[0].layout.rootHasOwner == false && rows[1].layout.rootHasOwner == false)
         #expect(rows[2].layout.rootHasOwner)
         #expect(rows[1].task == child)
@@ -469,7 +469,7 @@ struct TaskRowsTests {
                                         showsOnlyInProgress: showsOnlyInProgress) { root in
             .init(contentWidth: width, statusWidth: 16, titleGap: 6, ownerWidth: 20,
                   scaledReadingWidth: accessibility ? 640 : 192,
-                  accessibility: accessibility, rootHasOwner: root.ownerId != nil)
+                  accessibility: accessibility, rootHasOwner: root.owner != nil)
         }
     }
 

@@ -5,17 +5,42 @@ import Testing
 struct ChannelTaskTests {
     @Test func taskMathPreservesMeasuredZero() {
         let tasks = [
-            ChannelTask(id: "parent", title: "Build", status: "in_progress",
+            ChannelTask(id: "parent", title: "Build", status: "in_progress", owner: .user,
                         diff: .init(added: 4, removed: 2),
                         children: [.init(id: "child", title: "Review", status: "done",
-                                         ownerId: "ada", diff: .init(added: 3, removed: 1))]),
+                                         owner: .agent("ada"), diff: .init(added: 3, removed: 1))]),
             ChannelTask(id: "zero", title: "Measure", status: "done", diff: .init(added: 0, removed: 0)),
         ]
         #expect(tasks.diff == .init(added: 7, removed: 3))
         #expect(([] as [ChannelTask]).diff == nil)
         #expect([tasks[1]].diff == .init(added: 0, removed: 0))
         #expect(tasks.progress == .init(done: 1, total: 2))
-        #expect(tasks.unassigning(agentId: "ada")[0].children?[0].ownerId == nil)
+        #expect(tasks.unassigning(agentId: "ada")[0].children?[0].owner == nil)
+        #expect(tasks.unassigning(agentId: "user")[0].owner == .user)
+    }
+
+    @Test func ownerReadsTheActorOrAnOlderServersAgentIDAndYouIsNeverLookedUp() throws {
+        let json = """
+            [{"id": "ask", "title": "Choose", "status": "blocked", "owner": {"type": "user"}},
+             {"id": "build", "title": "Build", "status": "in_progress", "owner": {"type": "agent", "agentId": "ada"},
+              "children": [{"id": "review", "title": "Review", "status": "done", "ownerId": "ada"}]},
+             {"id": "old", "title": "Old", "status": "pending", "owner": {"type": "agent", "agentId": "gone"}},
+             {"id": "open", "title": "Open", "status": "pending"}]
+            """
+        let tasks = try JSONDecoder().decode([ChannelTask].self, from: Data(json.utf8))
+        #expect(tasks.map(\.owner) == [.user, .agent("ada"), .agent("gone"), nil])
+        #expect(tasks[1].children?[0].owner == .agent("ada"))
+        #expect(try JSONDecoder().decode([ChannelTask].self, from: JSONEncoder().encode(tasks)) == tasks)
+
+        let ada = ChannelAgent(id: "ada", name: "Ada")
+        let team = [ada, ChannelAgent(id: "user", name: "Impostor")]
+        let you = tasks[0].owner(in: team)
+        #expect(you == .you)
+        #expect(you?.name == "You")
+        #expect(you?.help == "Owned by you")
+        #expect(tasks[1].owner(in: team) == .agent(ada))
+        #expect(tasks[2].owner(in: team) == .agent(ChannelAgent(id: "gone", name: "Deleted agent", deleted: true)))
+        #expect(tasks[3].owner(in: team) == nil)
     }
 
     @Test func taskTimingFloorsElapsedCeilsCheckInAndHandlesAbsentOrInvalidDates() throws {

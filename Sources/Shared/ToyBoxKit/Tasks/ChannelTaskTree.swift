@@ -21,7 +21,7 @@ extension Array where Element == ChannelTask {
     public func unassigning(agentId: String) -> [ChannelTask] {
         map { task in
             var next = task
-            if next.ownerId == agentId { next.ownerId = nil }
+            if next.owner == .agent(agentId) { next.owner = nil }
             if let children = next.children { next.children = children.unassigning(agentId: agentId) }
             return next
         }
