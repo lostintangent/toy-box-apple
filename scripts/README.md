@@ -40,9 +40,9 @@ hard-wrapped paragraphs and a wrapped list item. The existing `fixture-progress`
 H1/H2 and a short list for comparing transcript rendering. Without the switch,
 the shared 3210 fixture is unchanged.
 
-Until the Command Line Tools ship the fix for swiftlang/swift-build#1861, many Mac builds
-recompile and relink everything with no change, adding 30 to 40 s. Swift Build picks either of the
-CLT's two toolchain identifiers on each run, so `TOOLCHAINS` in
-`<scratch>/out/Intermediates.noindex/XCBuildData/*/build-request.json` switches between
-`com.apple.dt.toolchain.XcodeDefault` and `org.swift.CommandLineTools`. No script setting avoids
-it, so don't chase it.
+Until the Command Line Tools ship swiftlang/swift-build@da7d609, the fix for
+swiftlang/swift-build#1861, many Mac builds recompile and relink everything with no change, adding
+30 to 40 s. Swift Build picks either of the CLT's two toolchain identifiers on each run, so
+`TOOLCHAINS` in `<scratch>/out/Intermediates.noindex/XCBuildData/*/build-request.json` switches
+between `com.apple.dt.toolchain.XcodeDefault` and `org.swift.CommandLineTools`. No script setting
+avoids it, so don't chase it, and delete this paragraph once a CLT carries that commit.
