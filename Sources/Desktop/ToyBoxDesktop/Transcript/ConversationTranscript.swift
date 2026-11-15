@@ -652,6 +652,7 @@ struct ConversationTranscript: View {
             capturedArrivalBoundary = true
         }
         await Task.yield()
+        var landsAtLatest = true
         if let plan = TranscriptLanding.opening(
             unreadAfter: arrivalUnreadAfter, oldestSequence: store.messages.first?.sequence,
             hasOlderMessages: store.hasOlderMessages, rows: rows) {
@@ -661,6 +662,7 @@ struct ConversationTranscript: View {
             // A card lays out before its rows show. Without one, the rows may already be in place.
             if catchUp == nil { showPlacedOpening() }
             if let first = rows.first(where: { $0.id == plan.rowID }) {
+                landsAtLatest = false
                 await settleLanding(on: first, using: proxy)
                 guard !Task.isCancelled, !isRevealing else { return }
             } else { await settleLatestLanding(using: proxy) }
@@ -669,6 +671,9 @@ struct ConversationTranscript: View {
         }
         guard !Task.isCancelled, !isRevealing else { return }
         await Task.yield()
+        // An estimate that jumped while follow waited for landing can leave this false, which
+        // would flash Jump to Latest and follow with an animation that misses a late image.
+        if landsAtLatest { isAtBottom = true }
         hasLanded = true
     }
 

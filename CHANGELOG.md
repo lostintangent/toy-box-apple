@@ -1,5 +1,11 @@
 # Changelog
 
+## Mac 0.1.43
+
+### Bugs/Polish
+
+- Opening a channel now always shows its newest message in full, even when a picture in it finishes loading a moment later, and Jump to Latest no longer flickers on as the channel opens.
+
 ## Mac 0.1.42
 
 ### Bugs/Polish
