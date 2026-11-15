@@ -220,6 +220,8 @@ struct ConversationView: View {
     @ViewState private var position = ScrollPosition()
     @ViewState private var arrivalUnreadAfter: Int?
     @ViewState private var capturedArrival = false
+    /// This transcript's own visit ended, so its next read may move New to what arrived meanwhile.
+    @ViewState private var lookedAway = false
     @ViewState private var showsJumpToLatest = false
     @ViewState private var showsWorkingNow = false
     @ViewState private var showsBookmarks = false
@@ -420,8 +422,20 @@ struct ConversationView: View {
             startedReveal = request.token
             Task { await reveal(sequence: request.sequence, token: request.token) }
         }
+        .onChange(of: read.isLooking) { _, looking in
+            if !looking, scroll.hasLanded { lookedAway = true }
+        }
         .onChange(of: read.sequence, initial: true) { _, sequence in
-            if let sequence { Task { await store.markRead(through: sequence) } }
+            guard let sequence else { return }
+            // The catch-up summary covered the span New replaced, so it ends with it.
+            if lookedAway {
+                lookedAway = false
+                if store.lookBack() {
+                    capturedArrival = false
+                    catchUp = nil
+                }
+            }
+            Task { await store.markRead(through: sequence) }
         }
     }
 

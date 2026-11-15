@@ -423,6 +423,26 @@ struct TransportTests {
         #expect(store.unreadAfter == 1, "An arrival during the visit leaves New where it opened")
     }
 
+    @Test @MainActor func lookingBackMovesNewOnlyWhenMessagesArrivedWhileAway() async throws {
+        let mock = MockTransport { request, _ in
+            let sequence = try JSONDecoder().decode([String: Int].self, from: requestBody(request))["sequence"] ?? 0
+            return MockResponse(body: Data(#"{"seenThrough":\#(sequence)}"#.utf8))
+        }
+        let store = ChannelStore(id: "test", api: try mock.api())
+        var state = testState(revision: 10, messages: [testMessage(1), testMessage(2), testMessage(3)])
+        state.channel.seenThrough = 1
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        store.captureUnreadBoundary()
+        await store.markRead(through: 3)
+
+        #expect(!store.lookBack())
+        #expect(store.unreadAfter == 1, "Nothing arrived, so New stays where the open put it")
+
+        _ = try store.apply(.init(type: "message", revision: 11, message: testMessage(4)))
+        #expect(store.lookBack())
+        #expect(store.unreadAfter == 3, "New sits above the message that arrived while away")
+    }
+
     /// Transcript's read task is cancelled whenever the visible sequence moves, which used to cancel
     /// the write in flight.
     @Test @MainActor func cancellingAReaderDoesNotDropItsRead() async throws {

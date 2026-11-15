@@ -296,6 +296,19 @@ public final class ChannelStore {
         capturedUnread = state != nil && phase.isConnected
     }
 
+    /// Looking back after looking away moves New to the first message that arrived meanwhile, as the
+    /// web does, and returns whether it moved. If none arrived, New stays, because a window loses key
+    /// far more often than a browser tab hides. Each window tracks its own look-away, since windows
+    /// share this store, and calls this at its next read, once a phone back from the background has
+    /// reconnected and brought what arrived.
+    public func lookBack() -> Bool {
+        guard phase.isConnected, let channel = state?.channel else { return false }
+        let read = max(channel.seenThrough, acknowledgedRead, pendingRead)
+        guard channel.latestSequence > read, unreadAfter != read else { return false }
+        unreadAfter = read
+        return true
+    }
+
     /// Returns once the page before the oldest loaded message lands or fails. The store owns the page,
     /// so cancelling a caller doesn't interrupt it, and a caller that arrives while it loads joins it.
     public func loadOlder() async {
