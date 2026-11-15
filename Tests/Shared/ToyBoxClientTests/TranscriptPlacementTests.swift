@@ -192,6 +192,18 @@ struct TranscriptPlacementTests {
         #expect(afterInput.origin == 700)
     }
 
+    @Test func landingThatTheEndHoldsFollowsArrivalsOnceTheRowsBelowAreMeasured() {
+        let target = Model.Event.land(.row("m18", order: 18))
+        let estimated = Model.reduce(.following, target, layout: layout([frames()[18]], origin: 0))
+        #expect(estimated.intent == .landing(.row("m18", order: 18)))
+        let landed = Model.reduce(.following, target, rows: frames(), viewport: viewport, origin: 0)
+        #expect(landed.intent == .following)
+        #expect(landed.origin == 1_566)
+        let arrival = frames() + [.init(id: "m20", order: 20, top: 2_000, height: 300)]
+        let followed = Model.reduce(landed.intent, .layoutChanged, rows: arrival, viewport: viewport, origin: 1_566)
+        #expect(followed.origin == 1_866)
+    }
+
     @Test func followingOwnsTheEndClearanceExactlyOnceAndKeepsArrivalsInView() {
         let first = Model.reduce(.landing(.end), .layoutChanged, rows: frames(), viewport: viewport, origin: 0)
         #expect(Model.end(frames()) == 2_016)

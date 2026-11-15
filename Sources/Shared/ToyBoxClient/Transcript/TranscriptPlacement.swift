@@ -273,6 +273,13 @@ public struct TranscriptPlacement: Equatable, Sendable {
                 return TranscriptPlacement(intent: intent, origin: nil, needsMeasurement: identity.id)
             }
             proposed = row.top - viewport.topInset
+            // A landing the end holds is at the end, so it follows what arrives. Rows below still
+            // estimated could make the end look closer than it is, so they must be measured first.
+            let below = layout.rows.drop { $0.id != identity.id }.dropFirst()
+            if proposed >= layout.documentEnd - viewport.height + viewport.bottomInset,
+               below.allSatisfy({ layout.measurements[$0.id] != nil }) {
+                return place(.following, layout: layout)
+            }
         case .reading(let anchor):
             guard let identity = survivor(id: anchor.row, order: anchor.order, layout: layout) else {
                 return place(.following, layout: layout)
