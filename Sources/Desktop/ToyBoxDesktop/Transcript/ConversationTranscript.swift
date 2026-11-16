@@ -307,7 +307,7 @@ struct ConversationTranscript: View {
         let gaps = transcriptRowGaps(rows)
         let channel = TranscriptRowChannel(agents: store.roster, id: store.id,
                                            historyStart: store.messages.first?.sequence ?? 0, api: store.api)
-        let statusReactions = statusReactions
+        let statusReactions = store.statusReactions
         let findHighlights = find.highlights(TranscriptFindHighlight.mac)
         let bookmarks = Set(store.bookmarks)
         let catchUp = interaction.messageView == .all ? catchUp : nil
@@ -357,18 +357,6 @@ struct ConversationTranscript: View {
         }
         .scrollTargetLayout()
         .coordinateSpace(name: "transcript-content")
-    }
-
-    /// The looking and working reactions by sequence. Roster leaves statuses out, so they're merged back.
-    private var statusReactions: [Int: [ChannelReaction]] {
-        guard !store.phase.isUnavailable else { return [:] }
-        let statuses = store.agentStatuses
-        let agents = store.roster.map { agent in
-            var agent = agent
-            agent.status = statuses[agent.id]
-            return agent
-        }
-        return agents.statusReactions(presence: store.presence)
     }
 
     private func sending(_ message: ChannelOutbox.Message, divider: TranscriptDivider?) -> some View {

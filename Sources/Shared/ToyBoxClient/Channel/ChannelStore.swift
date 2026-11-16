@@ -50,6 +50,16 @@ public final class ChannelStore {
     /// How each agent appears by agent ID, from its status and whether the catalog lists it as
     /// working. The channel's stream doesn't carry presence.
     public private(set) var presence: [String: ChannelAgentPresence] = [:]
+    /// The looking and working reactions working agents put on messages, by sequence. None while
+    /// the channel is unavailable, so a stale status never shows.
+    public var statusReactions: [Int: [ChannelReaction]] {
+        guard !phase.isUnavailable else { return [:] }
+        return roster.map { agent in
+            var agent = agent
+            agent.status = agentStatuses[agent.id]
+            return agent
+        }.statusReactions(presence: presence)
+    }
     /// The IDs of the agents running now, which the catalog store keeps current. It's empty while
     /// the catalog is unavailable, so nobody shows as working on a stale list.
     @ObservationIgnored var working: Set<String> = [] {

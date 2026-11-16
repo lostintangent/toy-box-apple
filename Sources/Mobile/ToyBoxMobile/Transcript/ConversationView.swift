@@ -244,7 +244,7 @@ struct ConversationView: View {
     var body: some View {
         let items = items
         let channel = TranscriptRowChannel(id: store.id, agents: store.roster, api: store.api)
-        let statusReactions = statusReactions
+        let statusReactions = store.statusReactions
         let card = interaction.messageView == .all ? catchUp.map { (session: $0, store: store) } : nil
         let requestChoices = TranscriptRequestChoices(request: store.request, store: store,
                                                       isConnected: store.phase.isConnected)
@@ -416,17 +416,6 @@ struct ConversationView: View {
         .onChange(of: read.sequence, initial: true) { _, sequence in
             if let sequence, visit.read(through: sequence, in: store) { catchUp = nil }
         }
-    }
-
-    private var statusReactions: [Int: [ChannelReaction]] {
-        guard !store.phase.isUnavailable else { return [:] }
-        let statuses = store.agentStatuses
-        let agents = store.roster.map { agent in
-            var agent = agent
-            agent.status = statuses[agent.id]
-            return agent
-        }
-        return agents.statusReactions(presence: store.presence)
     }
 
     private func openFind() {
