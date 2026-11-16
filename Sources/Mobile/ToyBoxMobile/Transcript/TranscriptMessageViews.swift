@@ -649,7 +649,7 @@ struct TranscriptSystemDetails: View {
             List(messages) { message in
                 if let system = message.system {
                     Section {
-                        ForEach(Self.details(system, agents: agents), id: \.label) { detail in
+                        ForEach(system.details(agents: agents), id: \.label) { detail in
                             LabeledContent(detail.label) {
                                 Text(detail.value).textSelection(.enabled).multilineTextAlignment(.trailing)
                             }
@@ -672,24 +672,5 @@ struct TranscriptSystemDetails: View {
             }
         }
         .presentationDetents([.medium, .large])
-    }
-
-    static func details(_ system: ChannelSystemContent, agents: [ChannelAgent]) -> [(label: String, value: String)] {
-        var details: [(label: String, value: String)] = []
-        if system.actor != nil { details.append(("By", system.actorName(agents: agents))) }
-        if let member = system.member?.name { details.append(("Member", member)) }
-        if let name = system.name { details.append(("Name", name)) }
-        if let purpose = system.purpose { details.append(("Purpose", purpose)) }
-        if let directory = system.directory { details.append(("Folder", directory)) }
-        if let preview = system.preview {
-            details.append(("Preview", preview.kind == "screen" ? "Screen" : preview.url ?? preview.kind))
-        }
-        if let artifact = system.artifact { details.append(("Artifact", artifact.title)) }
-        if let routine = system.routine {
-            details.append(("Routine", routine.title))
-            details.append(("Schedule", routine.schedule))
-        }
-        if let description = system.unknownFields?["description"]?.string { details.append(("Details", description)) }
-        return details
     }
 }

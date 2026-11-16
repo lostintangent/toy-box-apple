@@ -19,6 +19,8 @@ struct TranscriptSystemMessages: View {
 
     private var contents: [ChannelSystemContent] { messages.compactMap(\.system) }
     private var first: ChannelSystemContent? { contents.first }
+    /// The sentence Find matches and VoiceOver reads, which the styled line shows.
+    private var rendered: String { first?.rendered(agents: agents) ?? "" }
     private var findHighlight: TranscriptFindHighlight? {
         messages.compactMap { findHighlights[$0.sequence] }.first(where: \.isCurrent)
             ?? messages.compactMap { findHighlights[$0.sequence] }.first
@@ -66,8 +68,8 @@ struct TranscriptSystemMessages: View {
             event(phrase, value: first?.purpose).lineLimit(3)
         case "channel_directory_changed":
             if let directory = first?.directory {
-                valueLine(phrase, findText: "\(phrase) \(directory)") {
-                    findText(directory, in: "\(phrase) \(directory)", offset: "\(phrase) ".utf16.count)
+                valueLine(phrase, findText: rendered) {
+                    findText(directory, in: rendered, offset: "\(phrase) ".utf16.count)
                         .foregroundStyle(.primary).fontWeight(.medium)
                         .lineLimit(1).truncationMode(.middle)
                 }
@@ -76,10 +78,10 @@ struct TranscriptSystemMessages: View {
             if let preview = first?.preview {
                 if preview.kind == "url" {
                     if let address = preview.url, let url = api.resourceURL(address) {
-                        valueLine(phrase, findText: "\(phrase) \(address)") {
+                        valueLine(phrase, findText: rendered) {
                             Link(destination: url) {
                                 TranscriptSystemLinkLabel(title: address, findHighlight: findHighlight,
-                                                          findText: "\(phrase) \(address)",
+                                                          findText: rendered,
                                                           findOffset: "\(phrase) ".utf16.count)
                             }
                                 .transcriptSystemLink()
@@ -91,10 +93,10 @@ struct TranscriptSystemMessages: View {
                 } else if preview.kind == "screen" {
                     if let screenID = preview.screenId {
                         let screen = ChannelSystemContent.screenPreview
-                        valueLine(phrase, findText: "\(phrase) \(screen)") {
+                        valueLine(phrase, findText: rendered) {
                             Button { openWindow(id: "screens", value: ScreenWindowValue(serverURL: api.baseURL.absoluteString, screenID: screenID)) } label: {
                                 TranscriptSystemLinkLabel(title: screen, findHighlight: findHighlight,
-                                                          findText: "\(phrase) \(screen)",
+                                                          findText: rendered,
                                                           findOffset: "\(phrase) ".utf16.count)
                             }
                                 .transcriptSystemLink()
@@ -114,7 +116,7 @@ struct TranscriptSystemMessages: View {
             event(phrase, value: first?.routine?.title ?? "Routine").lineLimit(3)
         default:
             if let description = first?.unknownFields?["description"]?.string {
-                sentence(findText("\(phrase)\n\(description)"), spoken: "\(phrase). \(description)")
+                sentence(findText(rendered), spoken: "\(phrase). \(description)")
                     .lineLimit(4)
             } else { sentence(phrase) }
         }
@@ -143,7 +145,7 @@ struct TranscriptSystemMessages: View {
     }
 
     private func event(_ name: String, value: String?) -> some View {
-        sentence(eventLabel(name, value: value), spoken: value.map { "\(name) \(ChannelSystemContent.value($0))" } ?? name)
+        sentence(eventLabel(name, value: value), spoken: rendered)
     }
 
     /// A phrase followed by one value that truncates in place, so the sentence keeps one line.
@@ -176,21 +178,19 @@ struct TranscriptSystemMessages: View {
         return (Text(findHighlight?.applying(to: label) ?? label), "\(membership.names) \(membership.action)")
     }
 
+    /// Every distinct full value the row's events carry, in order, with values for the same label
+    /// joined, then the full local date and time.
     private var help: String {
-        let detail: String
-        switch first?.type {
-        case "member_joined", "member_left": detail = contents.compactMap { $0.member?.name }.joined(separator: ", ")
-        case "channel_purpose_changed": detail = first?.purpose ?? "Purpose cleared"
-        case "channel_directory_changed": detail = first?.directory ?? "Working directory cleared"
-        case "channel_renamed": detail = first?.name ?? ""
-        case "routine_scheduled", "routine_edited", "routine_deleted":
-            detail = [first?.routine?.title, first?.routine?.schedule, first?.routine?.prompt]
-                .compactMap { $0 }.joined(separator: "\n")
-        default: detail = first?.unknownFields?["description"]?.string ?? ""
+        var labels: [String] = []
+        var values: [String: [String]] = [:]
+        for (label, value) in contents.flatMap({ $0.details(agents: agents) }) {
+            if values[label] == nil { labels.append(label) }
+            if values[label]?.contains(value) != true { values[label, default: []].append(value) }
         }
         let timestamp = messages.first.flatMap { try? Date($0.timestamp, strategy: .iso8601) }?
-            .formatted(date: .complete, time: .shortened) ?? ""
-        return [detail, timestamp].filter { !$0.isEmpty }.joined(separator: "\n")
+            .formatted(date: .complete, time: .shortened)
+        return (labels.map { "\($0): \(values[$0]!.joined(separator: ", "))" } + [timestamp].compactMap { $0 })
+            .joined(separator: "\n")
     }
 }
 

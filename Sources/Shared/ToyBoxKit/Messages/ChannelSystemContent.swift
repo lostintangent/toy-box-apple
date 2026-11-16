@@ -158,6 +158,27 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
         }
     }
 
+    /// Every value the event carries, in full: the Mac's help and the phone's details sheet.
+    public func details(agents: [ChannelAgent]) -> [(label: String, value: String)] {
+        var details: [(label: String, value: String)] = []
+        if actor != nil { details.append(("By", actorName(agents: agents))) }
+        if let member = member?.name { details.append(("Member", member)) }
+        if let name { details.append(("Name", name)) }
+        if let purpose { details.append(("Purpose", purpose)) }
+        if let directory { details.append(("Folder", directory)) }
+        if let preview {
+            details.append(("Preview", preview.kind == "screen" ? "Screen" : preview.url ?? preview.kind))
+        }
+        if let artifact { details.append(("Artifact", artifact.title)) }
+        if let routine {
+            details.append(("Routine", routine.title))
+            details.append(("Schedule", routine.schedule))
+            details.append(("Prompt", routine.prompt))
+        }
+        if let description = unknownFields?["description"]?.string { details.append(("Details", description)) }
+        return details
+    }
+
     private static func membershipAction(_ type: String?) -> String {
         type == "member_joined" ? "joined the channel" : "left the channel"
     }

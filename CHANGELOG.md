@@ -5,6 +5,13 @@
 ### Bugs/Polish
 
 - Sending to a channel you have open, from Quick Send, the menu bar or a notification, now brings you to your message even if you'd scrolled up, just like sending from the channel itself.
+- Hovering a change to the channel, like a new routine or a changed preview, now shows who made it and its full details, such as the routine's prompt or the preview's whole link.
+
+## iPhone 0.1.43
+
+### Bugs/Polish
+
+- A new or changed routine's details now include its prompt, so you can see what it will do without leaving the conversation.
 
 ## Mac 0.1.45
 
