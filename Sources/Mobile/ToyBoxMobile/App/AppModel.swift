@@ -26,11 +26,7 @@ final class AppModel {
     private(set) var isResolvingNavigation = false
     /// Whether the navigation shows the selected channel, which `RootView` reads from its split view.
     var showsSelection = false {
-        didSet {
-            // Going back to the list forgets the channel, so a relaunch returns to where you were.
-            guard showsSelection != oldValue, let selection else { return }
-            remember(showsSelection ? selection.channelID : nil, on: selection.serverURL)
-        }
+        didSet { rememberVisibleChannel() }
     }
     /// The channel on screen, on its server: the selection, while the navigation shows it.
     var visibleChannel: ChannelTarget? { showsSelection ? selection : nil }
@@ -53,12 +49,16 @@ final class AppModel {
             selectedStore = selection.flatMap { catalogs.first(at: $0.serverURL)?.channel(id: $0.channelID) }
             connectSelection()
             if let selection { remember(selection.channelID, on: selection.serverURL) }
+            rememberVisibleChannel()
         }
     }
 
     @ObservationIgnored private let connections = ChannelConnections()
     @ObservationIgnored private(set) var isForeground = false
     @ObservationIgnored private var holdsSelectedConnection = false
+    /// The channel on screen as it was last remembered, so leaving it still knows its server once the
+    /// selection has cleared.
+    @ObservationIgnored private var rememberedVisibleChannel: ChannelTarget?
     @ObservationIgnored private let defaults: UserDefaults
     /// The first server, so a change to it clears what belonged to the last one.
     @ObservationIgnored private var first: ChannelCatalogStore?
@@ -185,6 +185,8 @@ final class AppModel {
     private func close(_ catalog: ChannelCatalogStore) {
         let server = ChannelTarget.normalizedServer(catalog.api.baseURL.absoluteString)
         func belongs(_ store: ChannelStore) -> Bool { catalog.existingChannel(id: store.id) === store }
+        // Leaving a server keeps the channel you were in on it.
+        if rememberedVisibleChannel?.serverURL == server { rememberedVisibleChannel = nil }
         if selection?.serverURL == server { selection = nil }
         for (target, interaction) in interactions where target.serverURL == server {
             interaction.isArtifactViewerPresented = false
@@ -492,6 +494,18 @@ final class AppModel {
 
     private var rememberedSelections: [String: String] {
         defaults.dictionary(forKey: "lastChannelByServer") as? [String: String] ?? [:]
+    }
+
+    /// Going back to the list, however the channel closes, forgets it, so a relaunch returns to where
+    /// you were.
+    private func rememberVisibleChannel() {
+        guard visibleChannel != rememberedVisibleChannel else { return }
+        if let visibleChannel {
+            remember(visibleChannel.channelID, on: visibleChannel.serverURL)
+        } else if let rememberedVisibleChannel {
+            remember(nil, on: rememberedVisibleChannel.serverURL)
+        }
+        rememberedVisibleChannel = visibleChannel
     }
 
     /// The channel you're in on each server, which launch restores on the saved server.

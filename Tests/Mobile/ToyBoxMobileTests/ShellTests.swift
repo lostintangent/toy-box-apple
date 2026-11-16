@@ -334,6 +334,16 @@ struct ShellTests {
             (model, window) = await launch()
             try await expectColumns(["Toy Box"], in: window, "Relaunching after going back returns to the list.")
             #expect(model.selection == nil && model.visibleChannel == nil)
+            // The widget's list clears the selection before the column moves, and still forgets the channel.
+            try await open(model, in: window, "Opening after relaunching")
+            await model.openExternalURL(NeedsYouSnapshot.mainURL)
+            try await expectColumns(["Toy Box"], in: window, "The widget's list returns to the list.")
+            #expect(defaults.dictionary(forKey: "lastChannelByServer")?[model.serverURL] == nil)
+            quit(model, window)
+
+            (model, window) = await launch()
+            try await expectColumns(["Toy Box"], in: window, "Relaunching after the widget's list returns to the list.")
+            #expect(model.selection == nil)
             quit(model, window)
         }
     }
