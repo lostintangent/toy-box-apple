@@ -178,14 +178,14 @@ struct TranscriptSystemMessages: View {
         return (Text(findHighlight?.applying(to: label) ?? label), "\(membership.names) \(membership.action)")
     }
 
-    /// Every full value the row's events carry, with values for the same label joined, then the
-    /// full local date and time.
+    /// Every distinct full value the row's events carry, in order, with values for the same label
+    /// joined, then the full local date and time.
     private var help: String {
         var labels: [String] = []
         var values: [String: [String]] = [:]
         for (label, value) in contents.flatMap({ $0.details(agents: agents) }) {
             if values[label] == nil { labels.append(label) }
-            values[label, default: []].append(value)
+            if values[label]?.contains(value) != true { values[label, default: []].append(value) }
         }
         let timestamp = messages.first.flatMap { try? Date($0.timestamp, strategy: .iso8601) }?
             .formatted(date: .complete, time: .shortened)
