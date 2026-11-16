@@ -82,8 +82,10 @@ struct ManagementTests {
     }
 
     @Test func aMissingSheetSubtitleCentersTheTitleWithoutAnEmptyLine() throws {
+        // A flat mark, because SwiftUI draws the channel mark's gradient a level apart after its
+        // first few renders in a process, which would tie these pixels to the tests run before.
         let layout = ManagementSheetLayout(title: "Edit Channel", subtitle: nil) {
-            ManagementChannelMark()
+            ChannelMark.cyan
         } fields: {
             EmptyView()
         } notices: {
@@ -92,7 +94,7 @@ struct ManagementTests {
             EmptyView()
         }
         let reference = HStack(spacing: 12) {
-            ManagementChannelMark().frame(width: 40, height: 40)
+            ChannelMark.cyan.frame(width: 40, height: 40)
             Text("Edit Channel").font(.system(size: 15, weight: .semibold))
             Spacer(minLength: 0)
         }
