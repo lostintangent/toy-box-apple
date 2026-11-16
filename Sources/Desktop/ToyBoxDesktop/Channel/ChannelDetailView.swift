@@ -12,9 +12,6 @@ struct ChannelDetailView: View {
     let isNarrow: Bool
     let windowHeight: CGFloat
     @Binding var isOverviewSheetPresented: Bool
-    /// A window draws its channel's first content before Overview and the composer build, which
-    /// keeps their first build off the launch's critical path. Once mounted, they stay.
-    @Binding var mountsSurroundings: Bool
     var onBack: () -> Void
     /// Selects a channel in this window, as the sidebar does.
     var onSelect: (ChannelTarget) -> Void
@@ -32,14 +29,6 @@ struct ChannelDetailView: View {
     @ViewState private var connection = ChannelConnection()
     /// Truncates the open image's title before NSToolbar overflows Copy and Share.
     @ViewState private var imageTitleFit = ViewerTitleFit()
-    private var showsSurroundings: Bool { mountsSurroundings || model.launchOptions.isSnapshot }
-    /// The transcript, an error or the deleted state is on screen.
-    private var hasFirstContent: Bool {
-        switch store.phase {
-        case .failed, .deleted: true
-        case .connecting, .connected: store.isLoaded
-        }
-    }
     private var narrowInspector: Binding<Bool> {
         Binding(get: { isNarrow && isOverviewSheetPresented && store.isLoaded && store.phase != .deleted },
                 set: { isOverviewSheetPresented = $0 })
@@ -93,19 +82,6 @@ struct ChannelDetailView: View {
                     ? model.launchOptions.width >= 1000 : inspectorVisible
                 interaction.messageView = model.launchOptions.isSnapshot ? .all : TranscriptFilter(rawValue: messageView) ?? .all
             }
-            // Overview and the composer mount once the first content has drawn, or after a second
-            // for a channel that's slow to connect.
-            .task(id: hasFirstContent) {
-                guard !mountsSurroundings else { return }
-                if hasFirstContent {
-                    await passEnd()
-                } else {
-                    try? await Task.sleep(for: .seconds(1))
-                }
-                if !Task.isCancelled {
-                    mountsSurroundings = true
-                }
-            }
             .task(id: ObjectIdentifier(store)) { connection.hold(store, in: model) }
             .onDisappear { connection.drop(in: model) }
             .onChange(of: interaction.isInspectorPresented) { _, value in
@@ -154,7 +130,7 @@ struct ChannelDetailView: View {
                 Button("Retry") { store.reconnect() }
                 Button("Settings") { model.settingsTab = .servers; openSettings() }
             }
-            .safeAreaBar(edge: .bottom, spacing: 0) { composer }
+            .safeAreaBar(edge: .bottom, spacing: 0) { ComposerArea(store: store) }
         } else {
             // The transcript's scroll position, paging and read state belong to one channel. Its bars
             // sit outside that identity, since a bar is rebuilt with the view it's attached to, so
@@ -166,16 +142,7 @@ struct ChannelDetailView: View {
             .overlay(alignment: .top) {
                 ReconnectingNotice(failure: store.phase.message, isBelowFind: interaction.isFinding)
             }
-            .safeAreaBar(edge: .bottom, spacing: 0) { composer }
-        }
-    }
-
-    /// Until the composer mounts, a bar of its resting height keeps the transcript's bottom inset.
-    @ViewBuilder private var composer: some View {
-        if showsSurroundings {
-            ComposerArea(store: store)
-        } else {
-            Color.clear.frame(height: 125)
+            .safeAreaBar(edge: .bottom, spacing: 0) { ComposerArea(store: store) }
         }
     }
 
@@ -388,20 +355,6 @@ struct ConversationRail: ViewModifier {
     func drop(in model: AppModel) {
         if let store { model.release(store) }
         store = nil
-    }
-}
-
-/// Waits until the main run loop has no more work and is about to sleep, once Core Animation has
-/// committed what that work drew.
-@MainActor private func passEnd() async {
-    await withCheckedContinuation { continuation in
-        // Core Animation commits at order 2,000,000, so the highest order runs after it.
-        let observer = CFRunLoopObserverCreateWithHandler(
-            nil, CFRunLoopActivity.beforeWaiting.rawValue, false, .max
-        ) { _, _ in continuation.resume() }
-        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
-        // An observer added while the run loop calls observers first runs on the next pass.
-        CFRunLoopWakeUp(CFRunLoopGetMain())
     }
 }
 
