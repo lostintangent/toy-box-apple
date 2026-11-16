@@ -26,7 +26,6 @@ struct ManagementValidationTests {
         for (check, limit) in [
             (Channel.nameError, 100),
             (Channel.purposeError, 12_000),
-            (Channel.directoryError, 4_096),
         ] {
             #expect(check("") == nil)
             #expect(check(String(repeating: "a", count: limit)) == nil)

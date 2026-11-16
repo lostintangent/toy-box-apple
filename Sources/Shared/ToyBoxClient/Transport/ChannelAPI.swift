@@ -36,14 +36,11 @@ public struct ChannelHistoryPage: Codable, Sendable {
 public struct CreateChannelInput: Encodable, Sendable {
     public var name: String
     public var purpose: String?
-    public var directory: String?
     public var model: ModelConfiguration
 
-    public init(name: String, purpose: String? = nil, directory: String? = nil,
-                model: ModelConfiguration) {
+    public init(name: String, purpose: String? = nil, model: ModelConfiguration) {
         self.name = name
         self.purpose = purpose
-        self.directory = directory
         self.model = model
     }
 }

@@ -4,7 +4,8 @@ import SwiftUI
 import ToyBoxUI
 
 /// The one sheet language for New Channel, Edit Channel, Add Agent and Edit Agent: a 40-point
-/// identity mark over a grouped form, with notices and trailing buttons below it.
+/// identity mark over a grouped form, with notices and trailing buttons below it. The header and
+/// the buttons each sit centered in their band, between the sheet's edge and the form.
 struct ManagementSheetLayout<Mark: View, Fields: View, Notices: View, Buttons: View>: View {
     static var width: CGFloat { 480 }
 
@@ -23,9 +24,7 @@ struct ManagementSheetLayout<Mark: View, Fields: View, Notices: View, Buttons: V
                 notices
                 HStack { buttons }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 4)
-            .padding(.bottom, 20)
+            .padding(20)
         }
         .frame(width: Self.width)
     }
@@ -48,9 +47,7 @@ struct ManagementSheetLayout<Mark: View, Fields: View, Notices: View, Buttons: V
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 2)
+        .padding(20)
     }
 }
 

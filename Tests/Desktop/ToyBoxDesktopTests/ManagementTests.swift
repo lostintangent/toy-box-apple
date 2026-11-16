@@ -98,9 +98,7 @@ struct ManagementTests {
             Text("Edit Channel").font(.system(size: 15, weight: .semibold))
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 2)
+        .padding(20)
         func render(_ content: some View) throws -> CGImage {
             let renderer = ImageRenderer(content: content
                 .frame(width: 480)
