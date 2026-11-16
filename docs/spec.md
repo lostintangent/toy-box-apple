@@ -2975,18 +2975,17 @@ the same picture a browser pane shows, and can take control of it like the brows
 
 All management uses the approved v1 endpoints, not browser RPC or filesystem writes. Fields:
 channel name (required, server's 100-character limit), purpose (optional, multiline, server's
-12,000-character limit), lead model, and working directory. Directory is selectable only on
-creation, read-only on edit. For a member, always offer clearing the model override, even when
+12,000-character limit) and lead model. Neither app's New Channel asks for a working directory,
+because either app may run on another machine than its server and the lead sets the folder. It
+omits the directory from its request and creates a discussion-only channel. For a member, always offer clearing the model override, even when
 there is no compatible workspace default or the catalog has no choices. Never describe the
 workspace default's provider as forbidding it. Restrict explicit model choices to the current
 provider where required. Never invent a model when the catalog is unavailable. Cancel and the
 default button sit trailing. Command-Return submits a valid sheet, Escape cancels. A failed mutation
 shows its error and leaves all fields and the sheet intact.
 
-**Phone channel forms.** Neither New Channel nor Edit Channel shows
-a Folder/Working directory field. Phone creation omits the directory from its request and
-creates a discussion-only channel. Editing must preserve any existing server directory
-without exposing or writing it. New Channel's Name row has a visible "Name" label aligned like
+**Phone channel forms.** Edit Channel shows no Folder/Working directory field either, and
+must preserve any existing server directory without exposing or writing it. New Channel's Name row has a visible "Name" label aligned like
 Lead model, with "Required" as the field prompt. Purpose, model/options, validation, focus,
 cancellation and write recovery follow the shared rules in this section. Neither channel form
 shows an explanatory introduction. Edit Channel also omits its
@@ -3005,7 +3004,9 @@ New Channel, Edit Channel, Add Agent and Edit Agent share one sheet language:
 
 - **Size.** 480 wide. The sheet fits its content, with no empty band above the buttons and no
   inner scroll view until it reaches the window's height. Initial focus is Name.
-- **Header.** 20-point insets. A 40-point identity mark, 12 points, then a 15-point semibold title
+- **Header.** 20-point insets, with the mark and text vertically centered between the sheet's top
+  edge and the form. The button row below the form is centered the same way, between the form
+  and the sheet's bottom edge. A 40-point identity mark, 12 points, then a 15-point semibold title
   over one 12-point secondary line when the sheet has a subtitle. Edit Channel has only its
   title, vertically centered beside the mark with no empty subtitle line. No divider follows
   the header. Channel sheets use the
@@ -3019,7 +3020,7 @@ New Channel, Edit Channel, Add Agent and Edit Agent share one sheet language:
   chrome. Purpose reserves 3 lines and grows to 6. Role reserves 5 and grows to 10. Past that the
   field scrolls. Return submits, Option-Return inserts a line break. Never use a bordered
   `TextEditor`. Section 2 is the model: Lead model or Model, Reasoning and Context only when the
-  chosen model offers them, then Working directory on channel sheets. Help lives in section
+  chosen model offers them, then the read-only Working directory on Edit Channel. Help lives in section
   footers (11-point secondary), never as loose rows between fields.
 - **Validation.** Never show a message for an empty required field. The default button stays
   disabled and the prompt already says Required. A real violation, such as a length limit, a
@@ -3045,7 +3046,7 @@ Copy:
 
 | Sheet | Subtitle | Section footers | Buttons |
 | --- | --- | --- | --- |
-| New Channel | The lead starts right away and adds specialists as needed. | Purpose prompt: "What should this team work toward? The lead reads this first." Directory prompt "Optional", footer: "A folder on the server. Leave it empty for a discussion-only channel." | Cancel, Create Channel |
+| New Channel | The lead starts right away and adds specialists as needed. | Purpose prompt: "What should this team work toward? The lead reads this first." The model section has no footer. | Cancel, Create Channel |
 | Edit Channel | None | Directory is a read-only row, middle-truncated and selectable. Footer: "Only the lead can change the directory. Model changes apply the next time the lead works." | Cancel, Save |
 | Add Agent | Joins {channel} and starts onboarding right away. | Identity: "Mentioned as @handle. Names are unique in this channel." (live). Role prompt: "What this agent owns and how it works, including any persona." | Cancel, Add Agent |
 | Edit Agent | Member of {channel} | Identity as Add Agent. Model: "Model changes apply the next time {name} works. Its history is kept." | Remove from Channel… (leading, destructive), Cancel, Save |
