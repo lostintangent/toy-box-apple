@@ -957,6 +957,135 @@ struct TranscriptTests {
 }
 
 @MainActor @Observable
+private final class ScenePhaseBox {
+    var phase: ScenePhase = .active
+}
+
+private struct PhasedScreen: View {
+    let shown: ShownChannel
+    let box: ScenePhaseBox
+    var body: some View {
+        SwitchingChannelScreen(shown: shown).environment(\.scenePhase, box.phase)
+    }
+}
+
+@MainActor @Suite("Mobile Transcript ready card")
+struct ReadyCardLookAwayTests {
+    @Test(arguments: [(true, 678.0), (false, 678.0), (true, 1600.0), (false, 1600.0)])
+    func theEndStaysAtTheBottomWhenAReadyCardGoesOnReturn(arrives: Bool, height: Double) async throws {
+        let tag = "\(arrives ? "arrive" : "none")-\(Int(height))"
+        let suite = "transcript-ready-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let server = "https://ready-\(UUID().uuidString.lowercased()).invalid"
+        let model = AppModel(arguments: ["--server", server], environment: [:], defaults: defaults,
+                             session: fixtureSession())
+        model.setScenePhase(.active)
+        defer { model.setScenePhase(.background) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ReadRecordingProtocol.self]
+        let api = try ChannelAPI(serverURL: server, session: URLSession(configuration: configuration))
+        let latest = 40
+        let unread = 4
+        let text = String(repeating: "The rest is two surfaces, the editor and the preview. ", count: 8)
+        let messages = (1...latest).map { sequence in
+            sequence <= latest - unread
+                ? ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-25T12:00:00Z",
+                                 sender: .user, content: .text("Message \(sequence)"))
+                : ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-25T12:00:00Z",
+                                 sender: .agent("a1"), content: .text("\(sequence) \(text)"))
+        }
+        let store = ChannelStore(id: "ready", api: api)
+        _ = try store.apply(.init(type: "snapshot", state: ChannelState(
+            revision: 1,
+            channel: Channel(id: "ready", name: "ready", model: .init(provider: "test", name: "test"),
+                             latestSequence: latest, seenThrough: latest - unread,
+                             updatedAt: "2026-10-25T12:00:00Z"),
+            lead: .lead(id: "lead", profile: .init(name: "Lead", role: "Coordinator",
+                                                  avatar: .init(mark: "M4 12H20", color: "#123456"))),
+            members: [ChannelAgent(id: "a1", name: "Agent 1")], messages: messages)))
+        model.showsSelection = true
+        model.selection = store.target
+        let box = ScenePhaseBox()
+        let host = UIHostingController(rootView: PhasedScreen(shown: ShownChannel(store), box: box)
+            .environment(model)
+            .environment(model.following)
+            .environment(ManagementPresenter())
+            .environment(Overview())
+            .environment(\.channelIntelligence, ReadyCatchUpService())
+            .environment(\.horizontalSizeClass, .compact))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: height))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+
+        func transcript() -> UIScrollView? {
+            func find(_ view: UIView) -> UIScrollView? {
+                if let scroll = view as? UIScrollView, scroll.contentSize.height > scroll.bounds.height { return scroll }
+                return view.subviews.lazy.compactMap(find).first
+            }
+            return find(host.view)
+        }
+        func pastEnd(_ scroll: UIScrollView) -> CGFloat {
+            scroll.contentOffset.y - (scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+        }
+        var trace: [String] = []
+        defer { try? trace.joined(separator: "\n").write(toFile: "/tmp/tbm-t1241-ready-\(tag).txt", atomically: true, encoding: .utf8) }
+        func sample(_ step: String) {
+            guard let scroll = transcript() else { return }
+            let line = "\(step) off \(Int(scroll.contentOffset.y)) size \(Int(scroll.contentSize.height)) past \(Int(pastEnd(scroll)))"
+            if trace.last?.dropFirst(2) != line.dropFirst(2) { trace.append(line) }
+        }
+        func frames(_ step: String, _ count: Int) async throws {
+            for _ in 0..<count {
+                try await Task.sleep(for: .milliseconds(16))
+                host.view.layoutIfNeeded()
+                sample(step)
+            }
+        }
+        func capture(_ name: String) throws {
+            let image = UIGraphicsImageRenderer(bounds: host.view.bounds).image { context in
+                host.view.layer.render(in: context.cgContext)
+            }
+            try image.pngData()?.write(to: URL(fileURLWithPath: "/tmp/tbm-t1241-ready-\(tag)-\(name).png"))
+        }
+        try await frames("A", 90)
+        try capture("1-landed")
+        model.interaction(for: store.target!).jumpToLatest()
+        try await frames("J", 60)
+        try capture("2-latest")
+        box.phase = .background
+        model.setScenePhase(.background)
+        try await frames("W", 10)
+        if arrives {
+            _ = try store.apply(.init(type: "message", revision: 2, message: ChannelMessage(
+                id: "m41", sequence: 41, timestamp: "2026-10-25T12:05:00Z", sender: .system,
+                content: .text("Lead removed How sync works and Minimalism review"))))
+        }
+        try await frames("W", 10)
+        model.setScenePhase(.active)
+        box.phase = .active
+        try await frames("R", 120)
+        try capture("3-returned")
+        let scroll = try #require(transcript())
+        #expect(abs(pastEnd(scroll)) <= 1, "\(tag): \(pastEnd(scroll)) past the end")
+    }
+}
+
+/// Answers every catch-up at once with three changes, a card about as tall as the gap.
+private final class ReadyCatchUpService: ChannelIntelligenceService {
+    var availability: IntelligenceAvailability { .available }
+    func catchUp(_ request: CatchUpRequest) async -> CatchUpResult {
+        .ready(CatchUp(needsYou: nil, changes: [
+            .init(text: "Intelligence lost 81 lines net, all checks that were repeated somewhere else.", sources: [37]),
+            .init(text: "All 168 package tests and all 206 simulator tests pass.", sources: [38]),
+            .init(text: "Build 50 installs whenever your phone is reachable.", sources: [39]),
+        ], through: request.key.through))
+    }
+    func altText(_ request: AltTextRequest) async -> AltText? { nil }
+}
+
+@MainActor @Observable
 private final class PlainRows {
     var cardHeight: CGFloat = 280
     var lastHeight: CGFloat = 300
