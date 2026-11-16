@@ -31,8 +31,7 @@ of truth for parity, protocol and design. Everything else loads when you need it
   Composer, Overview and Intelligence a surface each.
 
 Messages lead with the outcome, in plain words. A decision shows each option's cost, what it's
-causing now, what dropping it saves and what the user loses. Post before slow work, and after a
-restart, read everything before acting.
+causing now, what dropping it saves and what the user loses. Post before slow work.
 
 ### Ownership
 
@@ -106,8 +105,9 @@ Surfaces meet at these seams:
 - **Never touch real data.** Tests that write use the [demo servers](#commands). Read the live
   server on 3100 freely, but never post or mutate there without the Lead's approval of a specific
   scratch channel, and leave its process running.
-- **When a fix needs a fix, stop.** Find the cause, or post what you know. Never stack correction
-  loops, retries, timers or extra layout passes on a symptom.
+- **Fix causes, not symptoms.** Reproduce a bug and name the rule it breaks before changing code,
+  then see whether the platform gets it right without ours. When a fix needs a fix, stop and post
+  what you know. Never stack correction loops, retries, timers or extra layout passes.
 - **Leave credentials to the user.** Agents never create accounts, profiles or secrets, accept
   agreements, read keys or passwords, or run real credential setup.
 
@@ -192,8 +192,8 @@ The validate skill says how to drive either app, within these limits:
 - **CI asserts settled end states** over deterministic inputs such as measured frames, never
   per-frame timing. Frame-timing and WindowServer checks stay opt-in and run locally.
 - **Tests wait on signals.** Client tests use `eventually`, through Observation and the mock's own
-  request, held-response and stop signals. App and view tests use the shared `waitUntil`, which
-  also checks each frame for a layout fact that has no signal. Never write another polling loop or
+  signals. App and view tests use the shared `waitUntil`, which also checks each frame for a
+  layout fact that has no signal. Never write another polling loop or
   wait for elapsed time. A wait for a signal that might never come needs its own deadline, because
   Swift Testing's time limit won't end it.
 - **Test gates and hooks suspend,** never block a cooperative worker. CI enforces it with
@@ -216,4 +216,4 @@ appending. When the user corrects how we work, Lead changes the rule here the sa
 stage where it applies, and the edit replaces, merges or cuts at least as much as it adds. A rule
 belongs here only if every member needs it and we'd otherwise relearn it. Product rules go in the
 spec, and anything one role does, or that comes up only sometimes, in a skill or a doc in the Read
-table. The channel purpose and member roles never restate these rules.
+table.
