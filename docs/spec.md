@@ -822,11 +822,13 @@ Glass covers part of the scroll view, so visibility excludes it. First-unread la
 follow-at-bottom (within 48 points of the end) and paging anchors all measure against the
 unobscured viewport between the toolbar and the floating controls.
 
-Both apps mark a channel read through its newest message whenever the reader is looking at it (the
-key window on the Mac, the active scene showing the channel on the phone), nothing covers it, it
-has landed and it's connected, as the web does. Where it's scrolled, Find and Message View don't
-matter, and a message that arrives while those hold is read as it arrives. Landing captures the New
-divider first, so marking read never moves it.
+Both apps mark a channel read exactly as the web does: whenever the channel is on screen and
+connected, it's read through its newest message, and a message that arrives meanwhile is read as it
+arrives. On screen means the key window on the Mac, and on the phone the channel the navigation is
+showing in the active scene, taken from the navigation's own state, never from views appearing and
+disappearing. Nothing else gates it: not where it's scrolled, whether it has landed, Find, Message
+View, or a sheet or viewer on top. Opening captures the New divider before the first read, so
+marking read never moves it.
 
 **Floating composer.** Shell attaches the composer with `safeAreaBar(edge: .bottom, spacing: 0)`
 instead of `safeAreaInset`, including in the offline placeholder state. The bar has no
