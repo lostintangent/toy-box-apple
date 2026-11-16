@@ -269,7 +269,8 @@ struct ConversationTranscript: View {
             showPlacedOpening()
             followReaderWhilePaging()
             pointer.contentDidMove(byReader: isUserScrolling || !isAtBottom || !update.isAtBottom)
-            if isAtBottom != update.isAtBottom { isAtBottom = update.isAtBottom }
+            // A place past the end of the new estimates isn't the bottom, so the reader's row is still built and held.
+            if isAtBottom != update.isAtBottom, geometry.rebuild != .building { isAtBottom = update.isAtBottom }
             if update.follows && !window.holdsResizePin {
                 // Floating controls and composer growth change only the unobscured height.
                 let animation: Animation? = reduceMotion || old.contentHeight != new.contentHeight
@@ -282,7 +283,7 @@ struct ConversationTranscript: View {
         }
         .onPreferenceChange(TranscriptMessageFrames.self) { new in
             layoutTurns.moved = true
-            holdReadingPlace(in: new)
+            holdReadingPlace(in: new, using: proxy)
             geometry.frames = new
             showPlacedOpening()
             followReaderWhilePaging()
@@ -291,7 +292,10 @@ struct ConversationTranscript: View {
         .onScrollPhaseChange { _, phase in
             let scrolling = phase == .tracking || phase == .interacting || phase == .decelerating
             if isUserScrolling != scrolling { isUserScrolling = scrolling }
-            if phase == .tracking || phase == .interacting { catchUp?.isPinned = false }
+            if phase == .tracking || phase == .interacting {
+                catchUp?.isPinned = false
+                geometry.rebuild = nil
+            }
             // Before the page lands, the anchor follows the reader instead.
             if (phase == .tracking || phase == .interacting) && pagingRestoreTarget != nil {
                 pagingAnchor = nil
@@ -640,6 +644,13 @@ struct ConversationTranscript: View {
         return messageID
     }
 
+    /// The lazy child that reports a frame: a message's, a system group's or the divider above either.
+    private func lazyChildID(ofFrame id: String) -> String? {
+        let itemID = ["divider-", "system-group-"].first(where: id.hasPrefix).map { String(id.dropFirst($0.count)) } ?? id
+        guard rows.contains(where: { $0.id == itemID || $0.messages.contains { $0.id == itemID } }) else { return nil }
+        return lazyChildID(of: itemID)
+    }
+
     func loadOlder() async {
         guard !store.isLoadingOlder, store.hasOlderMessages, !isRevealing else { return }
         if let top = viewport.topVisibleFrame(in: pagingFrames) {
@@ -673,20 +684,51 @@ struct ConversationTranscript: View {
     /// first row starting in it moved through the content, so only scrolling moves what's on screen,
     /// while rows starting in the viewport still grow downward. Each correction costs a second layout
     /// pass, so a frame or two, but only while rows above change height.
-    private func holdReadingPlace(in frames: [String: TranscriptMessageFrame]) {
+    ///
+    /// A width change drops every measured height, and the new estimates can put the reader's offset past
+    /// the end, so a pass builds no rows at all. The hold then has the stack build the reader's row with a
+    /// `scrollTo` that puts it back where it was on screen. SwiftUI keeps the offset that scroll lands on
+    /// and puts it back on later layout changes, undoing any scroll of ours, so from then until the reader
+    /// scrolls, that offset owns the place and the hold corrects nothing.
+    private func holdReadingPlace(in frames: [String: TranscriptMessageFrame], using proxy: ScrollViewProxy) {
         // Anything else that moves the scroll position owns it outright, so the hold stands down while
         // following the bottom, landing, paging or revealing. New code that scrolls the
         // transcript needs to switch it off here too.
         let holds = hasLanded && pagingAnchor == nil && !isRevealing
             && (!isAtBottom || catchUp?.holdsLanding == true)
+        let rebuild = holds ? geometry.rebuild : nil
+        geometry.rebuild = nil
         var shift: CGFloat = 0
-        if holds, let anchor = geometry.readingAnchor, let frame = frames[anchor.id] {
-            shift = frame.contentTop - anchor.contentTop
-        } else if holds, geometry.readingAnchor != nil,
-                  let common = viewport.readingAnchor(in: frames.filter { geometry.frames[$0.key] != nil }),
-                  let previous = geometry.frames[common.id] {
-            // The pass that moved the anchor out of the built rows still moved the rows that stayed.
-            shift = common.contentTop - previous.contentTop
+        switch rebuild {
+        case .handedOff:
+            geometry.rebuild = .handedOff
+            geometry.readingAnchor = viewport.readingAnchor(in: frames) ?? geometry.readingAnchor
+            return
+        case .building:
+            // The row can build before the scroll that builds it lands.
+            if let anchor = geometry.readingAnchor, let frame = frames[anchor.id],
+               frame.rect.maxY > 0, frame.rect.minY < viewport.height {
+                geometry.rebuild = .handedOff
+            } else {
+                geometry.rebuild = .building
+            }
+            return
+        case nil:
+            if holds, let anchor = geometry.readingAnchor, let frame = frames[anchor.id] {
+                shift = frame.contentTop - anchor.contentTop
+            } else if holds, frames.isEmpty, let anchor = geometry.readingAnchor,
+                      let rect = geometry.frames[anchor.id]?.rect, let id = lazyChildID(ofFrame: anchor.id) {
+                // The anchor that puts the row's top back where it was, at its old height.
+                let y = rect.minY / max(viewport.height - rect.height, 1)
+                geometry.rebuild = .building
+                proxy.scrollTo(id, anchor: UnitPoint(x: 0, y: min(max(y, 0), 1)))
+                return
+            } else if holds, geometry.readingAnchor != nil,
+                      let common = viewport.readingAnchor(in: frames.filter { geometry.frames[$0.key] != nil }),
+                      let previous = geometry.frames[common.id] {
+                // The pass that moved the anchor out of the built rows still moved the rows that stayed.
+                shift = common.contentTop - previous.contentTop
+            }
         }
         if abs(shift) > 0.25 { window.scroll(by: shift) } else { shift = 0 }
         geometry.readingAnchor = holds ? viewport.readingAnchor(in: frames, scrolledBy: shift) : nil
@@ -833,7 +875,17 @@ final class TranscriptScrollGeometry {
         didSet { if let waiter, waiter.historyStart != historyStart { resumeWaiter() } }
     }
     var readingAnchor: TranscriptReadingAnchor?
+    /// Set once a pass builds none of the reader's rows and the hold builds the reading anchor's row with a
+    /// `scrollTo`, until the reader scrolls.
+    var rebuild: ReadingRebuild?
     private var waiter: (id: String, historyStart: Int?, token: UUID, continuation: CheckedContinuation<Void, Never>)?
+
+    enum ReadingRebuild {
+        /// The `scrollTo` hasn't landed the row yet.
+        case building
+        /// The offset the scroll landed on owns the place.
+        case handedOff
+    }
 
     /// Returns once the row reports a frame from this history, or once that can't happen because the
     /// history changed or the wait was cancelled.

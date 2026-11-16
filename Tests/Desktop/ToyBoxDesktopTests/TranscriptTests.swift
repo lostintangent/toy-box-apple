@@ -646,6 +646,30 @@ struct TranscriptTests {
                 "Worst step: \(String(describing: worst))")
     }
 
+    /// A width change drops every measured height, and the new estimates can put the reader's place past
+    /// the end, so one pass builds none of their rows. The hold scrolls the reader's row back where it was,
+    /// and until the reader scrolls, SwiftUI keeps that scroll, so a second width change leaves it on screen.
+    @MainActor
+    @Test func changingTheWidthWhileReadingKeepsTheReadersRow() async throws {
+        let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), resizable: true)
+        defer { await harness.close() }
+        try await harness.scrollUp(byWheel: TranscriptHarness.wheelEventsApply) { harness.bottomGap > 400 }
+        let reading = try #require(harness.visibleFrames().filter { $0.value.minY >= 0 }
+            .min { $0.value.minY < $1.value.minY })
+
+        harness.resize(width: 400)
+        try await harness.settled()
+        let narrowed = harness.capture.frames[reading.key]?.rect ?? .null
+        // The row's height at the new width, unknown until it's built, moves its top by a few points.
+        #expect(abs(narrowed.minY - reading.value.minY) < 5, "\(reading.key) moved from \(reading.value) to \(narrowed)")
+
+        harness.resize(width: 520)
+        try await harness.settled()
+        let widened = harness.capture.frames[reading.key]?.rect ?? .null
+        #expect(widened.maxY > 0 && widened.minY < harness.scrollView.contentView.bounds.height,
+                "\(reading.key) left the screen at \(widened)")
+    }
+
     @MainActor
     @Test(arguments: [false, true])
     func findOpeningProgressErrorsAndClosingLeaveTheReadersMessagesInPlace(atBottom: Bool) async throws {
