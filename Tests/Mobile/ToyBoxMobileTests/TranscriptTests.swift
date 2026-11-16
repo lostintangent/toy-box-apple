@@ -353,19 +353,6 @@ struct TranscriptTests {
         #expect(tall.reachesOlder)
     }
 
-    @Test func onlyANewSendFollowsToTheBottom() {
-        let ids = (old: UUID(), lost: UUID(), new: UUID())
-        func message(_ id: UUID, _ state: ChannelOutbox.State) -> ChannelOutbox.Message {
-            ChannelOutbox.Message(id: id, server: "https://example.invalid", channelID: "c", text: "Hi",
-                                  attachments: [], request: nil, sentAt: .now, state: state)
-        }
-        // Not sent messages kept from an earlier run must not move the reader.
-        #expect(!startsOwnPost(after: [], in: [message(ids.old, .notSent), message(ids.lost, .notSent)]))
-        #expect(startsOwnPost(after: [ids.old], in: [message(ids.old, .notSent), message(ids.new, .sending)]))
-        // Retry reuses its id, so it isn't a new post.
-        #expect(!startsOwnPost(after: [ids.old], in: [message(ids.old, .sending)]))
-    }
-
     @Test func phoneFindIsOneSixtyPointRowWithAStableStatusSlotAndStacksAtAccessibilitySizes() {
         func size(_ view: some View, width: CGFloat, _ type: DynamicTypeSize = .large) -> CGSize {
             UIHostingController(rootView: view.environment(\.dynamicTypeSize, type))

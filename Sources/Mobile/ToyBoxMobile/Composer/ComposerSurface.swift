@@ -412,8 +412,7 @@ struct ComposerSurface: View {
 
     private func send() {
         guard scenePhase == .active, session.canSend else { return }
-        interaction.jumpToLatest()
-        Task { if await session.send() { interaction.jumpToLatest() } }
+        Task { await session.send() }
     }
 
     private func preparePresentation() {

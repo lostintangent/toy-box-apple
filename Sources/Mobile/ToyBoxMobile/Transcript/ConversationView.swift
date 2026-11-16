@@ -113,7 +113,7 @@ final class TranscriptScroll {
         case .land: hasLanded = true
         // A request alert's reveal replaces the first landing.
         case .reveal where placement.unavailableTarget == nil: hasLanded = true
-        case .jumpToLatest, .ownPostConfirmed: holdsPlacementThroughInput = true
+        case .jumpToLatest: holdsPlacementThroughInput = true
         default: break
         }
         return placement
@@ -190,13 +190,6 @@ final class TranscriptScroll {
     }
 
     var distanceToEnd: CGFloat { layout.map(Model.distanceToEnd(in:)) ?? 0 }
-}
-
-/// Only a new message on its way follows the reader to the bottom. A Not sent one the outbox kept
-/// from an earlier run doesn't, and Retry jumps on its own.
-func startsOwnPost(after previous: [UUID], in sending: [ChannelOutbox.Message]) -> Bool {
-    let previous = Set(previous)
-    return sending.contains { !previous.contains($0.id) && $0.state == .sending }
 }
 
 struct ConversationView: View {
@@ -384,7 +377,7 @@ struct ConversationView: View {
             if scenePhase == .active { place(scroll.sceneBecameActive()) } else { scroll.isSceneActive = false }
         }
         .onChange(of: store.sending.map(\.id)) { old, _ in
-            if startsOwnPost(after: old, in: store.sending) { place(scroll.update(.ownPostConfirmed)) }
+            if ChannelOutbox.Message.startsPost(in: store.sending, after: old) { jumpToLatest() }
         }
         .onChange(of: interaction.findRequest) { openFind() }
         .onChange(of: interaction.findNavigation?.token) {
@@ -585,7 +578,6 @@ private struct TranscriptSending: View {
     let outbox: ChannelOutbox?
     let isConnected: Bool
     let channel: TranscriptRowChannel
-    @Environment(ChannelInteraction.self) private var interaction
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -602,10 +594,7 @@ private struct TranscriptSending: View {
                                       deleteNotSent: delete)
             }
             if message.state == .notSent {
-                Button("Retry") {
-                    outbox?.sendAgain(message.id)
-                    interaction.jumpToLatest()
-                }
+                Button("Retry") { outbox?.sendAgain(message.id) }
                 .disabled(!isConnected)
                 .buttonStyle(.bordered)
                 .tint(.primary)

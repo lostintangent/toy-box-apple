@@ -195,13 +195,7 @@ struct ConversationTranscript: View {
     private func observedScroll(proxy: ScrollViewProxy) -> some View {
         scrollViewport(proxy: proxy)
             .onChange(of: followsLatest, initial: true) { window.pinsToBottom = followsLatest }
-            .onChange(of: interaction.jumpToLatestRequest) {
-                find.close()
-                catchUp?.isPinned = false
-                pagingAnchor = nil
-                isAtBottom = true
-                scrollToLatest(using: proxy)
-            }
+            .onChange(of: interaction.jumpToLatestRequest) { jumpToLatest(using: proxy) }
             .onChange(of: interaction.messageView) {
                 catchUp?.isPinned = false
                 pagingAnchor = nil
@@ -215,8 +209,8 @@ struct ConversationTranscript: View {
                     scrollToLatest(using: proxy)
                 }
             }
-            .onChange(of: store.sending.map(\.id)) { old, new in
-                if isAtBottom && !find.isPresented && new.count > old.count { scrollToLatest(using: proxy) }
+            .onChange(of: store.sending.map(\.id)) { old, _ in
+                if ChannelOutbox.Message.startsPost(in: store.sending, after: old) { jumpToLatest(using: proxy) }
             }
             .onChange(of: store.requestSequence, initial: true) { _, sequence in
                 let eligible = !snapshot.isActive && hasLanded && isKeyWindow
@@ -231,6 +225,15 @@ struct ConversationTranscript: View {
                     window.announce("Your team needs your reply.")
                 }
             }
+    }
+
+    /// Rule 4, and Jump to Latest: closes Find and follows from the end.
+    private func jumpToLatest(using proxy: ScrollViewProxy) {
+        find.close()
+        catchUp?.isPinned = false
+        pagingAnchor = nil
+        isAtBottom = true
+        scrollToLatest(using: proxy)
     }
 
     private func scrollViewport(proxy: ScrollViewProxy) -> some View {
@@ -377,10 +380,7 @@ struct ConversationTranscript: View {
                                       deleteNotSent: isNotSent ? { outbox?.withdraw(message.id) } : nil)
             }
             if isNotSent {
-                Button("Retry") {
-                    outbox?.sendAgain(message.id)
-                    interaction.jumpToLatest()
-                }
+                Button("Retry") { outbox?.sendAgain(message.id) }
                 .disabled(!store.phase.isConnected)
                 .help("Send this message again")
                 .font(.caption)

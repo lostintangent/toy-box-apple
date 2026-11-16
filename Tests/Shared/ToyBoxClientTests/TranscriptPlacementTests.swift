@@ -244,10 +244,6 @@ struct TranscriptPlacementTests {
         let arrival = Model.reduce(.following, .layoutChanged, rows: frames(21), viewport: viewport, origin: 1_566)
         #expect(arrival.origin == 1_666)
         #expect(2_100 - (1_666 + viewport.height - viewport.bottomInset) == -Model.endClearance)
-        let ownPost = Model.reduce(.reading(.init(row: "m3", order: 3, offset: 20)), .ownPostConfirmed,
-                                   rows: frames(21), viewport: viewport, origin: 230)
-        #expect(ownPost.intent == .following)
-        #expect(ownPost.origin == 1_666)
     }
 
     @Test func readerInputAtTheFollowThresholdNeverReturnsAnOrigin() {

@@ -1,5 +1,11 @@
 # Changelog
 
+## Mac 0.1.46
+
+### Bugs/Polish
+
+- Sending to a channel you have open, from Quick Send, the menu bar or a notification, now brings you to your message even if you'd scrolled up, just like sending from the channel itself.
+
 ## Mac 0.1.45
 
 ### Bugs/Polish
