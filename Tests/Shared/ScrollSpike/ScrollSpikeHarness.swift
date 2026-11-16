@@ -151,6 +151,8 @@ final class SpikeChannel {
     var opensAtTheEnd = true
     /// Whether size changes keep the end in place, as following the end needs.
     var sizeChangesKeepTheEnd = true
+    /// Grows a stand-in row from 90 to 160 points tall, as a remote image's placeholder does.
+    var grown = false
     @ObservationIgnored private let builder = TranscriptRowBuilder()
 
     init(_ messages: [ChannelMessage], unreadAfter: Int? = nil) throws {
@@ -175,6 +177,95 @@ final class SpikeChannel {
     }
     var topRow: (id: String, minY: CGFloat)? {
         frames.filter { $0.value.maxY > 0 }.min { $0.value.minY < $1.value.minY }.map { ($0.key, $0.value.minY) }
+    }
+}
+
+/// What stands in for the image row, to find which part of it the platform misplaces.
+enum SpikeGrower: String, CaseIterable {
+    /// A tile under the row's text, as a plain rectangle.
+    case plain
+    /// The same tile in a plain button, as the image tile is.
+    case button
+    /// The same tile in the attachment strip's horizontal scroll view.
+    case strip
+    /// The strip's tile grows from its own state, set in a task after a suspension, as a load does.
+    case task
+    /// That, and the tile's content swaps from a spinner to an image as it grows.
+    case swap
+    /// A spinner goes away as it grows.
+    case spinnerGoes
+    /// An image appears as it grows.
+    case imageAppears
+    /// One color gives way to another through an if-else branch as it grows.
+    case branch
+    /// The spinner stays while it grows.
+    case spinnerStays
+    /// An image appears with no transition as it grows.
+    case identityTransition
+    /// An image that was always there turns opaque as it grows.
+    case opacity
+    /// An image appears and the tile keeps its height.
+    case insertOnly
+    /// The tile grows, and an image appears in a later update.
+    case insertLater
+}
+
+private struct SpikeGrowerRow: View {
+    let channel: SpikeChannel
+    let grower: SpikeGrower
+    @ViewState private var loaded = false
+    @ViewState private var inserted = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("History message \(SpikeFixture.imageSequence): here's the screenshot.")
+            switch grower {
+            case .plain: tile
+            case .button: Button {} label: { tile }.buttonStyle(.plain)
+            default:
+                TranscriptAttachmentStrip(count: 1, alignment: .leading, presented: nil) { _ in tile }
+            }
+        }
+        .task(id: channel.grown) {
+            guard channel.grown, ![.plain, .button, .strip].contains(grower) else { return }
+            await Task.yield()
+            loaded = true
+            if grower == .insertLater { await Task.yield() }
+            inserted = true
+        }
+        .padding(.top, 20)
+        .padding(.horizontal, 20)
+    }
+
+    private var grown: Bool {
+        grower == .insertOnly ? false : [.plain, .button, .strip].contains(grower) ? channel.grown : loaded
+    }
+
+    private var tile: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8).fill(.blue)
+            switch grower {
+            case .swap:
+                if grown { Image(systemName: "photo").resizable().scaledToFit() } else { ProgressView() }
+            case .spinnerGoes:
+                if !grown { ProgressView() }
+            case .imageAppears:
+                if grown { Image(systemName: "photo").resizable().scaledToFit() }
+            case .branch:
+                if grown { Color.green.padding(8) } else { Color.red.padding(8) }
+            case .spinnerStays:
+                ProgressView()
+            case .identityTransition:
+                if grown { Image(systemName: "photo").resizable().scaledToFit().transition(.identity) }
+            case .opacity:
+                Image(systemName: "photo").resizable().scaledToFit().opacity(grown ? 1 : 0)
+            case .insertOnly, .insertLater:
+                if inserted { Image(systemName: "photo").resizable().scaledToFit() }
+            default:
+                EmptyView()
+            }
+        }
+        .frame(width: 120, height: grown ? 160 : 90)
     }
 }
 
@@ -540,6 +631,8 @@ struct SpikeCases {
         let anchor = try #require(channel.frames[reader]?.minY)
         let imageTop = channel.frames[image]?.minY
         let tracked = channel.position.viewID(type: String.self)
+        let offset = channel.geometry?.contentOffset.y ?? .nan
+        let content = channel.contentHeight
         var heights: [String] = []
         SpikeImageProtocol.release()
         let watched = try await host.watch(frames: 90) {
@@ -551,7 +644,42 @@ struct SpikeCases {
         SpikeResults.record("image \(cut.rawValue) position=\(tracksPosition) sizeChanges="
             + "\(sizeChangesKeepTheEnd ? "bottom" : "nil")\timage row top \(spikeFormat(imageTop)), "
             + "heights \(spikeFormat(height)) then \(heights.joined(separator: ", ")), tracked \(tracked ?? "none")"
-            + "\treader moved \(spikeFormat(moved))\tswing \(spikeFormat(watched.swing))")
+            + "\treader moved \(spikeFormat(moved))\tswing \(spikeFormat(watched.swing))\toffset +"
+            + "\(spikeFormat((channel.geometry?.contentOffset.y ?? .nan) - offset)), content +"
+            + spikeFormat(channel.contentHeight - content))
+        #expect(abs(moved) <= 1)
+    }
+
+    /// The image case with a stand-in row that grows from 90 to 160 when the test says.
+    func keepsThePlaceWhenAStandInAboveGrows(_ grower: SpikeGrower, cut: Cut, tracksPosition: Bool) async throws {
+        let channel = try SpikeChannel(SpikeFixture.messages(281...480))
+        let image = SpikeFixture.id(SpikeFixture.imageSequence)
+        let host = SpikeHost(channel, tracksPosition: tracksPosition, size: size) { channel in
+            items(channel).map { item in
+                item.id == image ? SpikeItem(id: item.id, view: AnyView(SpikeGrowerRow(channel: channel, grower: grower)))
+                    : item
+            }
+        }
+        defer { host.close() }
+        try await host.landAtTheEnd()
+        try await host.place(image)
+        let height = try #require(channel.frames[image]?.height)
+        try host.scrollUp(by: cut == .mostlyAbove ? -(height - 20) : -40)
+        try await host.watch(frames: 5) { channel.topRow?.minY }
+        let reader = SpikeFixture.id(SpikeFixture.imageSequence + 1)
+        let anchor = try #require(channel.frames[reader]?.minY)
+        let imageTop = channel.frames[image]?.minY
+        let tracked = channel.position.viewID(type: String.self)
+        let offset = channel.geometry?.contentOffset.y ?? .nan
+        let content = channel.contentHeight
+        channel.grown = true
+        let watched = try await host.watch(frames: 30) { channel.frames[reader]?.minY }
+        let moved = (watched.last ?? .nan) - anchor
+        let geometryChange = "offset +\(spikeFormat((channel.geometry?.contentOffset.y ?? .nan) - offset)), content +"
+            + spikeFormat(channel.contentHeight - content)
+        SpikeResults.record("stand-in \(grower.rawValue) \(cut.rawValue) position=\(tracksPosition)\trow top "
+            + "\(spikeFormat(imageTop)) of \(spikeFormat(height)), tracked \(tracked ?? "none")\treader moved "
+            + "\(spikeFormat(moved))\tswing \(spikeFormat(watched.swing))\t\(geometryChange)")
         #expect(abs(moved) <= 1)
     }
 
@@ -607,7 +735,7 @@ struct SpikeCases {
 func runAllSpikeCases(_ cases: SpikeCases, only: String? = ProcessInfo.processInfo.environment["SPIKE_ONLY"])
     async throws {
     func run(_ name: String, _ body: () async throws -> Void) async {
-        if let only, !name.contains(only) { return }
+        if let only, !only.split(separator: ",").contains(where: { name == $0 }) { return }
         do { try await body() } catch { SpikeResults.record("\(name)\tthrew \(error)") }
     }
     for opensAtTheEnd in [true, false] {
@@ -629,6 +757,13 @@ func runAllSpikeCases(_ cases: SpikeCases, only: String? = ProcessInfo.processIn
                 await run("image") {
                     try await cases.keepsThePlaceWhenAnImageAboveLoads(cut, tracksPosition: tracks,
                                                                        sizeChangesKeepTheEnd: keeps)
+                }
+            }
+        }
+        for grower in SpikeGrower.allCases {
+            for cut in SpikeCases.Cut.allCases where tracks && cut == .mostlyAbove {
+                await run("stand-in") {
+                    try await cases.keepsThePlaceWhenAStandInAboveGrows(grower, cut: cut, tracksPosition: tracks)
                 }
             }
         }
