@@ -88,6 +88,7 @@ struct OverviewRoutineRow: View {
         .swipeActions(edge: .leading, allowsFullSwipe: false) {
             if !voiceOver {
                 Button("Run Now", systemImage: "play", action: run)
+                    .labelStyle(.iconOnly)
                     .tint(.accentColor)
                     .disabled(!canRun)
             }
@@ -95,6 +96,7 @@ struct OverviewRoutineRow: View {
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if !voiceOver {
                 Button("Delete", systemImage: "trash", role: .destructive, action: delete)
+                    .labelStyle(.iconOnly)
                     .disabled(!canDelete)
             }
         }

@@ -142,6 +142,7 @@ struct OverviewArtifactRow: View {
             if !voiceOver {
                 // Not `.destructive`: that role collapses the row before the server's event arrives.
                 Button("Remove", systemImage: "trash", action: remove)
+                    .labelStyle(.iconOnly)
                     .tint(.red)
                     .disabled(!canRemove)
             }
