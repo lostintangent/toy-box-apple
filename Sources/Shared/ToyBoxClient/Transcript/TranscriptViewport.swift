@@ -43,30 +43,21 @@ public struct TranscriptViewport: Equatable, Sendable {
         self.contentHeight = contentHeight
     }
 
-    public enum Follow: Equatable, Sendable { case latest, jump }
-
     public struct Update: Equatable, Sendable {
         public var isAtBottom: Bool
-        public var follow: Follow?
-        public var landsJump: Bool
+        public var follows: Bool
 
-        public init(isAtBottom: Bool, follow: Follow?, landsJump: Bool) {
+        public init(isAtBottom: Bool, follows: Bool) {
             self.isAtBottom = isAtBottom
-            self.follow = follow
-            self.landsJump = landsJump
+            self.follows = follows
         }
     }
 
-    /// Resolves one geometry change. A resize at the bottom follows the latest message or, while a
-    /// programmatic jump is still pending, re-applies that jump so the follow can't override it. Any
-    /// offset change while a jump is pending is that jump landing, which never counts as following.
-    public func update(after old: TranscriptViewport, wasAtBottom: Bool, canFollow: Bool, isJumping: Bool) -> Update {
-        let resized = contentHeight != old.contentHeight || height != old.height
-        let landsJump = isJumping && abs(top - old.top) > 0.5
-        let following = canFollow && wasAtBottom && resized && !landsJump
-        return Update(isAtBottom: isAtBottom(after: old, wasAtBottom: wasAtBottom, following: following),
-                      follow: following ? (isJumping ? .jump : .latest) : nil,
-                      landsJump: landsJump)
+    /// Resolves one geometry change. A resize at the bottom follows the latest message.
+    public func update(after old: TranscriptViewport, wasAtBottom: Bool, canFollow: Bool) -> Update {
+        let follows = canFollow && wasAtBottom && (contentHeight != old.contentHeight || height != old.height)
+        return Update(isAtBottom: isAtBottom(after: old, wasAtBottom: wasAtBottom, following: follows),
+                      follows: follows)
     }
 
     /// Whether the transcript is still at, or following, its bottom after moving here from `old`.

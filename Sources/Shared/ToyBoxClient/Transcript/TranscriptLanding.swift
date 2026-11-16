@@ -15,7 +15,6 @@ public enum TranscriptLanding {
     }
 
     public enum Step: Equatable {
-        case waitForJump
         case placeColdOpening
         case correctPosition
         case settled
@@ -30,8 +29,7 @@ public enum TranscriptLanding {
     }
 
     public static func step(on row: TranscriptRow, frames: [String: TranscriptMessageFrame],
-                     viewport: TranscriptViewport, isColdOpening: Bool, jumps: Int, hasPendingJump: Bool) -> Step {
-        if hasPendingJump { return .waitForJump }
+                     viewport: TranscriptViewport, isColdOpening: Bool, jumps: Int) -> Step {
         if isColdOpening && jumps == 0 { return .placeColdOpening }
         if jumps >= 2 { return .settled }
         return isPlaced(row, frames: frames, viewport: viewport) ? .settled : .correctPosition
