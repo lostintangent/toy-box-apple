@@ -14,9 +14,8 @@ struct RootView: View {
     /// Never `.automatic`, which would let the split view pick the list for each posture.
     @ViewState private var columnVisibility = NavigationSplitViewVisibility.all
     @ViewState private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
-    /// The split view's width and its detail's, as last laid out.
-    @ViewState private var splitWidth: CGFloat = 0
-    @ViewState private var detailWidth: CGFloat = 0
+    /// The split view's size, as last laid out.
+    @ViewState private var splitSize = CGSize.zero
     @ViewState private var isScreenUp = false
     @FocusState private var isSearchFocused: Bool
     @ViewState private var handoff: ChannelHandoffNavigation
@@ -186,10 +185,11 @@ struct RootView: View {
             ChannelSidebar(searchFocused: $isSearchFocused, isCollapsed: sizeClass == .compact)
                 .navigationSplitViewColumnWidth(min: 240, ideal: 256, max: 320)
         } detail: {
+            // Nothing measures the detail from around it. Even unread, that measurement makes a folded
+            // reopen end the new screen's work as it pushes.
             detail
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { detailWidth = $0 }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { splitWidth = $0 }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { splitSize = $0 }
         // Unfolding shows what the folded phone shows, the channel alone or the list. Kept current while
         // folded, the split view expands straight to it.
         .onChange(of: sizeClass == .compact ? preferredCompactColumn : nil) { _, column in
@@ -242,9 +242,9 @@ struct RootView: View {
         }
     }
 
-    /// Whether the list, when it shows, floats over the conversation rather than sitting beside it, as
-    /// it does wherever the detail fills the split view.
-    private var listFloats: Bool { detailWidth > 0 && detailWidth >= splitWidth }
+    /// Whether the list, when it shows, floats over the conversation rather than sitting beside it. The
+    /// system's split view floats it in portrait and sets it beside in landscape.
+    private var listFloats: Bool { splitSize.height > splitSize.width }
 
     private var selectedInteraction: ChannelInteraction? {
         model.selection.map(model.interaction)

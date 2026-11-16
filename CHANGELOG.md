@@ -30,6 +30,7 @@
 - Relaunching Toy Box now brings you back to where you left off: the channel you were reading, or your list of channels if you'd gone back to it.
 - A channel you're in now always stays read, including when you reopen it, come back to the app or open something on top of it, so it never shows as unread when you go back to your channels.
 - Revealing a message, from a bookmark, a notification or Find, now brings it up near the top where you start reading, and always takes you there.
+- Going back into a channel now always shows its conversation, instead of sometimes opening blank.
 
 ## iPhone 0.1.41
 
