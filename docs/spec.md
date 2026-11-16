@@ -986,6 +986,11 @@ way into its channel, or a channel opened from elsewhere, like a notification or
 list sits beside the conversation, as in landscape, it stays open. Anything in the list that doesn't
 open a channel, like expanding or answering a card, leaves the list as it is.
 
+**Phone relaunch.** A relaunch returns to where you were on the saved server: inside the channel
+you were in, or on the list if you'd gone Back, however fast the list loads. Each server keeps its
+own channel. The channel on screen, which reading, notifications, Handoff and Siri use, is the
+selection while the split view shows it, never what views report as they appear and disappear.
+
 **Phone channel search.** Use the native bottom-bar search item in the channel-list column,
 folded and unfolded. Search leads the bar, and a flexible space puts Settings (`gearshape`, the
 Mac's gear) at its trailing end. While the split view is collapsed, as
