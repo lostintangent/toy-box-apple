@@ -1846,7 +1846,10 @@ visible band, or as near as the end allows, and highlights it briefly, as the we
 take these steps from one shared implementation. Reveal never checks where it landed or reports a
 miss, and a failed history page keeps its own notice.
 Follow incoming messages only while within
-48 points of the end, or immediately after the user's own successful post. A landing the end stopped
+48 points of the end. The user's own new message, sent from any surface, moves the conversation
+to the end once and follows from there, wherever they were reading. The transcript does this when
+the message's row appears, so the composer, choices and cards don't move the conversation
+themselves, and a retry doesn't move it. A landing the end stopped
 short of its row is at the end, so a message arriving below it follows, while a catch-up card's
 landing keeps its top pinned (see Catch-up summaries). If scrolled away, a
 small glass Jump to Latest capsule appears in the floating activity row above the composer.
