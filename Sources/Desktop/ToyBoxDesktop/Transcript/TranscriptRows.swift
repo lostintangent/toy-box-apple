@@ -30,8 +30,6 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     /// The highlighted sequence, when it's one of this item's messages.
     let highlightedSequence: Int?
     let findHighlights: [Int: TranscriptFindHighlight]
-    /// The catch-up summary, for the item under the New divider that shows it.
-    let catchUp: TranscriptCatchUp?
     let store: ChannelStore
     /// The pending request's suggested replies, when they're in this item.
     let requestChoices: TranscriptRequestChoices?
@@ -45,7 +43,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     @Environment(ChannelInteraction.self) private var interaction
 
     init(item: TranscriptItem, channel: TranscriptRowChannel, statusReactions: [Int: [ChannelReaction]],
-         highlightedSequence: Int?, catchUp: TranscriptCatchUp?, store: ChannelStore,
+         highlightedSequence: Int?, store: ChannelStore,
          requestChoices: TranscriptRequestChoices? = nil,
          expandedMessageIds: Set<String>, findHighlights: [Int: TranscriptFindHighlight] = [:],
          bookmarks: Set<Int> = [], isConnected: Bool = true, onSetExpanded: @escaping (String, Bool) -> Void) {
@@ -59,7 +57,6 @@ struct TranscriptRowContent: View, @MainActor Equatable {
         self.findHighlights = messages.reduce(into: [:]) { result, message in
             result[message.sequence] = findHighlights[message.sequence]
         }
-        self.catchUp = item.divider?.unread == true ? catchUp : nil
         self.store = store
         self.requestChoices = messages.contains { $0.sequence == requestChoices?.sequence } ? requestChoices : nil
         self.expandedMessageIds = expandedMessageIds.isEmpty ? [] : expandedMessageIds.filter { id in
@@ -72,7 +69,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.item == rhs.item && lhs.channel == rhs.channel && lhs.statusReactions == rhs.statusReactions
-            && lhs.highlightedSequence == rhs.highlightedSequence && lhs.catchUp === rhs.catchUp
+            && lhs.highlightedSequence == rhs.highlightedSequence 
             && lhs.store === rhs.store && lhs.expandedMessageIds == rhs.expandedMessageIds
             && lhs.findHighlights == rhs.findHighlights && lhs.requestChoices == rhs.requestChoices
             && lhs.bookmarks == rhs.bookmarks && lhs.isConnected == rhs.isConnected
@@ -83,12 +80,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: TranscriptSpacing.divider) {
-            if let divider = item.divider {
-                // A frame, so a card starting in the viewport keeps the reader's place and grows downward.
-                TranscriptDividerStack(divider: divider, catchUp: catchUp, store: store)
-                    .transcriptMessageFrame(id: "divider-\(item.id)", sequence: 0, historyStart: channel.historyStart)
-            }
+        Group {
             switch item.content {
             case .user(let message):
                 TranscriptUserMessage(message: message, agents: channel.agents, api: channel.api,
@@ -100,7 +92,6 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                                 in: RoundedRectangle(cornerRadius: 12))
                     .transcriptMessageFrame(id: message.id, sequence: message.sequence,
                                             historyStart: channel.historyStart)
-                    .id(message.id)
             case .agent(let agentId, let entry, let startsRow):
                 let agent = ChannelAgent(id: agentId, in: channel.agents)
                 let message = TranscriptAgentMessage(entry: entry, agent: agent, agents: channel.agents,
@@ -118,7 +109,6 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                                 in: RoundedRectangle(cornerRadius: 12))
                     .transcriptMessageFrame(id: entry.message.id, sequence: entry.message.sequence,
                                             historyStart: channel.historyStart)
-                    .id(entry.message.id)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 // The run's avatar sits beside its first message, and the rest keep its inset.
                 if startsRow {
@@ -143,7 +133,6 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                     .transcriptMessageFrame(id: individualMessages ? "system-group-\(item.id)" : item.id,
                                             sequence: individualMessages ? 0 : messages.map(\.sequence).max() ?? 0,
                                             historyStart: channel.historyStart)
-                    .id(item.id)
             }
         }
     }

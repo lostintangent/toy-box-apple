@@ -120,7 +120,7 @@ struct TranscriptFindTests {
         let store = ChannelStore(id: "find", api: api)
         let channel = TranscriptRowChannel(agents: [agent], id: "find", historyStart: 1, api: api)
         func content(_ item: TranscriptItem, query: String) -> TranscriptRowContent {
-            .init(item: item, channel: channel, statusReactions: [:], highlightedSequence: nil, catchUp: nil,
+            .init(item: item, channel: channel, statusReactions: [:], highlightedSequence: nil,
                   store: store, expandedMessageIds: [],
                   findHighlights: [1: .mac(query: query, isCurrent: true)], onSetExpanded: { _, _ in })
         }

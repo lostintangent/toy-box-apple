@@ -87,13 +87,4 @@ public struct TranscriptViewport: Equatable, Sendable {
         }
         return (starting ?? spanning).map { .init(id: $0.id, contentTop: $0.frame.contentTop) }
     }
-
-    public func topVisibleFrame(in frames: [String: TranscriptMessageFrame])
-        -> (id: String, frame: TranscriptMessageFrame)? {
-        let visible = CGRect(x: 0, y: 0, width: width, height: height)
-        guard width > 0, height > 0 else { return nil }
-        return frames.filter { $0.value.sequence > 0 && $0.value.rect.intersects(visible) }
-            .min { $0.value.rect.minY < $1.value.rect.minY }
-            .map { (id: $0.key, frame: $0.value) }
-    }
 }
