@@ -28,6 +28,13 @@ in the iOS build.
   finished. A suite's launch waits on the simulator rather than the tests, so the three minutes
   start at its first output, and one that prints nothing for ten minutes after it launches is
   stopped the same way. A sample that fails is noted, and the stall stays the error.
+- A suite that fails or stalls on a simulator that's no longer booted, or whose runtime is gone, is
+  reported as the simulator going down, not as the tests failing. It prints the device's state, its
+  runtime's images and whether they're still mounted, crash reports, and what CoreSimulator logged
+  about the shutdown since the run started, and keeps the host log of the services that mount
+  runtimes in `mobile-test-watchdog/host.log`. CoreSimulator writes its own log only with its
+  `DebugLogging` default on, which CI sets, and CI uploads it with the watchdog folder and crash
+  reports when the job fails.
 - Existing opt-ins stay off. Prefix one with `SIMCTL_CHILD_` to pass it to the simulator, like
   `SIMCTL_CHILD_TOY_BOX_TEST_ARTIFACT_PHONE_EXTERNAL_LINK=1` for the quarantined phone external-link
   test in [docs/quarantined-tests.md](../../../../docs/quarantined-tests.md).
