@@ -1860,28 +1860,23 @@ show Load Older Messages when more history is available, a small loading row whi
 "Beginning of conversation" label and reserve no empty header space. A filtered view must
 continue paging even when a page contains no visible rows.
 
-Both apps scroll the conversation with SwiftUI's own tools, and add code only where those fall
-short. Each message is its own row in a `LazyVStack`, as are day labels, the New divider and system
-rows, so the stack estimates, measures and keeps places one message at a time. `scrollPosition(id:)`
-tracks the reader's row, which holds the reader's place when a row above changes height, when an
-older page arrives and when the stack corrects an estimate. `.defaultScrollAnchor(.bottom, for:
-.sizeChanges)` follows the end. The Load Older row and the empty state carry no ID it tracks, so
-they're never the reader's place. The 16-point clearance below the last row is part
-of the content, so following and Jump to Latest never add it again. Landing, Reveal, Jump to
-Latest and the user's own new message move the conversation with one `scrollTo` on a row's ID, and
-Reveal's page-until-found step stays shared in ToyBoxClient. Nothing else moves it.
+Both apps scroll the conversation with SwiftUI's own tools wherever those meet the rules above,
+and add code only where they don't. Each message is its own row in a `LazyVStack`, as are day
+labels, the New divider and system rows, so the stack estimates and measures one message at a time
+and any message can be a landing, Reveal or reading target. The Load Older row and the empty state
+are never the reader's place. The 16-point clearance below the last row is part of the content, so
+following and Jump to Latest never add it again. Reveal's page-until-found step is shared in
+ToyBoxClient.
 
-The platform falls short in two places, measured with both apps' real rows over history-demo. Each
-gets one `scrollTo`, never a correction loop or a wait for layout to settle:
+`scrollPosition(id:)` alone doesn't meet those rules. Measured on the Mac with real rows and real
+trackpad events over history-demo, these are the gaps, and each gets code of its own:
 
-| Behavior | The gap it fills |
+| Behavior | Why SwiftUI falls short |
 | --- | --- |
-| Landing scrolls to its row once, after the first layout | The first layout doesn't put the row in place. The Mac's bottom anchor wins over `scrollPosition`, and the phone stops 72 points past the row |
-| After a width change, scroll back to the reader's row. On the Mac, during a live resize drag, only when the drag ends | A width change while reading moves the reader, 118 points on the Mac with real rows and 274 on the phone with plain ones |
-
-A row never inserts a view with a transition in the same update that it changes height, because
-`scrollPosition` then corrects for the growth twice and moves the reader by it. So a loaded image
-replaces its placeholder with `.transition(.identity)`.
+| Landing scrolls once to its row | SwiftUI skips a seeded position whose row is already on the first screen, so a New divider 686 points down an 800-point window never moved |
+| While reading, a row above that changes height leaves the first row starting in the viewport where it was | SwiftUI keeps the first *visible* row in place, which can start above the viewport, so a late image growing 190 points above moved the reader 70 |
+| An older page keeps the visible top message and its offset | The reader's row isn't built yet when the page arrives, so scrolling up from message 183 jumped to 81 |
+| After a width change, the reader's row returns to its place, on the Mac when a live resize drag ends | A width change while reading moved the reader 118 points |
 
 Long histories must stay as fast as short ones. Build rows incrementally: derive each message's
 audience, display text and reactions once, and when messages only append, rebuild from the last
