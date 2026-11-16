@@ -137,9 +137,10 @@ struct TranscriptImage: View {
     private func load() async {
         guard image == nil else { return }
         do {
+            // The load runs to its end even when SwiftUI ends this task as a channel opens without
+            // starting it again, and nothing else redraws the tile, so it keeps what loaded.
             let loaded = try await ChannelThumbnails.load(for: attachment, api: api, scale: displayScale,
                                                           reload: attempt > 0)
-            try Task.checkCancellation()
             image = loaded.image
             file = loaded.file
         } catch is CancellationError {

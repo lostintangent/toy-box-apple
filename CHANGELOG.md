@@ -21,6 +21,7 @@
 ### Bugs/Polish
 
 - Swiping a team member, artifact, routine or bookmark now shows simple round buttons, matching your channel list.
+- Images in a channel now show as soon as you open it, even ones that arrived while you were away, instead of staying blank.
 
 ## iPhone 0.1.41
 
