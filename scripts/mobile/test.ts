@@ -4,8 +4,8 @@ import type { Subprocess } from "bun";
 import { CommandFailure, command, machineLock, main, scratchPath, text } from "../shared/lib/index.ts";
 import { buildMobile, mobileEnvironment } from "./bundle/index.ts";
 import {
-    bootMobileSimulator, chooseMobileSimulator, markSimulatorLogs, mobileSimulatorIsUp, reportMobileSimulatorLoss,
-    seconds, shutDownMobileSimulator, type SimulatorLogMark,
+    bootMobileSimulator, chooseMobileSimulator, deleteUnusedSimulatorRuntimes, markSimulatorLogs, mobileSimulatorIsUp,
+    reportMobileSimulatorLoss, seconds, shutDownMobileSimulator, type SimulatorLogMark,
 } from "./dogfood/boot.ts";
 
 export const mobileTestProducts = [
@@ -169,9 +169,12 @@ if (import.meta.main) await main(async () => {
     try {
         const udid = await chooseMobileSimulator(false, options.includes("--if-available"));
         if (!udid) return;
-        const logs = markSimulatorLogs();
         // Boot only once the build is done, since a CI runner's simulator can shut down during a long build.
         const { bin } = await buildMobile(false, true);
+        // After the build, since its resource compilers load simulator runtimes too, and before the boot, since
+        // deleting unmounts volumes just as the re-adds do.
+        if (process.env.CI) await deleteUnusedSimulatorRuntimes(udid);
+        const logs = markSimulatorLogs();
         const simulator = await bootMobileSimulator(udid, process.env.CI ? ciDisabledJobs : []);
         try {
             const developer = join(mobileEnvironment.DEVELOPER_DIR, "Platforms/iPhoneSimulator.platform/Developer");
