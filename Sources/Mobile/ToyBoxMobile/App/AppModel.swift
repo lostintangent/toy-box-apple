@@ -48,7 +48,6 @@ final class AppModel {
             holdsSelectedConnection = false
             selectedStore = selection.flatMap { catalogs.first(at: $0.serverURL)?.channel(id: $0.channelID) }
             connectSelection()
-            if let selection { remember(selection.channelID, on: selection.serverURL) }
             rememberVisibleChannel()
         }
     }

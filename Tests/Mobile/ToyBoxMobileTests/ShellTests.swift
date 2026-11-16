@@ -1668,6 +1668,7 @@ struct ShellTests {
             let model = AppModel(arguments: ["--server", "https://first.example"], environment: [:],
                                  defaults: defaults, session: fixtureSession())
             model.selectedChannelID = "first"
+            model.showsSelection = true
             let previousStore = model.selectedStore
             let previousInteraction = model.interaction(for: "first")
             try await model.replaceServer(with: "https://second.example")
