@@ -1876,7 +1876,7 @@ trackpad events over history-demo, these are the gaps, and each gets code of its
 | Landing scrolls once to its row | SwiftUI skips a seeded position whose row is already on the first screen, so a New divider 686 points down an 800-point window never moved |
 | While reading, a row above that changes height leaves the first row starting in the viewport where it was | SwiftUI keeps the first *visible* row in place, which can start above the viewport, so a late image growing 190 points above moved the reader 70 |
 | An older page keeps the visible top message and its offset | The reader's row isn't built yet when the page arrives, so scrolling up from message 183 jumped to 81 |
-| After a width change, the reader's row returns to its place, on the Mac when a live resize drag ends | A width change while reading moved the reader 118 points |
+| After a width change, the reader's row returns to its place, on the Mac when a live resize drag ends. When the new width's estimates leave the reader past the end, a `scrollTo` builds the row first, and from then until the reader scrolls, SwiftUI's target keeps that row at the top edge through later changes, with no correction of ours on top | A width change while reading moved the reader 118 points. One whose estimates put the reader past the end built nothing there, so the place was lost and the conversation showed its end |
 
 Long histories must stay as fast as short ones. Build rows incrementally: derive each message's
 audience, display text and reactions once, and when messages only append, rebuild from the last
