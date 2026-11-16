@@ -671,14 +671,23 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test func pagingDownAfterAWidthChangeHandsThePlaceBackToTheHold() async throws {
+    @Test(arguments: [false, true]) func pagingDownAfterAWidthChangeHandsThePlaceBackToTheHold(instant: Bool) async throws {
+        if instant { UserDefaults.standard.set(false, forKey: "NSScrollAnimationEnabled") }
+        print("TBPROBE start instant=\(instant) os=\(ProcessInfo.processInfo.operatingSystemVersionString)")
+        let observers = [NSScrollView.willStartLiveScrollNotification, NSScrollView.didLiveScrollNotification,
+                         NSScrollView.didEndLiveScrollNotification].map { name in
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { _ in print("TBPROBE note \(name.rawValue)") }
+        }
+        defer { observers.forEach(NotificationCenter.default.removeObserver) }
         let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), resizable: true)
         defer { await harness.close() }
         try await harness.scrollUp(byWheel: TranscriptHarness.wheelEventsApply) { harness.bottomGap > 400 }
         harness.resize(width: 400)
         try await harness.settled()
         let gap = harness.bottomGap
+        print("TBPROBE pageDown")
         harness.scrollView.pageDown(nil)
+        print("TBPROBE pageDown returned gap \(harness.bottomGap) from \(gap)")
         try await harness.waitUntil { harness.bottomGap < gap - 100 }
         try await harness.settled()
         // Nudge the top row partway off the top, with no scroll phase, so the row that grows is one on screen.
@@ -696,6 +705,7 @@ struct TranscriptTests {
         var grown = transcriptTestMessage(try #require(Int(top.key.dropFirst())))
         grown.content = .text(Array(repeating: "This update grew another long line of words here.", count: 4)
             .joined(separator: "\n\n"))
+        print("TBPROBE grow \(top.key) reading \(reading)")
         harness.push(grown, revision: 2)
         try await harness.waitUntil { (harness.capture.frames[top.key]?.rect.height ?? 0) > above.height + 40 }
         try await harness.settled()

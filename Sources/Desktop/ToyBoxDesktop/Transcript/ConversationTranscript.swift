@@ -289,12 +289,12 @@ struct ConversationTranscript: View {
             followReaderWhilePaging()
             restorePagingAnchor(using: new)
         }
-        .onScrollPhaseChange { _, phase in
+        .onScrollPhaseChange { _, phase in print("TBPROBE phase \(phase)")
             let scrolling = phase == .tracking || phase == .interacting || phase == .decelerating
             if isUserScrolling != scrolling { isUserScrolling = scrolling }
             if phase == .tracking || phase == .interacting {
                 catchUp?.isPinned = false
-                geometry.rebuild = nil
+                geometry.rebuild = nil; print("TBPROBE phase \(phase) ended hand-off")
             }
             // Before the page lands, the anchor follows the reader instead.
             if (phase == .tracking || phase == .interacting) && pagingRestoreTarget != nil {
@@ -701,7 +701,7 @@ struct ConversationTranscript: View {
         var shift: CGFloat = 0
         switch rebuild {
         case .handedOff:
-            geometry.rebuild = .handedOff
+            print("TBPROBE hold handedOff kept"); geometry.rebuild = .handedOff
             geometry.readingAnchor = viewport.readingAnchor(in: frames) ?? geometry.readingAnchor
             return
         case .building:
@@ -730,6 +730,7 @@ struct ConversationTranscript: View {
                 shift = common.contentTop - previous.contentTop
             }
         }
+        if rebuild != nil || abs(shift) > 0.25 { print("TBPROBE hold rebuild=\(String(describing: rebuild)) holds=\(holds) atBottom=\(isAtBottom) shift=\(shift)") }
         if abs(shift) > 0.25 { window.scroll(by: shift) } else { shift = 0 }
         geometry.readingAnchor = holds ? viewport.readingAnchor(in: frames, scrolledBy: shift) : nil
     }
