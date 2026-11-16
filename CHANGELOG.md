@@ -5,6 +5,7 @@
 ### Bugs/Polish
 
 - Clicking the mic now opens the talk card right away, with no pause while the microphone gets ready.
+- Replying to a request from the sidebar now lines your words up with the send button, so the field looks right whether you've typed one line or several.
 
 ## Mac 0.1.44
 

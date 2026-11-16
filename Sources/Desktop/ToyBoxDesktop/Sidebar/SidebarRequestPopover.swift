@@ -109,6 +109,8 @@ private struct SidebarReplyField: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 14 * textScale))
                 .lineLimit(1...5)
+                // As tall as Send, so one line centers on it and more grow up from its bottom.
+                .frame(minHeight: 24)
                 .focused($focused)
                 .disabled(cards.phase != .composing)
                 .onSubmit(send)
