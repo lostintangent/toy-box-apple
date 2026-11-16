@@ -476,6 +476,25 @@ struct TranscriptTests {
         try await harness.waitUntil { abs(harness.bottomGap) < 2 }
     }
 
+    /// One sender's 31 unread messages run near 6,000 points. As one lazy child, the stack guessed that
+    /// run thousands of points too tall, so the landing scrolled past it onto nothing and the channel
+    /// opened blank. Each message is its own child, so the landing finds the New divider and draws it.
+    @MainActor
+    @Test func aLongUnreadRunFromOneSenderOpensOnItsFirstMessage() async throws {
+        let messages = (1...40).map { $0 > 9 ? catchUpTestMessage($0, repeats: 3) : catchUpTestMessage($0, sender: .user) }
+        let service = StubChannelIntelligence(availability: .unavailable(.deviceNotEligible))
+        let harness = try await TranscriptHarness(messages: messages, seenThrough: 9, height: 800,
+                                                  intelligence: service)
+        defer { await harness.close() }
+        try await harness.waitUntil { harness.capture.hasLanded && harness.rowsOpacity > 0 }
+        try await harness.settled()
+        let divider = try #require(harness.frames["divider-m10"]?.rect, "No divider frame")
+        #expect(divider.minY >= -0.5 && divider.minY < 120, "Landed with the divider at \(divider)")
+        #expect(harness.isVisible("m10"))
+        let pixels = transcriptLayerPixels(of: harness.scrollView)
+        #expect(Set(pixels).count > 2, "The transcript drew nothing")
+    }
+
     /// A channel opening cold at its first unread message hides its rows only until the landing places
     /// them, then draws the divider at the top on that pass and never moves it. SwiftUI can leave each
     /// row's viewport frame stale after the long `scrollTo`, so only content positions show it placed.
@@ -997,11 +1016,6 @@ struct TranscriptTests {
         try await settle()
         #expect(abs(capture.viewport.bottomGap - 120) < 0.5)
 
-        // A row tucked under the toolbar isn't the paging anchor.
-        proxy.scrollTo(10, anchor: .top)
-        try await settle()
-        #expect(abs(try #require(capture.frames["m10"]).rect.minY) < 0.5)
-        #expect(capture.viewport.topVisibleFrame(in: capture.frames)?.id == "m10")
     }
 
     @MainActor
@@ -1196,7 +1210,7 @@ struct TranscriptTests {
         ], lead: .lead(id: "lead"), members: [])
         try #require(rows.count == 7)
         #expect(rows[3].divider?.day != nil)
-        #expect(rows.dropFirst().map { transcriptRowGaps(rows)[$0.id] } == [20, 4, 16, 4, 20, 20])
+        #expect(TranscriptItem.items(rows).dropFirst().map(\.spacing) == [20, 4, 16, 4, 20, 20])
     }
 
     @Test func coincidingDayAndUnreadDividersReadAsOneHeader() throws {
@@ -1327,11 +1341,11 @@ struct TranscriptTests {
         let store = ChannelStore(id: "bookmarks", api: try ChannelAPI(serverURL: "https://bookmarks.invalid"))
         let message = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-10-22T10:00:00Z",
                                      sender: .agent("lead"), content: .text("Hello"))
-        let row = try #require(TranscriptRowBuilder().rows([message], lead: lead, members: []).last)
+        let item = try #require(TranscriptItem.items(TranscriptRowBuilder().rows([message], lead: lead, members: [])).last)
         let channel = TranscriptRowChannel(agents: [lead], id: "bookmarks", historyStart: 1, api: store.api)
         func content(bookmarks: Set<Int>, isConnected: Bool) -> TranscriptRowContent {
-            TranscriptRowContent(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil,
-                                 catchUp: nil, store: store, expandedMessageIds: [], bookmarks: bookmarks,
+            TranscriptRowContent(item: item, channel: channel, statusReactions: [:], highlightedSequence: nil,
+                                 store: store, expandedMessageIds: [], bookmarks: bookmarks,
                                  isConnected: isConnected, onSetExpanded: { _, _ in })
         }
         #expect(content(bookmarks: [], isConnected: false) != content(bookmarks: [], isConnected: true))
@@ -2334,13 +2348,15 @@ struct TranscriptCatchUpTests {
             service.releaseCatchUp()
             await harness.close()
         }
-        let clip = harness.scrollView.contentView
         if legacyScrollers { #expect(harness.scrollView.scrollerStyle == .legacy) }
-        try await harness.waitUntil { harness.capture.hasLanded && service.catchUpCount == 1 }
-        let divider = try #require(harness.capture.frames["divider-m10"]?.rect)
+        try await harness.waitUntil { harness.capture.hasLanded && service.catchUpCount == 1 && harness.rowsOpacity > 0 }
+        try await harness.settled()
+        let divider = try #require(harness.frames["divider-m10"]?.rect)
         try #require(divider.minY >= -0.5 && divider.minY < 120, "Landed with the divider at \(divider)")
-        let landed = clip.bounds.minY
-        try await harness.scrollDown(byWheel: false) { clip.bounds.minY > landed + 400 }
+        // Until the card is above the viewport, with its message still built below it.
+        try await harness.scrollDown(byTrackpad: true) {
+            (harness.frames["m10"]?.rect.minY ?? 0) < -10
+        }
         let reading = harness.visibleFrames()
         try #require(reading.count >= 2)
         let height = harness.scrollView.documentView?.bounds.height ?? 0
@@ -2349,10 +2365,116 @@ struct TranscriptCatchUpTests {
         try await harness.waitUntil { (harness.scrollView.documentView?.bounds.height ?? 0) > height + 40 }
         try await harness.settled()
         for (id, rect) in reading {
-            let after = harness.capture.frames[id]?.rect ?? .null
+            let after = harness.frames[id]?.rect ?? .null
             #expect(abs(after.minY - rect.minY) < 1, "\(id) moved from \(rect) to \(after)")
         }
     }
+}
+
+extension TranscriptTests {
+    /// Spec: a row above the reader that changes height leaves the first row starting in the viewport
+    /// in place. A remote image above the reader learns its size late, and its tile appears in the
+    /// same update without a transition, so SwiftUI corrects for the growth once.
+    @MainActor
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func aLateImageAboveTheReaderLeavesThemInPlace() async throws {
+        TranscriptImageProtocol.register()
+        let url = "https://images.invalid/transcript-image/held-\(UUID().uuidString).png"
+        let messages = (1...40).map { sequence in
+            var message = catchUpTestMessage(sequence, repeats: 3)
+            if sequence == 12 {
+                message.attachments = [ChannelAttachment(name: "late.png", url: url, mimeType: "image/png")]
+            }
+            return message
+        }
+        let service = StubChannelIntelligence(availability: .unavailable(.deviceNotEligible))
+        let harness = try await TranscriptHarness(messages: messages, seenThrough: 9, height: 800,
+                                                  intelligence: service)
+        defer {
+            TranscriptImageProtocol.release()
+            await harness.close()
+        }
+        try await harness.waitUntil { harness.capture.hasLanded && harness.rowsOpacity > 0 }
+        try await harness.settled()
+        try await harness.waitUntil { TranscriptImageProtocol.heldCount > 0 }
+        // Until the image's row is mostly above the viewport, with the reader's rows below it.
+        try await harness.scrollDown(byTrackpad: true) {
+            guard let image = harness.frames["m12"]?.rect else { return false }
+            return image.minY < -10 && image.maxY < 200
+        }
+        let reading = harness.visibleFrames()
+        try #require(reading.count >= 2)
+        let height = harness.scrollView.documentView?.bounds.height ?? 0
+
+        TranscriptImageProtocol.release()
+        try await harness.waitUntil { (harness.scrollView.documentView?.bounds.height ?? 0) > height + 40 }
+        try await harness.settled()
+        for (id, rect) in reading {
+            let after = harness.frames[id]?.rect ?? .null
+            #expect(abs(after.minY - rect.minY) < 1, "\(id) moved from \(rect) to \(after)")
+        }
+    }
+}
+
+/// Serves `/transcript-image/...` with a 600 by 900 PNG. One whose path has `held` waits for `release()`.
+private final class TranscriptImageProtocol: URLProtocol, @unchecked Sendable {
+    private static let state = Mutex<(held: [TranscriptImageProtocol], registered: Bool)>(([], false))
+
+    static func register() {
+        let registers = state.withLock { state in
+            defer { state.registered = true }
+            return !state.registered
+        }
+        if registers { URLProtocol.registerClass(TranscriptImageProtocol.self) }
+    }
+
+    static var heldCount: Int { state.withLock { $0.held.count } }
+
+    static func release() {
+        nonisolated(unsafe) var requests: [TranscriptImageProtocol] = []
+        state.withLock { state in
+            requests = state.held
+            state.held = []
+        }
+        for request in requests { request.respond() }
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.path.hasPrefix("/transcript-image/") == true
+    }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        if request.url?.path.contains("held") == true {
+            Self.state.withLock { $0.held.append(self) }
+        } else {
+            respond()
+        }
+    }
+
+    override func stopLoading() {}
+
+    private func respond() {
+        guard let url = request.url,
+              let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil,
+                                             headerFields: ["Content-Type": "image/png"]) else { return }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Self.png)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    private static let png: Data = {
+        let context = CGContext(data: nil, width: 600, height: 900, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(CGColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 600, height: 900))
+        let data = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+        CGImageDestinationFinalize(destination)
+        return data as Data
+    }()
 }
 
 @MainActor
@@ -2778,6 +2900,29 @@ private final class TranscriptHarness {
         try await scroll(towardOlder: false, byWheel: byWheel, until: condition)
     }
 
+    /// Scrolls toward newer messages as a trackpad does: continuous pixel deltas with scroll phases,
+    /// which SwiftUI's scroll position follows, unlike wheel notches and clip view scrolls.
+    func scrollDown(byTrackpad: Bool, until condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(60)
+        func send(_ delta: Int32, phase: Int64) throws {
+            let event = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
+                                             wheel1: delta, wheel2: 0, wheel3: 0))
+            event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+            event.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
+            scrollView.scrollWheel(with: try #require(NSEvent(cgEvent: event)))
+        }
+        var phase: Int64 = 1
+        while !condition(), ContinuousClock.now < deadline {
+            try send(-30, phase: phase)
+            phase = 2
+            try await frame()
+        }
+        try send(0, phase: 4)
+        try await frame()
+        try #require(condition(), "Stopped at \(scrollView.contentView.bounds.minY) with a gap of \(bottomGap)")
+        try await settled()
+    }
+
     private func scroll(towardOlder: Bool, byWheel: Bool, until condition: () -> Bool) async throws {
         let clip = scrollView.contentView
         let deadline = ContinuousClock.now + .seconds(60)
@@ -2990,11 +3135,11 @@ private final class HoveredMessage {
         let message = ChannelMessage(id: id, sequence: 1, timestamp: "2026-10-22T10:00:00Z", sender: .agent("lead"),
                                      content: .text(String(repeating: "A paragraph long enough to wrap. ", count: 6)
                                          + "\n\nA second paragraph."))
-        let row = try #require(TranscriptRowBuilder().rows([message], lead: lead, members: []).last)
+        let item = try #require(TranscriptItem.items(TranscriptRowBuilder().rows([message], lead: lead, members: [])).last)
         let channel = TranscriptRowChannel(agents: [lead], id: "selection", historyStart: 1, api: store.api)
         host = NSHostingView(rootView:
-            TranscriptRowContent(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil,
-                                 catchUp: nil, store: store, expandedMessageIds: [], onSetExpanded: { _, _ in })
+            TranscriptRowContent(item: item, channel: channel, statusReactions: [:], highlightedSequence: nil,
+                                 store: store, expandedMessageIds: [], onSetExpanded: { _, _ in })
                 .padding(20)
                 .frame(width: 600, height: 300, alignment: .topLeading)
                 .coordinateSpace(name: "transcript-viewport")

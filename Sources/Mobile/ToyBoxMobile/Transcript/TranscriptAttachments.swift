@@ -117,7 +117,10 @@ struct TranscriptImage: View {
             ?? shown.map { CGSize(width: $0.width, height: $0.height) } ?? CGSize(width: 120, height: 90))
         return ZStack {
             if let shown {
+                // Inserted with no transition, or a scroll view keeping its place by identity
+                // corrects twice for the row growing as it lands.
                 Image(decorative: shown, scale: 1).resizable().aspectRatio(contentMode: .fit)
+                    .transition(.identity)
             } else {
                 Rectangle().fill(.quaternary)
                 if failed {

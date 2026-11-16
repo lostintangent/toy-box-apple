@@ -14,8 +14,4 @@ public enum TranscriptCoordinates {
     public static func targetOffset(for frame: TranscriptMessageFrame, bottom: CGFloat, topInset: CGFloat) -> CGFloat {
         contentTopPadding + frame.contentTop + frame.rect.height - bottom - topInset
     }
-
-    public static func isRestored(_ frame: TranscriptMessageFrame, bottom: CGFloat, nativeIsAligned: Bool) -> Bool {
-        nativeIsAligned && abs(frame.rect.maxY - bottom) <= 0.5
-    }
 }

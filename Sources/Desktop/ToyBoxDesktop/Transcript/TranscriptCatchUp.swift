@@ -52,7 +52,7 @@ struct TranscriptCatchUpCard: View {
                 if let summary = catchUp.summary {
                     content(summary)
                         .id(summary)
-                        .transition(.opacity.animation(.easeOut(duration: 0.2)))
+                        .transition(.identity)
                 }
             }
             .clipShape(Rectangle().inset(by: -6))

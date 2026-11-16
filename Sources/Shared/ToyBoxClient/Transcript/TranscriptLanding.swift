@@ -5,6 +5,8 @@ public enum TranscriptLanding {
     public struct Opening: Equatable {
         public var rowID: String
         public var unreadAfter: Int
+        /// Whether the unread messages run past one screen, so the scroll view opens on the row's top
+        /// rather than at the end, where a short tail opens with the row in view.
         public var seeds: Bool
 
         public init(rowID: String, unreadAfter: Int, seeds: Bool) {
@@ -14,25 +16,12 @@ public enum TranscriptLanding {
         }
     }
 
-    public enum Step: Equatable {
-        case placeColdOpening
-        case correctPosition
-        case settled
-    }
-
     /// Where a channel opens, on both apps and as the web does: on the row New sits above, which the
     /// row builder draws only when the unread boundary is in the loaded page. Otherwise it opens at the end.
     public static func opening(unreadAfter: Int?, rows: [TranscriptRow]) -> Opening? {
         guard let unreadAfter, let index = rows.firstIndex(where: { $0.divider?.unread == true }) else { return nil }
-        // A short tail opens at the bottom, where its first unread row is already on the last screen.
-        return Opening(rowID: rows[index].id, unreadAfter: unreadAfter, seeds: rows.count - index > 8)
-    }
-
-    public static func step(on row: TranscriptRow, frames: [String: TranscriptMessageFrame],
-                     viewport: TranscriptViewport, isColdOpening: Bool, jumps: Int) -> Step {
-        if isColdOpening && jumps == 0 { return .placeColdOpening }
-        if jumps >= 2 { return .settled }
-        return isPlaced(row, frames: frames, viewport: viewport) ? .settled : .correctPosition
+        let unread = rows[index...].reduce(0) { $0 + $1.messages.count }
+        return Opening(rowID: rows[index].id, unreadAfter: unreadAfter, seeds: unread > 8)
     }
 
     /// Whether the row is where a landing puts it: its start near the top, or anywhere on the last

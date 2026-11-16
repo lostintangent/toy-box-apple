@@ -158,6 +158,9 @@ private struct TranscriptAttachment: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: size.width, height: size.height)
+                        // Inserted with no transition, or a scroll view keeping its place by
+                        // identity corrects twice for the row growing as it lands.
+                        .transition(.identity)
                 } else if isBroken {
                     Image(systemName: "photo.badge.exclamationmark")
                         .font(.title2)
