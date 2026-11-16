@@ -24,10 +24,20 @@ final class AppModel {
     private(set) var isActive = false
     private(set) var selectedStore: ChannelStore?
     private(set) var isResolvingNavigation = false
-    /// The channel screen in front, on its server.
-    var visibleChannel: ChannelTarget?
+    /// Whether the navigation shows the selected channel, which `RootView` reads from its split view.
+    var showsSelection = false {
+        didSet {
+            // Going back to the list forgets the channel, so a relaunch returns to where you were.
+            guard showsSelection != oldValue, let selection else { return }
+            remember(showsSelection ? selection.channelID : nil, on: selection.serverURL)
+        }
+    }
+    /// The channel on screen, on its server: the selection, while the navigation shows it.
+    var visibleChannel: ChannelTarget? { showsSelection ? selection : nil }
+    /// What a channel screen last reported showing.
+    var shownEntity: ScreenEntity?
     /// What the visible channel screen shows, which Siri may read while it's in front.
-    var screenEntity: ScreenEntity?
+    var screenEntity: ScreenEntity? { shownEntity?.channel == visibleChannel ? shownEntity : nil }
     var cover: Cover?
     var navigationNotice: String?
     /// The list's chosen channel, on its server.
@@ -42,7 +52,7 @@ final class AppModel {
             holdsSelectedConnection = false
             selectedStore = selection.flatMap { catalogs.first(at: $0.serverURL)?.channel(id: $0.channelID) }
             connectSelection()
-            rememberSelection()
+            if let selection { remember(selection.channelID, on: selection.serverURL) }
         }
     }
 
@@ -176,10 +186,6 @@ final class AppModel {
         let server = ChannelTarget.normalizedServer(catalog.api.baseURL.absoluteString)
         func belongs(_ store: ChannelStore) -> Bool { catalog.existingChannel(id: store.id) === store }
         if selection?.serverURL == server { selection = nil }
-        if visibleChannel?.serverURL == server {
-            visibleChannel = nil
-            screenEntity = nil
-        }
         for (target, interaction) in interactions where target.serverURL == server {
             interaction.isArtifactViewerPresented = false
             interactions[target] = nil
@@ -255,9 +261,7 @@ final class AppModel {
             selection = catalog.target(id)
         } else {
             navigationNotice = "The channel you last opened is no longer available."
-            var selections = rememberedSelections
-            selections[server] = nil
-            defaults.set(selections, forKey: "lastChannelByServer")
+            remember(nil, on: server)
         }
     }
 
@@ -490,11 +494,10 @@ final class AppModel {
         defaults.dictionary(forKey: "lastChannelByServer") as? [String: String] ?? [:]
     }
 
-    /// Each server's last opened channel, which launch restores on the saved server.
-    private func rememberSelection() {
-        guard let selection else { return }
+    /// The channel you're in on each server, which launch restores on the saved server.
+    private func remember(_ channelID: String?, on server: String) {
         var selections = rememberedSelections
-        selections[selection.serverURL] = selection.channelID
+        selections[server] = channelID
         defaults.set(selections, forKey: "lastChannelByServer")
     }
 }

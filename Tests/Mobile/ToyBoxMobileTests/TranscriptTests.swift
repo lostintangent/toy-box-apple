@@ -793,6 +793,9 @@ struct TranscriptTests {
         let busy = try store("busy", through: 400, seen: 395)
         let quiet = try store("quiet", through: 40, seen: 35)
         let shown = ShownChannel(busy)
+        // The navigation shows the selected channel.
+        model.showsSelection = true
+        model.selection = busy.target
         let host = UIHostingController(rootView: SwitchingChannelScreen(shown: shown)
             .environment(model)
             .environment(model.following)
@@ -811,6 +814,7 @@ struct TranscriptTests {
             }
         }
         try await reads(["busy 400"])
+        model.selection = quiet.target
         shown.store = quiet
         try await reads(["busy 400", "quiet 40"])
     }

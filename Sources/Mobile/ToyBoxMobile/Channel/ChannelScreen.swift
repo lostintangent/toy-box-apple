@@ -100,8 +100,7 @@ struct ChannelScreen: View {
                     permissionTipIsAvailable = available
                 }
             }
-            .onChange(of: store.target, initial: true) { _, target in model.visibleChannel = target }
-            .onChange(of: screenEntity, initial: true) { _, entity in model.screenEntity = entity }
+            .onChange(of: screenEntity, initial: true) { _, entity in model.shownEntity = entity }
             .channelActivity(store.id, showing: screenEntity)
             .onChange(of: store.artifacts, initial: true) { _, current in
                 artifacts.configure(api: store.api, channelID: store.id, artifacts: current)
@@ -125,8 +124,6 @@ struct ChannelScreen: View {
             }
             .onDisappear {
                 interaction.isArtifactViewerPresented = false
-                if model.visibleChannel == store.target { model.visibleChannel = nil }
-                if let entity = model.screenEntity, entity.channel == store.target { model.screenEntity = nil }
             }
             .toolbar {
                 if !reader.requested { conversationToolbar }
