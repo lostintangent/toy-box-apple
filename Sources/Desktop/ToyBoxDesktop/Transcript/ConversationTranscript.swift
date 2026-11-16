@@ -92,8 +92,7 @@ struct ConversationTranscript: View {
     private var read: TranscriptRead {
         .init(latestSequence: store.state?.channel.latestSequence,
               isLooking: !snapshot.isActive && window.isKeyWindow && scenePhase == .active,
-              isCovered: viewer?.session != nil || interaction.isArtifactViewerPresented,
-              hasLanded: hasLanded, isConnected: store.phase.isConnected)
+              isConnected: store.phase.isConnected)
     }
 
     private var pagingRestoreTarget: PagingRestoreTarget? {

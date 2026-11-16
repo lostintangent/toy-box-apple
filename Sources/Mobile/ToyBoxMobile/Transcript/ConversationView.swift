@@ -218,9 +218,7 @@ func startsOwnPost(after previous: [UUID], in sending: [ChannelOutbox.Message]) 
 struct ConversationView: View {
     let store: ChannelStore
     @Environment(AppModel.self) private var model
-    @Environment(ManagementPresenter.self) private var management
     @Environment(ChannelInteraction.self) private var interaction
-    @Environment(Overview.self) private var overviewPresentation
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.channelIntelligence) private var intelligence
@@ -561,19 +559,10 @@ struct ConversationView: View {
         }
     }
 
-    /// Readers, the app's cover, management and compact Overview cover the conversation.
-    /// The regular-width Overview column sits beside it.
-    private var isUncovered: Bool {
-        model.isActive && model.visibleChannel == store.target && !model.isCovered
-            && management.flow == nil && !interaction.isArtifactViewerPresented
-            && !overviewPresentation.isCompactSheetPresented
-            && !(sizeClass == .compact && (interaction.isInspectorPresented || showsWorkingNow || showsBookmarks))
-            && !interaction.isRequestPreviewPresented
-    }
-
     private var read: TranscriptRead {
-        .init(latestSequence: store.state?.channel.latestSequence, isLooking: scenePhase == .active,
-              isCovered: !isUncovered, hasLanded: scroll.hasLanded, isConnected: store.phase.isConnected)
+        .init(latestSequence: store.state?.channel.latestSequence,
+              isLooking: scenePhase == .active && model.visibleChannel == store.target,
+              isConnected: store.phase.isConnected)
     }
 
     private func loadOlder() async {
