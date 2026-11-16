@@ -681,15 +681,23 @@ struct TranscriptTests {
         harness.scrollView.pageDown(nil)
         try await harness.waitUntil { harness.bottomGap < gap - 100 }
         try await harness.settled()
+        // Nudge the top row partway off the top, with no scroll phase, so the row that grows is one on screen.
+        let top = try #require(harness.visibleFrames().filter { $0.value.minY >= 0 }
+            .min { $0.value.minY < $1.value.minY })
+        let clip = harness.scrollView.contentView
+        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: clip.bounds.minY + top.value.minY + 12))
+        harness.scrollView.reflectScrolledClipView(clip)
+        try await harness.waitUntil { (harness.capture.frames[top.key]?.rect.minY ?? 0) < 0 }
+        try await harness.settled()
+        let above = try #require(harness.capture.frames[top.key]?.rect)
+        try #require(above.maxY > 0, "\(top.key) left the screen at \(above)")
         let reading = try #require(harness.visibleFrames().filter { $0.value.minY >= 0 }
             .min { $0.value.minY < $1.value.minY })
-        let sequence = try #require(Int(reading.key.dropFirst()))
-        let above = try #require(harness.capture.frames["m\(sequence - 1)"]?.rect)
-        var grown = transcriptTestMessage(sequence - 1)
+        var grown = transcriptTestMessage(try #require(Int(top.key.dropFirst())))
         grown.content = .text(Array(repeating: "This update grew another long line of words here.", count: 4)
             .joined(separator: "\n\n"))
         harness.push(grown, revision: 2)
-        try await harness.waitUntil { (harness.capture.frames["m\(sequence - 1)"]?.rect.height ?? 0) > above.height + 40 }
+        try await harness.waitUntil { (harness.capture.frames[top.key]?.rect.height ?? 0) > above.height + 40 }
         try await harness.settled()
         let after = harness.capture.frames[reading.key]?.rect ?? .null
         #expect(abs(after.minY - reading.value.minY) < 1, "\(reading.key) moved from \(reading.value) to \(after)")
