@@ -205,28 +205,11 @@ struct TranscriptTests {
         }
     }
 
-    @Test func aRevealFinishesFromSettledGeometryOrWhenTheReaderTakesOver() {
+    @Test func aRevealPutsItsRowsTop32PointsBelowTheTopOrAsNearAsTheEndAllows() {
         let scroll = measuredScroll(20, origin: 1400)
         _ = scroll.update(.land(.end))
-
-        // Asking to scroll isn't revealing: it finishes only once the native origin arrives.
-        let settles = UUID()
-        scroll.pendingReveal = (settles, "r5")
-        let origin = scroll.update(.reveal("r5"))?.origin
-        #expect(origin == 250 && scroll.finishedReveal() == nil)
-        scroll.metrics?.origin = 250
-        _ = scroll.update()
-        #expect(scroll.finishedReveal()! == (settles, true))
-        #expect(scroll.finishedReveal() == nil)
-
-        // The reader scrolling first finishes it, revealed only if the row ended up in view.
-        let interrupted = UUID()
-        scroll.pendingReveal = (interrupted, "r15")
-        #expect(scroll.update(.reveal("r15"))?.origin == 1250 && scroll.finishedReveal() == nil)
-        scroll.isReaderScrolling = true
-        scroll.metrics?.origin = 0
-        _ = scroll.update()
-        #expect(scroll.finishedReveal()! == (interrupted, false))
+        #expect(scroll.update(.reveal("r5"))?.origin == 468)
+        #expect(scroll.update(.reveal("r15"))?.origin == 1400)
     }
 
     @Test func aRevealIntoAPageThatJustLandedFindsItsRow() {
@@ -267,20 +250,13 @@ struct TranscriptTests {
         scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 32_000)
         #expect(scroll.update() == nil && !scroll.hasLanded)
 
-        let token = UUID()
-        scroll.pendingReveal = (token, "p40")
         let placement = scroll.update(.reveal("p40"))
-        // The request's row is centered, and the reveal counts as the landing.
-        #expect(placement?.unavailableTarget == nil && placement?.origin == 3750 && scroll.hasLanded)
+        // The request's row is placed, and the reveal counts as the landing.
+        #expect(placement?.unavailableTarget == nil && placement?.origin == 3968 && scroll.hasLanded)
         guard case .revealing("p40", _) = scroll.intent else {
             Issue.record("The reveal should own the first position.")
             return
         }
-        scroll.metrics?.origin = 3750
-        _ = scroll.update()
-        #expect(scroll.finishedReveal()! == (token, true))
-        let visible = scroll.layout.map(TranscriptPlacement.visibleRows(in:)) ?? []
-        #expect(visible.contains("p40") && !visible.contains("r10"))
     }
 
     /// A store that's already loaded can route its reveal at first appearance, so the conversation
@@ -294,7 +270,7 @@ struct TranscriptTests {
         scroll.metrics = .init(viewport: .init(width: 386, height: 600, topInset: 0, bottomInset: 0),
                                origin: 1400, documentEnd: 2000)
         let placement = scroll.update(.reveal("r4"))
-        #expect(scroll.layout != nil && placement?.unavailableTarget == nil && placement?.origin == 150 && scroll.hasLanded)
+        #expect(scroll.layout != nil && placement?.unavailableTarget == nil && placement?.origin == 368 && scroll.hasLanded)
     }
 
     @Test func aRevealThatCantFindItsRowLeavesTheFirstLandingToTheDivider() {

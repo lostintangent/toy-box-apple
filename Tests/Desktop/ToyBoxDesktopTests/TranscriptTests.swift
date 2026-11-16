@@ -700,6 +700,22 @@ struct TranscriptTests {
         #expect(abs(top - TranscriptReveal.margin) <= 1, "m20's top at \(top)")
     }
 
+    /// A reveal waits for its row's first frame from the history it paged. A reconnect's snapshot that
+    /// replaces that history ends the wait, so the transcript can't stay revealing with nothing to place.
+    @MainActor
+    @Test func aRevealsFrameWaitEndsWhenItsHistoryIsReplaced() async throws {
+        let geometry = TranscriptScrollGeometry()
+        geometry.historyStart = 1
+        var ended = false
+        let wait = Task { @MainActor in
+            await geometry.frame(of: "m20", historyStart: 1)
+            ended = true
+        }
+        defer { wait.cancel() }
+        geometry.historyStart = 61
+        try await waitUntil("the wait to end once its history is gone") { ended }
+    }
+
     /// A request's notification can reveal a message that arrived while the channel was away. The store
     /// still holds what it had, so the reveal waits for the reconnect's replay instead of giving up.
     @MainActor

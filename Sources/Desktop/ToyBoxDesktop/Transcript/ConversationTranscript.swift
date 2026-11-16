@@ -181,6 +181,7 @@ struct ConversationTranscript: View {
                     interaction.consumeRevealRequest(request.token)
                     await reveal(sequence: request.sequence, using: proxy)
                 }
+                .onChange(of: store.messages.first?.sequence) { _, start in geometry.historyStart = start }
                 .onChange(of: read.isLooking) { _, looking in visit.look(looking, hasLanded: hasLanded) }
                 .onChange(of: read.sequence, initial: true) { _, sequence in
                     if let sequence, visit.read(through: sequence, in: store) { catchUp = nil }
@@ -656,6 +657,7 @@ struct ConversationTranscript: View {
             || (membership && row.messages.contains(where: { expandedMessageIds.contains($0.id) }))
         let id = message.isSystem && !individualSystem ? row.id : message.id
         let historyStart = store.messages.first?.sequence
+        geometry.historyStart = historyStart
         if geometry.frames[id]?.historyStart != historyStart {
             scrollPosition = nil
             proxy.scrollTo(row.id, anchor: .top)
@@ -857,21 +859,28 @@ struct TranscriptLanded: PreferenceKey {
 /// scroll run without re-running the transcript's body and diffing every loaded row. Only what a
 /// frame actually changes, like the visible message or reaching the bottom, is published as state.
 @MainActor
-private final class TranscriptScrollGeometry {
+final class TranscriptScrollGeometry {
     var viewport = TranscriptViewport()
     var frames: [String: TranscriptMessageFrame] = [:] {
         didSet { if let waiter, frames[waiter.id]?.historyStart == waiter.historyStart { resumeWaiter() } }
     }
+    /// The first loaded message's sequence. A reconnect's snapshot can replace the history, after which
+    /// a row waited for under the old one can never report from it.
+    var historyStart: Int? {
+        didSet { if let waiter, waiter.historyStart != historyStart { resumeWaiter() } }
+    }
     var readingAnchor: TranscriptReadingAnchor?
     private var waiter: (id: String, historyStart: Int?, token: UUID, continuation: CheckedContinuation<Void, Never>)?
 
-    /// Returns once the row reports a frame from this history, or once cancelled.
+    /// Returns once the row reports a frame from this history, or once that can't happen because the
+    /// history changed or the wait was cancelled.
     func frame(of id: String, historyStart: Int?) async {
         let token = UUID()
         await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 resumeWaiter()
                 waiter = (id, historyStart, token, continuation)
+                if self.historyStart != historyStart { resumeWaiter() }
             }
         } onCancel: {
             Task { @MainActor in if self.waiter?.token == token { self.resumeWaiter() } }
