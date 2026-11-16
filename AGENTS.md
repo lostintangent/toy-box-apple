@@ -83,7 +83,7 @@ Surfaces meet at these seams:
 - **Start from an outcome the user will feel.** Lead writes the decision into the spec before
   anyone builds it, and what a platform does only once measured, then opens one task with one
   owner. The spec holds current rules, never history.
-- **Choose the simplest design that meets it,** because it's the easiest to understand, diagnose
+- **Choose the simplest design that meets it,** because it's easiest to understand, diagnose
   and change. Use what Apple's platforms ship, in its idiomatic form, and build your own only for
   behavior Toy Box needs and the platform lacks. Add no cache, retry, abstraction or option until a
   measurement or a second case asks for one.
