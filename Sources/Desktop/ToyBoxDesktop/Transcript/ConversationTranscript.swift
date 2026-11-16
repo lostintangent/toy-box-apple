@@ -181,7 +181,6 @@ struct ConversationTranscript: View {
                     interaction.consumeRevealRequest(request.token)
                     await reveal(sequence: request.sequence, using: proxy)
                 }
-                .onChange(of: store.messages.first?.sequence) { _, start in geometry.historyStart = start }
                 .task(id: isRestoringPage) { await settlePagingRestore(using: proxy) }
                 .onChange(of: read.isLooking) { _, looking in visit.look(looking, hasLanded: hasLanded) }
                 .onChange(of: read.sequence, initial: true) { _, sequence in
@@ -526,17 +525,17 @@ struct ConversationTranscript: View {
     /// Lands on the row in at most one scroll, the way a reveal places its message: natively from its
     /// New divider's frame, so no later pass can move it first, after bringing in by identity a row the
     /// lazy stack hasn't built. A row already in place, as a seeded opening's first layout leaves it,
-    /// stays put.
+    /// stays put. One that hasn't reported by the first quiet layout turn after the scroll never will,
+    /// as when a Message View change drops it, so the landing ends where that scroll left it.
     private func land(on row: TranscriptRow, using proxy: ScrollViewProxy) async {
         let id = "divider-\(row.id)"
         let historyStart = store.messages.first?.sequence
-        geometry.historyStart = historyStart
-        if geometry.frames[id]?.historyStart != historyStart {
+        if frames[id]?.historyStart != historyStart {
             scrollPosition = nil
             proxy.scrollTo(row.id, anchor: .top)
-            await geometry.frame(of: id, historyStart: historyStart)
+            guard await layoutTurns.settled() else { return }
         }
-        guard !Task.isCancelled, let frame = geometry.frames[id], frame.historyStart == historyStart else { return }
+        guard let frame = frames[id], frame.historyStart == historyStart else { return }
         if !TranscriptLanding.isPlaced(row, frames: placedFrames, viewport: viewport) {
             let gap = transcriptRowGaps(rows)[row.id] ?? TranscriptSpacing.run
             _ = window.restoreReadingBottom(gap + frame.rect.height, of: frame)
@@ -619,13 +618,14 @@ struct ConversationTranscript: View {
             || (membership && row.messages.contains(where: { expandedMessageIds.contains($0.id) }))
         let id = message.isSystem && !individualSystem ? row.id : message.id
         let historyStart = store.messages.first?.sequence
-        geometry.historyStart = historyStart
-        if geometry.frames[id]?.historyStart != historyStart {
+        if frames[id]?.historyStart != historyStart {
             scrollPosition = nil
             proxy.scrollTo(row.id, anchor: .top)
-            await geometry.frame(of: id, historyStart: historyStart)
+            FileHandle.standardError.write(Data("T1230 reveal scroll \(id) rows=\(rows.suffix(2).map(\.id)) keys=\(frames.keys.sorted().suffix(3))\n".utf8))
+            guard await layoutTurns.settled() else { return }
+            FileHandle.standardError.write(Data("T1230 reveal settled has=\(frames[id] != nil) keys=\(frames.keys.sorted().suffix(3)) top=\(viewport.top) h=\(viewport.contentHeight)\n".utf8))
         }
-        guard !Task.isCancelled, let frame = geometry.frames[id], frame.historyStart == historyStart else { return }
+        guard let frame = frames[id], frame.historyStart == historyStart else { return }
         let top = TranscriptReveal.margin + (find.isPresented ? findBarHeight : 0)
         _ = window.restoreReadingBottom(top + frame.rect.height, of: frame)
         hasLanded = true
@@ -703,9 +703,13 @@ struct ConversationTranscript: View {
             // The page can push the reader's row out of the lazy stack, so it's brought in by identity first.
             let row = rows.first { $0.messages.contains { $0.id == anchor.id } }
             proxy.scrollTo(row?.id ?? anchor.id, anchor: .top)
-            await geometry.frame(of: anchor.id, historyStart: historyStart)
         }
         while isRestoringPage, await layoutTurns.settled() {
+            // A row that doesn't report by a quiet turn never will, so the reader stays where the page left them.
+            guard frames[anchor.id]?.historyStart == historyStart else {
+                pagingAnchor = nil
+                return
+            }
             if restorePagingAnchor(using: frames) { pagingAnchor = nil }
         }
     }
@@ -795,37 +799,8 @@ struct TranscriptLanded: PreferenceKey {
 @MainActor
 final class TranscriptScrollGeometry {
     var viewport = TranscriptViewport()
-    var frames: [String: TranscriptMessageFrame] = [:] {
-        didSet { if let waiter, frames[waiter.id]?.historyStart == waiter.historyStart { resumeWaiter() } }
-    }
-    /// The first loaded message's sequence. A reconnect's snapshot can replace the history, after which
-    /// a row waited for under the old one can never report from it.
-    var historyStart: Int? {
-        didSet { if let waiter, waiter.historyStart != historyStart { resumeWaiter() } }
-    }
+    var frames: [String: TranscriptMessageFrame] = [:]
     var readingAnchor: TranscriptReadingAnchor?
-    private var waiter: (id: String, historyStart: Int?, token: UUID, continuation: CheckedContinuation<Void, Never>)?
-
-    /// Returns once the row reports a frame from this history, or once that can't happen because the
-    /// history changed or the wait was cancelled.
-    func frame(of id: String, historyStart: Int?) async {
-        let token = UUID()
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                resumeWaiter()
-                waiter = (id, historyStart, token, continuation)
-                if self.historyStart != historyStart { resumeWaiter() }
-            }
-        } onCancel: {
-            Task { @MainActor in if self.waiter?.token == token { self.resumeWaiter() } }
-        }
-    }
-
-    private func resumeWaiter() {
-        let continuation = waiter?.continuation
-        waiter = nil
-        continuation?.resume()
-    }
 }
 
 struct PagingAnchor: Equatable {

@@ -449,6 +449,20 @@ struct TranscriptTests {
         try await harness.waitUntil { abs(harness.bottomGap) < 2 }
     }
 
+    /// A landing ends on the first quiet layout turn after its one scroll, even when its row never reports a
+    /// frame. Here none do: a run of unread messages near 8,000 points tall stops every row's frame reaching
+    /// the transcript, so a landing that waited for its New divider would leave the channel blank.
+    @MainActor
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func aLandingWhoseRowNeverReportsStillShowsItsRows() async throws {
+        let messages = (1...40).map { $0 > 9 ? catchUpTestMessage($0, repeats: 3) : catchUpTestMessage($0, sender: .user) }
+        let service = StubChannelIntelligence(availability: .unavailable(.deviceNotEligible))
+        let harness = try await TranscriptHarness(messages: messages, seenThrough: 9, height: 800,
+                                                  intelligence: service)
+        defer { await harness.close() }
+        try await harness.waitUntil { harness.rowsOpacity > 0 }
+    }
+
     /// A channel opening cold at its first unread message hides its rows only until the landing places
     /// them, then draws the divider at the top on that pass and never moves it. SwiftUI can leave each
     /// row's viewport frame stale after the long `scrollTo`, so only content positions show it placed.
@@ -698,22 +712,6 @@ struct TranscriptTests {
         try await harness.settled()
         let top = try #require(harness.frames["m20"]).rect.minY
         #expect(abs(top - TranscriptReveal.margin) <= 1, "m20's top at \(top)")
-    }
-
-    /// A reveal waits for its row's first frame from the history it paged. A reconnect's snapshot that
-    /// replaces that history ends the wait, so the transcript can't stay revealing with nothing to place.
-    @MainActor
-    @Test func aRevealsFrameWaitEndsWhenItsHistoryIsReplaced() async throws {
-        let geometry = TranscriptScrollGeometry()
-        geometry.historyStart = 1
-        var ended = false
-        let wait = Task { @MainActor in
-            await geometry.frame(of: "m20", historyStart: 1)
-            ended = true
-        }
-        defer { wait.cancel() }
-        geometry.historyStart = 61
-        try await waitUntil("the wait to end once its history is gone") { ended }
     }
 
     /// A request's notification can reveal a message that arrived while the channel was away. The store
