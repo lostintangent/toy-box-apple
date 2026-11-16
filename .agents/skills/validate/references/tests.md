@@ -44,6 +44,10 @@ in the iOS build.
 - On CI, it boots without system widget timelines, push and Apple Intelligence indexing. A
   runner's device is new, and that first-boot work starved the first suite's launch. A local
   simulator keeps them, because `bun run simulator` shares it.
+- On CI, between the build and the boot, it deletes every runtime image but the simulator's own and
+  prints what it deleted. The runner's image registers some runtimes twice, and CoreSimulator
+  re-adds those every ten minutes, unmounting a volume SimLaunchHost still has a library from,
+  which crashed SimLaunchHost and the simulator with it. A local run never deletes a runtime.
 - It shuts down the simulator only if it booted it. One that's already off, which a crash can
   cause, is noted rather than failing, so the run's own error is the one reported.
 

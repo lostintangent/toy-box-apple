@@ -11,7 +11,10 @@ type Simulator = {
     udid: string; name: string; state: string; isAvailable: boolean; availabilityError?: string;
     deviceTypeIdentifier: string;
 };
-type RuntimeImage = { runtimeIdentifier: string; build: string; state: string; runtimeBundlePath?: string };
+type RuntimeImage = {
+    identifier: string; runtimeIdentifier: string; build: string; state: string; deletable: boolean;
+    parentIdentifier?: string; runtimeBundlePath?: string;
+};
 
 /** The simulator with `udid` and the identifier of the runtime it runs. */
 async function device(udid: string) {
@@ -102,6 +105,34 @@ export async function shutDownMobileSimulator(udid: string) {
     await command(["xcrun", "simctl", "shutdown", udid], { env: mobileEnvironment });
 }
 
+/** The Mac's simulator runtime images, or none when simctl can't list them. */
+async function runtimeImages(): Promise<RuntimeImage[]> {
+    return Object.values(JSON.parse(await text(["xcrun", "simctl", "runtime", "list", "-j"],
+        { env: mobileEnvironment, allowFailure: true }) || "{}"));
+}
+
+/** Deletes every runtime image except the ones the simulator runs on and the images they patch, for a CI runner,
+ * whose runtimes no later step uses. Its image registers some runtimes twice, and CoreSimulator re-adds those
+ * every ten minutes, unmounting the volume each replaces while SimLaunchHost still has a library from it loaded.
+ * SimLaunchHost then crashes on its next load and takes every booted simulator with it. */
+export async function deleteUnusedSimulatorRuntimes(udid: string) {
+    const runtime = (await device(udid))?.runtime;
+    if (!runtime) throw new Error(`The simulator ${udid} is gone.`);
+    const images = await runtimeImages();
+    const used = images.filter(image => image.runtimeIdentifier === runtime);
+    const kept = new Set(used.flatMap(image => [image.identifier, image.parentIdentifier]));
+    const unused = images.filter(image => image.deletable && !kept.has(image.identifier));
+    const startedAt = performance.now();
+    // Keeps each image's MobileAsset, since simctl fails to delete an image whose asset another image still uses.
+    for (const image of unused) {
+        await command(["xcrun", "simctl", "runtime", "delete", image.identifier, "--keep-asset"],
+            { env: mobileEnvironment, quiet: true });
+    }
+    const names = unused.map(image => `${image.runtimeIdentifier.split(".").at(-1)} ${image.build}`);
+    console.log(`Deleted ${unused.length} runtime images the tests don't use in ${seconds(startedAt)}`
+        + (names.length ? `: ${names.join(", ")}.` : "."));
+}
+
 /** Whether the simulator is still booted with its runtime, so a suite that failed on it failed on its own. */
 export async function mobileSimulatorIsUp(udid: string) {
     const found = await device(udid);
@@ -140,9 +171,7 @@ export async function reportMobileSimulatorLoss(udid: string, since: SimulatorLo
     const found = await device(udid);
     const lines = [!found ? `The simulator ${udid} is gone.` : found.isAvailable ? `${found.name} is ${found.state}.`
         : `${found.name} is ${found.state} and unavailable: ${found.availabilityError}.`];
-    const images = await text(["xcrun", "simctl", "runtime", "list", "-j"],
-        { env: mobileEnvironment, allowFailure: true });
-    for (const image of Object.values<RuntimeImage>(JSON.parse(images || "{}"))) {
+    for (const image of await runtimeImages()) {
         if (image.runtimeIdentifier !== found?.runtime) continue;
         const mounted = image.runtimeBundlePath && existsSync(image.runtimeBundlePath) ? "mounted" : "unmounted";
         lines.push(`Its runtime image ${image.build} is ${image.state} and ${mounted}.`);
