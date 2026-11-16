@@ -27,7 +27,6 @@ struct ConversationTranscript: View {
     @ViewState private var scrollPosition: String?
     @ViewState private var visit = TranscriptVisit()
     @ViewState private var isUserScrolling = false
-    @ViewState var pendingJump: TranscriptJump?
     @ViewState private var requestAnnouncements = TranscriptRequestAnnouncements()
     @ViewState var catchUp: TranscriptCatchUp?
     @ViewState private var rowBuilder = TranscriptRowBuilder()
@@ -89,10 +88,11 @@ struct ConversationTranscript: View {
               isConnected: store.phase.isConnected)
     }
 
-    private var pagingRestoreTarget: PagingRestoreTarget? {
-        guard let anchor = pagingAnchor, !store.isLoadingOlder,
-              let oldest = store.messages.first?.sequence, oldest < anchor.oldestSequence else { return nil }
-        return .init(id: anchor.id, oldestSequence: oldest)
+    /// Whether the older page has landed above the reader's row and their place isn't back yet.
+    private var isRestoringPage: Bool {
+        guard let anchor = pagingAnchor, !store.isLoadingOlder, let oldest = store.messages.first?.sequence
+        else { return false }
+        return oldest < anchor.oldestSequence
     }
 
     var body: some View {
@@ -182,11 +182,11 @@ struct ConversationTranscript: View {
                     await reveal(sequence: request.sequence, using: proxy)
                 }
                 .onChange(of: store.messages.first?.sequence) { _, start in geometry.historyStart = start }
+                .task(id: isRestoringPage) { await settlePagingRestore(using: proxy) }
                 .onChange(of: read.isLooking) { _, looking in visit.look(looking, hasLanded: hasLanded) }
                 .onChange(of: read.sequence, initial: true) { _, sequence in
                     if let sequence, visit.read(through: sequence, in: store) { catchUp = nil }
                 }
-                .task(id: pagingRestoreTarget) { await settlePagingRestore(using: proxy) }
                 // Owned here rather than by the card, which the lazy stack drops when it scrolls away.
                 .task(id: catchUp?.session.generation) { await catchUp?.session.run(using: intelligence) }
         }
@@ -255,32 +255,23 @@ struct ConversationTranscript: View {
         .onScrollGeometryChange(for: TranscriptViewport.self) { TranscriptViewport($0) } action: { old, new in
             layoutTurns.moved = true
             // Keyboard scrolling has no scroll phase, so any move the transcript didn't make releases the card.
-            if catchUp?.isPinned == true, hasLanded, pendingJump == nil, abs(new.top - old.top) > 0.5,
+            if catchUp?.isPinned == true, hasLanded, abs(new.top - old.top) > 0.5,
                new.contentHeight == old.contentHeight, new.height == old.height {
                 catchUp?.isPinned = false
             }
             let update = new.update(after: old, wasAtBottom: isAtBottom,
                                     canFollow: hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling
-                                        && catchUp?.holdsLanding != true && !find.isPresented,
-                                    isJumping: pendingJump != nil)
+                                        && catchUp?.holdsLanding != true && !find.isPresented)
             geometry.viewport = new
             showPlacedOpening()
             followReaderWhilePaging()
             pointer.contentDidMove(byReader: isUserScrolling || !isAtBottom || !update.isAtBottom)
             if isAtBottom != update.isAtBottom { isAtBottom = update.isAtBottom }
-            let jump = pendingJump
-            if update.landsJump { pendingJump = nil }
-            switch update.follow {
-            case .latest:
-                if window.holdsResizePin { break }
+            if update.follows && !window.holdsResizePin {
                 // Floating controls and composer growth change only the unobscured height.
                 let animation: Animation? = reduceMotion || old.contentHeight != new.contentHeight
                     ? nil : .easeOut(duration: 0.2)
                 scrollToLatest(using: proxy, animation: animation)
-            case .jump:
-                if let jump { proxy.scrollTo(jump.id, anchor: jump.anchor) }
-            case nil:
-                break
             }
             if hasLanded && new.top < 32 && old.top >= 32 && !isRevealing {
                 Task { await loadOlder() }
@@ -299,7 +290,7 @@ struct ConversationTranscript: View {
             if isUserScrolling != scrolling { isUserScrolling = scrolling }
             if phase == .tracking || phase == .interacting { catchUp?.isPinned = false }
             // Before the page lands, the anchor follows the reader instead.
-            if (phase == .tracking || phase == .interacting) && pagingRestoreTarget != nil {
+            if (phase == .tracking || phase == .interacting) && isRestoringPage {
                 pagingAnchor = nil
             }
         }
@@ -343,9 +334,12 @@ struct ConversationTranscript: View {
                                              return
                                          }
                                          expandedMessageIds.remove(id)
-                                         Task { @MainActor in
-                                             await Task.yield()
-                                             jump(to: id, anchor: .top, using: proxy)
+                                         // Its top stays put as it shrinks, so the reader moves up to it
+                                         // rather than past it. A move clears following first, so the
+                                         // shrink can't pull the transcript back to its end.
+                                         if let frame = frames[id],
+                                            !window.restoreReadingBottom(frame.rect.height, of: frame) {
+                                             isAtBottom = false
                                          }
                                      })
                     .equatable()
@@ -428,7 +422,7 @@ struct ConversationTranscript: View {
 
     /// When a resize should keep the newest message in place, as the geometry action's follow does.
     private var followsLatest: Bool {
-        isAtBottom && hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling && pendingJump == nil
+        isAtBottom && hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling
             && catchUp?.holdsLanding != true && !find.isPresented
     }
 
@@ -498,23 +492,7 @@ struct ConversationTranscript: View {
     /// Before landing, clears an anchor a user scroll left, which would pull the viewport back toward it.
     func scrollToLatest(using proxy: ScrollViewProxy, animation: Animation? = nil) {
         scrollPosition = nil
-        pendingJump = nil
         withAnimation(animation) { proxy.scrollTo("transcript-end", anchor: .bottom) }
-    }
-
-    /// A programmatic scroll applies on a later layout pass. A resize that arrives first while the
-    /// transcript is at its bottom re-applies the jump rather than following the latest message, which
-    /// lands on the bottom anyway when the target is already on the last screen. A jump that never
-    /// moves the viewport stops guarding once it has had time to apply.
-    func jump(to id: String, anchor: UnitPoint, using proxy: ScrollViewProxy) {
-        let jump = TranscriptJump(id: id, anchor: anchor)
-        pendingJump = jump
-        scrollPosition = nil
-        proxy.scrollTo(id, anchor: anchor)
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(500))
-            if pendingJump == jump { pendingJump = nil }
-        }
     }
 
     /// Hides the rows of a transcript opening on its first unread message until the first layout
@@ -545,43 +523,27 @@ struct ConversationTranscript: View {
         opening.decidedCatchUp = opening.plan.map { makeCatchUp(unreadAfter: $0.unreadAfter) == nil } ?? true
     }
 
-    /// Lands on the row, moving only if it isn't in place already. A jump converges over several
-    /// layout passes, so the landing ends only after a run loop turn in which nothing moved. Until
-    /// then, those passes can't count as the reader scrolling, and following the bottom can't
-    /// override the landing.
-    private func settleLanding(on row: TranscriptRow, using proxy: ScrollViewProxy) async {
-        var jumps = 0
-        landing: while await layoutTurns.settled() {
-            let step = TranscriptLanding.step(on: row, frames: placedFrames, viewport: viewport,
-                                             isColdOpening: opening.rowID == nil, jumps: jumps,
-                                             hasPendingJump: pendingJump != nil)
-            switch step {
-            case .waitForJump:
-                // Not applied yet, or it found nothing to move and stops guarding shortly.
-                try? await Task.sleep(for: .milliseconds(16))
-            case .placeColdOpening:
-                // Cold lazy rows can report their old bottom before measuring the unread run.
-                scrollPosition = nil
-                proxy.scrollTo(row.id, anchor: .top)
-                jumps += 1
-            case .correctPosition:
-                jumps += 1
-                jump(to: row.id, anchor: .top, using: proxy)
-            case .settled:
-                break landing
-            }
+    /// Lands on the row in at most one scroll, the way a reveal places its message: natively from its
+    /// New divider's frame, so no later pass can move it first, after bringing in by identity a row the
+    /// lazy stack hasn't built. A row already in place, as a seeded opening's first layout leaves it,
+    /// stays put.
+    private func land(on row: TranscriptRow, using proxy: ScrollViewProxy) async {
+        let id = "divider-\(row.id)"
+        let historyStart = store.messages.first?.sequence
+        geometry.historyStart = historyStart
+        if geometry.frames[id]?.historyStart != historyStart {
+            scrollPosition = nil
+            proxy.scrollTo(row.id, anchor: .top)
+            await geometry.frame(of: id, historyStart: historyStart)
         }
-        // A no-move jump leaves the initial bottom anchor active. End it before a summary grows.
-        guard !Task.isCancelled, opening.seededRowID == nil, viewport.bottomGap < 1 else { return }
-        scrollToLatest(using: proxy)
-        _ = await layoutTurns.settled()
-    }
-
-    private func settleLatestLanding(using proxy: ScrollViewProxy) async {
-        // A cold transcript can start its task before its lazy rows have measured the end.
-        guard await layoutTurns.settled() else { return }
-        scrollToLatest(using: proxy)
-        _ = await layoutTurns.settled()
+        guard !Task.isCancelled, let frame = geometry.frames[id], frame.historyStart == historyStart else { return }
+        if !TranscriptLanding.isPlaced(row, frames: placedFrames, viewport: viewport) {
+            let gap = transcriptRowGaps(rows)[row.id] ?? TranscriptSpacing.run
+            _ = window.restoreReadingBottom(gap + frame.rect.height, of: frame)
+        } else if opening.seededRowID == nil, viewport.bottomGap < 1 {
+            // A short tail rests on the initial bottom anchor. End it before a summary grows.
+            scrollToLatest(using: proxy)
+        }
     }
 
     private func land(using proxy: ScrollViewProxy) async {
@@ -598,11 +560,11 @@ struct ConversationTranscript: View {
             if catchUp == nil { showPlacedOpening() }
             if let first = rows.first(where: { $0.id == plan.rowID }) {
                 landsAtLatest = false
-                await settleLanding(on: first, using: proxy)
-                guard !Task.isCancelled, !isRevealing else { return }
-            } else { await settleLatestLanding(using: proxy) }
+                await land(on: first, using: proxy)
+            } else { scrollToLatest(using: proxy) }
         } else {
-            await settleLatestLanding(using: proxy)
+            // A transcript can start landing before its lazy rows have measured the end.
+            scrollToLatest(using: proxy)
         }
         guard !Task.isCancelled, !isRevealing else { return }
         await Task.yield()
@@ -690,7 +652,7 @@ struct ConversationTranscript: View {
     /// load, including a scroll phase the triggering wheel notch reports after the load starts, moves
     /// that place rather than abandoning it.
     private func followReaderWhilePaging() {
-        guard let anchor = pagingAnchor, pagingRestoreTarget == nil else { return }
+        guard let anchor = pagingAnchor, !isRestoringPage else { return }
         guard let top = viewport.topVisibleFrame(in: pagingFrames), top.frame.historyStart == anchor.oldestSequence
         else { return }
         let current = PagingAnchor(id: top.id, bottom: top.frame.rect.maxY, oldestSequence: anchor.oldestSequence)
@@ -705,9 +667,9 @@ struct ConversationTranscript: View {
     /// pass, so a frame or two, but only while rows above change height.
     private func holdReadingPlace(in frames: [String: TranscriptMessageFrame]) {
         // Anything else that moves the scroll position owns it outright, so the hold stands down while
-        // following the bottom, landing, paging, jumping or revealing. New code that scrolls the
+        // following the bottom, landing, paging or revealing. New code that scrolls the
         // transcript needs to switch it off here too.
-        let holds = hasLanded && pagingAnchor == nil && pendingJump == nil && !isRevealing
+        let holds = hasLanded && pagingAnchor == nil && !isRevealing
             && (!isAtBottom || catchUp?.holdsLanding == true)
         var shift: CGFloat = 0
         if holds, let anchor = geometry.readingAnchor, let frame = frames[anchor.id] {
@@ -722,59 +684,31 @@ struct ConversationTranscript: View {
         geometry.readingAnchor = holds ? viewport.readingAnchor(in: frames, scrolledBy: shift) : nil
     }
 
+    /// Puts the reader's row back where it was once the older page lands above it, from each frame change
+    /// while the lazy stack measures the page. True once it's there.
     @discardableResult
     private func restorePagingAnchor(using frames: [String: TranscriptMessageFrame]) -> Bool {
-        guard let anchor = pagingAnchor, !store.isLoadingOlder,
-              let oldest = store.state?.messages.first?.sequence, oldest < anchor.oldestSequence,
+        guard let anchor = pagingAnchor, isRestoringPage, let oldest = store.messages.first?.sequence,
               let frame = frames[anchor.id], frame.historyStart == oldest else { return false }
         return window.restoreReadingBottom(anchor.bottom, of: frame)
     }
 
-    /// Preference-driven correction is immediate but can be overridden by a deferred `scrollTo` or
-    /// lazy-layout pass without a further frame change, so this bounded loop re-applies it until the
-    /// anchor holds still, then releases read marking and follow.
+    /// Hands the reader's place to `holdReadingPlace` after the first layout turn in which nothing moved
+    /// and the row is back, so the hold starts once the page's rows stop measuring. A native scroll
+    /// leaves row frames where they were, so the hold can't take over from the first correction.
     private func settlePagingRestore(using proxy: ScrollViewProxy) async {
-        guard let target = pagingRestoreTarget else { return }
-        let deadline = Date.now.addingTimeInterval(2)
-        let displayTurns = TranscriptLayoutTurns()
-        var alignedSince: Date?
-        var requestedMaterialization = false
-        while let anchor = pagingAnchor, pagingRestoreTarget == target, Date.now < deadline {
-            // Projection can agree before AppKit draws the correction or SwiftUI applies a queued jump.
-            guard await displayTurns.settled() else { return }
-            if let frame = frames[anchor.id], frame.historyStart == target.oldestSequence {
-                let nativeIsAligned = restorePagingAnchor(using: frames)
-                let positioned = TranscriptCoordinates.viewportFrame(frame, top: window.viewportTop ?? viewport.top)
-                if TranscriptCoordinates.isRestored(positioned, bottom: anchor.bottom, nativeIsAligned: nativeIsAligned) {
-                    // A reader still scrolling takes over as soon as their place is restored.
-                    if isUserScrolling { break }
-                    let since = alignedSince ?? .now
-                    alignedSince = since
-                    // A later lazy-layout correction can replace the first matching offset.
-                    if Date.now.timeIntervalSince(since) >= 0.1 { break }
-                } else {
-                    alignedSince = nil
-                }
-            } else {
-                alignedSince = nil
-                if !requestedMaterialization {
-                    let row = rows.first { $0.messages.contains { $0.id == anchor.id } }
-                    proxy.scrollTo(row?.id ?? anchor.id, anchor: .top)
-                    requestedMaterialization = true
-                }
-            }
-            do { try await Task.sleep(for: .milliseconds(16)) }
-            catch { return }
+        guard let anchor = pagingAnchor, isRestoringPage, let historyStart = store.messages.first?.sequence
+        else { return }
+        if frames[anchor.id]?.historyStart != historyStart {
+            // The page can push the reader's row out of the lazy stack, so it's brought in by identity first.
+            let row = rows.first { $0.messages.contains { $0.id == anchor.id } }
+            proxy.scrollTo(row?.id ?? anchor.id, anchor: .top)
+            await geometry.frame(of: anchor.id, historyStart: historyStart)
         }
-        guard !Task.isCancelled, pagingRestoreTarget == target else { return }
-        pagingAnchor = nil
+        while isRestoringPage, await layoutTurns.settled() {
+            if restorePagingAnchor(using: frames) { pagingAnchor = nil }
+        }
     }
-}
-
-struct TranscriptJump: Equatable {
-    var id: String
-    var anchor: UnitPoint
-    var token = UUID()
 }
 
 /// Where a transcript that's already loaded when it appears opens. Its body resolves this once,
@@ -813,7 +747,7 @@ private final class TranscriptLayoutTurns {
         busyTurns = 0
         repeat {
             await withCheckedContinuation { continuation in
-                // A landing cancelled while it waits is replaced by the next, which ends its wait.
+                // A wait cancelled while it waits is replaced by the next, which ends it.
                 waiter?.resume()
                 waiter = continuation
                 guard observer == nil else { return }
@@ -899,11 +833,6 @@ struct PagingAnchor: Equatable {
     /// The anchor row's bottom edge. A prepended page can merge the row into an earlier run and remove
     /// its header, so its top can move while its content and everything below stay put.
     var bottom: CGFloat
-    var oldestSequence: Int
-}
-
-private struct PagingRestoreTarget: Hashable {
-    var id: String
     var oldestSequence: Int
 }
 
