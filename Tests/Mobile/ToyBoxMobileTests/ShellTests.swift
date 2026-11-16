@@ -273,6 +273,81 @@ struct ShellTests {
         }
     }
 
+    @Test func reopeningAndRelaunchingFoldedReturnToWhereYouWere() async throws {
+        try await withDefaults { defaults in
+            @MainActor func launch() async -> (AppModel, UIWindow) {
+                let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                     defaults: defaults, session: fixtureSession())
+                await model.refreshCatalog()
+                let window = UIWindow(frame: .zero)
+                window.rootViewController = UIHostingController(
+                    rootView: RootView(handoff: ChannelHandoffNavigation()).environment(model).environment(\.scenePhase, .inactive))
+                window.traitOverrides.horizontalSizeClass = .compact
+                window.frame = CGRect(x: 0, y: 0, width: 466, height: 678)
+                window.rootViewController?.view.frame = window.bounds
+                window.isHidden = false
+                return (model, window)
+            }
+            @MainActor func quit(_ model: AppModel, _ window: UIWindow) {
+                window.isHidden = true
+                model.setScenePhase(.background)
+            }
+            @MainActor func expectShown(_ model: AppModel, in window: UIWindow, _ step: String) async throws {
+                try await expectColumns(["first"], in: window, "\(step) shows the channel.")
+                let target = try #require(model.target("first"))
+                try await waitUntil("\(step) has \(target) on screen", in: window) {
+                    model.visibleChannel == target && model.screenEntity == .channel(target)
+                }
+            }
+            @MainActor func open(_ model: AppModel, in window: UIWindow, _ step: String) async throws {
+                try await expectColumns(["Toy Box"], in: window, "\(step) starts at the list.")
+                let row = try #require(MobileAutomationTree(windows: [window]).matching("first").first)
+                #expect(row.activate(in: [window]), "\(step) taps the row.")
+                try await expectShown(model, in: window, step)
+            }
+            // Back pops the folded split view's one navigation stack, and clears the list's selection.
+            @MainActor func back(_ model: AppModel, in window: UIWindow, _ step: String) async throws {
+                @MainActor func stacks(in controller: UIViewController) -> [UINavigationController] {
+                    [controller as? UINavigationController].compactMap(\.self) + controller.children.flatMap(stacks)
+                }
+                let root = try #require(window.rootViewController)
+                let stack = try #require(stacks(in: root).first { $0.viewControllers.count > 1 })
+                stack.popViewController(animated: true)
+                try await expectColumns(["Toy Box"], in: window, "\(step) returns to the list.")
+                try await waitUntil("\(step) has no channel on screen", in: window) {
+                    model.visibleChannel == nil && model.screenEntity == nil
+                }
+                try await waitUntil("\(step) settles with nothing selected", in: window) { model.selection == nil }
+            }
+
+            var (model, window) = await launch()
+            try await open(model, in: window, "Opening")
+            try await back(model, in: window, "Going back")
+            try await open(model, in: window, "Reopening")
+            quit(model, window)
+
+            (model, window) = await launch()
+            try await expectShown(model, in: window, "Relaunching in the channel")
+            try await back(model, in: window, "Going back after relaunching")
+            quit(model, window)
+
+            (model, window) = await launch()
+            try await expectColumns(["Toy Box"], in: window, "Relaunching after going back returns to the list.")
+            #expect(model.selection == nil && model.visibleChannel == nil)
+            // The widget's list clears the selection before the column moves, and still forgets the channel.
+            try await open(model, in: window, "Opening after relaunching")
+            await model.openExternalURL(NeedsYouSnapshot.mainURL)
+            try await expectColumns(["Toy Box"], in: window, "The widget's list returns to the list.")
+            #expect(defaults.dictionary(forKey: "lastChannelByServer")?[model.serverURL] == nil)
+            quit(model, window)
+
+            (model, window) = await launch()
+            try await expectColumns(["Toy Box"], in: window, "Relaunching after the widget's list returns to the list.")
+            #expect(model.selection == nil)
+            quit(model, window)
+        }
+    }
+
     @Test func aCardInTheListReportsItsFrameOnlyWhenItResizesNotAsTheListScrolls() async throws {
         let card = ResizingCard()
         let list = List {
@@ -1593,6 +1668,7 @@ struct ShellTests {
             let model = AppModel(arguments: ["--server", "https://first.example"], environment: [:],
                                  defaults: defaults, session: fixtureSession())
             model.selectedChannelID = "first"
+            model.showsSelection = true
             let previousStore = model.selectedStore
             let previousInteraction = model.interaction(for: "first")
             try await model.replaceServer(with: "https://second.example")
@@ -1668,7 +1744,7 @@ struct ShellTests {
             let firstDraft = model.composerSession(for: firstStore).draft
             drafts.append(firstDraft)
             firstDraft.text = "Draft for the first server"
-            model.visibleChannelID = firstStore.id
+            model.showsSelection = true
             model.setScenePhase(.active)
             #expect(firstStore.isTrying)
             try await model.replaceServer(with: secondAddress)
@@ -1849,9 +1925,9 @@ struct ShellTests {
             await model.refreshCatalog()
             model.selectedChannelID = "first"
             let store = try #require(model.selectedStore)
-            model.visibleChannelID = "first"
+            model.showsSelection = true
             let first = try #require(model.target("first"))
-            model.screenEntity = .channel(first)
+            model.shownEntity = .channel(first)
             @MainActor func shownChannel() -> ChannelStore? { if case .channel(let shown) = model.onScreen { shown } else { nil } }
             #expect(model.onScreen == nil)
 
@@ -1861,14 +1937,14 @@ struct ShellTests {
             model.cover = .settings
             #expect(model.onScreen == nil)
             model.cover = nil
-            model.visibleChannelID = "second"
+            model.showsSelection = false
             #expect(model.onScreen == nil)
-            model.visibleChannelID = "first"
-            model.screenEntity = .channel(try #require(model.target("second")))
+            model.showsSelection = true
+            model.shownEntity = .channel(try #require(model.target("second")))
             #expect(model.onScreen == nil)
 
             let artifact = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: "Plan")
-            model.screenEntity = .artifact(first, artifactID: artifact.id)
+            model.shownEntity = .artifact(first, artifactID: artifact.id)
             #expect(model.onScreen == nil)
             let session = model.artifactSession(for: store)
             defer { session.close() }
@@ -1884,8 +1960,7 @@ struct ShellTests {
             await second.refresh()
             let elsewhere = try #require(second.target("first"))
             model.selection = elsewhere
-            model.visibleChannel = elsewhere
-            model.screenEntity = .channel(elsewhere)
+            model.shownEntity = .channel(elsewhere)
             #expect(shownChannel()?.target == elsewhere)
 
             model.setScenePhase(.background)
@@ -2088,10 +2163,7 @@ extension AppModel {
         set { selection = newValue.flatMap(target) }
     }
 
-    var visibleChannelID: String? {
-        get { visibleChannel?.channelID }
-        set { visibleChannel = newValue.flatMap(target) }
-    }
+    var visibleChannelID: String? { visibleChannel?.channelID }
 
     func interaction(for channelID: String) -> ChannelInteraction { interaction(for: target(channelID)!) }
 }

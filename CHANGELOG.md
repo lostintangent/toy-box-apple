@@ -22,6 +22,7 @@
 
 - Swiping a team member, artifact, routine or bookmark now shows simple round buttons, matching your channel list.
 - Images in a channel now show as soon as you open it, even ones that arrived while you were away, instead of staying blank.
+- Relaunching Toy Box now brings you back to where you left off: the channel you were reading, or your list of channels if you'd gone back to it.
 
 ## iPhone 0.1.41
 

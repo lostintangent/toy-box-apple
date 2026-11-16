@@ -24,10 +24,16 @@ final class AppModel {
     private(set) var isActive = false
     private(set) var selectedStore: ChannelStore?
     private(set) var isResolvingNavigation = false
-    /// The channel screen in front, on its server.
-    var visibleChannel: ChannelTarget?
+    /// Whether the navigation shows the selected channel, which `RootView` reads from its split view.
+    var showsSelection = false {
+        didSet { rememberVisibleChannel() }
+    }
+    /// The channel on screen, on its server: the selection, while the navigation shows it.
+    var visibleChannel: ChannelTarget? { showsSelection ? selection : nil }
+    /// What a channel screen last reported showing.
+    var shownEntity: ScreenEntity?
     /// What the visible channel screen shows, which Siri may read while it's in front.
-    var screenEntity: ScreenEntity?
+    var screenEntity: ScreenEntity? { shownEntity?.channel == visibleChannel ? shownEntity : nil }
     var cover: Cover?
     var navigationNotice: String?
     /// The list's chosen channel, on its server.
@@ -42,13 +48,16 @@ final class AppModel {
             holdsSelectedConnection = false
             selectedStore = selection.flatMap { catalogs.first(at: $0.serverURL)?.channel(id: $0.channelID) }
             connectSelection()
-            rememberSelection()
+            rememberVisibleChannel()
         }
     }
 
     @ObservationIgnored private let connections = ChannelConnections()
     @ObservationIgnored private(set) var isForeground = false
     @ObservationIgnored private var holdsSelectedConnection = false
+    /// The channel on screen as it was last remembered, so leaving it still knows its server once the
+    /// selection has cleared.
+    @ObservationIgnored private var rememberedVisibleChannel: ChannelTarget?
     @ObservationIgnored private let defaults: UserDefaults
     /// The first server, so a change to it clears what belonged to the last one.
     @ObservationIgnored private var first: ChannelCatalogStore?
@@ -175,11 +184,9 @@ final class AppModel {
     private func close(_ catalog: ChannelCatalogStore) {
         let server = ChannelTarget.normalizedServer(catalog.api.baseURL.absoluteString)
         func belongs(_ store: ChannelStore) -> Bool { catalog.existingChannel(id: store.id) === store }
+        // Leaving a server keeps the channel you were in on it.
+        if rememberedVisibleChannel?.serverURL == server { rememberedVisibleChannel = nil }
         if selection?.serverURL == server { selection = nil }
-        if visibleChannel?.serverURL == server {
-            visibleChannel = nil
-            screenEntity = nil
-        }
         for (target, interaction) in interactions where target.serverURL == server {
             interaction.isArtifactViewerPresented = false
             interactions[target] = nil
@@ -255,9 +262,7 @@ final class AppModel {
             selection = catalog.target(id)
         } else {
             navigationNotice = "The channel you last opened is no longer available."
-            var selections = rememberedSelections
-            selections[server] = nil
-            defaults.set(selections, forKey: "lastChannelByServer")
+            remember(nil, on: server)
         }
     }
 
@@ -490,11 +495,22 @@ final class AppModel {
         defaults.dictionary(forKey: "lastChannelByServer") as? [String: String] ?? [:]
     }
 
-    /// Each server's last opened channel, which launch restores on the saved server.
-    private func rememberSelection() {
-        guard let selection else { return }
+    /// Going back to the list, however the channel closes, forgets it, so a relaunch returns to where
+    /// you were.
+    private func rememberVisibleChannel() {
+        guard visibleChannel != rememberedVisibleChannel else { return }
+        if let visibleChannel {
+            remember(visibleChannel.channelID, on: visibleChannel.serverURL)
+        } else if let rememberedVisibleChannel {
+            remember(nil, on: rememberedVisibleChannel.serverURL)
+        }
+        rememberedVisibleChannel = visibleChannel
+    }
+
+    /// The channel you're in on each server, which launch restores on the saved server.
+    private func remember(_ channelID: String?, on server: String) {
         var selections = rememberedSelections
-        selections[selection.serverURL] = selection.channelID
+        selections[server] = channelID
         defaults.set(selections, forKey: "lastChannelByServer")
     }
 }

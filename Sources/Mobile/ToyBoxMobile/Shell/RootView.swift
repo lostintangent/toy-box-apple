@@ -96,7 +96,8 @@ struct RootView: View {
                 model.selection = created.target
             }
         }
-        .onChange(of: model.selection) { _, selection in
+        .onChange(of: showsSelection, initial: true) { _, shows in model.showsSelection = shows }
+        .onChange(of: model.selection, initial: true) { _, selection in
             if selection != nil { handoff.cancel() }
             preferredCompactColumn = selection == nil ? .sidebar : .detail
             if selection == nil {
@@ -167,6 +168,11 @@ struct RootView: View {
             Text("Try again.")
         }
         .environment(model.following)
+    }
+
+    /// The split view shows the selected channel beside the list, and folded once its column is in front.
+    private var showsSelection: Bool {
+        handoff.phase == .idle && (sizeClass != .compact || preferredCompactColumn == .detail)
     }
 
     private var channelNavigation: some View {
