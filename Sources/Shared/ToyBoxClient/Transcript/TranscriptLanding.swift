@@ -24,8 +24,10 @@ public enum TranscriptLanding {
     /// row builder draws only when the unread boundary is in the loaded page. Otherwise it opens at the end.
     public static func opening(unreadAfter: Int?, rows: [TranscriptRow]) -> Opening? {
         guard let unreadAfter, let index = rows.firstIndex(where: { $0.divider?.unread == true }) else { return nil }
-        // A short tail opens at the bottom, where its first unread row is already on the last screen.
-        return Opening(rowID: rows[index].id, unreadAfter: unreadAfter, seeds: rows.count - index > 8)
+        // A short tail opens at the bottom, where its first unread message is already on the last
+        // screen. Messages count, not rows, since one sender's run is a single row.
+        let unread = rows[index...].reduce(0) { $0 + $1.messages.count }
+        return Opening(rowID: rows[index].id, unreadAfter: unreadAfter, seeds: unread > 8)
     }
 
     public static func step(on row: TranscriptRow, frames: [String: TranscriptMessageFrame],

@@ -308,7 +308,7 @@ struct ConversationTranscript: View {
 
     private func conversationRows(proxy: ScrollViewProxy) -> some View {
         let rows = rows
-        let gaps = transcriptRowGaps(rows)
+        let items = TranscriptItem.items(rows)
         let channel = TranscriptRowChannel(agents: store.roster, id: store.id,
                                            historyStart: store.messages.first?.sequence ?? 0, api: store.api)
         let statusReactions = store.statusReactions
@@ -319,8 +319,10 @@ struct ConversationTranscript: View {
                                                       isConnected: store.phase.isConnected)
         return LazyVStack(alignment: .leading, spacing: 0) {
             historyHeader
-            ForEach(rows) { row in
-                TranscriptRowContent(row: row, channel: channel, statusReactions: statusReactions,
+            // One lazy child per message, so a long run from one sender is never one child too tall
+            // for the stack's estimate, and any message can be landed on, revealed or read.
+            ForEach(items) { item in
+                TranscriptRowContent(item: item, channel: channel, statusReactions: statusReactions,
                                      highlightedSequence: revealer.highlightedSequence, catchUp: catchUp, store: store,
                                      requestChoices: requestChoices,
                                      expandedMessageIds: expandedMessageIds,
@@ -346,7 +348,8 @@ struct ConversationTranscript: View {
                                          }
                                      })
                     .equatable()
-                    .padding(.top, gaps[row.id] ?? TranscriptSpacing.run)
+                    .padding(.top, item.order == 0 ? TranscriptSpacing.run : item.spacing)
+                    .id(item.id)
             }
             let outgoing = store.sending
             let sendingDividers = TranscriptRowBuilder.pendingDividers(outgoing.map(\.message),
@@ -619,7 +622,7 @@ struct ConversationTranscript: View {
         geometry.historyStart = historyStart
         if geometry.frames[id]?.historyStart != historyStart {
             scrollPosition = nil
-            proxy.scrollTo(row.id, anchor: .top)
+            proxy.scrollTo(lazyChildID(of: message.id), anchor: .center)
             await geometry.frame(of: id, historyStart: historyStart)
         }
         guard !Task.isCancelled, let frame = geometry.frames[id], frame.historyStart == historyStart else { return }
@@ -627,6 +630,14 @@ struct ConversationTranscript: View {
         _ = window.restoreReadingBottom(top + frame.rect.height, of: frame)
         hasLanded = true
         isRevealing = false
+    }
+
+    /// The lazy child that builds a message: its own, or its system group's. A scroll that only builds
+    /// it centers it, so the stack's estimates for the rows above can't leave it just out of view.
+    private func lazyChildID(of messageID: String) -> String {
+        let row = rows.first { $0.messages.contains { $0.id == messageID } }
+        if let row, case .system = row.content { return row.id }
+        return messageID
     }
 
     func loadOlder() async {
@@ -717,8 +728,7 @@ struct ConversationTranscript: View {
             } else {
                 alignedSince = nil
                 if !requestedMaterialization {
-                    let row = rows.first { $0.messages.contains { $0.id == anchor.id } }
-                    proxy.scrollTo(row?.id ?? anchor.id, anchor: .top)
+                    proxy.scrollTo(lazyChildID(of: anchor.id), anchor: .center)
                     requestedMaterialization = true
                 }
             }

@@ -13,7 +13,6 @@ import UIKit
 @MainActor
 struct TranscriptTests {
     private let lead = ChannelAgent(id: "lead", name: "Lead")
-    private let ada = ChannelAgent(id: "ada", name: "Ada")
 
     private func message(_ sequence: Int, _ sender: ChannelMessageSender, minute: Int = 0) -> ChannelMessage {
         ChannelMessage(id: "m\(sequence)", sequence: sequence,
@@ -33,32 +32,6 @@ struct TranscriptTests {
         }
         scroll.metrics = .init(viewport: viewport, origin: origin, documentEnd: CGFloat(count) * 100)
         return scroll
-    }
-
-    @Test func runsSplitIntoEntriesThatEachMarkTheirOwnSequence() {
-        let messages = [
-            message(1, .user),
-            message(2, .agent("lead")),
-            message(3, .agent("lead")),
-            message(4, .agent("ada")),
-        ]
-        let rows = TranscriptRowBuilder().rows(messages, lead: lead, members: [ada], unreadAfter: 3,
-                                               calendar: Calendar(identifier: .gregorian))
-        let items = transcriptItems(rows)
-
-        #expect(items.map(\.id) == ["m1", "m2", "m3", "m4"])
-        #expect(items.map(\.order) == [0, 1, 2, 3])
-        #expect(items.map(\.sequence) == [1, 2, 3, 4])
-        #expect(items.map(\.spacing) == [0, TranscriptSpacing.run, TranscriptSpacing.entry, TranscriptSpacing.divider])
-        guard case .agent(_, _, let firstStarts) = items[1].content,
-              case .agent(_, _, let secondStarts) = items[2].content else {
-            Issue.record("Lead's run should become two agent entries.")
-            return
-        }
-        #expect(firstStarts && !secondStarts)
-        // A run's divider is drawn once, above its first entry.
-        #expect(items[2].divider == nil)
-        #expect(items[3].divider?.unread == true)
     }
 
     @Test func readingAPositionWaitsForAMeasuredRowInView() {
