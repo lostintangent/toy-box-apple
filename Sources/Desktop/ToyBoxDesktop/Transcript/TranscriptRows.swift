@@ -19,37 +19,38 @@ struct TranscriptRowChannel: Equatable {
     }
 }
 
-/// One transcript row. It compares only what it renders, so the rows a new message doesn't touch
-/// skip their bodies, and its actions are ignored since they only call back into the transcript.
+/// One lazy child of the transcript: a user message, one message of an agent's run, or a system group.
+/// It compares only what it renders, so the items a new message doesn't touch skip their bodies, and
+/// its actions are ignored since they only call back into the transcript.
 struct TranscriptRowContent: View, @MainActor Equatable {
-    let row: TranscriptRow
+    let item: TranscriptItem
     let channel: TranscriptRowChannel
-    /// The looking and working reactions on this row's messages, by sequence.
+    /// The looking and working reactions on this item's messages, by sequence.
     let statusReactions: [Int: [ChannelReaction]]
-    /// The highlighted sequence, when it's one of this row's messages.
+    /// The highlighted sequence, when it's one of this item's messages.
     let highlightedSequence: Int?
     let findHighlights: [Int: TranscriptFindHighlight]
-    /// The catch-up summary, for the row under the New divider that shows it.
+    /// The catch-up summary, for the item under the New divider that shows it.
     let catchUp: TranscriptCatchUp?
     let store: ChannelStore
-    /// The pending request's suggested replies, when they're in this row.
+    /// The pending request's suggested replies, when they're in this item.
     let requestChoices: TranscriptRequestChoices?
-    /// This row's expanded messages.
+    /// This item's expanded messages.
     let expandedMessageIds: Set<String>
-    /// This row's bookmarked sequences.
+    /// This item's bookmarked sequences.
     let bookmarks: Set<Int>
     /// Whether bookmarks can change.
     let isConnected: Bool
     let onSetExpanded: (String, Bool) -> Void
     @Environment(ChannelInteraction.self) private var interaction
 
-    init(row: TranscriptRow, channel: TranscriptRowChannel, statusReactions: [Int: [ChannelReaction]],
+    init(item: TranscriptItem, channel: TranscriptRowChannel, statusReactions: [Int: [ChannelReaction]],
          highlightedSequence: Int?, catchUp: TranscriptCatchUp?, store: ChannelStore,
          requestChoices: TranscriptRequestChoices? = nil,
          expandedMessageIds: Set<String>, findHighlights: [Int: TranscriptFindHighlight] = [:],
          bookmarks: Set<Int> = [], isConnected: Bool = true, onSetExpanded: @escaping (String, Bool) -> Void) {
-        let messages = row.messages
-        self.row = row
+        let messages = item.messages
+        self.item = item
         self.channel = channel
         self.statusReactions = statusReactions.isEmpty ? [:] : messages.reduce(into: [:]) { reactions, message in
             reactions[message.sequence] = statusReactions[message.sequence]
@@ -58,7 +59,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
         self.findHighlights = messages.reduce(into: [:]) { result, message in
             result[message.sequence] = findHighlights[message.sequence]
         }
-        self.catchUp = row.divider?.unread == true ? catchUp : nil
+        self.catchUp = item.divider?.unread == true ? catchUp : nil
         self.store = store
         self.requestChoices = messages.contains { $0.sequence == requestChoices?.sequence } ? requestChoices : nil
         self.expandedMessageIds = expandedMessageIds.isEmpty ? [] : expandedMessageIds.filter { id in
@@ -70,7 +71,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.row == rhs.row && lhs.channel == rhs.channel && lhs.statusReactions == rhs.statusReactions
+        lhs.item == rhs.item && lhs.channel == rhs.channel && lhs.statusReactions == rhs.statusReactions
             && lhs.highlightedSequence == rhs.highlightedSequence && lhs.catchUp === rhs.catchUp
             && lhs.store === rhs.store && lhs.expandedMessageIds == rhs.expandedMessageIds
             && lhs.findHighlights == rhs.findHighlights && lhs.requestChoices == rhs.requestChoices
@@ -83,12 +84,12 @@ struct TranscriptRowContent: View, @MainActor Equatable {
 
     var body: some View {
         VStack(alignment: .leading, spacing: TranscriptSpacing.divider) {
-            if let divider = row.divider {
+            if let divider = item.divider {
                 // A frame, so a card starting in the viewport keeps the reader's place and grows downward.
                 TranscriptDividerStack(divider: divider, catchUp: catchUp, store: store)
-                    .transcriptMessageFrame(id: "divider-\(row.id)", sequence: 0, historyStart: channel.historyStart)
+                    .transcriptMessageFrame(id: "divider-\(item.id)", sequence: 0, historyStart: channel.historyStart)
             }
-            switch row.content {
+            switch item.content {
             case .user(let message):
                 TranscriptUserMessage(message: message, agents: channel.agents, api: channel.api,
                                       statusReactions: statusReactions[message.sequence] ?? [],
@@ -100,31 +101,33 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                     .transcriptMessageFrame(id: message.id, sequence: message.sequence,
                                             historyStart: channel.historyStart)
                     .id(message.id)
-            case .agent(let agentId, let entries):
+            case .agent(let agentId, let entry, let startsRow):
                 let agent = ChannelAgent(id: agentId, in: channel.agents)
-                HStack(alignment: .top, spacing: 12) {
-                    AgentAvatarView(agent: agent, size: 32)
-                    VStack(alignment: .leading, spacing: TranscriptSpacing.entry) {
-                        ForEach(entries) { entry in
-                            TranscriptAgentMessage(entry: entry, agent: agent, agents: channel.agents,
-                                                   channelID: channel.id, api: channel.api, interaction: interaction,
-                                                   statusReactions: statusReactions[entry.message.sequence] ?? [],
-                                                   expanded: expandedMessageIds.contains(entry.id),
-                                                   findHighlight: findHighlights[entry.message.sequence],
-                                                   choices: requestChoices,
-                                                   bookmark: bookmark(entry.message.sequence),
-                                                   onSetExpanded: onSetExpanded,
-                                                   onChoose: { interaction.sendSuggestedReply($0, store: store) })
-                                .equatable()
-                                .background(highlightedSequence == entry.message.sequence
-                                            ? ChannelColors.sourceHighlight : .clear,
-                                            in: RoundedRectangle(cornerRadius: 12))
-                                .transcriptMessageFrame(id: entry.message.id, sequence: entry.message.sequence,
-                                                        historyStart: channel.historyStart)
-                                .id(entry.message.id)
-                        }
-                    }
+                let message = TranscriptAgentMessage(entry: entry, agent: agent, agents: channel.agents,
+                                                     channelID: channel.id, api: channel.api, interaction: interaction,
+                                                     statusReactions: statusReactions[entry.message.sequence] ?? [],
+                                                     expanded: expandedMessageIds.contains(entry.id),
+                                                     findHighlight: findHighlights[entry.message.sequence],
+                                                     choices: requestChoices,
+                                                     bookmark: bookmark(entry.message.sequence),
+                                                     onSetExpanded: onSetExpanded,
+                                                     onChoose: { interaction.sendSuggestedReply($0, store: store) })
+                    .equatable()
+                    .background(highlightedSequence == entry.message.sequence
+                                ? ChannelColors.sourceHighlight : .clear,
+                                in: RoundedRectangle(cornerRadius: 12))
+                    .transcriptMessageFrame(id: entry.message.id, sequence: entry.message.sequence,
+                                            historyStart: channel.historyStart)
+                    .id(entry.message.id)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                // The run's avatar sits beside its first message, and the rest keep its inset.
+                if startsRow {
+                    HStack(alignment: .top, spacing: 12) {
+                        AgentAvatarView(agent: agent, size: 32)
+                        message
+                    }
+                } else {
+                    message.padding(.leading, 32 + 12)
                 }
             case .system(let messages):
                 let expandsMembership = messages.count > 1 && !expandedMessageIds.isEmpty
@@ -137,10 +140,10 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                     .background(messages.contains { $0.sequence == highlightedSequence }
                                 ? ChannelColors.sourceHighlight : .clear,
                                 in: RoundedRectangle(cornerRadius: 6))
-                    .transcriptMessageFrame(id: individualMessages ? "system-group-\(row.id)" : row.id,
+                    .transcriptMessageFrame(id: individualMessages ? "system-group-\(item.id)" : item.id,
                                             sequence: individualMessages ? 0 : messages.map(\.sequence).max() ?? 0,
                                             historyStart: channel.historyStart)
-                    .id(row.id)
+                    .id(item.id)
             }
         }
     }
@@ -200,12 +203,6 @@ private struct TranscriptRule: View {
         .accessibilityLabel(divider.accessibilityLabel())
         .accessibilityAddTraits(divider.day == nil ? [] : .isHeader)
     }
-}
-
-/// The gap above each row after the first, which keeps the run gap.
-func transcriptRowGaps(_ rows: [TranscriptRow]) -> [String: CGFloat] {
-    Dictionary(zip(rows, rows.dropFirst()).map { ($1.id, TranscriptSpacing.between($0, $1)) },
-               uniquingKeysWith: { $1 })
 }
 
 struct TranscriptUserMessage: View {

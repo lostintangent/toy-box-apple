@@ -308,7 +308,7 @@ struct ConversationTranscript: View {
 
     private func conversationRows(proxy: ScrollViewProxy) -> some View {
         let rows = rows
-        let gaps = transcriptRowGaps(rows)
+        let items = TranscriptItem.items(rows)
         let channel = TranscriptRowChannel(agents: store.roster, id: store.id,
                                            historyStart: store.messages.first?.sequence ?? 0, api: store.api)
         let statusReactions = store.statusReactions
@@ -319,8 +319,9 @@ struct ConversationTranscript: View {
                                                       isConnected: store.phase.isConnected)
         return LazyVStack(alignment: .leading, spacing: 0) {
             historyHeader
-            ForEach(rows) { row in
-                TranscriptRowContent(row: row, channel: channel, statusReactions: statusReactions,
+            // One lazy child per message, so a long run is never one child too tall for its estimate.
+            ForEach(items) { item in
+                TranscriptRowContent(item: item, channel: channel, statusReactions: statusReactions,
                                      highlightedSequence: revealer.highlightedSequence, catchUp: catchUp, store: store,
                                      requestChoices: requestChoices,
                                      expandedMessageIds: expandedMessageIds,
@@ -346,7 +347,7 @@ struct ConversationTranscript: View {
                                          }
                                      })
                     .equatable()
-                    .padding(.top, gaps[row.id] ?? TranscriptSpacing.run)
+                    .padding(.top, item.order == 0 ? TranscriptSpacing.run : item.spacing)
             }
             let outgoing = store.sending
             let sendingDividers = TranscriptRowBuilder.pendingDividers(outgoing.map(\.message),
@@ -606,8 +607,9 @@ struct ConversationTranscript: View {
     }
 
     /// One scroll puts the message's top `TranscriptReveal.margin` below the visible top, or below Find's
-    /// bar while it's open, or as near as the end allows. A row the lazy stack hasn't built is brought in
-    /// by identity first, and placed from its first frame. From then on, reading holds it like any other place.
+    /// bar while it's open, or as near as the end allows. A message the lazy stack hasn't built is brought
+    /// in by identity first, centered so the stack's height estimates can't leave it just outside what it
+    /// builds, and placed from its first frame. From then on, reading holds it like any other place.
     private func placeReveal(_ message: ChannelMessage, using proxy: ScrollViewProxy) async {
         if find.isPresented { expandedMessageIds.insert(message.id) }
         guard let row = rows.first(where: { $0.messages.contains { $0.id == message.id } }) else { return }
@@ -619,7 +621,7 @@ struct ConversationTranscript: View {
         geometry.historyStart = historyStart
         if geometry.frames[id]?.historyStart != historyStart {
             scrollPosition = nil
-            proxy.scrollTo(row.id, anchor: .top)
+            proxy.scrollTo(lazyChildID(of: message.id), anchor: .center)
             await geometry.frame(of: id, historyStart: historyStart)
         }
         guard !Task.isCancelled, let frame = geometry.frames[id], frame.historyStart == historyStart else { return }
@@ -627,6 +629,13 @@ struct ConversationTranscript: View {
         _ = window.restoreReadingBottom(top + frame.rect.height, of: frame)
         hasLanded = true
         isRevealing = false
+    }
+
+    /// The lazy child that builds a message: its own, or its system group's.
+    private func lazyChildID(of messageID: String) -> String {
+        let row = rows.first { $0.messages.contains { $0.id == messageID } }
+        if let row, case .system = row.content { return row.id }
+        return messageID
     }
 
     func loadOlder() async {
@@ -717,8 +726,7 @@ struct ConversationTranscript: View {
             } else {
                 alignedSince = nil
                 if !requestedMaterialization {
-                    let row = rows.first { $0.messages.contains { $0.id == anchor.id } }
-                    proxy.scrollTo(row?.id ?? anchor.id, anchor: .top)
+                    proxy.scrollTo(lazyChildID(of: anchor.id), anchor: .top)
                     requestedMaterialization = true
                 }
             }

@@ -111,38 +111,25 @@ struct TranscriptFindTests {
         }
     }
 
-    @Test func onlyMatchingRowsAndAgentMessagesChangeWithTheQuery() throws {
+    @Test func onlyMatchingMessagesChangeWithTheQuery() throws {
         let agent = ChannelAgent.lead(id: "lead")
         let messages = [message(1, "hit hit", sender: .agent("lead")),
                         message(2, "no result", sender: .agent("lead")), message(3, "unrelated")]
-        let rows = TranscriptRowBuilder().rows(messages, lead: agent, members: [])
+        let items = TranscriptItem.items(TranscriptRowBuilder().rows(messages, lead: agent, members: []))
         let api = try ChannelAPI(serverURL: "https://find.invalid")
         let store = ChannelStore(id: "find", api: api)
         let channel = TranscriptRowChannel(agents: [agent], id: "find", historyStart: 1, api: api)
-        func content(_ row: TranscriptRow, query: String) -> TranscriptRowContent {
-            .init(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil, catchUp: nil,
+        func content(_ item: TranscriptItem, query: String) -> TranscriptRowContent {
+            .init(item: item, channel: channel, statusReactions: [:], highlightedSequence: nil, catchUp: nil,
                   store: store, expandedMessageIds: [],
                   findHighlights: [1: .mac(query: query, isCurrent: true)], onSetExpanded: { _, _ in })
         }
-        let run = try #require(rows.first)
-        let user = try #require(rows.last)
-        #expect(content(run, query: "hit") != content(run, query: "hi"))
-        #expect(content(user, query: "hit") == content(user, query: "hi"))
-        #expect(content(user, query: "hit").findHighlights.isEmpty)
-        guard case .agent(_, let entries) = run.content else {
-            Issue.record("The fixture must group both agent messages into one run.")
-            return
-        }
-        try #require(entries.count == 2)
-        let interaction = ChannelInteraction()
-        func child(_ entry: AgentRunEntry, query: String) -> TranscriptAgentMessage {
-            .init(entry: entry, agent: agent, agents: [agent], channelID: "find", api: api, interaction: interaction,
-                  statusReactions: [], expanded: false,
-                  findHighlight: entry.message.sequence == 1 ? .mac(query: query, isCurrent: true) : nil,
-                  onSetExpanded: { _, _ in })
-        }
-        #expect(child(entries[0], query: "hit") != child(entries[0], query: "hi"))
-        #expect(child(entries[1], query: "hit") == child(entries[1], query: "hi"))
+        try #require(items.count == 3)
+        // The run's two messages are separate items, so only the one holding the match redraws.
+        #expect(content(items[0], query: "hit") != content(items[0], query: "hi"))
+        #expect(content(items[1], query: "hit") == content(items[1], query: "hi"))
+        #expect(content(items[2], query: "hit") == content(items[2], query: "hi"))
+        #expect(content(items[2], query: "hit").findHighlights.isEmpty)
     }
 
     private func highlighted(_ text: AttributedString) -> [String] {

@@ -476,6 +476,25 @@ struct TranscriptTests {
         try await harness.waitUntil { abs(harness.bottomGap) < 2 }
     }
 
+    /// One sender's 31 unread messages run near 6,000 points. As one lazy child, the stack guessed that
+    /// run thousands of points too tall, so the landing scrolled past it onto nothing and the channel
+    /// opened blank. Each message is its own child, so the landing finds the New divider and draws it.
+    @MainActor
+    @Test func aLongUnreadRunFromOneSenderOpensOnItsFirstMessage() async throws {
+        let messages = (1...40).map { $0 > 9 ? catchUpTestMessage($0, repeats: 3) : catchUpTestMessage($0, sender: .user) }
+        let service = StubChannelIntelligence(availability: .unavailable(.deviceNotEligible))
+        let harness = try await TranscriptHarness(messages: messages, seenThrough: 9, height: 800,
+                                                  intelligence: service)
+        defer { await harness.close() }
+        try await harness.waitUntil { harness.capture.hasLanded && harness.rowsOpacity > 0 }
+        try await harness.settled()
+        let divider = try #require(harness.frames["divider-m10"]?.rect, "No divider frame")
+        #expect(divider.minY >= -0.5 && divider.minY < 120, "Landed with the divider at \(divider)")
+        #expect(harness.isVisible("m10"))
+        let pixels = transcriptLayerPixels(of: harness.scrollView)
+        #expect(Set(pixels).count > 2, "The transcript drew nothing")
+    }
+
     /// A channel opening cold at its first unread message hides its rows only until the landing places
     /// them, then draws the divider at the top on that pass and never moves it. SwiftUI can leave each
     /// row's viewport frame stale after the long `scrollTo`, so only content positions show it placed.
@@ -1196,7 +1215,7 @@ struct TranscriptTests {
         ], lead: .lead(id: "lead"), members: [])
         try #require(rows.count == 7)
         #expect(rows[3].divider?.day != nil)
-        #expect(rows.dropFirst().map { transcriptRowGaps(rows)[$0.id] } == [20, 4, 16, 4, 20, 20])
+        #expect(TranscriptItem.items(rows).dropFirst().map(\.spacing) == [20, 4, 16, 4, 20, 20])
     }
 
     @Test func coincidingDayAndUnreadDividersReadAsOneHeader() throws {
@@ -1327,10 +1346,10 @@ struct TranscriptTests {
         let store = ChannelStore(id: "bookmarks", api: try ChannelAPI(serverURL: "https://bookmarks.invalid"))
         let message = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-10-22T10:00:00Z",
                                      sender: .agent("lead"), content: .text("Hello"))
-        let row = try #require(TranscriptRowBuilder().rows([message], lead: lead, members: []).last)
+        let item = try #require(TranscriptItem.items(TranscriptRowBuilder().rows([message], lead: lead, members: [])).last)
         let channel = TranscriptRowChannel(agents: [lead], id: "bookmarks", historyStart: 1, api: store.api)
         func content(bookmarks: Set<Int>, isConnected: Bool) -> TranscriptRowContent {
-            TranscriptRowContent(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil,
+            TranscriptRowContent(item: item, channel: channel, statusReactions: [:], highlightedSequence: nil,
                                  catchUp: nil, store: store, expandedMessageIds: [], bookmarks: bookmarks,
                                  isConnected: isConnected, onSetExpanded: { _, _ in })
         }
@@ -2334,13 +2353,14 @@ struct TranscriptCatchUpTests {
             service.releaseCatchUp()
             await harness.close()
         }
-        let clip = harness.scrollView.contentView
         if legacyScrollers { #expect(harness.scrollView.scrollerStyle == .legacy) }
         try await harness.waitUntil { harness.capture.hasLanded && service.catchUpCount == 1 }
         let divider = try #require(harness.capture.frames["divider-m10"]?.rect)
         try #require(divider.minY >= -0.5 && divider.minY < 120, "Landed with the divider at \(divider)")
-        let landed = clip.bounds.minY
-        try await harness.scrollDown(byWheel: false) { clip.bounds.minY > landed + 400 }
+        // Until the card starts above the viewport, with its message still built below it.
+        try await harness.scrollDown(byWheel: false) {
+            (harness.capture.frames["divider-m10"]?.rect.minY ?? 0) < -30
+        }
         let reading = harness.visibleFrames()
         try #require(reading.count >= 2)
         let height = harness.scrollView.documentView?.bounds.height ?? 0
@@ -2990,10 +3010,10 @@ private final class HoveredMessage {
         let message = ChannelMessage(id: id, sequence: 1, timestamp: "2026-10-22T10:00:00Z", sender: .agent("lead"),
                                      content: .text(String(repeating: "A paragraph long enough to wrap. ", count: 6)
                                          + "\n\nA second paragraph."))
-        let row = try #require(TranscriptRowBuilder().rows([message], lead: lead, members: []).last)
+        let item = try #require(TranscriptItem.items(TranscriptRowBuilder().rows([message], lead: lead, members: [])).last)
         let channel = TranscriptRowChannel(agents: [lead], id: "selection", historyStart: 1, api: store.api)
         host = NSHostingView(rootView:
-            TranscriptRowContent(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil,
+            TranscriptRowContent(item: item, channel: channel, statusReactions: [:], highlightedSequence: nil,
                                  catchUp: nil, store: store, expandedMessageIds: [], onSetExpanded: { _, _ in })
                 .padding(20)
                 .frame(width: 600, height: 300, alignment: .topLeading)
