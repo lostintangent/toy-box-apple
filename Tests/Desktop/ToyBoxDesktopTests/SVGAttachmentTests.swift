@@ -39,7 +39,7 @@ struct SVGAttachmentTests {
         let file = try svgFile(Self.picture, suffix: "data")
         defer { try? FileManager.default.removeItem(at: file) }
         let (thumbnail, full) = try await Task.detached {
-            (try TranscriptThumbnails.decode(file, scale: 2), try ImageViewer.decode(file, maximumPixelSize: 1280))
+            (try thumbnail(file), try ImageViewer.decoded(file, maximumPixelSize: 1280).image)
         }.value
         #expect(thumbnail.width == 480 && thumbnail.height == 240)
         #expect(full.width == 1280 && full.height == 640)
@@ -126,8 +126,8 @@ struct SVGAttachmentTests {
         let file = try svgFile(source)
         defer { try? FileManager.default.removeItem(at: file) }
         await Task.detached {
-            #expect(throws: ChannelAttachmentError.invalidImage) { try TranscriptThumbnails.decode(file, scale: 2) }
-            #expect(throws: ChannelAttachmentError.invalidImage) { try ImageViewer.decode(file, maximumPixelSize: 64) }
+            #expect(throws: ChannelAttachmentError.invalidImage) { try thumbnail(file) }
+            #expect(throws: ChannelAttachmentError.invalidImage) { try ImageViewer.decoded(file, maximumPixelSize: 64) }
         }.value
     }
 
@@ -161,8 +161,8 @@ struct SVGAttachmentTests {
             """)
         defer { try? FileManager.default.removeItem(at: file) }
         try await Task.detached {
-            _ = try TranscriptThumbnails.decode(file, scale: 2)
-            _ = try ImageViewer.decode(file, maximumPixelSize: 640)
+            _ = try thumbnail(file)
+            _ = try ImageViewer.decoded(file, maximumPixelSize: 640)
         }.value
         try await Task.sleep(for: .milliseconds(150))
         #expect(probe.connectionCount == 0)
@@ -307,4 +307,9 @@ private final class SVGResourceProbe: Sendable {
             listener.start(queue: .global())
         }
     }
+}
+
+/// A transcript tile's decode at 2x, which the app reaches through `TranscriptThumbnails.load`.
+private func thumbnail(_ file: URL) throws -> CGImage {
+    try ChannelThumbnails.decode(file, scale: 2, fallback: TranscriptThumbnails.svg).image
 }

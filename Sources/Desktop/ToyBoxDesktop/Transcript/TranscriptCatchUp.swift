@@ -11,9 +11,6 @@ final class TranscriptCatchUp {
     /// Until the reader scrolls, uses the keyboard or reveals anything, the transcript doesn't follow
     /// its bottom, so the card's top stays where it landed.
     var isPinned = true
-    /// The top of the card and New divider in the viewport, measured by the divider row. The
-    /// transcript keeps the rows below in place when the card changes height above the viewport.
-    @ObservationIgnored var top: CGFloat?
 
     /// Nil unless the landing is eligible: the model is available, the setting is on, All Messages is
     /// showing, this boundary's summary wasn't dismissed, and enough unread text came from others.
@@ -151,10 +148,6 @@ private struct TranscriptCatchUpLine: View {
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.colorScheme) private var colorScheme
-    @ViewState private var shownHeight: CGFloat = 0
-    @ViewState private var fullHeight: CGFloat = 0
-
-    private var isTruncated: Bool { fullHeight > shownHeight + 0.5 }
 
     var body: some View {
         Button(action: show) {
@@ -165,14 +158,6 @@ private struct TranscriptCatchUpLine: View {
                     .foregroundStyle(isReplied == true ? .secondary : .primary)
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0 }
-                    .background(alignment: .topLeading) {
-                        Text(line.text)
-                            .font(.system(size: 13 * textScale, weight: isReplied == nil ? .regular : .medium))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .hidden()
-                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
-                    }
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.vertical, 3)
@@ -185,7 +170,7 @@ private struct TranscriptCatchUpLine: View {
             show()
             return .handled
         }
-        .help(isTruncated ? line.text : "Show Message")
+        .help("Show Message")
         .accessibilityLabel(accessibilityText)
         .accessibilityHint("Shows the message")
     }

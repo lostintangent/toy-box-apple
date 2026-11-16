@@ -18,8 +18,7 @@ so any reference to it goes inside `#if TOY_BOX_BENCHMARK`. Prove a change that 
   4, then 20, working agents to expose continuous animation. Warn the user first.
 - `place` runs only when named. With `messages`, `paging` and `scroll`, it checks that the reader's place
   holds, against the spec's place budgets in points: arrivals, page inserts, a resize while following and
-  a reveal two pages back. Reading up, a resize mid-read and the sequence the read rule counts as seen
-  are information lines without budgets.
+  a reveal two pages back. A resize mid-read is an information line without a budget.
 - `resize` runs only when named. It loads all of `scroll-demo`'s history and drags the window's right
   edge in and out through AppKit's live resize, one step a frame, once following and once mid-read. It
   reports dropped frames, busy time a drag step and where the rows ended, without budgets.

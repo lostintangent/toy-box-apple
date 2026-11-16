@@ -46,11 +46,10 @@ import QuartzCore
 /// budgets in points. `messages` checks how far from the end each arrival leaves the transcript,
 /// `paging` where the first visible row settles after each older page is inserted, and `scroll`
 /// where the end settles after the window narrows and widens while following. `scroll` also reports
-/// the last sequence the read rule counts as seen once reading up stops, and where a mid-transcript
-/// reader's row sits after the same resize, without a budget.
+/// where a mid-transcript reader's row sits after the same resize, without a budget.
 /// - `place`: reveals a message a page and a half older than the first page, through the request a
-///   bookmark makes, checks that it settles centered, and reports its time, scroll writes, settle
-///   passes and what the read rule counts as seen.
+///   bookmark makes, checks that it settles centered, and reports its time, scroll writes and settle
+///   passes.
 /// - `key`: makes the window key, which a person's window is, and measures the whole process's CPU
 ///   while it sits there, first with the channel's own working agents and then with 20 working.
 ///   Animations that run only in the key window, like the working ellipsis, show up here.
@@ -286,8 +285,8 @@ final class PerformanceBenchmark {
               value: meter.longestGap * 1000, budget: Budget.burstFrameGap)
         let burstGap = gapToEnd(scroll)
         check("Place following arrivals at \(before) loaded\(place)",
-              String(format: "%.1f pt from the end at most after one message, %.1f pt after the burst, ",
-                     widestGap, burstGap) + describeRead(placeSnapshot()),
+              String(format: "%.1f pt from the end at most after one message, %.1f pt after the burst",
+                     widestGap, burstGap),
               value: max(widestGap, burstGap), budget: Budget.arrivalGapPoints, unit: " pt")
         requireStill(pointer, over: scroll)
     }
@@ -344,7 +343,6 @@ final class PerformanceBenchmark {
         try? await Task.sleep(for: .seconds(1))
         _ = await settled()
         header()
-        info("Read on opening", describeRead(placeSnapshot()))
         info("Wheel driver", "unphased precise input through the app-local event queue")
         await verifyWheelDriver()
         await verifyTranscriptInput()
@@ -370,7 +368,6 @@ final class PerformanceBenchmark {
         guard let store = store(channelID) else { return }
         _ = await settled()
         header()
-        info("Read on opening", describeRead(placeSnapshot()))
         await measureReveal(in: store)
     }
 
@@ -496,7 +493,6 @@ final class PerformanceBenchmark {
         for up in [true, false] {
             try? await Task.sleep(for: .milliseconds(300))
             _ = await settled()
-            if !up { info("Read after reading up \(place)", describeRead(geometry.benchmarkPlaceSnapshot())) }
             let start = offsetFromTop(scroll)
             let gesture = WheelGesture(window: window, over: scroll, geometry: geometry,
                                        speed: up ? Self.scrollSpeed : -Self.scrollSpeed, distance: distance) { [weak self] in
@@ -545,21 +541,14 @@ final class PerformanceBenchmark {
         transcriptScrollView().flatMap { BenchmarkScrollGeometry.source(in: $0)?.benchmarkPlaceSnapshot() }
     }
 
-    private func describeRead(_ place: BenchmarkPlace?) -> String {
-        guard let place else { return "no transcript geometry" }
-        return place.readThrough.map { "read through \($0)" }
-            ?? "nothing counted as read, with \(place.rows.count) rows built"
-    }
-
-    /// How far `id` settled from where it should be, with the read rule's sequence.
+    /// How far `id` settled from where it should be.
     private func describeHold(of id: String?, expectedTop: CGFloat?, in place: BenchmarkPlace?) -> String {
-        guard let id, let expectedTop else { return "no first visible row before, \(describeRead(place))" }
+        guard let id, let expectedTop else { return "no first visible row before" }
         guard let top = place?.rows[id]?.minY else {
             let now = place?.firstVisible.map { String(format: "%@ at %.1f pt", $0.id, Double($0.top)) } ?? "nothing"
-            return "\(id) is no longer built and \(now) is first visible, \(describeRead(place))"
+            return "\(id) is no longer built and \(now) is first visible"
         }
-        return String(format: "%@ settled %.1f pt from its place, ", id, Double(abs(top - expectedTop)))
-            + describeRead(place)
+        return String(format: "%@ settled %.1f pt from its place", id, Double(abs(top - expectedTop)))
     }
 
     /// How far `id` settled from where it should be, or infinity when the place is lost.
@@ -603,7 +592,7 @@ final class PerformanceBenchmark {
         }
         check("Reveal \(sequence) from \(oldest) loaded",
               "\(result) in \(format(seconds * 1000)), \(counts.writes) scroll writes over \(counts.turns) settle passes, "
-              + "\(landing), \(describeRead(place))",
+              + landing,
               value: outcome == .revealed ? offCenter : .infinity, budget: Budget.revealCenterPoints, unit: " pt")
     }
 
@@ -624,8 +613,8 @@ final class PerformanceBenchmark {
             _ = await settled()
             let gap = gapToEnd(scroll)
             check("Place following, resized to \(Int(frame.width)) pt",
-                  String(format: "%.1f pt from the end on the next pass, %.1f pt once settled, ", Double(next),
-                         Double(gap)) + describeRead(source.benchmarkPlaceSnapshot()),
+                  String(format: "%.1f pt from the end on the next pass, %.1f pt once settled", Double(next),
+                         Double(gap)),
                   value: Double(gap), budget: Budget.resizeGapPoints, unit: " pt")
         }
         await scrollSteadily(scroll, toTopOffset: offsetFromTop(scroll) / 2)
@@ -667,8 +656,8 @@ final class PerformanceBenchmark {
         }
         _ = await settled()
         let place = following
-            ? String(format: "%.1f pt from the end at most, %.1f pt once settled, ", frames.widestGap,
-                     gapToEnd(scroll)) + describeRead(source.benchmarkPlaceSnapshot())
+            ? String(format: "%.1f pt from the end at most, %.1f pt once settled", frames.widestGap,
+                     gapToEnd(scroll))
             : describeHold(of: reader?.id, expectedTop: reader?.top, in: source.benchmarkPlaceSnapshot())
         info("Live resize \(following ? "following" : "reading") at \(loaded) loaded",
              "\(frames.dropped) of \(frames.count) frames dropped, \(format(frames.longest * 1000)) longest frame, "
@@ -1113,12 +1102,10 @@ struct BenchmarkScrollGeometry: Equatable, Sendable {
     }
 }
 
-/// Every built message's frame in viewport coordinates, and the last sequence the read rule counts
-/// as seen there.
+/// Every built message's frame in viewport coordinates.
 struct BenchmarkPlace: Sendable {
     var rows: [String: CGRect]
     var viewportHeight: CGFloat
-    var readThrough: Int?
 
     var firstVisible: (id: String, top: CGFloat)? {
         rows.filter { $0.value.maxY > 0 && $0.value.minY < viewportHeight }

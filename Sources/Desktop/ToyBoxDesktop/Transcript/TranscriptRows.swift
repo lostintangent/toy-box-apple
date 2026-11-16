@@ -167,9 +167,6 @@ struct TranscriptDividerStack: View {
             TranscriptRule(divider: divider)
                 .accessibilityFocused($focusesDivider)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("transcript-viewport")).minY } action: { top in
-            catchUp?.top = top
-        }
     }
 }
 
@@ -549,14 +546,6 @@ private struct TranscriptHoverActions<Header: View>: View {
     }
 }
 
-extension TranscriptHoverActions where Header == Never {
-    init(isHovered: Binding<Bool>, isFocused: Bool = false, edge: HorizontalEdge, reply: Reply? = nil,
-         text: String, bookmark: TranscriptBookmark?) {
-        self.init(isHovered: isHovered, isFocused: isFocused, edge: edge, reply: reply, text: text,
-                  bookmark: bookmark, header: nil)
-    }
-}
-
 /// A hover toolbar button's symbol, in a 24-point square like an accessory bar's, with the hover
 /// fill rounded concentric with the toolbar.
 private struct TranscriptToolbarLabelStyle: LabelStyle {
@@ -597,7 +586,7 @@ final class TranscriptPointer {
     var location: @MainActor () -> CGPoint = { NSEvent.mouseLocation }
     private var locationWhenContentMoved: CGPoint?
     private var contentMovedAt: TimeInterval = 0
-    private var resting: (id: String, reached: () -> Void)?
+    private(set) var resting: (id: String, reached: () -> Void)?
     private var settlePending = false
     private var readerMovedContent = true
 
@@ -610,9 +599,6 @@ final class TranscriptPointer {
     }
 
     var hasMovedSinceContentMoved: Bool { location() != locationWhenContentMoved }
-
-    /// The message the content carried under a still pointer, until the content holds still.
-    var restingID: String? { resting?.id }
 
     /// Notes the message the reader's scroll carried under a still pointer, which hears `reached` once
     /// the content holds still unless the pointer leaves it first.

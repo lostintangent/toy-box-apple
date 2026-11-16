@@ -147,7 +147,6 @@ struct TranscriptPlacementTests {
             (.readerScrolled(to: 700), missing),
             (.readerScrolled(to: 700), mismatch),
             (.holdCurrentPosition, missing),
-            (.resumeFromCurrentPosition, missing),
             (.toggledExpansion("m5", expanded: true), missing),
             (.toggledExpansion("m5", expanded: false), missing),
         ]
@@ -289,27 +288,6 @@ struct TranscriptPlacementTests {
         #expect(held.intent == intent)
         #expect(held.origin == nil)
         #expect(held.unavailableTarget == nil)
-    }
-
-    @Test(arguments: [
-        (CGFloat(500), Model.Intent.reading(.init(row: "m6", order: 6, offset: 50)), CGFloat(500)),
-        (1_517.5, .reading(.init(row: "m16", order: 16, offset: 32.5)), 1_517.5),
-        (1_518, .following, 1_666),
-        (1_536, .following, 1_666),
-        (1_566, .following, 1_666),
-    ])
-    func resumingAfterFindClassifiesTheThresholdWithoutMoving(_ y: CGFloat, _ intent: Model.Intent,
-                                                            _ afterArrival: CGFloat) {
-        let rows = frames()
-        let held = Model.reduce(.following, .holdCurrentPosition, rows: rows, viewport: viewport, origin: y)
-        let resumed = Model.reduce(held.intent, .resumeFromCurrentPosition, rows: rows, viewport: viewport, origin: y)
-        #expect(resumed.intent == intent)
-        #expect(resumed.origin == nil)
-        #expect(resumed.unavailableTarget == nil)
-        #expect(Model.layoutEvent(from: Model.complete(rows, viewport: viewport, origin: y),
-                                 to: Model.complete(rows, viewport: viewport, origin: y)) == nil)
-        let arrival = Model.reduce(resumed.intent, .layoutChanged, rows: frames(21), viewport: viewport, origin: y)
-        #expect(arrival.origin == afterArrival)
     }
 
     @Test func theHistoryHeaderContributesHeightButNeverOwnsThePrependAnchor() {

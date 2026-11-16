@@ -17,9 +17,6 @@ final class ImageViewer {
     /// What the viewing toolbar shows: the sender as its title and a preformatted subtitle.
     struct Presentation: Equatable {
         var sender: String
-        /// The zero-based position of the presented image among the message's images.
-        var index: Int
-        var count: Int
         var filename: String
         /// "Today at 5:23 PM · 2 of 4", without the position for a single image.
         var subtitle: String
@@ -93,7 +90,7 @@ final class ImageViewer {
     var toolbarInset: CGFloat = 0
     @ObservationIgnored var reducesMotion = false
     @ObservationIgnored weak var anchorView: NSView?
-    @ObservationIgnored private var canvases = 0
+    @ObservationIgnored private var hasCanvas = false
     @ObservationIgnored private(set) var loads: [Int: Task<Void, Never>] = [:]
     @ObservationIgnored private var vectorRasterTask: Task<Void, Never>?
     @ObservationIgnored private var vectorRasterPixels = 0
@@ -101,8 +98,6 @@ final class ImageViewer {
     @ObservationIgnored weak var liveTextView: ImageAnalysisOverlayView?
     @ObservationIgnored private(set) var analysisTask: Task<Void, Never>?
     @ObservationIgnored private lazy var analyzer = ImageAnalyzer()
-    /// The window's recent analyses by attachment digest, most recent last.
-    @ObservationIgnored private var analyses: [(key: String, analysis: ImageAnalysis)] = []
     /// Live Text waits for the opening motion, which it couldn't follow.
     private(set) var hasSettledOpening = false
     /// Asks the stage to take keyboard focus back after Live Text handled a click.
@@ -113,7 +108,6 @@ final class ImageViewer {
     /// Lets a paged-to image settle before its analysis starts, so paging through images analyzes
     /// none of the ones passed on the way.
     static let analysisDelay: Duration = .milliseconds(300)
-    static let rememberedAnalyses = 8
     static var readsText: Bool { ImageAnalyzer.isSupported }
 
     init() {}
@@ -122,8 +116,7 @@ final class ImageViewer {
 
     var presentation: Presentation? {
         guard let session, !isClosing, session.images.indices.contains(index) else { return nil }
-        return Presentation(sender: session.source.sender, index: index, count: session.images.count,
-                            filename: session.names[index],
+        return Presentation(sender: session.source.sender, filename: session.names[index],
                             subtitle: session.source.subtitle(index: index, count: session.images.count))
     }
 
@@ -194,7 +187,7 @@ final class ImageViewer {
         cancelAnalysis()
         cancelVectorRaster()
         liveTextView?.resetSelection()
-        if animated && canvases > 0 {
+        if animated && hasCanvas {
             closingFrame = layout.flatMap(closingTileFrame(in:))
             isClosing = true
         } else {
@@ -234,11 +227,11 @@ final class ImageViewer {
         return frame.width > 0 && frame.height > 0
     }
 
-    func canvasAppeared() { canvases += 1 }
+    func canvasAppeared() { hasCanvas = true }
 
     func canvasDisappeared() {
-        canvases = max(0, canvases - 1)
-        if canvases == 0, isClosing, let session { finishClosing(session.id) }
+        hasCanvas = false
+        if isClosing, let session { finishClosing(session.id) }
     }
 
     // MARK: Fit and zoom
@@ -451,20 +444,12 @@ final class ImageViewer {
     func reclaimKeyFocus() { keyFocusRequest += 1 }
 
     /// Analyzes the presented image for Live Text once it has decoded and settled. Paging or
-    /// closing cancels it, and the window remembers its last few results.
+    /// closing cancels it.
     func analyzeCurrent(after delay: Duration = analysisDelay) {
         cancelAnalysis()
         guard let session, !isClosing, hasSettledOpening, Self.readsText,
               let item = items[index], item.analysis == nil, let bitmap = item.bitmap else { return }
         let position = index
-        let key = ChannelAttachmentCache.destination(for: session.images[position], api: session.api)?
-            .deletingPathExtension().lastPathComponent
-        if let key, let remembered = analyses.firstIndex(where: { $0.key == key }) {
-            let entry = analyses.remove(at: remembered)
-            analyses.append(entry)
-            items[position]?.analysis = entry.analysis
-            return
-        }
         let id = session.id
         let analyzer = analyzer
         analysisTask = Task { [weak self] in
@@ -476,17 +461,8 @@ final class ImageViewer {
                   !self.isClosing else { return }
             self.analysisTask = nil
             self.items[position]?.analysis = analysis
-            if let key { self.remember(analysis, for: key) }
         }
     }
-
-    private func remember(_ analysis: ImageAnalysis, for key: String) {
-        analyses.removeAll { $0.key == key }
-        analyses.append((key, analysis))
-        if analyses.count > Self.rememberedAnalyses { analyses.removeFirst(analyses.count - Self.rememberedAnalyses) }
-    }
-
-    var rememberedAnalysisCount: Int { analyses.count }
 
     private func cancelAnalysis() {
         analysisTask?.cancel()
@@ -589,12 +565,7 @@ final class ImageViewer {
         ChannelImageDecoder.pixelSize(for: attachment, api: api)
     }
 
-    /// Decodes the full image, oriented, off the main actor. Very large images cap at 8192 pixels.
-    nonisolated static func decode(_ file: URL, maximumPixelSize: Int = 8192) throws -> CGImage {
-        try decoded(file, maximumPixelSize: maximumPixelSize).image
-    }
-
-    private nonisolated static func decoded(_ file: URL, maximumPixelSize: Int) throws
+    nonisolated static func decoded(_ file: URL, maximumPixelSize: Int) throws
         -> (image: CGImage, vectorSize: CGSize?) {
         if let source = CGImageSourceCreateWithURL(file as CFURL, nil),
            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],

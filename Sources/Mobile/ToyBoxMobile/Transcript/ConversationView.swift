@@ -144,7 +144,7 @@ final class TranscriptScroll {
 
     private func capturesPosition(_ event: Model.Event) -> Bool {
         switch event {
-        case .readerScrolled, .holdCurrentPosition, .resumeFromCurrentPosition: true
+        case .readerScrolled, .holdCurrentPosition: true
         default: false
         }
     }

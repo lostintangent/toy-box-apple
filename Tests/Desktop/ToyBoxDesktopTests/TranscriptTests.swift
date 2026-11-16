@@ -115,14 +115,14 @@ struct TranscriptTests {
         message.pointer.contentDidMove()
         message.host.mouseEntered(with: try message.hover())
         message.host.mouseMoved(with: try message.hover(x: 140))
-        try await message.waitUntil { message.pointer.restingID == "resting" }
-        try #require(message.pointer.restingID == "resting")
+        try await message.waitUntil { message.pointer.resting?.id == "resting" }
+        try #require(message.pointer.resting?.id == "resting")
         try await message.waitUntil { clockReads >= 4 }
         #expect(message.platformViews() == mounted)
 
         now += 1
         try await message.waitUntil { message.platformViews() > mounted }
-        #expect(message.pointer.restingID == nil)
+        #expect(message.pointer.resting?.id == nil)
     }
 
     /// Following a new message carries a row under a still pointer on every arrival, and mounting its
@@ -134,14 +134,14 @@ struct TranscriptTests {
 
         pointer.contentDidMove(byReader: false)
         pointer.rest(on: "arrival") {}
-        #expect(pointer.restingID == nil)
+        #expect(pointer.resting?.id == nil)
 
         pointer.contentDidMove(byReader: true)
         pointer.rest(on: "scrolled") {}
-        #expect(pointer.restingID == "scrolled")
+        #expect(pointer.resting?.id == "scrolled")
 
         pointer.contentDidMove(byReader: false)
-        #expect(pointer.restingID == nil)
+        #expect(pointer.resting?.id == nil)
         #expect(!pointer.hasMovedSinceContentMoved)
     }
 
@@ -877,7 +877,7 @@ struct TranscriptTests {
                 harness.store.state?.messages.first?.sequence == oldest && !harness.store.isLoadingOlder
             }
             try await harness.waitUntil {
-                !harness.capture.isRestoringHistory && reading.allSatisfy { id, rect in
+                reading.allSatisfy { id, rect in
                     guard let restored = harness.frames[id], restored.historyStart == oldest else { return false }
                     return abs(restored.rect.maxY - rect.maxY) < 1
                 }
@@ -940,20 +940,17 @@ struct TranscriptTests {
         #expect(abs(capture.viewport.height - 450) < 0.5)
         #expect(capture.viewport.bottomGap < 0.5)
         #expect(abs(try #require(capture.frames["m40"]).rect.maxY - 450) < 0.5)
-        #expect(capture.viewport.visibleThrough(capture.frames) == 40)
 
-        // Three rows sit beneath the bottom bar. They stay unread and still count as distance from the end.
+        // Three rows sit beneath the bottom bar, and they still count as distance from the end.
         proxy.scrollTo(37, anchor: .bottom)
         try await settle()
         #expect(abs(capture.viewport.bottomGap - 120) < 0.5)
-        #expect(capture.viewport.visibleThrough(capture.frames) == 37)
 
-        // A row tucked under the toolbar is neither the paging anchor nor the read edge.
+        // A row tucked under the toolbar isn't the paging anchor.
         proxy.scrollTo(10, anchor: .top)
         try await settle()
         #expect(abs(try #require(capture.frames["m10"]).rect.minY) < 0.5)
         #expect(capture.viewport.topVisibleFrame(in: capture.frames)?.id == "m10")
-        #expect(capture.viewport.visibleThrough(capture.frames) == 20)
     }
 
     @MainActor
@@ -1490,7 +1487,7 @@ struct ImageViewerTests {
 
     @Test func closingWithoutACanvasEndsTheSessionAndReturnsFocusToTheTile() throws {
         let viewer = try openViewer([Self.screenshot, Self.screenshot], at: 1)
-        #expect(viewer.presentation?.index == 1)
+        #expect(viewer.presentation != nil && viewer.index == 1)
         viewer.close()
         #expect(viewer.session == nil && viewer.presentation == nil)
         #expect(viewer.focusReturn?.messageID == "m1" && viewer.focusReturn?.index == 1)
@@ -1690,7 +1687,7 @@ struct ImageViewerLiveTextTests {
     /// Waits on the viewer's own load and analysis tasks rather than a deadline, since VisionKit's
     /// out-of-process analysis can take tens of seconds on a loaded machine.
     @Test(.readsTextInImages, .timeLimit(.minutes(2)))
-    func onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt() async throws {
+    func onlyTheSettledCurrentImageIsAnalyzed() async throws {
         let viewer = try Self.openViewer([Self.textPNG("Release notes ship Friday"),
                                           Self.textPNG("Quarterly roadmap review"), Self.textPNG(nil)])
         defer { viewer.close(animated: false) }
@@ -1716,16 +1713,6 @@ struct ImageViewerLiveTextTests {
         viewer.show(1)
         try await Self.analysis(viewer, at: 1)
         #expect(viewer.liveText?.transcript.contains("roadmap") == true)
-        #expect(viewer.rememberedAnalysisCount == 3)
-        // Reopening uses the window's analyses without asking VisionKit again.
-        let images = try #require(viewer.session?.images)
-        viewer.close(animated: false)
-        viewer.open(images: images, at: 1, source: Self.source, api: try Self.api())
-        await viewer.loads[1]?.value
-        viewer.openingDidSettle()
-        #expect(viewer.analysisTask == nil)
-        #expect(viewer.liveText?.transcript.contains("roadmap") == true)
-        #expect(viewer.items[0]?.analysis == nil)
     }
 
     @Test(.readsTextInImages,
@@ -2228,7 +2215,6 @@ private final class TranscriptLayoutCapture {
     var viewport = TranscriptViewport()
     var proxy: ScrollViewProxy?
     var hasLanded = false
-    var isRestoringHistory = false
 }
 
 @MainActor
@@ -2510,7 +2496,6 @@ private final class TranscriptHarness {
                                                                       slowSendDelay: slowSendDelay)
                 .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }
                 .onPreferenceChange(TranscriptLanded.self) { capture.hasLanded = $0 }
-                .onPreferenceChange(TranscriptRestoringHistory.self) { capture.isRestoringHistory = $0 }
                 .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: 100) }
                 .environment(interaction)
                 .environment(ArtifactOpener())
@@ -2601,8 +2586,12 @@ private final class TranscriptHarness {
         return capture.frames.mapValues { TranscriptCoordinates.viewportFrame($0, top: top) }
     }
 
+    /// Each row's frame in the window, from the top of its content view.
     var windowFrames: [String: CGRect] {
-        capture.frames.mapValues(\.windowRect)
+        guard let content = window.contentView else { return [:] }
+        let corner = scrollView.convert(NSPoint(x: 0, y: scrollView.isFlipped ? 0 : scrollView.bounds.height), to: nil)
+        let top = content.frame.height - corner.y + scrollView.contentInsets.top
+        return frames.mapValues { $0.rect.offsetBy(dx: corner.x, dy: top) }
     }
 
     var findField: NSSearchField? {
