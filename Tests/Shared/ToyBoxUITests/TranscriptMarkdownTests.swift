@@ -244,6 +244,98 @@ struct TranscriptMarkdownTests {
         #expect(bytes[(10 * image.width + 10) * 4] < 252)
     }
 
+    #if os(macOS)
+    @MainActor
+    @Test func aClickOpensALinkInSelectableTextButNotTheTextBesideIt() async throws {
+        var opened: [URL] = []
+        let url = URL(string: "https://example.com/notes")!
+        let view = NSHostingView(rootView:
+            TranscriptMarkdown(content: "[The notes](\(url)) are linked, and the rest of this line is plain text.",
+                               copyCode: { _ in }, mentionInk: { _ in .purple })
+                .frame(width: 480, height: 40, alignment: .topLeading)
+                .environment(\.openURL, OpenURLAction { opened.append($0); return .handled }))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 40), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        window.orderFrontRegardless()
+        defer { window.close() }
+        // Window points on the first line, over the link and over the plain text after it.
+        let link = NSPoint(x: 20, y: 31)
+        let beside = NSPoint(x: 240, y: 31)
+        try await waitUntil("the link has its own click target", in: view) {
+            view.hitTest(link) != nil && view.hitTest(link) !== view.hitTest(beside)
+        }
+        for point in [beside, link] {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                window.sendEvent(try #require(NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+            }
+        }
+        try await waitUntil(in: view) { !opened.isEmpty }
+        #expect(opened == [url])
+    }
+
+    @MainActor
+    @Test func aLinkScrolledOutOfATableLeavesNoClickTargetBesideTheTable() async throws {
+        var opened: [URL] = []
+        let plan = URL(string: "https://example.com/plan")!
+        let sentinel = URL(string: "https://example.com/sentinel")!
+        let content = "| Link | Notes |\n| --- | --- |\n"
+            + "| [the plan](\(plan)) | a long plain cell that keeps this table far wider than its frame |"
+        let view = NSHostingView(rootView:
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top, spacing: 0) {
+                    Text(String(repeating: "Plain text beside the table. ", count: 6))
+                        .frame(width: 200, height: 90, alignment: .topLeading)
+                    TranscriptMarkdown(content: content, copyCode: { _ in }, mentionInk: { _ in .purple })
+                        .frame(width: 200, height: 90, alignment: .topLeading)
+                }
+                Link("Sentinel", destination: sentinel).frame(height: 30)
+            }
+            .frame(width: 400, height: 120, alignment: .topLeading)
+            .environment(\.openURL, OpenURLAction { opened.append($0); return .handled }))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 120), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        window.orderFrontRegardless()
+        defer { window.close() }
+        // Window points on the table's second row, over its link and over its plain cell.
+        let link = NSPoint(x: 230, y: 75)
+        let cell = NSPoint(x: 350, y: 75)
+        try await waitUntil("the table's link has its own click target", in: view) {
+            view.hitTest(link) != nil && view.hitTest(link) !== view.hitTest(cell)
+        }
+        let target = view.hitTest(link)
+        func scrollViews(in view: NSView) -> [NSScrollView] {
+            ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap { scrollViews(in: $0) }
+        }
+        let scroll = try #require(scrollViews(in: view).first)
+        scroll.contentView.scroll(to: NSPoint(x: 150, y: scroll.contentView.bounds.minY))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        try await waitUntil("the link scrolled behind the table's leading edge", in: view) {
+            view.hitTest(link) !== target
+        }
+        func click(_ point: NSPoint) throws {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                window.sendEvent(try #require(NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+            }
+        }
+        // Where the link now sits, behind the table's leading edge, over the plain text beside it.
+        try click(NSPoint(x: 80, y: 75))
+        // The sentinel opens last, so once it has, every earlier click has landed.
+        try click(NSPoint(x: 20, y: 15))
+        try await waitUntil(in: view) { opened.last == sentinel }
+        #expect(opened == [sentinel])
+    }
+    #endif
+
     /// Draws into the test's own bitmap at the default scale. `ImageRenderer.cgImage` returns an image-provider
     /// CGImage that rasterizes through an IOSurface on first draw, the path that failed CI (t510 and t603).
     /// Both callers fill an opaque white background, so a transparent pixel marks an incomplete render.

@@ -7,6 +7,7 @@
 - Clicking the mic now opens the talk card right away, with no pause while the microphone gets ready.
 - Replying to a request from the sidebar now lines your words up with the send button, so the field looks right whether you've typed one line or several.
 - A channel now stays read while you look at one of its images or artifacts, so messages that arrive meanwhile don't leave it unread in the sidebar.
+- Clicking a link in a message now always opens it, even while your pointer is over the message to select its text.
 
 ## Mac 0.1.44
 
