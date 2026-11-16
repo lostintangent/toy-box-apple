@@ -244,6 +244,41 @@ struct TranscriptMarkdownTests {
         #expect(bytes[(10 * image.width + 10) * 4] < 252)
     }
 
+    #if os(macOS)
+    @MainActor
+    @Test func aClickOpensALinkInSelectableTextButNotTheTextBesideIt() async throws {
+        var opened: [URL] = []
+        let url = URL(string: "https://example.com/notes")!
+        let view = NSHostingView(rootView:
+            TranscriptMarkdown(content: "[The notes](\(url)) are linked, and the rest of this line is plain text.",
+                               copyCode: { _ in }, mentionInk: { _ in .purple })
+                .frame(width: 480, height: 40, alignment: .topLeading)
+                .environment(\.openURL, OpenURLAction { opened.append($0); return .handled }))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 40), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        window.orderFrontRegardless()
+        defer { window.close() }
+        // Window points on the first line, over the link and over the plain text after it.
+        let link = NSPoint(x: 20, y: 31)
+        let beside = NSPoint(x: 240, y: 31)
+        try await waitUntil("the link has its own click target", in: view) {
+            view.hitTest(link) != nil && view.hitTest(link) !== view.hitTest(beside)
+        }
+        for point in [beside, link] {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                window.sendEvent(try #require(NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+            }
+        }
+        try await waitUntil(in: view) { !opened.isEmpty }
+        #expect(opened == [url])
+    }
+    #endif
+
     /// Draws into the test's own bitmap at the default scale. `ImageRenderer.cgImage` returns an image-provider
     /// CGImage that rasterizes through an IOSurface on first draw, the path that failed CI (t510 and t603).
     /// Both callers fill an opaque white background, so a transparent pixel marks an incomplete render.

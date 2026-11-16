@@ -19,6 +19,7 @@ public struct TranscriptMarkdown: View {
     public var preservesLineBreaks: Bool
     private let copyCode: (String) -> Void
     private let mentionInk: (ChannelAgent?) -> Color
+    @Environment(\.openURL) private var openURL
     public init(content: String, agents: [ChannelAgent] = [], baseURL: URL? = nil,
                 selectable: Bool = true, findHighlight: TranscriptFindHighlight? = nil,
                 bodySize: CGFloat = 14, codeSize: CGFloat = 12, lineSpacing: CGFloat = 3,
@@ -63,7 +64,8 @@ public struct TranscriptMarkdown: View {
             guard let resolved, ["http", "https", "mailto"].contains(resolved.scheme?.lowercased() ?? "") else {
                 return .discarded
             }
-            return .systemAction(resolved)
+            openURL(resolved)
+            return .handled
         })
     }
 
@@ -71,12 +73,12 @@ public struct TranscriptMarkdown: View {
     private func blockView(_ block: MarkdownBlock, highlights: TranscriptMarkdownHighlights?) -> some View {
         switch block.kind {
         case .paragraph(let text):
-            Text(inline(inlineText(text), fragment: .init(block: block.id), highlights: highlights))
+            inline(inlineText(text), fragment: .init(block: block.id), highlights: highlights)
                 .fixedSize(horizontal: false, vertical: true)
         case .heading(let level, let text):
             let size: CGFloat = level == 1 ? 23 : level == 2 ? 19 : 16
-            let heading = Text(inline(inlineText(text), size: size, fragment: .init(block: block.id),
-                                      highlights: highlights))
+            let heading = inline(inlineText(text), size: size, fragment: .init(block: block.id),
+                                 highlights: highlights)
                 .font(.system(size: size * textScale, weight: .semibold))
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
@@ -93,15 +95,14 @@ public struct TranscriptMarkdown: View {
                 Text(highlights?.applying(to: AttributedString(marker), fragment: .init(block: block.id))
                      ?? AttributedString(marker)).foregroundStyle(ChannelInk.secondary).textSelection(.disabled)
                     .frame(minWidth: 14, alignment: .trailing)
-                Text(inline(inlineText(text), fragment: .init(block: block.id, column: 1),
-                            highlights: highlights))
+                inline(inlineText(text), fragment: .init(block: block.id, column: 1), highlights: highlights)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.leading, CGFloat(depth) * 16)
         case .quote(let text):
             HStack(alignment: .top, spacing: 10) {
                 RoundedRectangle(cornerRadius: 2).fill(.tertiary).frame(width: 3)
-                Text(inline(inlineText(text), fragment: .init(block: block.id), highlights: highlights))
+                inline(inlineText(text), fragment: .init(block: block.id), highlights: highlights)
                     .foregroundStyle(ChannelInk.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -156,8 +157,8 @@ public struct TranscriptMarkdown: View {
         return TranscriptMarkdownTableLayout(columns: columns) {
             ForEach(rows.indices, id: \.self) { row in
                 ForEach(0..<columns, id: \.self) { column in
-                    Text(inline(column < rows[row].count ? rows[row][column] : "", size: 13,
-                                fragment: .init(block: block, row: row, column: column), highlights: highlights))
+                    inline(column < rows[row].count ? rows[row][column] : "", size: 13,
+                           fragment: .init(block: block, row: row, column: column), highlights: highlights)
                         .font(.system(size: 13 * textScale, weight: row == 0 ? .semibold : .regular))
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 10)
@@ -197,11 +198,11 @@ public struct TranscriptMarkdown: View {
     }
 
     private func inline(_ text: String, size: CGFloat? = nil, fragment: TranscriptMarkdownText.Fragment,
-                        highlights: TranscriptMarkdownHighlights?) -> AttributedString {
+                        highlights: TranscriptMarkdownHighlights?) -> Text {
         let result = transcriptInlineMarkdown(text, agents: agents, textScale: textScale,
                                               fontSize: size ?? bodySize, codeSize: codeSize,
                                               mentionInk: mentionInk)
-        return highlights?.applying(to: result, fragment: fragment) ?? result
+        return TranscriptLinks.text(highlights?.applying(to: result, fragment: fragment) ?? result)
     }
 }
 
@@ -272,7 +273,55 @@ private struct TranscriptTextSelection: ViewModifier {
     let enabled: Bool
 
     func body(content: Content) -> some View {
-        if enabled { content.textSelection(.enabled) } else { content }
+        if enabled { content.textSelection(.enabled).modifier(TranscriptLinks()) } else { content }
+    }
+}
+
+/// Selectable text on the Mac lays an AppKit text view over itself that selects and copies but never
+/// follows a link. So each link run carries its URL into the text's layout, and a native `Link` sits
+/// over it, leaving every other click and drag to selection.
+private struct TranscriptLinks: ViewModifier {
+    private struct Target: TextAttribute {
+        let url: URL
+    }
+
+    static func text(_ value: AttributedString) -> Text {
+        #if os(macOS)
+        let runs = value.runs[\.link]
+        if runs.contains(where: { $0.0 != nil }) {
+            return runs.reduce(Text(verbatim: "")) { text, run in
+                let segment = Text(AttributedString(value[run.1]))
+                return Text("\(text)\(run.0.map { segment.customAttribute(Target(url: $0)) } ?? segment)")
+            }
+        }
+        #endif
+        return Text(value)
+    }
+
+    func body(content: Content) -> some View {
+        #if os(macOS)
+        content.overlayPreferenceValue(Text.LayoutKey.self) { layouts in
+            GeometryReader { proxy in
+                let targets = layouts.flatMap { anchored in
+                    let origin = proxy[anchored.origin]
+                    return anchored.layout.flatMap { $0 }.compactMap { run in
+                        run[Target.self].map { (run.typographicBounds.rect.offsetBy(dx: origin.x, dy: origin.y), $0.url) }
+                    }
+                }
+                ForEach(targets.indices, id: \.self) { index in
+                    let (rect, url) = targets[index]
+                    Link(destination: url) { Color.clear.contentShape(Rectangle()) }
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+                        .pointerStyle(.link)
+                }
+            }
+            // The text already lists its links for accessibility.
+            .accessibilityHidden(true)
+        }
+        #else
+        content
+        #endif
     }
 }
 
