@@ -3005,8 +3005,8 @@ New Channel, Edit Channel, Add Agent and Edit Agent share one sheet language:
 - **Size.** 480 wide. The sheet fits its content, with no empty band above the buttons and no
   inner scroll view until it reaches the window's height. Initial focus is Name.
 - **Header.** 20-point insets, with the mark and text vertically centered between the sheet's top
-  edge and the form. The button row below the form is centered the same way, between the form
-  and the sheet's bottom edge. A 40-point identity mark, 12 points, then a 15-point semibold title
+  edge and the form. The button row below the form keeps 20-point side insets and sits 10 points
+  from the form and 10 from the sheet's bottom edge. A 40-point identity mark, 12 points, then a 15-point semibold title
   over one 12-point secondary line when the sheet has a subtitle. Edit Channel has only its
   title, vertically centered beside the mark with no empty subtitle line. No divider follows
   the header. Channel sheets use the
