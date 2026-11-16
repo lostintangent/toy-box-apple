@@ -78,7 +78,11 @@ struct ConversationTranscript: View {
         frames.mapValues { TranscriptCoordinates.viewportFrame($0, top: viewport.top) }
     }
 
-    var pagingFrames: [String: TranscriptMessageFrame] {
+    var pagingFrames: [String: TranscriptMessageFrame] { onScreen(frames) }
+
+    /// Frames placed by their content position under the native scroll offset, which a `scrollTo` moves
+    /// without SwiftUI reporting the rows' new viewport frames.
+    private func onScreen(_ frames: [String: TranscriptMessageFrame]) -> [String: TranscriptMessageFrame] {
         let top = window.viewportTop ?? viewport.top
         return frames.mapValues { TranscriptCoordinates.viewportFrame($0, top: top) }
     }
@@ -195,6 +199,17 @@ struct ConversationTranscript: View {
     private func observedScroll(proxy: ScrollViewProxy) -> some View {
         scrollViewport(proxy: proxy)
             .onChange(of: followsLatest, initial: true) { window.pinsToBottom = followsLatest }
+            .onAppear {
+                window.liveResizeChanged = { started in
+                    if started {
+                        geometry.liveResizePlace = readingPlace
+                    } else {
+                        // AppKit lays out each step of the drag as it happens, so the frames already have
+                        // the rows' sizes at the final width.
+                        restoreAfterLiveResize(in: frames, using: proxy)
+                    }
+                }
+            }
             .onChange(of: interaction.jumpToLatestRequest) { jumpToLatest(using: proxy) }
             .onChange(of: interaction.messageView) {
                 catchUp?.isPinned = false
@@ -266,11 +281,14 @@ struct ConversationTranscript: View {
                                     canFollow: hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling
                                         && catchUp?.holdsLanding != true && !find.isPresented)
             geometry.viewport = new
+            if geometry.rebuild == .building { _ = landReadingRow(in: frames) }
             showPlacedOpening()
             followReaderWhilePaging()
             pointer.contentDidMove(byReader: isUserScrolling || !isAtBottom || !update.isAtBottom)
             // A place past the end of the new estimates isn't the bottom, so the reader's row is still built and held.
-            if isAtBottom != update.isAtBottom, geometry.rebuild != .building { isAtBottom = update.isAtBottom }
+            if isAtBottom != update.isAtBottom, geometry.rebuild != .building, geometry.liveResizePlace == nil {
+                isAtBottom = update.isAtBottom
+            }
             if update.follows && !window.holdsResizePin {
                 // Floating controls and composer growth change only the unobscured height.
                 let animation: Animation? = reduceMotion || old.contentHeight != new.contentHeight
@@ -352,7 +370,7 @@ struct ConversationTranscript: View {
                                          }
                                      })
                     .equatable()
-                    .padding(.top, item.order == 0 ? TranscriptSpacing.run : item.spacing)
+                    .padding(.top, Self.gap(above: item))
                     .id(item.id)
             }
             let outgoing = store.sending
@@ -690,38 +708,43 @@ struct ConversationTranscript: View {
     /// `scrollTo` that puts it back where it was on screen. SwiftUI keeps the offset that scroll lands on
     /// and puts it back on later layout changes, undoing any scroll of ours, so from then until the reader
     /// scrolls, that offset owns the place and the hold corrects nothing.
+    ///
+    /// Dragging the window's edge only promises the place back when the drag ends. Holding it every pass
+    /// fought SwiftUI's own offset, which re-estimates move between passes, and lost the place, so the
+    /// hold stands down for the drag and puts the reader's row back once, with the same `scrollTo`.
+    ///
+    /// The hold keeps one row until the reader scrolls, because frames can lag the offset by a pass.
     private func holdReadingPlace(in frames: [String: TranscriptMessageFrame], using proxy: ScrollViewProxy) {
-        // Anything else that moves the scroll position owns it outright, so the hold stands down while
-        // following the bottom, landing, paging or revealing. New code that scrolls the
-        // transcript needs to switch it off here too.
-        let holds = hasLanded && pagingAnchor == nil && !isRevealing
-            && (!isAtBottom || catchUp?.holdsLanding == true)
+        let holds = holdsReadingPlace
+        if geometry.liveResizePlace != nil, holds {
+            geometry.rebuild = nil
+            return
+        }
         let rebuild = holds ? geometry.rebuild : nil
         geometry.rebuild = nil
         var shift: CGFloat = 0
         switch rebuild {
         case .handedOff:
+            // SwiftUI keeps the offset, not the row, so a new width needs the row put back again.
+            if let placed = geometry.placed,
+               frames.contains(where: { id, frame in geometry.frames[id].map { $0.rect.width != frame.rect.width } ?? false }) {
+                return placeReadingRow(placed.id, top: placed.top, height: placed.height, inset: placed.inset,
+                                       in: frames, using: proxy)
+            }
             geometry.rebuild = .handedOff
             geometry.readingAnchor = viewport.readingAnchor(in: frames) ?? geometry.readingAnchor
             return
         case .building:
-            // The row can build before the scroll that builds it lands.
-            if let anchor = geometry.readingAnchor, let frame = frames[anchor.id],
-               frame.rect.maxY > 0, frame.rect.minY < viewport.height {
-                geometry.rebuild = .handedOff
-            } else {
-                geometry.rebuild = .building
-            }
+            if landReadingRow(in: frames) { return }
+            geometry.rebuild = .building
             return
         case nil:
             if holds, let anchor = geometry.readingAnchor, let frame = frames[anchor.id] {
                 shift = frame.contentTop - anchor.contentTop
             } else if holds, frames.isEmpty, let anchor = geometry.readingAnchor,
-                      let rect = geometry.frames[anchor.id]?.rect, let id = lazyChildID(ofFrame: anchor.id) {
-                // The anchor that puts the row's top back where it was, at its old height.
-                let y = rect.minY / max(viewport.height - rect.height, 1)
-                geometry.rebuild = .building
-                proxy.scrollTo(id, anchor: UnitPoint(x: 0, y: min(max(y, 0), 1)))
+                      let rect = geometry.frames[anchor.id]?.rect {
+                rebuildReadingRow(anchor.id, top: rect.minY, height: rect.height,
+                                  inset: childInset(ofFrame: anchor.id, in: geometry.frames), using: proxy)
                 return
             } else if holds, geometry.readingAnchor != nil,
                       let common = viewport.readingAnchor(in: frames.filter { geometry.frames[$0.key] != nil }),
@@ -731,7 +754,100 @@ struct ConversationTranscript: View {
             }
         }
         if abs(shift) > 0.25 { window.scroll(by: shift) } else { shift = 0 }
-        geometry.readingAnchor = holds ? viewport.readingAnchor(in: frames, scrolledBy: shift) : nil
+        if holds, !isUserScrolling, let anchor = geometry.readingAnchor, let frame = frames[anchor.id] {
+            geometry.readingAnchor = .init(id: anchor.id, contentTop: frame.contentTop)
+        } else {
+            geometry.readingAnchor = holds ? viewport.readingAnchor(in: frames, scrolledBy: shift) : nil
+        }
+    }
+
+    /// Builds the reader's row with a `scrollTo` whose anchor puts its top `top` points down the
+    /// viewport at `height`, and hands the place to the offset it lands on. The scroll places the row's
+    /// lazy child, whose top is `inset` above the row's.
+    private func rebuildReadingRow(_ id: String, top: CGFloat, height: CGFloat, inset: CGFloat,
+                                   using proxy: ScrollViewProxy) {
+        guard let child = lazyChildID(ofFrame: id) else { return }
+        let y = (top - inset) / max(viewport.height - height - inset, 1)
+        geometry.rebuild = .building
+        geometry.placed = .init(id: id, top: top, height: height, inset: inset)
+        proxy.scrollTo(child, anchor: UnitPoint(x: 0, y: min(max(y, 0), 1)))
+    }
+
+    /// Anything else that moves the scroll position owns it outright, so the hold stands down while
+    /// following the bottom, landing, paging or revealing. New code that scrolls the transcript needs
+    /// to switch it off here too.
+    private var holdsReadingPlace: Bool {
+        hasLanded && pagingAnchor == nil && !isRevealing && (!isAtBottom || catchUp?.holdsLanding == true)
+    }
+
+    /// A scroll to a row it had to build lands where the estimates put it, so once SwiftUI's geometry
+    /// reports where it landed, the row, built now, moves natively to where it was. A second `scrollTo`
+    /// would leave SwiftUI a target to put back over the reader's next scroll.
+    private func landReadingRow(in frames: [String: TranscriptMessageFrame]) -> Bool {
+        guard let placed = geometry.placed, let frame = onScreen(frames)[placed.id] else { return false }
+        // The anchor's content position is from before the scroll, maybe at another width.
+        geometry.readingAnchor = .init(id: placed.id, contentTop: frame.contentTop)
+        guard let top = window.viewportTop, abs(viewport.top - top) < 0.01 else { return false }
+        geometry.rebuild = .handedOff
+        if abs(frame.rect.minY - placed.top) > 0.5 { placeBuiltReadingRow(placed.id, top: placed.top) }
+        return true
+    }
+
+    /// The reader's row and where it is on screen, while the hold keeps it.
+    private var readingPlace: TranscriptScrollGeometry.LiveResizePlace? {
+        let frames = onScreen(frames)
+        guard holdsReadingPlace, let anchor = geometry.readingAnchor ?? viewport.readingAnchor(in: frames),
+              let rect = frames[anchor.id]?.rect else { return nil }
+        return .init(anchor: anchor, rect: rect, inset: childInset(ofFrame: anchor.id, in: frames))
+    }
+
+    /// The gap above an item, which its lazy child draws as padding.
+    private static func gap(above item: TranscriptItem) -> CGFloat {
+        item.order == 0 ? TranscriptSpacing.run : item.spacing
+    }
+
+    /// How far below the top of its lazy child a frame starts: the gap above the child, and any frame
+    /// above it in the child, such as its divider.
+    private func childInset(ofFrame id: String, in frames: [String: TranscriptMessageFrame]) -> CGFloat {
+        guard let child = lazyChildID(ofFrame: id), let frame = frames[id],
+              let item = TranscriptItem.items(rows).first(where: { $0.id == child }) else { return 0 }
+        let top = frames.filter { lazyChildID(ofFrame: $0.key) == child }.map(\.value.rect.minY).min() ?? frame.rect.minY
+        return Self.gap(above: item) + frame.rect.minY - top
+    }
+
+    /// Puts the reader's row back where it was when the drag started, at its height in `frames`, which
+    /// have the rows' sizes at the new width.
+    private func restoreAfterLiveResize(in frames: [String: TranscriptMessageFrame], using proxy: ScrollViewProxy) {
+        guard let place = geometry.liveResizePlace else { return }
+        geometry.liveResizePlace = nil
+        guard holdsReadingPlace else { return }
+        geometry.readingAnchor = place.anchor
+        placeReadingRow(place.anchor.id, top: place.rect.minY, height: place.rect.height, inset: place.inset,
+                        in: frames, using: proxy)
+    }
+
+    /// Puts the reader's row back at `top`. A built row moves natively, which leaves SwiftUI no `scrollTo`
+    /// target to put back over a later scroll, and the hold keeps it from there. Only a row that isn't
+    /// built needs `scrollTo`.
+    private func placeReadingRow(_ id: String, top: CGFloat, height: CGFloat, inset: CGFloat,
+                                 in frames: [String: TranscriptMessageFrame], using proxy: ScrollViewProxy) {
+        guard let frame = onScreen(frames)[id] else {
+            return rebuildReadingRow(id, top: top, height: height, inset: inset, using: proxy)
+        }
+        geometry.rebuild = nil
+        geometry.placed = nil
+        geometry.readingAnchor = .init(id: id, contentTop: frame.contentTop)
+        placeBuiltReadingRow(id, top: top)
+    }
+
+    /// Moves a built row's top to `top` natively, the way a reveal places its row, once SwiftUI's update
+    /// is over, since a scroll made during it can be put back.
+    private func placeBuiltReadingRow(_ id: String, top: CGFloat) {
+        Task { @MainActor in
+            // Rows above can rebuild before this runs, so the row's frame is read now.
+            guard let frame = geometry.frames[id] else { return }
+            _ = window.restoreReadingBottom(top + frame.rect.height, of: frame)
+        }
     }
 
     @discardableResult
@@ -878,6 +994,24 @@ final class TranscriptScrollGeometry {
     /// Set once a pass builds none of the reader's rows and the hold builds the reading anchor's row with a
     /// `scrollTo`, until the reader scrolls.
     var rebuild: ReadingRebuild?
+    /// Where the hold's last `scrollTo` aims the reader's row, at the height it aimed with.
+    var placed: ReadingPlacement?
+
+    struct ReadingPlacement {
+        var id: String
+        var top: CGFloat
+        var height: CGFloat
+        var inset: CGFloat
+    }
+    /// The reader's row and where it was on screen when the user started dragging the window's edge.
+    var liveResizePlace: LiveResizePlace?
+
+    struct LiveResizePlace {
+        var anchor: TranscriptReadingAnchor
+        var rect: CGRect
+        /// How far below the top of its lazy child, which a `scrollTo` places, the row starts.
+        var inset: CGFloat
+    }
     private var waiter: (id: String, historyStart: Int?, token: UUID, continuation: CheckedContinuation<Void, Never>)?
 
     enum ReadingRebuild {

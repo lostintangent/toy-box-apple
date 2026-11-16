@@ -1,5 +1,11 @@
 # Changelog
 
+## Mac 0.1.47
+
+### Bugs/Polish
+
+- Dragging the window's edge to resize it while you're reading now keeps the message you were reading right where it was, so you never lose your place.
+
 ## Mac 0.1.46
 
 ### Bugs/Polish

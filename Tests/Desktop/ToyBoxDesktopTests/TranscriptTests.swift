@@ -671,6 +671,57 @@ struct TranscriptTests {
     }
 
     @MainActor
+    @Test func draggingTheWidthWhileReadingKeepsTheReadersRow() async throws {
+        let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), resizable: true)
+        defer { await harness.close() }
+        try await harness.scrollUp(byWheel: TranscriptHarness.wheelEventsApply) { harness.bottomGap > 400 }
+        let reading = try #require(harness.visibleFrames().filter { $0.value.minY >= 0 }
+            .min { $0.value.minY < $1.value.minY })
+
+        try await harness.drag(throughWidths: [480, 440, 400])
+        let dragged = harness.frames[reading.key]?.rect ?? .null
+        #expect(abs(dragged.minY - reading.value.minY) < 1, "\(reading.key) moved from \(reading.value) to \(dragged)")
+
+        harness.resize(width: 520)
+        try await harness.settled()
+        let resized = harness.frames[reading.key]?.rect ?? .null
+        #expect(abs(resized.minY - reading.value.minY) < 5, "\(reading.key) moved from \(reading.value) to \(resized)")
+    }
+
+    @MainActor
+    @Test func pagingDownAfterADragHandsThePlaceBackToTheHold() async throws {
+        let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), resizable: true)
+        defer { await harness.close() }
+        try await harness.scrollUp(byWheel: TranscriptHarness.wheelEventsApply) { harness.bottomGap > 400 }
+        let held = try #require(harness.visibleFrames().filter { $0.value.minY >= 0 }
+            .min { $0.value.minY < $1.value.minY })
+        try await harness.drag(throughWidths: [460, 400])
+        // Like a person, page once the reader's row is back in place.
+        try await harness.waitUntil { abs((harness.frames[held.key]?.rect.minY ?? .infinity) - held.value.minY) < 1 }
+        try await harness.settled()
+        // SwiftUI puts a `scrollTo`'s target back over a later scroll, so each page must stay where it lands.
+        for down in [true, false] {
+            let top = harness.scrollView.contentView.bounds.minY
+            if down { harness.scrollView.pageDown(nil) } else { harness.scrollView.pageUp(nil) }
+            try await harness.settled()
+            let paged = harness.scrollView.contentView.bounds.minY
+            #expect(abs(paged - top) > 100, "Paging \(down ? "down" : "up") went from \(top) back to \(paged)")
+        }
+        let reading = try #require(harness.visibleFrames().filter { $0.value.minY >= 0 }
+            .min { $0.value.minY < $1.value.minY })
+        let sequence = try #require(Int(reading.key.dropFirst()))
+        let above = try #require(harness.frames["m\(sequence - 1)"]?.rect)
+        var grown = transcriptTestMessage(sequence - 1)
+        grown.content = .text(Array(repeating: "This update grew another long line of words here.", count: 4)
+            .joined(separator: "\n\n"))
+        harness.push(grown, revision: 2)
+        try await harness.waitUntil { (harness.frames["m\(sequence - 1)"]?.rect.height ?? 0) > above.height + 40 }
+        try await harness.settled()
+        let after = harness.frames[reading.key]?.rect ?? .null
+        #expect(abs(after.minY - reading.value.minY) < 1, "\(reading.key) moved from \(reading.value) to \(after)")
+    }
+
+    @MainActor
     @Test(arguments: [false, true])
     func findOpeningProgressErrorsAndClosingLeaveTheReadersMessagesInPlace(atBottom: Bool) async throws {
         let find = TranscriptFind()
@@ -2853,6 +2904,18 @@ private final class TranscriptHarness {
         let size = CGSize(width: width ?? frame.width, height: height ?? frame.height)
         window.setFrame(NSRect(x: frame.minX, y: frame.maxY - size.height, width: size.width, height: size.height),
                         display: true)
+    }
+
+    /// Drags the right edge through each width, as the user does, with AppKit's live-resize notifications
+    /// around it, then lets go.
+    func drag(throughWidths widths: [CGFloat]) async throws {
+        NotificationCenter.default.post(name: NSWindow.willStartLiveResizeNotification, object: window)
+        for width in widths {
+            resize(width: width)
+            try await frame()
+        }
+        NotificationCenter.default.post(name: NSWindow.didEndLiveResizeNotification, object: window)
+        try await settled()
     }
 
     func push(_ message: ChannelMessage, revision: Int) {

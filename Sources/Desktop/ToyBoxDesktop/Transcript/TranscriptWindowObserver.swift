@@ -16,7 +16,17 @@ final class TranscriptWindowObserver {
         scrollView = scroll
         window = view.window
         if let scroll { observeResizes(of: scroll) }
+        for name in [NSWindow.willStartLiveResizeNotification, NSWindow.didEndLiveResizeNotification] {
+            guard let window = view.window else { break }
+            notifications.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: nil) {
+                [weak self] _ in
+                MainActor.assumeIsolated { self?.liveResizeChanged?(name == NSWindow.willStartLiveResizeNotification) }
+            })
+        }
     }
+
+    /// Runs when the user starts dragging a window edge, with `true`, and when they let go.
+    var liveResizeChanged: (@MainActor (_ started: Bool) -> Void)?
 
     var viewportTop: CGFloat? {
         guard let scrollView else { return nil }
