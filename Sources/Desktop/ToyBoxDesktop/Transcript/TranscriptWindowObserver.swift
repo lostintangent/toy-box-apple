@@ -7,8 +7,6 @@ import ToyBoxUI
 @MainActor @Observable
 final class TranscriptWindowObserver {
     private(set) var isKeyWindow = false
-    /// Counts live resizes as they begin.
-    private(set) var liveResizeStarts = 0
     @ObservationIgnored private weak var scrollView: NSScrollView?
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private var notifications: [NSObjectProtocol] = []
@@ -32,15 +30,8 @@ final class TranscriptWindowObserver {
             }
             notifications.append(token)
         }
-        notifications.append(NotificationCenter.default.addObserver(
-            forName: NSWindow.willStartLiveResizeNotification, object: view.window, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.liveResizeStarts += 1 }
-        })
         if let scroll { observeResizes(of: scroll) }
     }
-
-    /// The clip view's offset as AppKit has it, which can run ahead of SwiftUI's geometry after a clamp.
-    var scrollOffset: CGFloat? { scrollView?.contentView.bounds.minY }
 
     var viewportTop: CGFloat? {
         guard let scrollView else { return nil }
@@ -88,9 +79,6 @@ final class TranscriptWindowObserver {
               let bottom = bottomOffset, let clip = scrollView?.contentView else { return false }
         return abs(clip.bounds.minY - bottom) <= 0.25
     }
-
-    /// How far AppKit's clip sits above the end of the document.
-    var endGap: CGFloat? { bottomOffset.flatMap { bottom in scrollOffset.map { bottom - $0 } } }
 
     private var bottomOffset: CGFloat? {
         guard let scrollView, let document = scrollView.documentView, document.isFlipped else { return nil }
@@ -224,8 +212,7 @@ extension BenchmarkPlace {
             let rect = TranscriptCoordinates.viewportFrame(frame, top: nativeTop).rect
             if rect.minY.isFinite, rect.height.isFinite, rect.height > 0 { rows[id] = rect }
         }
-        self.init(rows: rows, viewportHeight: viewport.height,
-                  readThrough: viewport.visibleThrough(messageFrames, nativeViewportTop: nativeTop))
+        self.init(rows: rows, viewportHeight: viewport.height)
     }
 }
 
@@ -270,8 +257,7 @@ extension View {
                 Color.clear.preference(key: TranscriptMessageFrames.self, value: [
                     id: .init(sequence: sequence, rect: geometry.frame(in: .named("transcript-viewport")),
                               historyStart: historyStart,
-                              contentTop: geometry.frame(in: .named("transcript-content")).minY,
-                              windowRect: geometry.frame(in: .global))
+                              contentTop: geometry.frame(in: .named("transcript-content")).minY)
                 ])
             }
         }

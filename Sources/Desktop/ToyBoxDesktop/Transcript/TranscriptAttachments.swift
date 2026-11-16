@@ -278,11 +278,7 @@ enum TranscriptThumbnails {
         try await ChannelThumbnails.load(for: attachment, api: api, scale: scale, reload: reload, fallback: svg)
     }
 
-    nonisolated static func decode(_ file: URL, scale: CGFloat) throws -> CGImage {
-        try ChannelThumbnails.decode(file, scale: scale, fallback: svg).image
-    }
-
-    nonisolated private static let svg: ChannelThumbnails.Fallback = { file, bound in
+    nonisolated static let svg: ChannelThumbnails.Fallback = { file, bound in
         try TranscriptSVGImage.decode(file, maximumPixelSize: bound)
     }
 }

@@ -145,8 +145,6 @@ public struct TranscriptPlacement: Equatable, Sendable {
         case readerScrolled(to: CGFloat)
         /// Captures reading without moving. With no anchorable rows, preserves the existing intent.
         case holdCurrentPosition
-        /// Restores position-based following without moving or reporting reader input.
-        case resumeFromCurrentPosition
         /// Rows arrived below the last one, reduced against the geometry from before they did. A
         /// landing the end stopped short follows them, like any arrival at the end. Growth of the
         /// landed row isn't an arrival, and a catch-up card pins its landing's top, so it keeps landing.
@@ -172,8 +170,6 @@ public struct TranscriptPlacement: Equatable, Sendable {
                 return TranscriptPlacement(intent: intent, origin: nil)
             }
             return TranscriptPlacement(intent: intentForPosition(layout, allowsFollowing: false) ?? intent, origin: nil)
-        case .resumeFromCurrentPosition:
-            return TranscriptPlacement(intent: intentForPosition(layout, allowsFollowing: true) ?? intent, origin: nil)
         case .arrived(let pinsLanding):
             return TranscriptPlacement(intent: !pinsLanding && endHolds(intent, layout: layout) ? .following : intent,
                                        origin: nil)

@@ -7,15 +7,12 @@ public struct TranscriptMessageFrame: Equatable, Sendable {
     public var historyStart: Int
     /// The top in the content, which only layout changes move. Scrolling moves only `rect`.
     public var contentTop: CGFloat
-    public var windowRect: CGRect
 
-    public init(sequence: Int, rect: CGRect, historyStart: Int, contentTop: CGFloat = 0,
-                windowRect: CGRect = .zero) {
+    public init(sequence: Int, rect: CGRect, historyStart: Int, contentTop: CGFloat = 0) {
         self.sequence = sequence
         self.rect = rect
         self.historyStart = historyStart
         self.contentTop = contentTop
-        self.windowRect = windowRect
     }
 }
 
@@ -79,21 +76,6 @@ public struct TranscriptViewport: Equatable, Sendable {
         if bottomGap <= 48 || following { return true }
         let resized = contentHeight != old.contentHeight || height != old.height
         return resized || bottomGap > old.bottomGap ? false : wasAtBottom
-    }
-
-    /// The newest message the reader can see, which the benchmark reports with each place. Visibility is
-    /// `TranscriptPlacement.visibleRows`, the one rule on both apps.
-    public func visibleThrough(_ frames: [String: TranscriptMessageFrame], nativeViewportTop: CGFloat? = nil) -> Int? {
-        // Read in content coordinates when native clipping has outpaced frame preferences.
-        let origin = nativeViewportTop.map { $0 - TranscriptCoordinates.contentTopPadding } ?? 0
-        let rows = frames.map { id, frame in
-            TranscriptPlacement.RowFrame(id: id, order: frame.sequence,
-                                         top: nativeViewportTop == nil ? frame.rect.minY : frame.contentTop,
-                                         height: frame.rect.height, isAnchorable: frame.sequence > 0)
-        }
-        let viewport = TranscriptPlacement.Viewport(width: width, height: height, topInset: 0, bottomInset: 0)
-        return TranscriptPlacement.visibleRows(rows, viewport: viewport, origin: origin)
-            .compactMap { frames[$0]?.sequence }.max()
     }
 
     /// The first frame starting in the viewport or, when one row fills it, the frame spanning its top.
