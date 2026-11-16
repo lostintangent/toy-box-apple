@@ -8,6 +8,7 @@ struct ConversationTranscript: View {
     let store: ChannelStore
     @Environment(ChannelInteraction.self) var interaction
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.isKeyWindow) private var isKeyWindow
     @SnapshotRequest var snapshot
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.channelTextScale) private var textScale
@@ -84,7 +85,7 @@ struct ConversationTranscript: View {
 
     private var read: TranscriptRead {
         .init(latestSequence: store.state?.channel.latestSequence,
-              isLooking: !snapshot.isActive && window.isKeyWindow && scenePhase == .active,
+              isLooking: !snapshot.isActive && isKeyWindow && scenePhase == .active,
               isConnected: store.phase.isConnected)
     }
 
@@ -218,7 +219,7 @@ struct ConversationTranscript: View {
                 if isAtBottom && !find.isPresented && new.count > old.count { scrollToLatest(using: proxy) }
             }
             .onChange(of: store.requestSequence, initial: true) { _, sequence in
-                let eligible = !snapshot.isActive && hasLanded && window.isKeyWindow
+                let eligible = !snapshot.isActive && hasLanded && isKeyWindow
                     && scenePhase == .active && store.phase.isConnected
                 guard requestAnnouncements.receive(sequence, isEligible: eligible),
                       let sequence else { return }
