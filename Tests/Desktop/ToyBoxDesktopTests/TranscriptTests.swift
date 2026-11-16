@@ -358,12 +358,10 @@ struct TranscriptTests {
     @MainActor
     @Test func yourOwnNewMessageMovesToTheEndFromAnywhereButRetryDoesNot() async throws {
         let find = TranscriptFind()
-        let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), find: find)
+        let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...40), find: find)
         defer { await harness.close() }
         func readEarlier() async throws {
-            harness.interaction.reveal(sequence: 5)
-            try await harness.waitUntil { harness.isVisible("m5") && harness.bottomGap > 400 }
-            try await harness.settled()
+            try await harness.scrollUp(byWheel: false) { harness.bottomGap > 400 }
         }
         try await readEarlier()
         harness.interaction.findInChannel()
