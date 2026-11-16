@@ -115,14 +115,8 @@ final class TranscriptWindowObserver {
         let maximum = max(minimum, document.bounds.height + scrollView.contentInsets.bottom - clip.bounds.height)
         let target = min(maximum, max(minimum, offset))
         guard abs(clip.bounds.minY - target) > 0.25 else { return true }
-        let previous = clip.bounds.minY
         clip.scroll(to: NSPoint(x: clip.bounds.minX, y: target))
         scrollView.reflectScrolledClipView(clip)
-        if ProcessInfo.processInfo.environment["TOY_BOX_TEST_PAGING_TRACE"] == "1" {
-            let line = "Transcript paging m\(frame.sequence): native \(previous) -> \(clip.bounds.minY), "
-                + "target \(target), content top \(frame.contentTop), saved bottom \(bottom)\n"
-            FileHandle.standardError.write(Data(line.utf8))
-        }
         return false
     }
 
