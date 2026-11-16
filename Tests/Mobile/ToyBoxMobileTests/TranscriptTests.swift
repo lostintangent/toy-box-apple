@@ -6,6 +6,7 @@ import SwiftUI
 import Synchronization
 import Testing
 @testable import ToyBoxMobile
+import ToyBoxIntelligence
 import ToyBoxUI
 import UIKit
 
@@ -794,6 +795,241 @@ struct TranscriptTests {
         shown.store = quiet
         try await reads(["busy 400", "quiet 40"])
     }
+
+    /// The conversation opens at its end, then its last message shrinks, as when agents' reactions go.
+    /// The end stays at the bottom of the screen, with no space left below it.
+    @Test func theEndStaysAtTheBottomWhenTheLastMessageShrinksAfterLanding() async throws {
+        let suite = "transcript-shrink-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let server = "https://shrink-\(UUID().uuidString.lowercased()).invalid"
+        let model = AppModel(arguments: ["--server", server], environment: [:], defaults: defaults,
+                             session: fixtureSession())
+        model.setScenePhase(.active)
+        defer { model.setScenePhase(.background) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ReadRecordingProtocol.self]
+        let api = try ChannelAPI(serverURL: server, session: URLSession(configuration: configuration))
+        let agents = (1...5).map { ChannelAgent(id: "a\($0)", name: "Agent \($0)") }
+        let kinds = ["done", "agree", "celebrate", "love", "laugh"]
+        let latest = 40
+        var messages = (1...latest).map { message($0, .user) }
+        messages[latest - 1] = ChannelMessage(
+            id: "m\(latest)", sequence: latest, timestamp: "2026-10-25T12:00:00Z", sender: .agent("a1"),
+            content: .text("Reacted"),
+            reactions: zip(agents, kinds).map { ChannelReaction(agentId: $0.id, reaction: $1) })
+        let store = ChannelStore(id: "shrink", api: api)
+        _ = try store.apply(.init(type: "snapshot", state: ChannelState(
+            revision: 1,
+            channel: Channel(id: "shrink", name: "shrink", model: .init(provider: "test", name: "test"),
+                             latestSequence: latest, seenThrough: latest, updatedAt: "2026-10-25T12:00:00Z"),
+            lead: .lead(id: "lead", profile: .init(name: "Lead", role: "Coordinator",
+                                                  avatar: .init(mark: "M4 12H20", color: "#123456"))),
+            members: agents, messages: messages)))
+        model.showsSelection = true
+        model.selection = store.target
+        let host = UIHostingController(rootView: SwitchingChannelScreen(shown: ShownChannel(store))
+            .environment(model)
+            .environment(model.following)
+            .environment(ManagementPresenter())
+            .environment(Overview())
+            .environment(\.horizontalSizeClass, .compact)
+            .environment(\.scenePhase, .active))
+        // The folded Duo's scene.
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+
+        func transcript() -> UIScrollView? {
+            func find(_ view: UIView) -> UIScrollView? {
+                if let scroll = view as? UIScrollView, scroll.contentSize.height > scroll.bounds.height { return scroll }
+                return view.subviews.lazy.compactMap(find).first
+            }
+            return find(host.view)
+        }
+        /// How far the scroll rests past the end of its content, or short of it.
+        func pastEnd(_ scroll: UIScrollView) -> CGFloat {
+            scroll.contentOffset.y - (scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+        }
+        var landed: CGFloat = 0
+        try await waitUntil("lands at the end", in: host.view) {
+            guard let scroll = transcript(), abs(pastEnd(scroll)) <= 1 else { return false }
+            landed = scroll.contentSize.height
+            return true
+        }
+        for (revision, agent) in agents.enumerated() {
+            _ = try store.apply(.init(type: "reaction", revision: revision + 2, sequence: latest, agentId: agent.id))
+        }
+        try await waitUntil("rests at the shrunk end, \(transcript().map { "\(pastEnd($0)) past it" } ?? "")",
+                            in: host.view) {
+            guard let scroll = transcript() else { return false }
+            return scroll.contentSize.height < landed - 40 && abs(pastEnd(scroll)) <= 1
+        }
+    }
+
+    @Test(arguments: [(4, 678.0), (8, 678.0), (4, 1600.0)])
+    func theEndStaysAtTheBottomWhenTheCatchUpCardGoesAfterLanding(unreadCount: Int, height: Double) async throws {
+        let suite = "transcript-card-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let server = "https://card-\(UUID().uuidString.lowercased()).invalid"
+        let model = AppModel(arguments: ["--server", server], environment: [:], defaults: defaults,
+                             session: fixtureSession())
+        model.setScenePhase(.active)
+        defer { model.setScenePhase(.background) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ReadRecordingProtocol.self]
+        let api = try ChannelAPI(serverURL: server, session: URLSession(configuration: configuration))
+        let latest = 40
+        let text = String(repeating: "The rest is two surfaces, the editor and the preview. ", count: 8)
+        let messages = (1...latest).map { sequence in
+            sequence <= latest - unreadCount ? message(sequence, .user) : ChannelMessage(
+                id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-25T12:00:00Z", sender: .agent("a1"),
+                content: .text("\(sequence) \(text)"))
+        }
+        let store = ChannelStore(id: "card", api: api)
+        _ = try store.apply(.init(type: "snapshot", state: ChannelState(
+            revision: 1,
+            channel: Channel(id: "card", name: "card", model: .init(provider: "test", name: "test"),
+                             latestSequence: latest, seenThrough: latest - unreadCount,
+                             updatedAt: "2026-10-25T12:00:00Z"),
+            lead: .lead(id: "lead", profile: .init(name: "Lead", role: "Coordinator",
+                                                  avatar: .init(mark: "M4 12H20", color: "#123456"))),
+            members: [ChannelAgent(id: "a1", name: "Agent 1")], messages: messages)))
+        model.showsSelection = true
+        model.selection = store.target
+        let service = HeldCatchUpService()
+        let host = UIHostingController(rootView: SwitchingChannelScreen(shown: ShownChannel(store))
+            .environment(model)
+            .environment(model.following)
+            .environment(ManagementPresenter())
+            .environment(Overview())
+            .environment(\.channelIntelligence, service)
+            .environment(\.horizontalSizeClass, .compact)
+            .environment(\.scenePhase, .active))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: height))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+
+        func transcript() -> UIScrollView? {
+            func find(_ view: UIView) -> UIScrollView? {
+                if let scroll = view as? UIScrollView, scroll.contentSize.height > scroll.bounds.height { return scroll }
+                return view.subviews.lazy.compactMap(find).first
+            }
+            return find(host.view)
+        }
+        func pastEnd(_ scroll: UIScrollView) -> CGFloat {
+            scroll.contentOffset.y - (scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+        }
+        var trace: [String] = []
+        defer { try? trace.joined(separator: "\n").write(toFile: "/tmp/tbm-t1241-card-\(unreadCount)-\(Int(height)).txt", atomically: true, encoding: .utf8) }
+        func sample(_ tag: String) {
+            guard let scroll = transcript() else { return }
+            let line = "\(tag) off \(Int(scroll.contentOffset.y)) size \(Int(scroll.contentSize.height)) past \(Int(pastEnd(scroll)))"
+            if trace.last?.dropFirst(2) != line.dropFirst(2) { trace.append(line) }
+        }
+        func frames(_ tag: String, _ count: Int) async throws {
+            for _ in 0..<count {
+                try await Task.sleep(for: .milliseconds(16))
+                host.view.layoutIfNeeded()
+                sample(tag)
+            }
+        }
+        func capture(_ name: String) throws {
+            let image = UIGraphicsImageRenderer(bounds: host.view.bounds).image { context in
+                host.view.layer.render(in: context.cgContext)
+            }
+            try image.pngData()?.write(to: URL(fileURLWithPath: "/tmp/tbm-t1241-card-\(unreadCount)-\(Int(height))-\(name).png"))
+        }
+        try await frames("A", 90)
+        try capture("1-asked")
+        model.interaction(for: store.target!).jumpToLatest()
+        try await frames("J", 60)
+        try capture("2-latest")
+        service.decline()
+        try await frames("B", 90)
+        try capture("3-declined")
+        let scroll = try #require(transcript())
+        #expect(pastEnd(scroll) <= 1)
+    }
+}
+
+@MainActor @Observable
+private final class PlainRows {
+    var cardHeight: CGFloat = 280
+    var lastHeight: CGFloat = 300
+}
+
+private struct PlainTranscript: View {
+    let rows: PlainRows
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 8) {
+                ForEach(0..<40, id: \.self) { index in
+                    VStack(spacing: 0) {
+                        if index == 36 { Color.blue.frame(height: rows.cardHeight) }
+                        Color.gray.frame(height: index == 39 ? rows.lastHeight : 120)
+                    }
+                }
+            }
+        }
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .defaultScrollAnchor(.bottom, for: .sizeChanges)
+    }
+}
+
+@MainActor @Suite("Plain SwiftUI end")
+struct PlainSwiftUIEndTests {
+    @Test(arguments: [false, true])
+    func theEndStaysAtTheBottomWhenContentShrinks(onScreen: Bool) async throws {
+        let rows = PlainRows()
+        let host = UIHostingController(rootView: PlainTranscript(rows: rows))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: onScreen ? 1600 : 678))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        func scroll() -> UIScrollView? {
+            func find(_ view: UIView) -> UIScrollView? {
+                (view as? UIScrollView) ?? view.subviews.lazy.compactMap(find).first
+            }
+            return find(host.view)
+        }
+        func pastEnd(_ scroll: UIScrollView) -> CGFloat {
+            scroll.contentOffset.y - (scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+        }
+        var landed: CGFloat = 0
+        try await waitUntil("lands at the end", in: host.view) {
+            guard let scroll = scroll(), scroll.contentSize.height > scroll.bounds.height,
+                  abs(pastEnd(scroll)) <= 1 else { return false }
+            landed = scroll.contentSize.height
+            return true
+        }
+        rows.cardHeight = 0
+        rows.lastHeight = 60
+        try await waitUntil("rests at the shrunk end, \(scroll().map { "\(pastEnd($0)) past it, content \($0.contentSize.height) from \(landed)" } ?? "")",
+                            in: host.view) {
+            guard let scroll = scroll() else { return false }
+            return scroll.contentSize.height < landed - 200 && abs(pastEnd(scroll)) <= 1
+        }
+    }
+}
+
+/// Holds the catch-up until the test declines it, the way the model can answer after landing.
+private final class HeldCatchUpService: ChannelIntelligenceService {
+    var availability: IntelligenceAvailability { .available }
+    private let held = Mutex<(asked: Bool, continuation: CheckedContinuation<Void, Never>?)>((false, nil))
+    var isAsked: Bool { held.withLock { $0.asked } }
+
+    func catchUp(_ request: CatchUpRequest) async -> CatchUpResult {
+        await withCheckedContinuation { continuation in held.withLock { $0 = (true, continuation) } }
+        return .declined
+    }
+    func decline() {
+        held.withLock { $0.continuation?.resume(); $0.continuation = nil }
+    }
+    func altText(_ request: AltTextRequest) async -> AltText? { nil }
 }
 
 
