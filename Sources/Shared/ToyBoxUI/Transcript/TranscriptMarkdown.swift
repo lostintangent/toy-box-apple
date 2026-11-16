@@ -198,11 +198,12 @@ public struct TranscriptMarkdown: View {
     }
 
     private func inline(_ text: String, size: CGFloat? = nil, fragment: TranscriptMarkdownText.Fragment,
-                        highlights: TranscriptMarkdownHighlights?) -> Text {
+                        highlights: TranscriptMarkdownHighlights?) -> some View {
         let result = transcriptInlineMarkdown(text, agents: agents, textScale: textScale,
                                               fontSize: size ?? bodySize, codeSize: codeSize,
                                               mentionInk: mentionInk)
-        return TranscriptLinks.text(highlights?.applying(to: result, fragment: fragment) ?? result)
+        return TranscriptLinkedText(value: highlights?.applying(to: result, fragment: fragment) ?? result,
+                                    selectable: selectable)
     }
 }
 
@@ -273,54 +274,56 @@ private struct TranscriptTextSelection: ViewModifier {
     let enabled: Bool
 
     func body(content: Content) -> some View {
-        if enabled { content.textSelection(.enabled).modifier(TranscriptLinks()) } else { content }
+        if enabled { content.textSelection(.enabled) } else { content }
     }
 }
 
 /// Selectable text on the Mac lays an AppKit text view over itself that selects and copies but never
-/// follows a link. So each link run carries its URL into the text's layout, and a native `Link` sits
-/// over it, leaving every other click and drag to selection.
-private struct TranscriptLinks: ViewModifier {
+/// follows a link. So selectable text carries each link's URL into its layout, and a native `Link` sits
+/// over each one, leaving every other click and drag to selection. The links stay with their text, so
+/// whatever clips the text, like a scrolling table, clips them too.
+private struct TranscriptLinkedText: View {
     private struct Target: TextAttribute {
         let url: URL
     }
 
-    static func text(_ value: AttributedString) -> Text {
+    let value: AttributedString
+    let selectable: Bool
+
+    var body: some View {
         #if os(macOS)
         let runs = value.runs[\.link]
-        if runs.contains(where: { $0.0 != nil }) {
-            return runs.reduce(Text(verbatim: "")) { text, run in
+        if selectable, runs.contains(where: { $0.0 != nil }) {
+            runs.reduce(Text(verbatim: "")) { text, run in
                 let segment = Text(AttributedString(value[run.1]))
                 return Text("\(text)\(run.0.map { segment.customAttribute(Target(url: $0)) } ?? segment)")
             }
-        }
-        #endif
-        return Text(value)
-    }
-
-    func body(content: Content) -> some View {
-        #if os(macOS)
-        content.overlayPreferenceValue(Text.LayoutKey.self) { layouts in
-            GeometryReader { proxy in
-                let targets = layouts.flatMap { anchored in
-                    let origin = proxy[anchored.origin]
-                    return anchored.layout.flatMap { $0 }.compactMap { run in
-                        run[Target.self].map { (run.typographicBounds.rect.offsetBy(dx: origin.x, dy: origin.y), $0.url) }
+            .overlayPreferenceValue(Text.LayoutKey.self) { layouts in
+                GeometryReader { proxy in
+                    let targets = layouts.flatMap { anchored in
+                        let origin = proxy[anchored.origin]
+                        return anchored.layout.flatMap { $0 }.compactMap { run in
+                            run[Target.self].map {
+                                (run.typographicBounds.rect.offsetBy(dx: origin.x, dy: origin.y), $0.url)
+                            }
+                        }
+                    }
+                    ForEach(targets.indices, id: \.self) { index in
+                        let (rect, url) = targets[index]
+                        Link(destination: url) { Color.clear.contentShape(Rectangle()) }
+                            .frame(width: rect.width, height: rect.height)
+                            .position(x: rect.midX, y: rect.midY)
+                            .pointerStyle(.link)
                     }
                 }
-                ForEach(targets.indices, id: \.self) { index in
-                    let (rect, url) = targets[index]
-                    Link(destination: url) { Color.clear.contentShape(Rectangle()) }
-                        .frame(width: rect.width, height: rect.height)
-                        .position(x: rect.midX, y: rect.midY)
-                        .pointerStyle(.link)
-                }
+                // The text already lists its links for accessibility.
+                .accessibilityHidden(true)
             }
-            // The text already lists its links for accessibility.
-            .accessibilityHidden(true)
+        } else {
+            Text(value)
         }
         #else
-        content
+        Text(value)
         #endif
     }
 }
