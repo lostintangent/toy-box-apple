@@ -73,7 +73,8 @@ struct OverviewRoutineRow: View {
             OverviewRoutineLabel(title: routine.title, schedule: scheduleLine, expanded: state.expanded)
         }
         .buttonStyle(.plain)
-        .listRowInsets(.vertical, 6)
+        // As on artifact rows, 7 keeps the row tall enough for the system's swipe circle.
+        .listRowInsets(.vertical, 7)
         .listRowSeparator(contentEndsSection && !state.expanded ? .hidden : .automatic, edges: .bottom)
         .accessibilityLabel(routine.title)
         .accessibilityValue("\(scheduleLine), \(state.expanded ? "Expanded" : "Collapsed")")
@@ -88,6 +89,7 @@ struct OverviewRoutineRow: View {
         .swipeActions(edge: .leading, allowsFullSwipe: false) {
             if !voiceOver {
                 Button("Run Now", systemImage: "play", action: run)
+                    .labelStyle(.iconOnly)
                     .tint(.accentColor)
                     .disabled(!canRun)
             }
@@ -95,6 +97,7 @@ struct OverviewRoutineRow: View {
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if !voiceOver {
                 Button("Delete", systemImage: "trash", role: .destructive, action: delete)
+                    .labelStyle(.iconOnly)
                     .disabled(!canDelete)
             }
         }

@@ -2842,8 +2842,9 @@ visual size. Bound wider HTML and SVG artwork to that footprint without stretchi
 enlarging the column or adopting the Mac's 28-point size. Phone artifact rows match Team's compact
 two-line rhythm: body title and footnote date, 4-point title/date gap, 24-point icon lane and
 12-point icon/text gap. Team's name/status gap is 2 points. There is no 64-point content minimum.
-Add exactly 6 points of native vertical row inset above and below the minimum-44 label, for both
-short and two-line titles. Rows keep readable content and the full target and are never squeezed to
+Add exactly 7 points of native vertical row inset above and below the minimum-44 label, for both
+short and two-line titles, so the row reaches the 58 points iOS needs to draw a swipe action as a
+circle. Rows keep readable content and the full target and are never squeezed to
 60. Rows grow for wrapping or larger text. Phone artifact rows also offer a trailing Remove swipe,
 `trash` in red, hidden under VoiceOver. Swiping all the way across removes the artifact without tapping
 the button, like Mail. Team and Routines swipes keep full swipe off. The row stays in place with its
@@ -2873,8 +2874,8 @@ routines here, matching the pane.
 Phone routine rows match the phone artifact rows: `calendar.badge.clock` in the same 24-point
 icon lane, primary ink and 12-point icon/text gap, so routine and artifact titles share one
 leading edge. The body title and footnote schedule line sit 4 points apart in a minimum-44 label
-with exactly 6 points of native vertical row inset, growing for wrapping or larger text, with no
-64-point minimum. The disclosure trails the title inline, as for phone task parents: one wrapping
+with exactly 7 points of native vertical row inset, so its swipe action is a circle, growing for
+wrapping or larger text, with no 64-point minimum. The disclosure trails the title inline, as for phone task parents: one wrapping
 `Text` with the title, two non-breaking spaces and the footnote-semibold secondary
 `chevron.right` or `chevron.down`, never a stock `DisclosureGroup` or trailing accessory. The
 whole row is one plain button that toggles immediately, without a fade, and keeps its expansion

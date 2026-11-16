@@ -122,8 +122,10 @@ struct OverviewTeamRow: View {
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if !isLead, !voiceOver {
                 Button("Remove", systemImage: "person.badge.minus", role: .destructive, action: remove)
+                    .labelStyle(.iconOnly)
                     .disabled(!canManage)
                 Button("Edit", systemImage: "pencil", action: edit)
+                    .labelStyle(.iconOnly)
                     .disabled(!canManage)
             }
         }

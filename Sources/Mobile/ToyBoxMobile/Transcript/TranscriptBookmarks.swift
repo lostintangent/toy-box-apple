@@ -122,7 +122,9 @@ private struct TranscriptBookmarkRow: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             if canRemove {
-                Button("Remove", systemImage: "bookmark.slash", action: onRemove).tint(TranscriptBookmark.ink)
+                Button("Remove", systemImage: "bookmark.slash", action: onRemove)
+                    .labelStyle(.iconOnly)
+                    .tint(TranscriptBookmark.ink)
             }
         }
         .accessibilityElement(children: .ignore)

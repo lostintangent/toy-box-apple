@@ -632,7 +632,6 @@ struct OverviewTests {
                 OverviewArtifactRow(
                     artifact: .init(file: .init(kind: "machine", path: "plan.md"), title: "Daily notes"),
                     share: nil, store: store, state: ChannelOverview.Artifact())
-                    .listRowInsets(.vertical, 6)
                 OverviewRoutineRow(
                     routine: .init(id: "routine", title: "Daily review", schedule: "0 9 * * *",
                                    prompt: "Review the workshop."),
@@ -654,7 +653,7 @@ struct OverviewTests {
         let artifact = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 0))).frame
         let routine = try #require(list.layoutAttributesForItem(at: IndexPath(item: 1, section: 0))).frame
         if size == .large {
-            #expect(abs(routine.height - 56) <= 1 && abs(routine.height - artifact.height) <= 1)
+            #expect(abs(routine.height - 58) <= 1 && abs(routine.height - artifact.height) <= 1)
         } else {
             #expect(routine.height > 64)
         }
@@ -849,7 +848,7 @@ struct OverviewTests {
 
     @Test(arguments: [DynamicTypeSize.large, .accessibility5],
           ["Design", "Design notes for the workshop and the next release"])
-    func artifactRowsKeepSixPointInsetsAndGrowWithTitlesAndTextSize(
+    func artifactRowsKeepSevenPointInsetsAndGrowWithTitlesAndTextSize(
         size: DynamicTypeSize, title: String
     ) async throws {
         let suite = "mobile-overview-artifact-rhythm-\(UUID().uuidString)"
@@ -867,7 +866,6 @@ struct OverviewTests {
                 OverviewArtifactRow(
                     artifact: value,
                     share: nil, store: store, state: ChannelOverview.Artifact())
-                    .listRowInsets(.vertical, 6)
             }
             .environment(model).environment(ManagementPresenter()).environment(ChannelInteraction()).environment(viewer)
             .environment(\.horizontalSizeClass, .compact).dynamicTypeSize(size))
@@ -885,9 +883,9 @@ struct OverviewTests {
         let label = ImageRenderer(content: OverviewArtifactLabel(artifact: value, share: nil).dynamicTypeSize(size))
         label.proposedSize = ProposedViewSize(width: artifact.width - 32, height: nil)
         let labelImage = try #require(label.uiImage)
-        #expect(abs(artifact.height - labelImage.size.height - 12) <= 1)
+        #expect(abs(artifact.height - labelImage.size.height - 14) <= 1)
         if size == .large, title == "Design" {
-            #expect(abs(artifact.height - 56) <= 1)
+            #expect(abs(artifact.height - 58) <= 1)
             #expect(artifact.height < 64)
         } else if size.isAccessibilitySize {
             #expect(team.height > 64 && artifact.height > 64)

@@ -16,6 +16,12 @@
 - When you talk to the Lead, Send is ready as soon as your words appear, so you can send the moment you finish speaking.
 - When you send or cancel a note to the Lead, the card now settles back into its row smoothly, with no flash as its text returns to the sidebar, just a check to show your note went, and your open channel stays highlighted.
 
+## iPhone 0.1.42
+
+### Bugs/Polish
+
+- Swiping a team member, artifact, routine or bookmark now shows simple round buttons, matching your channel list.
+
 ## iPhone 0.1.41
 
 ### Bugs/Polish
