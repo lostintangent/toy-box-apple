@@ -373,6 +373,7 @@ final class PerformanceBenchmark {
     /// Drags the window's edge with every message loaded, once following the latest message and once
     /// reading mid-transcript.
     private func resizing() async {
+        placeForLiveResize()
         await load(channelID)
         guard let store = store(channelID) else { return }
         while store.hasOlderMessages {
@@ -689,6 +690,20 @@ final class PerformanceBenchmark {
         guard BenchmarkWindowPlacement.covers(window.frame, pointer),
               let origin = BenchmarkWindowPlacement.origin(awayFrom: pointer, size: window.frame.size,
                                                            in: screen.visibleFrame) else { return }
+        window.setFrameOrigin(origin)
+    }
+
+    /// Moves the window where its right edge, through the whole drag, stays clear of the screen's
+    /// edges and middle, which macOS tiling snaps a dragged edge to, and the window stays clear of
+    /// the pointer.
+    private func placeForLiveResize() {
+        guard let window, let screen = window.screen ?? NSScreen.main else { return }
+        guard let origin = BenchmarkWindowPlacement.origin(
+            dragging: window.frame.size, inward: -(Self.liveResizeSteps.min() ?? 0),
+            awayFrom: NSEvent.mouseLocation, in: screen.visibleFrame) else {
+            fail("the window can't sit clear of the pointer with its dragged edge clear of where macOS tiling "
+                 + "snaps it. Park the pointer nearer a corner of the screen and run it again.")
+        }
         window.setFrameOrigin(origin)
     }
 
@@ -1049,17 +1064,39 @@ enum BenchmarkWindowPlacement {
         frame.insetBy(dx: -margin, dy: -margin).contains(pointer)
     }
 
+    /// How far a dragged edge stays from the screen's edges and middle, where macOS tiling snaps it.
+    static let snapClearance: CGFloat = 64
+
     /// The origin, at a corner of `visible`, that keeps a window of `size` farthest from the
     /// pointer, or nil when every corner covers it.
     static func origin(awayFrom pointer: CGPoint, size: CGSize, in visible: CGRect) -> CGPoint? {
         guard size.width <= visible.width, size.height <= visible.height else { return nil }
-        let corners = [visible.minX, visible.maxX - size.width].flatMap { x in
-            [visible.minY, visible.maxY - size.height].map { CGPoint(x: x, y: $0) }
-        }
+        return farthest(from: pointer, at: [visible.minX, visible.maxX - size.width], size: size, in: visible)
+    }
+
+    /// The origin that keeps a window of `size` farthest from the pointer while its right edge, dragged
+    /// up to `inward` points in and back, stays `snapClearance` from the edges and middle of `visible`,
+    /// or nil when there's no such place.
+    static func origin(dragging size: CGSize, inward: CGFloat, awayFrom pointer: CGPoint,
+                       in visible: CGRect) -> CGPoint? {
+        guard size.height <= visible.height else { return nil }
+        let lowest = visible.minX + snapClearance, highest = visible.maxX - snapClearance - size.width
+        // The edge's whole travel stays left of the middle, or right of it.
+        let spans = [(lowest, min(highest, visible.midX - snapClearance - size.width)),
+                     (max(lowest, visible.midX + snapClearance + inward - size.width), highest)]
+        return farthest(from: pointer, at: spans.filter { $0.0 <= $0.1 }.flatMap { [$0.0, $0.1] }, size: size,
+                        in: visible)
+    }
+
+    /// The origin at one of `xs`, against the bottom or top of `visible`, that keeps a window of
+    /// `size` farthest from the pointer, or nil when every one covers it.
+    private static func farthest(from pointer: CGPoint, at xs: [CGFloat], size: CGSize,
+                                 in visible: CGRect) -> CGPoint? {
+        let origins = xs.flatMap { x in [visible.minY, visible.maxY - size.height].map { CGPoint(x: x, y: $0) } }
         func distance(_ origin: CGPoint) -> CGFloat {
             hypot(origin.x + size.width / 2 - pointer.x, origin.y + size.height / 2 - pointer.y)
         }
-        return corners.filter { !covers(CGRect(origin: $0, size: size), pointer) }
+        return origins.filter { !covers(CGRect(origin: $0, size: size), pointer) }
             .max { distance($0) < distance($1) }
     }
 
@@ -1448,6 +1485,10 @@ private final class LiveResizeDrag: NSObject {
         guard let window, let scroll else { return frames }
         anchor = NSPoint(x: window.frame.width - 1, y: window.frame.height / 2)
         post(.leftMouseDown, at: anchor)
+        // AppKit's live resize starts on the first drag that moves the pointer and measures the edge
+        // from there, so a 1 pt grab comes first and every step is relative to where it left the pointer.
+        anchor.x -= 1
+        post(.leftMouseDragged, at: anchor)
         let link = scroll.displayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
         let frames = await withCheckedContinuation { finished = $0 }
