@@ -25,6 +25,21 @@ struct PerformanceBenchmarkTests {
         #expect(BenchmarkWindowPlacement.origin(awayFrom: CGPoint(x: 720, y: 440), size: size, in: small) == nil)
     }
 
+    /// A live resize drags the right edge clear of the screen's edges and middle, where macOS tiling
+    /// snaps it, with the window clear of the pointer.
+    @Test func benchmarkLiveResizeDragsClearOfTilingSnaps() {
+        let size = CGSize(width: 1280, height: 840)
+        func origin(_ x: CGFloat, _ y: CGFloat, on screen: CGSize) -> CGPoint? {
+            BenchmarkWindowPlacement.origin(dragging: size, inward: 320, awayFrom: CGPoint(x: x, y: y),
+                                            in: CGRect(origin: .zero, size: screen))
+        }
+        // The corner the other scenarios pick would rest the edge on the screen's right edge.
+        #expect(origin(1308, 1173, on: CGSize(width: 2880, height: 1575)) == CGPoint(x: 1536, y: 0))
+        // On a screen twice the window's width, the edge's travel stays right of the middle.
+        #expect(origin(2400, 800, on: CGSize(width: 2560, height: 1415)) == CGPoint(x: 384, y: 0))
+        #expect(origin(720, 440, on: CGSize(width: 1440, height: 875)) == nil)
+    }
+
     /// The transcript centers under the pointer, slides from a screen edge while still under it,
     /// and gives up when the pointer is too near an edge or under the menu bar.
     @Test func benchmarkTranscriptCentersUnderThePointer() {

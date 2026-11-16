@@ -21,7 +21,8 @@ so any reference to it goes inside `#if TOY_BOX_BENCHMARK`. Prove a change that 
   a reveal two pages back. A resize mid-read is an information line without a budget.
 - `resize` runs only when named. It loads all of `scroll-demo`'s history and drags the window's right
   edge in and out through AppKit's live resize, one step a frame, once following and once mid-read. It
-  reports dropped frames, busy time a drag step and where the rows ended, without budgets.
+  reports dropped frames, busy time a drag step and where the rows ended, without budgets. The window
+  sits where the dragged edge stays clear of the screen's edges and middle, where macOS tiling snaps it.
 - Catch-up summaries stay off unless you pass `--summaries`.
 - Only one benchmark runs at a time on this Mac. Others wait for it, so never poll for one yourself.
 - Under load, compare main-thread CPU. Scroll's CPU ms per 1,000 native points and paging's CPU ms
