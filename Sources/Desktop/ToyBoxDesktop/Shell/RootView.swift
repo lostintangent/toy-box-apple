@@ -144,6 +144,7 @@ struct RootView: View {
         .environment(artifactOpener)
         .environment(interaction)
         .environment(imageViewer)
+        .environment(\.isKeyWindow, isKeyWindow)
         .managementFlows(management)
         .focusedSceneValue(\.channelCommands, commandActions)
         .background(WindowObserver(onAttach: { window in

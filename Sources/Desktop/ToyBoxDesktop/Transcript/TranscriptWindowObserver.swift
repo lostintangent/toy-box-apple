@@ -1,15 +1,13 @@
 import AppKit
 import ToyBoxClient
-import Observation
 import SwiftUI
 import ToyBoxUI
 
-@MainActor @Observable
+@MainActor
 final class TranscriptWindowObserver {
-    private(set) var isKeyWindow = false
-    @ObservationIgnored private weak var scrollView: NSScrollView?
-    @ObservationIgnored private weak var window: NSWindow?
-    @ObservationIgnored private var notifications: [NSObjectProtocol] = []
+    private weak var scrollView: NSScrollView?
+    private weak var window: NSWindow?
+    private var notifications: [NSObjectProtocol] = []
 
     func attach(to view: NSView) {
         let scroll = view.enclosingScrollView
@@ -17,19 +15,6 @@ final class TranscriptWindowObserver {
         detach()
         scrollView = scroll
         window = view.window
-        isKeyWindow = view.window?.isKeyWindow == true && view.window?.isVisible == true
-        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
-                     NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification] {
-            let token = NotificationCenter.default.addObserver(forName: name, object: view.window,
-                                                                queue: .main) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.isKeyWindow = self.window?.isKeyWindow == true
-                        && self.window?.isVisible == true && self.window?.isMiniaturized == false
-                }
-            }
-            notifications.append(token)
-        }
         if let scroll { observeResizes(of: scroll) }
     }
 
@@ -41,8 +26,8 @@ final class TranscriptWindowObserver {
     /// Whether the transcript is following its newest message. A window resize then keeps the end of the
     /// content at the bottom of the viewport in the same layout pass that draws the new size. SwiftUI's
     /// follow lands a frame or more later, which a live resize shows as the newest message drifting.
-    @ObservationIgnored var pinsToBottom = false
-    @ObservationIgnored private var isResizing = false
+    var pinsToBottom = false
+    private var isResizing = false
 
     private func observeResizes(of scroll: NSScrollView) {
         let clip = scroll.contentView
@@ -115,14 +100,8 @@ final class TranscriptWindowObserver {
         let maximum = max(minimum, document.bounds.height + scrollView.contentInsets.bottom - clip.bounds.height)
         let target = min(maximum, max(minimum, offset))
         guard abs(clip.bounds.minY - target) > 0.25 else { return true }
-        let previous = clip.bounds.minY
         clip.scroll(to: NSPoint(x: clip.bounds.minX, y: target))
         scrollView.reflectScrolledClipView(clip)
-        if ProcessInfo.processInfo.environment["TOY_BOX_TEST_PAGING_TRACE"] == "1" {
-            let line = "Transcript paging m\(frame.sequence): native \(previous) -> \(clip.bounds.minY), "
-                + "target \(target), content top \(frame.contentTop), saved bottom \(bottom)\n"
-            FileHandle.standardError.write(Data(line.utf8))
-        }
         return false
     }
 
@@ -138,7 +117,6 @@ final class TranscriptWindowObserver {
         notifications.removeAll()
         scrollView = nil
         window = nil
-        isKeyWindow = false
         isResizing = false
     }
 }

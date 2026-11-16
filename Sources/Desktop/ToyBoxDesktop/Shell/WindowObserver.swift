@@ -1,6 +1,18 @@
 import AppKit
 import SwiftUI
 
+private struct KeyWindowKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Whether this view's window is key and not minimized, as `WindowObserver` reports it.
+    var isKeyWindow: Bool {
+        get { self[KeyWindowKey.self] }
+        set { self[KeyWindowKey.self] = newValue }
+    }
+}
+
 struct WindowObserver: NSViewRepresentable {
     var onAttach: (NSWindow) -> Void
     /// Reports whether the window is key, its size, and whether a live resize is still under way.

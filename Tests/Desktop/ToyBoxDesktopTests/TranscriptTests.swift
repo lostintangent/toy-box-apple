@@ -639,6 +639,27 @@ struct TranscriptTests {
         try await expectInPlace("Closing")
     }
 
+    /// Rule 11: reading marks read only while you're looking, which on the Mac is the transcript's own
+    /// key window. Quick Send's panel taking key resigns it, while the window stays main.
+    @MainActor
+    @Test func readsGoOutOnlyWhileTheTranscriptsWindowIsKey() async throws {
+        let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), seenThrough: 38,
+                                                  observesKeyWindow: true)
+        defer { await harness.close() }
+        try await harness.settled()
+        #expect(harness.readRequests == 0, "Nothing is read before the window is key")
+        harness.setKey(true)
+        try await harness.waitUntil { harness.readRequests > 0 }
+        let read = harness.readRequests
+        harness.setKey(false)
+        harness.push(transcriptTestMessage(41), revision: 2)
+        try await harness.waitUntil { harness.store.messages.last?.sequence == 41 && harness.isVisible("m41") }
+        try await harness.settled()
+        #expect(harness.readRequests == read, "An arrival on screen isn't read while another window is key")
+        harness.setKey(true)
+        try await harness.waitUntil { harness.readRequests > read }
+    }
+
     @MainActor
     @Test func findKeepsOwnershipOfTheReadingPositionWhenMessagesArrive() async throws {
         let find = TranscriptFind()
@@ -2439,8 +2460,38 @@ func transcriptResizeSteps(by step: CGFloat, count: Int) -> [CGFloat] {
     return out + out.dropLast().reversed() + [480]
 }
 
-/// Hosts the real transcript against an in-memory channel server. The window never becomes key, so
-/// the transcript must never acknowledge what it shows.
+/// A test app never becomes active, so AppKit never makes its windows key. This one reports key
+/// as AppKit would, with the same notifications.
+private final class TranscriptKeyableWindow: NSWindow {
+    private var isKey = false
+    override var isKeyWindow: Bool { isKey }
+
+    func setKey(_ key: Bool) {
+        isKey = key
+        NotificationCenter.default.post(name: key ? NSWindow.didBecomeKeyNotification
+                                            : NSWindow.didResignKeyNotification, object: self)
+    }
+}
+
+/// Tells the transcript whether its window is key, as `RootView` does from Shell's observer, in an
+/// active scene.
+private struct TranscriptKeyWindow: ViewModifier {
+    let isObserved: Bool
+    @ViewState private var isKey = false
+
+    func body(content: Content) -> some View {
+        if isObserved {
+            content.environment(\.isKeyWindow, isKey)
+                .environment(\.scenePhase, .active)
+                .background(WindowObserver(onAttach: { _ in }, onChange: { key, _, _ in isKey = key }))
+        } else {
+            content
+        }
+    }
+}
+
+/// Hosts the real transcript against an in-memory channel server. The window never becomes key unless
+/// a test makes it, so the transcript must otherwise never acknowledge what it shows.
 @MainActor
 private final class TranscriptHarness {
     let host: String
@@ -2467,6 +2518,7 @@ private final class TranscriptHarness {
          intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared,
          find: TranscriptFind = TranscriptFind(),
          slowSendDelay: Duration = .seconds(1),
+         observesKeyWindow: Bool = false,
          onTurn: (@MainActor (TranscriptHarness) -> Void)? = nil) async throws {
         let host = "transcript-\(UUID().uuidString.lowercased()).invalid"
         let latest = messages.last?.sequence ?? 0
@@ -2502,14 +2554,15 @@ private final class TranscriptHarness {
                 .environment(interaction)
                 .environment(ArtifactOpener())
                 .environment(\.channelIntelligence, intelligence)
+                .modifier(TranscriptKeyWindow(isObserved: observesKeyWindow))
                 .frame(width: resizable ? nil : 520, height: resizable ? nil : height))
             if resizable { view.sizingOptions = [] }
             return view
         }
         let view = makeView()
         self.makeView = makeView
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: height),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = TranscriptKeyableWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: height),
+                                             styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = view
         (self.host, self.store, self.interaction, self.capture) = (host, store, interaction, capture)
@@ -2577,6 +2630,17 @@ private final class TranscriptHarness {
 
     var streamRequests: Int {
         TranscriptServerProtocol.fixtures.withLock { $0[host]?.requests.filter { $0.hasSuffix("/channels/harness") }.count ?? 0 }
+    }
+
+    var readRequests: Int {
+        TranscriptServerProtocol.fixtures.withLock { $0[host]?.requests.filter { $0.hasSuffix("/read") }.count ?? 0 }
+    }
+
+    /// Brings the window forward offscreen and reports it key or not, as AppKit does.
+    func setKey(_ key: Bool) {
+        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        window.orderFrontRegardless()
+        (window as? TranscriptKeyableWindow)?.setKey(key)
     }
 
     var historyRequests: Int {
