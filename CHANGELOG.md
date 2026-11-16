@@ -7,6 +7,7 @@
 - Sending to a channel you have open, from Quick Send, the menu bar or a notification, now brings you to your message even if you'd scrolled up, just like sending from the channel itself.
 - Hovering a change to the channel, like a new routine or a changed preview, now shows who made it and its full details, such as the routine's prompt or the preview's whole link.
 - A channel where one agent wrote a long run of messages while you were away now opens on the first one you haven't read, instead of opening blank, and revealing any message in that run brings it right up.
+- Creating a channel no longer asks for a folder on the server. The lead sets one up when the work needs it, so starting a channel takes just a name and what you want done. The channel and agent sheets also look tidier, with their titles and buttons evenly spaced.
 
 ## iPhone 0.1.43
 

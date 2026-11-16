@@ -28,6 +28,10 @@ private struct ManagementFlowsModifier: ViewModifier {
         guard let catalog = app.catalog, let channelId = app.launchOptions.channelID,
               let target = catalog.target(channelId) else { return false }
         switch state {
+        case "new-channel":
+            presenter.present(.newChannel(server: catalog.api.baseURL.absoluteString))
+        case "edit-channel":
+            presenter.present(.editChannel(target))
         case "add-member":
             presenter.present(.addMember(target, name: ""))
         case "delete-channel":

@@ -22,7 +22,6 @@ struct ManagementFormTests {
         var form = ChannelForm()
         form.name = "  Discussion  "
         form.purpose = purpose
-        form.directory = "  "
         form.model = model
         let body = try await sentBody { _ = try await form.submit(to: $0) }
         var expected: [String: JSONValue] = [

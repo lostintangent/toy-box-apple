@@ -59,23 +59,19 @@ struct ChannelEditor: View {
                 model: $presenter.channelForm.model, openingModel: channel?.model, api: catalog.api,
                 provider: channel?.model.provider, allowsInheritance: false,
                 title: "Lead model",
-                help: [channel == nil
-                       ? "A folder on the server. Leave it empty for a discussion-only channel."
-                       : "Only the lead can change the directory. Model changes apply the next time the lead works."],
-                violation: form.directoryViolation
+                help: channel == nil ? [] : [
+                    "Only the lead can change the directory. Model changes apply the next time the lead works."
+                ]
             ) {
-                if channel == nil {
-                    TextField("Working directory", text: $presenter.channelForm.directory, prompt: Text("Optional"))
-                        .onSubmit(submit)
-                        .accessibilityHint(form.directoryViolation ?? "")
-                } else {
+                if let channel {
+                    let directory = channel.directory ?? ""
                     LabeledContent("Working directory") {
-                        Text(form.directory.isEmpty ? "None" : form.directory)
-                            .foregroundStyle(form.directory.isEmpty ? .secondary : .primary)
+                        Text(directory.isEmpty ? "None" : directory)
+                            .foregroundStyle(directory.isEmpty ? .secondary : .primary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .textSelection(.enabled)
-                            .help(form.directory)
+                            .help(directory)
                     }
                 }
             }
