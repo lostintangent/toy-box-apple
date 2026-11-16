@@ -19,7 +19,6 @@ struct OverviewArtifactsSection: View {
                 ForEach(artifacts) { artifact in
                     OverviewArtifactRow(artifact: artifact, share: store.artifactShares[artifact.file.id],
                                         store: store, state: session.artifact(artifact.id))
-                        .listRowInsets(.vertical, 6)
                         .modifier(OverviewListRowBoundary(isLast: artifact.id == artifacts.last?.id))
                 }
             }
@@ -138,6 +137,8 @@ struct OverviewArtifactRow: View {
             if let error { ManagementError(message: error) }
             if let message = state.error { ManagementError(message: message) }
         }
+        // 7, not 6: a row under 58 points stretches the system's swipe circle into a capsule.
+        .listRowInsets(.vertical, 7)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             if !voiceOver {
                 // Not `.destructive`: that role collapses the row before the server's event arrives.
