@@ -578,7 +578,6 @@ private struct TranscriptSending: View {
     let outbox: ChannelOutbox?
     let isConnected: Bool
     let channel: TranscriptRowChannel
-    @Environment(ChannelInteraction.self) private var interaction
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
