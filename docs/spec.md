@@ -1773,7 +1773,8 @@ is one centered, multiline `Text`: the event's inline SF Symbol, two spaces, the
 in 11 regular secondary. Center on the full lane, including the identity gutter, with a 480-point
 maximum text width and centered wrapping. Consecutive system rows stack 4 points apart as one
 group, with normal 20-point run spacing around the group. Rows are at least 18 high, and each
-link keeps a 28-point hit target. Help shows the full local date and time and any full values.
+link keeps a 28-point hit target. Help shows the full local date and time, who made the change,
+and any full values, from one ToyBoxKit list both apps share.
 Matching membership events and one actor's consecutive artifact shares or removals merge only
 where the canonical projection does. A merged artifact line is one sentence, "Pixel shared A, B,
 and C", built once in ToyBoxKit for display, Find and catch-up. Find matches within each title.
