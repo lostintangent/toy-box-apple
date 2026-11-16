@@ -69,10 +69,6 @@ Signing, notarization, in-place updates and TestFlight are in the [release skill
   because that snapshot already arrives while the window is built, and a channel loaded before the
   window holds the window back until its whole transcript renders, about 470 ms later at
   launch.
-  A window builds Overview and the composer once its first content has drawn and the main thread
-  is about to sleep, or after a second for a channel that's slow to connect. Until then, a clear
-  bar of the composer's resting height keeps the transcript's inset. That brings launch's first
-  content about 340 ms sooner.
   A window, sheet or intent holds its channel's store while it shows it. When the last one lets
   go, the store stays connected for 5 seconds, so switching back lands on a live store. Its first
   frame then has a working composer, and the transcript lands without waiting on a reconnect. On

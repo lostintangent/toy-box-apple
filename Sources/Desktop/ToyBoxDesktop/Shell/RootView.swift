@@ -36,9 +36,6 @@ struct RootView: View {
     /// revision, which presents the column again.
     @ViewState private var column = ColumnPresentation()
     @ViewState private var titleFit = ChannelTitleFit()
-    /// A window draws its channel's first content before Overview and the composer build, which
-    /// keeps their first build off the launch's critical path. Once mounted, they stay.
-    @ViewState private var mountsSurroundings = false
     @ViewState private var isOverviewSheetPresented = false
     @ViewState private var handoff = ChannelHandoffNavigation()
     #if DEBUG
@@ -116,7 +113,7 @@ struct RootView: View {
         // top, and the image and artifact viewers cover only the conversation beside it.
         .inspector(isPresented: overviewColumn) {
             Group {
-                if let store = selectedStore, mountsSurroundings || model.launchOptions.isSnapshot {
+                if let store = selectedStore {
                     OverviewInspector(store: store)
                 } else {
                     Color.clear
@@ -219,7 +216,6 @@ struct RootView: View {
         .onChange(of: model.catalogs.isEmpty) { _, isEmpty in
             guard isEmpty, selection != nil else { return }
             handoff.cancel()
-            mountsSurroundings = false
             imageViewer.close(animated: false)
             selection = nil
             management.flow = nil
@@ -320,7 +316,6 @@ struct RootView: View {
                               isNarrow: isNarrow,
                               windowHeight: windowHeight ?? CGFloat(model.launchOptions.height),
                               isOverviewSheetPresented: $isOverviewSheetPresented,
-                              mountsSurroundings: $mountsSurroundings,
                               onBack: { selectChannel(nil) },
                               onSelect: { selectChannel($0) })
                 // A switch keeps the detail and its toolbar, which hand per-channel state to
