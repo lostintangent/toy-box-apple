@@ -84,9 +84,10 @@ Surfaces meet at these seams:
 - **Start from an outcome the user will feel,** like "sending scrolls you to the bottom". Lead
   writes the decision into the spec before anyone builds it, and opens one task with one owner.
   The spec holds current rules, never history.
-- **Choose the simplest design that meets it.** Use what Apple's platforms ship, in its idiomatic
-  form, and build your own only for behavior Toy Box needs and the platform lacks. Add no cache,
-  retry, abstraction or option until a measurement or a second case asks for one.
+- **Choose the simplest design that meets it,** because it's the easiest to understand, diagnose
+  and change. Use what Apple's platforms ship, in its idiomatic form, and build your own only for
+  behavior Toy Box needs and the platform lacks. Add no cache, retry, abstraction or option until a
+  measurement or a second case asks for one.
 - **Keep to what was asked.** Post anything else you notice as a follow-up instead of doing it.
 
 ## 2. Show it first
@@ -116,12 +117,13 @@ Surfaces meet at these seams:
   `@State` macro, so `@ViewState` aliases `SwiftUI.State` once in `ToyBoxUI/Design`.
 - **Declare environment values with an `EnvironmentKey`,** not `@Entry`, in code that builds for
   the Mac. Command Line Tools lack the SwiftUIMacros plugin.
-- **Put rules on their nouns, and keep the vocabulary small.** Write members such as
-  `channel.attention` and `state.applying(event)`, not free functions, and reuse a noun or verb
-  the code already has before adding one. Name a type for the thing itself, nesting a part under
-  its owner (`Channel.Attention`), a file for its main type and a folder for the subsystem it
-  owns. Never a layer or grab-bag like `Stores` or `Shared`, a file at a module's root, or Manager,
-  Helper, Support, Context, Projection or Presentation.
+- **Put rules on their nouns, as pure functions of current state.** Write members such as
+  `channel.attention` and `state.applying(event)`, never free functions or flags set when a view
+  appears or a timer fires, where our read bugs hid. Reuse the code's nouns and verbs before adding
+  one. Name a type for the thing itself, nesting a part under its owner (`Channel.Attention`), a
+  file for its main type and a folder for the subsystem it owns. Never a layer or grab-bag like
+  `Stores` or `Shared`, a file at a module's root, or Manager, Helper, Support, Context,
+  Projection or Presentation.
 - **Keep a feature's rules out of the app targets,** in a UI-free ToyBoxClient model with its
   animation, waits and announcements passed in, like `TalkRecorder`, proven by Mac tests.
   `simulator --build-only` checks the phone compiles.
@@ -134,13 +136,11 @@ Surfaces meet at these seams:
 - **Channels are live server state, not local-first data.** Show stale data as stale, keep
   connection status apart from activity, and resume from the last applied revision. Only what the
   user writes, like a draft, is saved locally first.
-- **Every send goes through `ChannelOutbox`,** a deliberate guard for the user's words. It gives
-  each message a UUID and reuses it on every attempt and Send Again, so the server never posts one
-  twice.
-- **Optimistic writes are idempotent upserts.** A send keeps its UUID, a read only raises its
-  marker and a bookmark sets its state, so a repeat or an echo changes nothing. Show a write in
-  flight by reading the store through it, never by editing the store, then upsert the server's
-  answer. Report a failure only when the user would otherwise think it saved.
+- **Optimistic writes are idempotent upserts.** Every send goes through `ChannelOutbox`, which
+  reuses the message's UUID on every attempt and Send Again, a read only raises its marker and a
+  bookmark sets its state, so a repeat or an echo changes nothing. Show a write in flight by
+  reading the store through it, never by editing the store, then upsert the server's answer.
+  Report a failure only when the user would otherwise think it saved.
 - **Management writes are sent once,** never retried or checked, as the spec's Sending says.
 - **Reading never answers a request.**
 
