@@ -232,7 +232,7 @@ struct ConversationView: View {
                                filter: interaction.messageView, bookmarks: store.bookmarks)
     }
 
-    private var items: [TranscriptItem] { transcriptItems(rows) }
+    private var items: [TranscriptItem] { TranscriptItem.items(rows) }
 
     var body: some View {
         let items = items
