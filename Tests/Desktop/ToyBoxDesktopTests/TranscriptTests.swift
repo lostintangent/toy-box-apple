@@ -671,6 +671,31 @@ struct TranscriptTests {
     }
 
     @MainActor
+    @Test func pagingDownAfterAWidthChangeHandsThePlaceBackToTheHold() async throws {
+        let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), resizable: true)
+        defer { await harness.close() }
+        try await harness.scrollUp(byWheel: TranscriptHarness.wheelEventsApply) { harness.bottomGap > 400 }
+        harness.resize(width: 400)
+        try await harness.settled()
+        let gap = harness.bottomGap
+        harness.scrollView.pageDown(nil)
+        try await harness.waitUntil { harness.bottomGap < gap - 100 }
+        try await harness.settled()
+        let reading = try #require(harness.visibleFrames().filter { $0.value.minY >= 0 }
+            .min { $0.value.minY < $1.value.minY })
+        let sequence = try #require(Int(reading.key.dropFirst()))
+        let above = try #require(harness.capture.frames["m\(sequence - 1)"]?.rect)
+        var grown = transcriptTestMessage(sequence - 1)
+        grown.content = .text(Array(repeating: "This update grew another long line of words here.", count: 4)
+            .joined(separator: "\n\n"))
+        harness.push(grown, revision: 2)
+        try await harness.waitUntil { (harness.capture.frames["m\(sequence - 1)"]?.rect.height ?? 0) > above.height + 40 }
+        try await harness.settled()
+        let after = harness.capture.frames[reading.key]?.rect ?? .null
+        #expect(abs(after.minY - reading.value.minY) < 1, "\(reading.key) moved from \(reading.value) to \(after)")
+    }
+
+    @MainActor
     @Test(arguments: [false, true])
     func findOpeningProgressErrorsAndClosingLeaveTheReadersMessagesInPlace(atBottom: Bool) async throws {
         let find = TranscriptFind()
