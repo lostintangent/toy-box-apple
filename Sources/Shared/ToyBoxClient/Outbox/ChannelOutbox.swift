@@ -23,6 +23,14 @@ public final class ChannelOutbox {
 
         var destination: Destination { .init(server: server, channelID: channelID) }
 
+        /// Whether `sending` holds a new message on its way that `previous` didn't, which moves the
+        /// transcript to the end. A Not sent one kept from an earlier run doesn't, and nor does Retry,
+        /// which keeps its ID.
+        public static func startsPost(in sending: [Message], after previous: [UUID]) -> Bool {
+            let previous = Set(previous)
+            return sending.contains { !previous.contains($0.id) && $0.state == .sending }
+        }
+
         /// The row a transcript shows until the server's message replaces it.
         public var message: ChannelMessage {
             .init(id: id.uuidString, sequence: 0,

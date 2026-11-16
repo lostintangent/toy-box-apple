@@ -152,7 +152,6 @@ public struct TranscriptPlacement: Equatable, Sendable {
         case arrived(pinsLanding: Bool)
         case land(Target)
         case jumpToLatest
-        case ownPostConfirmed
         case reveal(RowID)
         case toggledExpansion(RowID, expanded: Bool)
     }
@@ -179,7 +178,7 @@ public struct TranscriptPlacement: Equatable, Sendable {
                 return TranscriptPlacement(intent: intent, origin: nil, unavailableTarget: id)
             }
             return place(.landing(target), layout: layout)
-        case .jumpToLatest, .ownPostConfirmed:
+        case .jumpToLatest:
             return place(.following, layout: layout)
         case .reveal(let id):
             guard let row = anchorableIdentity(id, layout: layout) else {

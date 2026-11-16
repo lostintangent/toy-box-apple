@@ -138,6 +138,21 @@ struct ChannelOutboxTests {
         return catalog
     }
 
+    @Test func onlyANewSendFollowsToTheBottom() {
+        let ids = (old: UUID(), lost: UUID(), new: UUID())
+        func message(_ id: UUID, _ state: ChannelOutbox.State) -> ChannelOutbox.Message {
+            ChannelOutbox.Message(id: id, server: "https://example.invalid", channelID: "c", text: "Hi",
+                                  attachments: [], request: nil, sentAt: .now, state: state)
+        }
+        // Not sent messages kept from an earlier run must not move the reader.
+        #expect(!ChannelOutbox.Message.startsPost(in: [message(ids.old, .notSent), message(ids.lost, .notSent)],
+                                                  after: []))
+        #expect(ChannelOutbox.Message.startsPost(in: [message(ids.old, .notSent), message(ids.new, .sending)],
+                                                 after: [ids.old]))
+        // Retry reuses its id, so it isn't a new post.
+        #expect(!ChannelOutbox.Message.startsPost(in: [message(ids.old, .sending)], after: [ids.old]))
+    }
+
     @Test func aMessageThatCantReachTheServerResendsUnderItsIDOnReconnect() async throws {
         let folder = Self.folder()
         defer { try? FileManager.default.removeItem(at: folder) }

@@ -499,8 +499,7 @@ private struct ChannelComposer: View {
         Task.immediate {
             // Only finalized words are sent, so Send waits for the transcriber's last pass.
             guard await dictation.stop(.send), canSend else { return }
-            interaction.jumpToLatest()
-            if await session.send() != nil { interaction.jumpToLatest() }
+            await session.send()
         }
     }
 

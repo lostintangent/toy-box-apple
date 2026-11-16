@@ -41,15 +41,11 @@ public struct TranscriptRequestChoices: Equatable, Sendable {
 }
 
 extension ChannelInteraction {
-    /// Sends a suggested reply at once as the user's own message, through the outbox with a new ID,
-    /// and follows it to the latest like a composer send. It answers the channel's waiting request.
+    /// Sends a suggested reply at once as the user's own message, through the outbox with a new ID.
+    /// It answers the channel's waiting request, and the transcript follows its row to the end.
     public func sendSuggestedReply(_ label: String, store: ChannelStore) {
-        jumpToLatest()
         guard let outbox = store.outbox else { return }
-        Task {
-            await outbox.send(label, to: store.id, on: store.api.baseURL)
-            jumpToLatest()
-        }
+        Task { await outbox.send(label, to: store.id, on: store.api.baseURL) }
     }
 }
 

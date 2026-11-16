@@ -353,6 +353,35 @@ struct TranscriptTests {
         #expect(abs(harness.bottomGap) < 2)
     }
 
+    /// Rule 4. Your own new message, from any surface, moves the conversation to the end once when its
+    /// row appears, wherever you were reading, and closes Find. Retry keeps your place.
+    @MainActor
+    @Test func yourOwnNewMessageMovesToTheEndFromAnywhereButRetryDoesNot() async throws {
+        let find = TranscriptFind()
+        let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), find: find)
+        defer { await harness.close() }
+        func readEarlier() async throws {
+            harness.interaction.reveal(sequence: 5)
+            try await harness.waitUntil { harness.isVisible("m5") && harness.bottomGap > 400 }
+            try await harness.settled()
+        }
+        try await readEarlier()
+        harness.interaction.findInChannel()
+        try await harness.waitUntil { find.isPresented }
+        let id = await harness.send("Sent while reading earlier")
+        try await harness.waitUntil { harness.store.sending.first?.state == .notSent && !find.isPresented }
+        try await harness.settled()
+        #expect(abs(harness.bottomGap) < 2)
+
+        try await readEarlier()
+        let origin = harness.scrollView.contentView.bounds.minY
+        let posts = harness.sendRequests
+        harness.store.outbox?.sendAgain(id)
+        try await harness.waitUntil { harness.sendRequests > posts && harness.store.sending.first?.state == .notSent }
+        try await harness.settled()
+        #expect(abs(harness.scrollView.contentView.bounds.minY - origin) < 1, "Retry moved the reader")
+    }
+
     /// Rule 4. A message on its way is drawn exactly as it will be once sent, with the same bubble and
     /// gap, and the day divider when it's the first message today, so confirming it changes nothing on
     /// screen. The send is held at the server until the pending message has settled, then its event
@@ -2641,6 +2670,12 @@ private final class TranscriptHarness {
         window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
         window.orderFrontRegardless()
         (window as? TranscriptKeyableWindow)?.setKey(key)
+    }
+
+    var sendRequests: Int {
+        TranscriptServerProtocol.fixtures.withLock {
+            $0[host]?.requests.filter { $0.hasPrefix("POST") && $0.hasSuffix("/messages") }.count ?? 0
+        }
     }
 
     var historyRequests: Int {
