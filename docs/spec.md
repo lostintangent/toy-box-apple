@@ -1860,45 +1860,28 @@ show Load Older Messages when more history is available, a small loading row whi
 "Beginning of conversation" label and reserve no empty header space. A filtered view must
 continue paging even when a page contains no visible rows.
 
-`ToyBoxClient.TranscriptPlacement` defines container-independent placement from ordered row frames
-and the viewport's width, height and glass insets. Its adapter sends `layoutChanged` only when
-`layoutEvent` detects changed geometry, never just because another native layout pass ran.
-The pure `placement(for:layout:)` function projects an existing intent against the current
-layout for adapter-owned animation, using the same fallback and clamping without inventing a
-layout event.
-Reader input updates intent without returning an origin. Opening Find uses `holdCurrentPosition`
-to capture reading even at the end without moving. With no anchorable rows it preserves the existing intent.
-Jump to Latest immediately resumes following at the end.
-Landing and reveal targets retain their
-conversation order so a target removed during layout falls forward to its next surviving row,
-then backward to the last row, then to the end. Only explicit missing-target actions report an
-unavailable target without moving. The model's document end owns the 16-point clearance exactly
-once.
-`RowFrame.isAnchorable` defaults to true. History and empty-state accessories set it to false:
-they still contribute document height, but are never reading anchors or fallback targets. Explicit row-target actions reject accessories. With only accessory geometry remaining,
-a layout-time target loss falls back to the document end.
+Both apps scroll the conversation with SwiftUI's own tools, and add code only where those fall
+short. Each message is its own row in a `LazyVStack`, as are day labels, the New divider and system
+rows, so the stack estimates, measures and keeps places one message at a time. `scrollPosition(id:)`
+tracks the reader's row, which holds the reader's place when a row above changes height, when an
+older page arrives and when the stack corrects an estimate. `.defaultScrollAnchor(.bottom, for:
+.sizeChanges)` follows the end. The Load Older row and the empty state carry no ID it tracks, so
+they're never the reader's place. The 16-point clearance below the last row is part
+of the content, so following and Jump to Latest never add it again. Landing, Reveal, Jump to
+Latest and the user's own new message move the conversation with one `scrollTo` on a row's ID, and
+Reveal's page-until-found step stays shared in ToyBoxClient. Nothing else moves it.
 
-Adapters use the model's `Layout` entry points, its only ones. A layout separates all canonical
-`RowIdentity` values in conversation order from the subset of measured `RowFrame` values,
-and supplies the viewport, native origin and native `documentEnd`. That extent already
-includes the 16-point clearance. Following, threshold classification and clamping
-use it without adding clearance or inferring an end from the last measured row.
-A known target without a frame returns `needsMeasurement` and no origin, retaining its intent.
-Only canonical absence triggers unavailable-target errors or layout-time survivor fallback.
-The adapter materializes the requested ID, then submits a new measured layout.
+The platform falls short in two places, measured with both apps' real rows over history-demo. Each
+gets one `scrollTo`, never a correction loop or a wait for layout to settle:
 
-The adapter builds each `Layout` from one layout callback, never mixing old frames with a
-new native viewport, origin or document extent. Identities and measured frames have unique
-IDs, and frame identity metadata must match canonical membership. Before capturing reader
-input or Find's position, the adapter requires current measured viewport geometry. If that
-geometry is not available, it retains the reader-input notification and suppresses programmatic
-placement until it can reduce that input first. Expansion actions require the clicked row's
-measured frame. The model never invents an anchor offset or falls back to following merely
-because a known row is unmeasured.
-Violations of those live-input requirements assert in debug builds and leave the intent and
-position unchanged in release builds, never crashing a release app for delayed geometry.
-`layoutEvent(from:to:)` compares membership, measured geometry, viewport and document extent,
-not reader-only origin changes.
+| Behavior | The gap it fills |
+| --- | --- |
+| Landing scrolls to its row once, after the first layout | The first layout doesn't put the row in place. The Mac's bottom anchor wins over `scrollPosition`, and the phone stops 72 points past the row |
+| After a width change, scroll back to the reader's row. On the Mac, during a live resize drag, only when the drag ends | A width change while reading moves the reader, 118 points on the Mac with real rows and 274 on the phone with plain ones |
+
+A row never inserts a view with a transition in the same update that it changes height, because
+`scrollPosition` then corrects for the growth twice and moves the reader by it. So a loaded image
+replaces its placeholder with `.transition(.identity)`.
 
 Long histories must stay as fast as short ones. Build rows incrementally: derive each message's
 audience, display text and reactions once, and when messages only append, rebuild from the last
