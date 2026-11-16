@@ -867,7 +867,7 @@ reserves no space.
 | Working capsule | Leading. Height 28, `.glassEffect(.regular.interactive(), in: .capsule)`. At most three 20-point avatars, inset 4 so they sit concentric with the capsule, 6 points to the label and 12 trailing padding |
 | Label | "Ada is working" or "3 agents are working", 12-point medium in the primary label color. Activation opens the Working Now popover anchored to the capsule. It lists the working agents, then a plain rule and the waiting agents in roster order, in the same rows with the shared status text, such as "Waiting for Moss's review". Idle agents stay out, and waiting agents alone never show the capsule |
 | Jump to Latest | Trailing. The same capsule and glass, with `arrow.down` and "Jump to Latest" in 12-point medium and 12-point horizontal padding |
-| Notices | Reveal, send-action and read-position errors stack 8 points above the row in a glass rounded rectangle, radius 14, with primary caption text, 12 horizontal and 8 vertical padding, and borderless Retry or Dismiss |
+| Notices | Send-action and read-position errors stack 8 points above the row in a glass rounded rectangle, radius 14, with primary caption text, 12 horizontal and 8 vertical padding, and borderless Retry or Dismiss |
 | Motion | Appears and leaves with opacity and a 4-point rise over 0.2 seconds, ease-out. Reduce Motion uses opacity only |
 
 When the row appears or leaves, a reader at the end stays at the end, and a reader elsewhere
@@ -1837,12 +1837,18 @@ Land on the first unread row when its boundary is in the loaded page, otherwise 
 land only once the store is connected, so a reopened channel lands on that boundary rather than on
 its cached end. Until then the cached conversation rests at its end, unread. Landing may hide the
 rows only until the first layout pass puts its target in place, never until layout goes quiet,
-so streaming or a busy app can't leave an opened channel blank. Later corrections move the rows in
-view. If the
+so streaming or a busy app can't leave an opened channel blank. Landing ends there, with no
+correction afterward: from then on the end is followed, or the reader's place held, like any other
+time. If the
 first unread predates the snapshot and older history exists, show no synthetic New divider or
 catch-up summary. Scrolling up loads the real unread boundary in its original place.
 When a catch-up summary is eligible, land on its card instead (see Catch-up summaries).
 Older pages load only through reader paging, Find navigation or Reveal.
+Reveal, from a bookmark, a notification, Input Needed, Find or a summary line, loads older pages
+until it has the message, then scrolls once to put the message's top 32 points below the top of the
+visible band, or as near as the end allows, and highlights it briefly, as the web does. Both apps
+take these steps from one shared implementation. Reveal never checks where it landed or reports a
+miss, and a failed history page keeps its own notice.
 Follow incoming messages only while within
 48 points of the end, or immediately after the user's own successful post. A landing the end stopped
 short of its row is at the end, so a message arriving below it follows, while a catch-up card's
@@ -1862,8 +1868,7 @@ layout for adapter-owned animation, using the same fallback and clamping without
 layout event.
 Reader input updates intent without returning an origin. Opening Find uses `holdCurrentPosition`
 to capture reading even at the end without moving. With no anchorable rows it preserves the existing intent.
-After the Find bar's closing geometry settles, `resumeFromCurrentPosition` restores the normal
-following threshold without moving. Jump to Latest immediately resumes following at the end.
+Jump to Latest immediately resumes following at the end.
 Landing and reveal targets retain their
 conversation order so a target removed during layout falls forward to its next surviving row,
 then backward to the last row, then to the end. Only explicit missing-target actions report an
@@ -3992,7 +3997,7 @@ The reader's place has budgets too, so a change that loses it fails the run like
 | --- | --- |
 | Following arrivals | Each arrival leaves the end within 1 point of the bottom |
 | Each older page | The first visible row settles within 0.5 point of where it was |
-| Reveal a page and a half older | The message settles centered within 1 point |
+| Reveal a page and a half older | The message's top settles 32 points below the visible top, within 1 point |
 | Window narrows and widens while following | The end is back within 1 point of the bottom |
 
 Resizing mid-read is reported beside them without a budget until it keeps the reader's row on
