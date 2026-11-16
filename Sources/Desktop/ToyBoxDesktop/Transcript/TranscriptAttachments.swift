@@ -208,9 +208,9 @@ private struct TranscriptAttachment: View {
     private func load() async {
         failed = false
         do {
+            // The load runs to its end even when its task is cancelled, so the tile keeps what loaded.
             let loaded = try await TranscriptThumbnails.load(for: attachment, api: api, scale: displayScale,
                                                              reload: retry > 0)
-            guard !Task.isCancelled else { return }
             thumbnail = loaded.image
             localURL = loaded.file
         } catch is CancellationError {
