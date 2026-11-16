@@ -1,13 +1,27 @@
-import { command, text } from "../../shared/lib/index.ts";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { command, scratchPath, text } from "../../shared/lib/index.ts";
 import { mobileEnvironment } from "../bundle/index.ts";
 
 type DeviceType = { identifier: string; productFamily: string };
 type Runtime = { identifier: string; version: string; isAvailable: boolean; supportedDeviceTypes: DeviceType[] };
-type Simulator = { udid: string; name: string; state: string; isAvailable: boolean; deviceTypeIdentifier: string };
+type Simulator = {
+    udid: string; name: string; state: string; isAvailable: boolean; availabilityError?: string;
+    deviceTypeIdentifier: string;
+};
+type RuntimeImage = { runtimeIdentifier: string; build: string; state: string; runtimeBundlePath?: string };
 
-async function state(udid: string) {
-    return Object.values(await simulators()).flat().find(device => device.udid === udid)?.state;
+/** The simulator with `udid` and the identifier of the runtime it runs. */
+async function device(udid: string) {
+    for (const [runtime, devices] of Object.entries(await simulators())) {
+        const found = devices.find(device => device.udid === udid);
+        if (found) return { ...found, runtime };
+    }
 }
+
+async function state(udid: string) { return (await device(udid))?.state; }
 
 async function simulators() {
     const { devices }: { devices: Record<string, Simulator[]> } = JSON.parse(
@@ -86,4 +100,76 @@ export async function shutDownMobileSimulator(udid: string) {
         return;
     }
     await command(["xcrun", "simctl", "shutdown", udid], { env: mobileEnvironment });
+}
+
+/** Whether the simulator is still booted with its runtime, so a suite that failed on it failed on its own. */
+export async function mobileSimulatorIsUp(udid: string) {
+    const found = await device(udid);
+    return found?.state === "Booted" && found.isAvailable;
+}
+
+/** CoreSimulator's own log, which it writes only while its `DebugLogging` default is on, as CI turns it on. It's
+ * the one record of why CoreSimulator shut a device down, like its runtime's volume unmounting. */
+const coreSimulatorLog = join(homedir(), "Library/Logs/CoreSimulator/CoreSimulator.log");
+
+/** The CoreSimulator lines that explain a device going down: a runtime's volume leaving, a shutdown and who asked
+ * for it, the device's launchd_sim ending, and errors. */
+const shutdownEvidence = new RegExp(["VolumeManager:", "Unloading runtime", "Shutdown requested", "device_shutdown",
+    "port died", "launchd_sim termination", "<(?:Error|Fault)>"].join("|"));
+
+/** What CoreSimulator logs routinely: every simctl's idle volume check, volumes it ignores, and a boot's errors. */
+const routine = /IdleTrampoline|Appeared|Ignoring|Could not register service/;
+
+/** The host processes that run simulators and mount, update and unmount their runtimes. */
+const runtimeServices = `(process IN {"com.apple.CoreSimulator.CoreSimulatorService", "launchd_sim", "simdiskimaged", `
+    + `"cryptexd", "diskarbitrationd"} OR (process == "mobileassetd" AND eventMessage CONTAINS "SimulatorRuntime") `
+    + `OR (process == "kernel" AND (eventMessage CONTAINS[c] "unmount" `
+    + `OR eventMessage CONTAINS "memorystatus: killing"))) AND NOT subsystem == "com.apple.xpc"`;
+
+export type SimulatorLogMark = { time: number; coreSimulator: number };
+
+/** Where the Mac's simulator logs stand now, so a report reads only what came after. */
+export function markSimulatorLogs(): SimulatorLogMark {
+    return { time: Date.now(), coreSimulator: existsSync(coreSimulatorLog) ? statSync(coreSimulatorLog).size : 0 };
+}
+
+/** Prints what the Mac recorded since `since` about a simulator that went down under a run: the device, its
+ * runtime's images, crash reports, and CoreSimulator's account of why. The host log of the services that mount
+ * runtimes goes to scratch, beside the stalled suites' samples. */
+export async function reportMobileSimulatorLoss(udid: string, since: SimulatorLogMark) {
+    const found = await device(udid);
+    const lines = [!found ? `The simulator ${udid} is gone.` : found.isAvailable ? `${found.name} is ${found.state}.`
+        : `${found.name} is ${found.state} and unavailable: ${found.availabilityError}.`];
+    const images = await text(["xcrun", "simctl", "runtime", "list", "-j"],
+        { env: mobileEnvironment, allowFailure: true });
+    for (const image of Object.values<RuntimeImage>(JSON.parse(images || "{}"))) {
+        if (image.runtimeIdentifier !== found?.runtime) continue;
+        const mounted = image.runtimeBundlePath && existsSync(image.runtimeBundlePath) ? "mounted" : "unmounted";
+        lines.push(`Its runtime image ${image.build} is ${image.state} and ${mounted}.`);
+    }
+
+    const reports = join(homedir(), "Library/Logs/DiagnosticReports");
+    const crashes = existsSync(reports) ? readdirSync(reports)
+        .filter(name => name.endsWith(".ips") && statSync(join(reports, name)).birthtimeMs >= since.time) : [];
+    lines.push(crashes.length ? `Crash reports: ${crashes.join(", ")}.` : "No crash reports.");
+
+    if (existsSync(coreSimulatorLog)) {
+        const file = Bun.file(coreSimulatorLog);
+        const added = await file.slice(file.size < since.coreSimulator ? 0 : since.coreSimulator).text();
+        const evidence = added.split("\n")
+            .filter(line => shutdownEvidence.test(line) && !routine.test(line));
+        lines.push(evidence.length
+            ? `CoreSimulator logged:\n${evidence.slice(-40).map(line => `    ${line}`).join("\n")}`
+            : "CoreSimulator logged nothing about it.");
+    } else lines.push("CoreSimulator kept no log, since its DebugLogging default is off.");
+
+    const path = join(scratchPath(), "mobile-test-watchdog", "host.log");
+    await mkdir(dirname(path), { recursive: true });
+    const minutes = Math.ceil((Date.now() - since.time) / 60_000);
+    const host = await command(["log", "show", "--last", `${minutes}m`, "--info", "--style", "compact",
+        "--predicate", runtimeServices], { quiet: true, allowFailure: true });
+    await Bun.write(path, host.stdout);
+    lines.push(`The host log of the services that mount runtimes is in ${path}.`);
+
+    console.error(`What the Mac recorded since the run started:\n${lines.map(line => `  ${line}`).join("\n")}`);
 }

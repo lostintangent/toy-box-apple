@@ -3,7 +3,10 @@ import { mkdir } from "node:fs/promises";
 import type { Subprocess } from "bun";
 import { CommandFailure, command, machineLock, main, scratchPath, text } from "../shared/lib/index.ts";
 import { buildMobile, mobileEnvironment } from "./bundle/index.ts";
-import { bootMobileSimulator, chooseMobileSimulator, seconds, shutDownMobileSimulator } from "./dogfood/boot.ts";
+import {
+    bootMobileSimulator, chooseMobileSimulator, markSimulatorLogs, mobileSimulatorIsUp, reportMobileSimulatorLoss,
+    seconds, shutDownMobileSimulator, type SimulatorLogMark,
+} from "./dogfood/boot.ts";
 
 export const mobileTestProducts = [
     "ToyBoxClientTests", "ToyBoxUITests",
@@ -88,7 +91,7 @@ async function stopStalledSuite(child: Subprocess, agent: string, bundle: string
         catch (error) {
             if (!(error instanceof Error) || !("code" in error) || error.code !== "ESRCH") throw error;
         }
-    }
+    } else console.error(`${name}'s xctest had already exited, so there was nothing to sample.`);
     child.kill("SIGKILL");
     await child.exited;
 }
@@ -143,7 +146,18 @@ async function runSuite(udid: string, developer: string, bin: string, name: stri
         process.stdout.write(log);
         throw new CommandFailure(code, `xctest failed (exit ${code}).`);
     }
+    checkMobileTestCompletion(log);
     return { log, startedIn };
+}
+
+/** Rethrows a suite's failure unless the simulator went down under it. Its xctest goes down with it and its
+ * `simctl spawn` can be left waiting, so that failure is a symptom, and what the Mac recorded is reported instead. */
+async function blameLostSimulator(error: unknown, udid: string, name: string, logs: SimulatorLogMark): Promise<never> {
+    if (await mobileSimulatorIsUp(udid).catch(() => false)) throw error;
+    console.error(error instanceof Error ? error.message : String(error));
+    await reportMobileSimulatorLoss(udid, logs)
+        .catch(report => console.error(`The report stopped: ${report instanceof Error ? report.message : report}`));
+    throw new Error(`error: the simulator went down during ${name}, so its tests were cut off rather than failing.`);
 }
 
 if (import.meta.main) await main(async () => {
@@ -155,14 +169,15 @@ if (import.meta.main) await main(async () => {
     try {
         const udid = await chooseMobileSimulator(false, options.includes("--if-available"));
         if (!udid) return;
+        const logs = markSimulatorLogs();
         // Boot only once the build is done, since a CI runner's simulator can shut down during a long build.
         const { bin } = await buildMobile(false, true);
         const simulator = await bootMobileSimulator(udid, process.env.CI ? ciDisabledJobs : []);
         try {
             const developer = join(mobileEnvironment.DEVELOPER_DIR, "Platforms/iPhoneSimulator.platform/Developer");
             for (const name of mobileTestProducts) {
-                const { log, startedIn } = await runSuite(simulator.udid, developer, bin, name);
-                checkMobileTestCompletion(log);
+                const { log, startedIn } = await runSuite(simulator.udid, developer, bin, name)
+                    .catch(error => blameLostSimulator(error, simulator.udid, name, logs));
                 console.log(`${name}: started in ${startedIn}. ${log.match(/Test run with [^\n]+/)?.[0]}`);
                 const skipped = [...log.matchAll(/Test .+ skipped\./g)].length;
                 if (skipped) console.log(`  ${skipped} existing opt-in tests skipped.`);

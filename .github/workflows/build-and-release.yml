@@ -80,6 +80,10 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 25
     steps:
+      # CoreSimulator logs why it shut a device down, like its runtime's volume unmounting, only with this on.
+      # It's set first, so it's on before anything starts CoreSimulator's service.
+      - name: Keep CoreSimulator's log
+        run: defaults write com.apple.CoreSimulator DebugLogging -bool YES
       - name: Select and check the iOS toolchain
         run: |
           DEVELOPER_DIR="$(xcode-select -p)"
@@ -110,6 +114,17 @@ jobs:
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-mobile
         run: bun run test:mobile --if-available
+      - name: Upload simulator diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mobile-test-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/toy-box-mobile/mobile-test-watchdog
+            ~/Library/Logs/CoreSimulator/CoreSimulator.log
+            ~/Library/Logs/DiagnosticReports/*.ips
+          if-no-files-found: ignore
+          retention-days: 7
 
   release-checks:
     name: Release checks

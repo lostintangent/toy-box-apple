@@ -94,19 +94,16 @@ git history keeps closed incidents.
 - On 2026-11-10, under load averages of 59 to 170, the simulator's WebKit took 5.9 seconds to ask
   for the root document's policy and 8.7 seconds to start it, so the link opened after the
   then 15-second deadline. The deadline became 60 seconds in `1ce24856`.
-- On 2026-11-14 it hung in CI, in the iOS foundation job of
-  [run 43632443145](https://github.com/lostintangent/toy-box-apple/actions/runs/43632443145) on
-  `f811319`. ToyBoxUITests printed nothing for 3 minutes and was stopped with this test started and
-  unfinished. It stalled somewhere its wait's 60-second deadline couldn't report, and at cleanup the
-  simulator had already shut down. It was the job's first failure in 40 runs.
+- On 2026-11-14, CI's iOS foundation job in
+  [run 43632443145](https://github.com/lostintangent/toy-box-apple/actions/runs/43632443145) stopped
+  while this test was running, but the test didn't cause it. The CI simulator went down under the
+  suite, one of six such losses since 11-10, which `test:mobile` now reports as a simulator loss, so that run doesn't count against it.
 - The same day it missed the 60-second deadline in Overview's local full phone run for t1131, on the
   shared Mac at load averages of about 390 to 455 from ordinary agent builds and a freshly booted
   simulator, with no burner. It failed at the helper's `#require` (`ArtifactWebRendererTests.swift:40`,
   unchanged since `d53a8d9`): "The artifact did not reach its expected settled state."
-- The two misses stalled at different points. In CI, the leading candidate is `ArtifactWebRenderer.load`'s
-  `compileContentRuleList`, its one unbounded await. Locally, the load returned, but the helper
-  doesn't say whether the page never finished loading or the link never reached the navigation
-  policy. Neither is measured. Since t1131 the test runs `load` in its own task and waits with the
+- In the local 11-14 miss, the load returned, but the helper doesn't say whether the page never finished
+  loading or the link never reached the navigation policy. Neither is measured. Since t1131 the test runs `load` in its own task and waits with the
   shared `waitUntil` in two named steps, each with a 60-second deadline. "The content rules compiled
   and the page started loading" covers the compile, and "the link opened the browser" reports
   whether the page was still loading. t607 follows it with the other WebKit settle misses. Restoration needs
