@@ -7,6 +7,7 @@ public struct TranscriptPlacement: Equatable, Sendable {
     public typealias RowID = String
 
     public static let endClearance: CGFloat = 16
+    /// Both apps follow arrivals within this distance of the end.
     public static let followingThreshold: CGFloat = 48
 
     public let intent: Intent
@@ -210,25 +211,8 @@ public struct TranscriptPlacement: Equatable, Sendable {
             || old.viewport != new.viewport || old.documentEnd != new.documentEnd ? .layoutChanged : nil
     }
 
-    public static func visibleRows(in layout: Layout) -> [RowID] {
-        return visibleRows(layout.orderedFrames, viewport: layout.viewport, origin: layout.origin)
-    }
-
     public static func distanceToEnd(in layout: Layout) -> CGFloat {
         return max(0, layout.documentEnd - layout.origin - layout.viewport.height + layout.viewport.bottomInset)
-    }
-
-    /// Preserves read eligibility: at least 24 unobscured points, or half of a shorter row.
-    public static func visibleRows(_ rows: [RowFrame], viewport: Viewport, origin: CGFloat) -> [RowID] {
-        precondition(origin.isFinite)
-        guard viewport.width > 0, viewport.unobscuredHeight > 0 else { return [] }
-        let top = origin + viewport.topInset
-        let bottom = origin + viewport.height - viewport.bottomInset
-        return rows.compactMap { row in
-            guard row.isAnchorable else { return nil }
-            let visible = min(row.bottom, bottom) - max(row.top, top)
-            return visible > 0 && visible >= min(24, row.height / 2) ? row.id : nil
-        }
     }
 
     public static func firstRowStartingInView(_ origin: CGFloat, rows: [RowFrame],
@@ -298,10 +282,7 @@ public struct TranscriptPlacement: Equatable, Sendable {
             guard let row = layout.measurements[identity.id] else {
                 return TranscriptPlacement(intent: intent, origin: nil, needsMeasurement: identity.id)
             }
-            // A row taller than the unobscured area starts at its top, so its sender stays in view.
-            let middle = viewport.topInset + viewport.unobscuredHeight / 2
-            proposed = row.height > viewport.unobscuredHeight
-                ? row.top - viewport.topInset : row.top + row.height / 2 - middle
+            proposed = row.top - viewport.topInset - TranscriptReveal.margin
         }
         let minimum = -viewport.topInset
         let maximum = max(minimum, layout.documentEnd - viewport.height + viewport.bottomInset)

@@ -19,15 +19,13 @@ struct ConversationTranscript: View {
     @ViewState private var isOpeningPlaced = false
     @ViewState var isAtBottom = true
     @ViewState var pagingAnchor: PagingAnchor?
-    @ViewState private var highlightedSequence: Int?
-    @ViewState private var revealError: String?
+    @ViewState private var revealer = TranscriptReveal()
     @ViewState var isRevealing = false
+    /// Find's bar floats over the top of the rows, so a reveal while it's open places below it.
+    @ViewState private var findBarHeight: CGFloat = 0
     @ViewState private var expandedMessageIds: Set<String> = []
     @ViewState private var scrollPosition: String?
-    @ViewState private var arrivalUnreadAfter: Int?
-    @ViewState private var capturedArrivalBoundary = false
-    /// This transcript's own visit ended, so its next read may move New to what arrived meanwhile.
-    @ViewState private var lookedAway = false
+    @ViewState private var visit = TranscriptVisit()
     @ViewState private var isUserScrolling = false
     @ViewState var pendingJump: TranscriptJump?
     @ViewState private var requestAnnouncements = TranscriptRequestAnnouncements()
@@ -37,13 +35,10 @@ struct ConversationTranscript: View {
     @ViewState private var opening = TranscriptOpening()
     @ViewState private var layoutTurns = TranscriptLayoutTurns()
     @ViewState var find: TranscriptFind
-    private let revealTimeout: Duration
     private let slowSendDelay: Duration
 
-    init(store: ChannelStore, find: TranscriptFind = TranscriptFind(), revealTimeout: Duration = .seconds(2),
-         slowSendDelay: Duration = .seconds(1)) {
+    init(store: ChannelStore, find: TranscriptFind = TranscriptFind(), slowSendDelay: Duration = .seconds(1)) {
         self.store = store
-        self.revealTimeout = revealTimeout
         self.slowSendDelay = slowSendDelay
         _find = ViewState(wrappedValue: find)
     }
@@ -51,7 +46,7 @@ struct ConversationTranscript: View {
     var rows: [TranscriptRow] {
         guard let lead = store.roster.first else { return [] }
         return rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
-                               unreadAfter: capturedArrivalBoundary ? arrivalUnreadAfter : store.unreadAfter,
+                               unreadAfter: visit.unreadAfter(in: store),
                                filter: interaction.messageView, bookmarks: store.bookmarks)
     }
 
@@ -138,6 +133,7 @@ struct ConversationTranscript: View {
                                           focusRequest: interaction.findRequest,
                                           navigate: navigateFind, close: closeFind,
                                           announce: { [weak window] in window?.announce($0) })
+                            .onGeometryChange(for: CGFloat.self, of: \.size.height) { findBarHeight = $0 }
                     }
                 }
                 .safeAreaBar(edge: .bottom, spacing: 0) { floatingControls }
@@ -185,20 +181,10 @@ struct ConversationTranscript: View {
                     interaction.consumeRevealRequest(request.token)
                     await reveal(sequence: request.sequence, using: proxy)
                 }
-                .onChange(of: read.isLooking) { _, looking in
-                    if !looking, hasLanded { lookedAway = true }
-                }
+                .onChange(of: store.messages.first?.sequence) { _, start in geometry.historyStart = start }
+                .onChange(of: read.isLooking) { _, looking in visit.look(looking, hasLanded: hasLanded) }
                 .onChange(of: read.sequence, initial: true) { _, sequence in
-                    guard let sequence else { return }
-                    // The catch-up summary covered the span New replaced, so it ends with it.
-                    if lookedAway {
-                        lookedAway = false
-                        if store.lookBack() {
-                            capturedArrivalBoundary = false
-                            catchUp = nil
-                        }
-                    }
-                    Task { await store.markRead(through: sequence) }
+                    if let sequence, visit.read(through: sequence, in: store) { catchUp = nil }
                 }
                 .task(id: pagingRestoreTarget) { await settlePagingRestore(using: proxy) }
                 // Owned here rather than by the card, which the lazy stack drops when it scrolls away.
@@ -341,7 +327,7 @@ struct ConversationTranscript: View {
             historyHeader
             ForEach(rows) { row in
                 TranscriptRowContent(row: row, channel: channel, statusReactions: statusReactions,
-                                     highlightedSequence: highlightedSequence, catchUp: catchUp, store: store,
+                                     highlightedSequence: revealer.highlightedSequence, catchUp: catchUp, store: store,
                                      requestChoices: requestChoices,
                                      expandedMessageIds: expandedMessageIds,
                                      findHighlights: findHighlights, bookmarks: bookmarks,
@@ -450,16 +436,7 @@ struct ConversationTranscript: View {
         let presence = store.phase.isUnavailable ? [:] : store.presence
         let hasWorkingAgents = store.roster.contains { presence[$0.id]?.state == "working" }
         let rises: AnyTransition = reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4))
-        let hasNotices = revealError != nil
         return VStack(alignment: .leading, spacing: 8) {
-            if let error = revealError {
-                TranscriptNotice {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                } action: {
-                    Button("Dismiss") { revealError = nil }
-                }
-                .transition(rises)
-            }
             if hasWorkingAgents || showsJumpToLatest {
                 HStack(spacing: 12) {
                     if hasWorkingAgents {
@@ -486,11 +463,10 @@ struct ConversationTranscript: View {
                 .transition(rises)
             }
         }
-        .padding(.bottom, hasWorkingAgents || showsJumpToLatest || hasNotices ? 8 : 0)
+        .padding(.bottom, hasWorkingAgents || showsJumpToLatest ? 8 : 0)
         .modifier(ConversationRail())
         .animation(.easeOut(duration: 0.2), value: hasWorkingAgents)
         .animation(.easeOut(duration: 0.2), value: showsJumpToLatest)
-        .animation(.easeOut(duration: 0.2), value: hasNotices)
     }
 
     @ViewBuilder
@@ -563,9 +539,7 @@ struct ConversationTranscript: View {
         guard !opening.isResolved, !snapshot.isActive, store.isLoaded, store.phase.isConnected else { return }
         opening.isResolved = true
         guard !hasLanded, !isRevealing else { return }
-        opening.plan = TranscriptLanding.opening(
-            unreadAfter: store.unreadAfter, oldestSequence: store.messages.first?.sequence,
-            hasOlderMessages: store.hasOlderMessages, rows: rows)
+        opening.plan = TranscriptLanding.opening(unreadAfter: store.unreadAfter, rows: rows)
         opening.hidesRows = opening.plan != nil && frames.isEmpty
         // Without a card to wait for, the first pass that places the row shows it.
         opening.decidedCatchUp = opening.plan.map { makeCatchUp(unreadAfter: $0.unreadAfter) == nil } ?? true
@@ -612,16 +586,11 @@ struct ConversationTranscript: View {
 
     private func land(using proxy: ScrollViewProxy) async {
         guard !isRevealing else { return }
-        if !capturedArrivalBoundary {
-            // The opening's boundary is the one its first frame shows.
-            arrivalUnreadAfter = opening.rowID == nil ? store.unreadAfter : opening.unreadAfter
-            capturedArrivalBoundary = true
-        }
+        // The opening's boundary is the one its first frame shows.
+        visit.capture(opening.rowID == nil ? store.unreadAfter : opening.unreadAfter)
         await Task.yield()
         var landsAtLatest = true
-        if let plan = TranscriptLanding.opening(
-            unreadAfter: arrivalUnreadAfter, oldestSequence: store.messages.first?.sequence,
-            hasOlderMessages: store.hasOlderMessages, rows: rows) {
+        if let plan = TranscriptLanding.opening(unreadAfter: visit.unreadAfter(in: store), rows: rows) {
             guard !Task.isCancelled, !isRevealing else { return }
             prepareCatchUp(unreadAfter: plan.unreadAfter)
             opening.decidedCatchUp = true
@@ -658,53 +627,17 @@ struct ConversationTranscript: View {
             isOn: IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages))
     }
 
-    /// Nil when the reveal was superseded.
-    @discardableResult
-    func reveal(sequence: Int, using proxy: ScrollViewProxy) async -> RevealProgress.Outcome? {
+    func reveal(sequence: Int, using proxy: ScrollViewProxy) async {
         let token = interaction.revealRequestToken
         let findToken = find.isPresented && find.revealRequest?.sequence == sequence ? find.revealRequest?.token : nil
         catchUp?.isPinned = false
         isRevealing = true
-        revealError = nil
         pagingAnchor = nil
         defer { if interaction.revealRequestToken == token { isRevealing = false } }
-        guard await store.catchUp(toReveal: sequence), revealIsCurrent(token, findToken: findToken) else { return nil }
-        let failure = await store.loadHistory(through: sequence)
-        guard revealIsCurrent(token, findToken: findToken) else { return nil }
-        guard let message = store.state?.messages.first(where: { $0.sequence == sequence }) else {
-            return missReveal(token: token, failure: failure)
-        }
-        if !rows.contains(where: { $0.messages.contains { $0.id == message.id } }) {
-            interaction.messageView = .all
-        }
-        if find.isPresented { expandedMessageIds.insert(message.id) }
-        guard let row = rows.first(where: { $0.messages.contains { $0.id == message.id } }) else {
-            return missReveal(token: token, failure: failure)
-        }
-        let membership = message.system?.type == "member_joined" || message.system?.type == "member_left"
-        let individualSystem = ChannelArtifactGroup.Verb(systemType: message.system?.type) != nil
-            || (membership && row.messages.contains(where: { expandedMessageIds.contains($0.id) }))
-        let targetID = message.isSystem && !individualSystem ? row.id : message.id
-        guard let outcome = await settleReveal(targetID: targetID, rowID: row.id, token: token,
-                                               findToken: findToken, using: proxy) else { return nil }
-        interaction.finishReveal(token, outcome)
-        guard outcome == .revealed else { return outcome }
-        highlightedSequence = find.isPresented ? nil : sequence
-        hasLanded = true
-        guard !find.isPresented else { return outcome }
-        do { try await Task.sleep(for: .seconds(2)) }
-        catch { return outcome }
-        if highlightedSequence == sequence { highlightedSequence = nil }
-        return outcome
-    }
-
-    /// Messages are never deleted, so a caught-up channel without the target shows no notice.
-    /// The transcript lands as usual, and a failed page keeps its own history error.
-    private func missReveal(token: UUID, failure: String?) -> RevealProgress.Outcome {
-        let outcome = RevealProgress.Outcome.failed(failure ?? "Couldn't reveal this message.")
-        interaction.finishReveal(token, outcome)
-        isRevealing = false
-        return outcome
+        await revealer.run(sequence, token: token, store: store, interaction: interaction,
+                           isCurrent: { revealIsCurrent(token, findToken: findToken) },
+                           shows: { message in rows.contains { $0.messages.contains { $0.id == message.id } } },
+                           place: { await placeReveal($0, using: proxy) })
     }
 
     private func revealIsCurrent(_ token: UUID, findToken: UUID?) -> Bool {
@@ -713,42 +646,28 @@ struct ConversationTranscript: View {
         return findToken == nil || (find.isPresented && find.revealRequest?.token == findToken)
     }
 
-    /// Nil when another reveal, Find or the artifact viewer superseded this one.
-    private func settleReveal(targetID: String, rowID: String, token: UUID, findToken: UUID?,
-                              using proxy: ScrollViewProxy) async -> RevealProgress.Outcome? {
-        let turns = TranscriptLayoutTurns()
-        let deadline = ContinuousClock.now + revealTimeout
-        var reveal = TranscriptReveal()
-        var materialized = false
-        scrollPosition = nil
-        while ContinuousClock.now < deadline {
-            guard await turns.settled(), revealIsCurrent(token, findToken: findToken) else { return nil }
-            #if TOY_BOX_BENCHMARK
-            BenchmarkReveal.turned()
-            #endif
-            guard let layout = TranscriptReveal.Layout(
-                frame: frames[targetID], historyStart: store.messages.first?.sequence,
-                viewport: viewport, nativeTop: window.viewportTop) else {
-                _ = reveal.receive(nil, isAligned: false)
-                if !materialized {
-                    proxy.scrollTo(rowID, anchor: .center)
-                    materialized = true
-                    #if TOY_BOX_BENCHMARK
-                    BenchmarkReveal.wrote()
-                    #endif
-                }
-                continue
-            }
-            let aligned = window.restoreReadingBottom(layout.bottom, of: layout.frame)
-            #if TOY_BOX_BENCHMARK
-            if !aligned { BenchmarkReveal.wrote() }
-            #endif
-            if reveal.receive(layout, isAligned: aligned) { return .revealed }
+    /// One scroll puts the message's top `TranscriptReveal.margin` below the visible top, or below Find's
+    /// bar while it's open, or as near as the end allows. A row the lazy stack hasn't built is brought in
+    /// by identity first, and placed from its first frame. From then on, reading holds it like any other place.
+    private func placeReveal(_ message: ChannelMessage, using proxy: ScrollViewProxy) async {
+        if find.isPresented { expandedMessageIds.insert(message.id) }
+        guard let row = rows.first(where: { $0.messages.contains { $0.id == message.id } }) else { return }
+        let membership = message.system?.type == "member_joined" || message.system?.type == "member_left"
+        let individualSystem = ChannelArtifactGroup.Verb(systemType: message.system?.type) != nil
+            || (membership && row.messages.contains(where: { expandedMessageIds.contains($0.id) }))
+        let id = message.isSystem && !individualSystem ? row.id : message.id
+        let historyStart = store.messages.first?.sequence
+        geometry.historyStart = historyStart
+        if geometry.frames[id]?.historyStart != historyStart {
+            scrollPosition = nil
+            proxy.scrollTo(row.id, anchor: .top)
+            await geometry.frame(of: id, historyStart: historyStart)
         }
-        guard revealIsCurrent(token, findToken: findToken) else { return nil }
-        let failure = "Couldn't reveal this message. Try Reveal again."
-        revealError = failure
-        return .failed(failure)
+        guard !Task.isCancelled, let frame = geometry.frames[id], frame.historyStart == historyStart else { return }
+        let top = TranscriptReveal.margin + (find.isPresented ? findBarHeight : 0)
+        _ = window.restoreReadingBottom(top + frame.rect.height, of: frame)
+        hasLanded = true
+        isRevealing = false
     }
 
     func loadOlder() async {
@@ -940,10 +859,39 @@ struct TranscriptLanded: PreferenceKey {
 /// scroll run without re-running the transcript's body and diffing every loaded row. Only what a
 /// frame actually changes, like the visible message or reaching the bottom, is published as state.
 @MainActor
-private final class TranscriptScrollGeometry {
+final class TranscriptScrollGeometry {
     var viewport = TranscriptViewport()
-    var frames: [String: TranscriptMessageFrame] = [:]
+    var frames: [String: TranscriptMessageFrame] = [:] {
+        didSet { if let waiter, frames[waiter.id]?.historyStart == waiter.historyStart { resumeWaiter() } }
+    }
+    /// The first loaded message's sequence. A reconnect's snapshot can replace the history, after which
+    /// a row waited for under the old one can never report from it.
+    var historyStart: Int? {
+        didSet { if let waiter, waiter.historyStart != historyStart { resumeWaiter() } }
+    }
     var readingAnchor: TranscriptReadingAnchor?
+    private var waiter: (id: String, historyStart: Int?, token: UUID, continuation: CheckedContinuation<Void, Never>)?
+
+    /// Returns once the row reports a frame from this history, or once that can't happen because the
+    /// history changed or the wait was cancelled.
+    func frame(of id: String, historyStart: Int?) async {
+        let token = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                resumeWaiter()
+                waiter = (id, historyStart, token, continuation)
+                if self.historyStart != historyStart { resumeWaiter() }
+            }
+        } onCancel: {
+            Task { @MainActor in if self.waiter?.token == token { self.resumeWaiter() } }
+        }
+    }
+
+    private func resumeWaiter() {
+        let continuation = waiter?.continuation
+        waiter = nil
+        continuation?.resume()
+    }
 }
 
 struct PagingAnchor: Equatable {
@@ -957,22 +905,6 @@ struct PagingAnchor: Equatable {
 private struct PagingRestoreTarget: Hashable {
     var id: String
     var oldestSequence: Int
-}
-
-private struct TranscriptNotice<Message: View, Action: View>: View {
-    @ViewBuilder var message: Message
-    @ViewBuilder var action: Action
-
-    var body: some View {
-        HStack(spacing: 8) {
-            message.foregroundStyle(.primary).textSelection(.enabled)
-            action.buttonStyle(.borderless)
-        }
-        .font(.caption)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .glassEffect(.regular, in: .rect(cornerRadius: 14))
-    }
 }
 
 struct TranscriptRequestAnnouncements {

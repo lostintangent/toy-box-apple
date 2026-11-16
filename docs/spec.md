@@ -1833,7 +1833,7 @@ This boundary is not an extra synthetic message. Reference renders of day labels
 `docs/transcript-events.png`.
 
 Opening uses only the latest 100 messages supplied by the snapshot and never fetches older pages.
-Land on the first unread row when its boundary is in the loaded page, otherwise the end. Both apps
+Land on the row the New divider sits above, otherwise the end. Both apps
 land only once the store is connected, so a reopened channel lands on that boundary rather than on
 its cached end. Until then the cached conversation rests at its end, unread. Landing may hide the
 rows only until the first layout pass puts its target in place, never until layout goes quiet,
@@ -1873,10 +1873,9 @@ Landing and reveal targets retain their
 conversation order so a target removed during layout falls forward to its next surviving row,
 then backward to the last row, then to the end. Only explicit missing-target actions report an
 unavailable target without moving. The model's document end owns the 16-point clearance exactly
-once, and read eligibility excludes both glass insets and zero-sized viewports.
+once.
 `RowFrame.isAnchorable` defaults to true. History and empty-state accessories set it to false:
-they still contribute document height, but are never reading anchors, fallback targets or read
-candidates. Explicit row-target actions reject accessories. With only accessory geometry remaining,
+they still contribute document height, but are never reading anchors or fallback targets. Explicit row-target actions reject accessories. With only accessory geometry remaining,
 a layout-time target loss falls back to the document end.
 
 Adapters use the model's `Layout` entry points, its only ones. A layout separates all canonical

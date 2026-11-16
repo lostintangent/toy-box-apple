@@ -686,11 +686,8 @@ struct TranscriptTests {
         try await harness.waitUntil { find.isPresented && harness.findField != nil }
     }
 
-    // Shell's composed run at e83ae76 (2799) failed this because sibling suites held the main
-    // thread past the app's 2-second reveal budget. The harness gives reveals 30 seconds, so this
-    // checks what a reveal reports, and the test below checks the budget.
     @MainActor
-    @Test func aRevealReportsRevealedOnlyOnceItsMessageIsInView() async throws {
+    @Test func aRevealPutsItsMessagesTop32PointsBelowTheVisibleTop() async throws {
         let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage))
         defer { await harness.close() }
         try await harness.settled()
@@ -698,19 +695,25 @@ struct TranscriptTests {
         #expect(harness.interaction.revealProgress?.outcome == .loading)
         try await harness.waitUntil { harness.interaction.revealProgress?.outcome != .loading }
         #expect(harness.interaction.revealProgress == RevealProgress(token: token, sequence: 20, outcome: .revealed))
-        #expect(harness.visibleWindowFrames()["m20"] != nil)
+        try await harness.settled()
+        let top = try #require(harness.frames["m20"]).rect.minY
+        #expect(abs(top - TranscriptReveal.margin) <= 1, "m20's top at \(top)")
     }
 
+    /// A reveal waits for its row's first frame from the history it paged. A reconnect's snapshot that
+    /// replaces that history ends the wait, so the transcript can't stay revealing with nothing to place.
     @MainActor
-    @Test func aRevealThatNeverSettlesReportsItsFailure() async throws {
-        // No time to settle, so the reveal times out on its first check.
-        let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage), revealTimeout: .zero)
-        defer { await harness.close() }
-        try await harness.settled()
-        let token = harness.interaction.reveal(sequence: 20)
-        try await harness.waitUntil { harness.interaction.revealProgress?.outcome != .loading }
-        #expect(harness.interaction.revealProgress == RevealProgress(
-            token: token, sequence: 20, outcome: .failed("Couldn't reveal this message. Try Reveal again.")))
+    @Test func aRevealsFrameWaitEndsWhenItsHistoryIsReplaced() async throws {
+        let geometry = TranscriptScrollGeometry()
+        geometry.historyStart = 1
+        var ended = false
+        let wait = Task { @MainActor in
+            await geometry.frame(of: "m20", historyStart: 1)
+            ended = true
+        }
+        defer { wait.cancel() }
+        geometry.historyStart = 61
+        try await waitUntil("the wait to end once its history is gone") { ended }
     }
 
     /// A request's notification can reveal a message that arrived while the channel was away. The store
@@ -731,7 +734,7 @@ struct TranscriptTests {
     }
 
     /// Messages are never deleted, so a caught-up channel without the message is a bug. The reader sees
-    /// the usual landing, and the miss reports a neutral failure instead of "no longer available".
+    /// the usual landing, and no reveal says a message is unavailable.
     @MainActor
     @Test func aRevealOfAMessageTheServerNeverSentLandsAsUsualWithoutANotice() async throws {
         let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage))
@@ -743,21 +746,20 @@ struct TranscriptTests {
             harness.capture.hasLanded && harness.interaction.revealProgress?.outcome != .loading
         }
         try await harness.settled()
-        #expect(harness.interaction.revealProgress == RevealProgress(
-            token: token, sequence: 99, outcome: .failed("Couldn't reveal this message.")))
+        #expect(harness.interaction.revealProgress == RevealProgress(token: token, sequence: 99, outcome: .revealed))
         #expect(abs(harness.bottomGap) < 2 && harness.isVisible("m40"))
     }
 
-    /// A reveal that interrupts the opening and then fails, like one that times out, leaves the
-    /// opening to land as usual, so its hidden rows always come back.
+    /// A reveal that interrupts the opening pages back and lands the transcript on its message, so the
+    /// opening's hidden rows come back there.
     @MainActor
-    @Test func aRevealThatInterruptsTheOpeningAndFailsStillLandsIt() async throws {
+    @Test func aRevealThatInterruptsTheOpeningLandsOnItsMessage() async throws {
         var turn = 0
         var interrupted = false
         // The harness returns once the transcript lands.
         let harness = try await TranscriptHarness(
             messages: (41...100).map(transcriptTestMessage), history: (1...40).map(transcriptTestMessage),
-            holdsHistory: true, seenThrough: 70, revealTimeout: .zero,
+            holdsHistory: true, seenThrough: 70,
             onTurn: { harness in
                 turn += 1
                 if turn == 2 { harness.interaction.reveal(sequence: 5) }
@@ -768,8 +770,9 @@ struct TranscriptTests {
         defer { await harness.close() }
         // A reconnect would land it again, so the landing has to come from the one connection.
         #expect(interrupted && harness.streamRequests == 1)
-        #expect(harness.interaction.revealProgress?.outcome == .failed("Couldn't reveal this message. Try Reveal again."))
-        #expect(harness.rowsOpacity == 1)
+        try await harness.waitUntil { harness.interaction.revealProgress?.outcome == .revealed }
+        try await harness.settled()
+        #expect(harness.rowsOpacity == 1 && harness.isVisible("m5"))
     }
 
     @MainActor
@@ -2462,7 +2465,7 @@ private final class TranscriptHarness {
          seenThrough: Int? = nil, height: CGFloat = 480, resizable: Bool = false, warm: Bool = false,
          legacyScrollers: Bool = false,
          intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared,
-         find: TranscriptFind = TranscriptFind(), revealTimeout: Duration = .seconds(30),
+         find: TranscriptFind = TranscriptFind(),
          slowSendDelay: Duration = .seconds(1),
          onTurn: (@MainActor (TranscriptHarness) -> Void)? = nil) async throws {
         let host = "transcript-\(UUID().uuidString.lowercased()).invalid"
@@ -2492,7 +2495,6 @@ private final class TranscriptHarness {
         }
         let makeView = {
             let view = NSHostingView(rootView: ConversationTranscript(store: store, find: find,
-                                                                      revealTimeout: revealTimeout,
                                                                       slowSendDelay: slowSendDelay)
                 .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }
                 .onPreferenceChange(TranscriptLanded.self) { capture.hasLanded = $0 }

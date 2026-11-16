@@ -8,6 +8,8 @@
 - Replying to a request from the sidebar now lines your words up with the send button, so the field looks right whether you've typed one line or several.
 - A channel now stays read while you look at one of its images or artifacts, so messages that arrive meanwhile don't leave it unread in the sidebar.
 - Clicking a link in a message now always opens it, even while your pointer is over the message to select its text.
+- Revealing a message, from a bookmark, a notification or Find, now brings it up near the top where you start reading, and always takes you there.
+- A channel that's entirely new to you now opens at its latest message, so you start where the conversation is.
 
 ## Mac 0.1.44
 
@@ -27,6 +29,7 @@
 - Images in a channel now show as soon as you open it, even ones that arrived while you were away, instead of staying blank.
 - Relaunching Toy Box now brings you back to where you left off: the channel you were reading, or your list of channels if you'd gone back to it.
 - A channel you're in now always stays read, including when you reopen it, come back to the app or open something on top of it, so it never shows as unread when you go back to your channels.
+- Revealing a message, from a bookmark, a notification or Find, now brings it up near the top where you start reading, and always takes you there.
 
 ## iPhone 0.1.41
 

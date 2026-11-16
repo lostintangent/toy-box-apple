@@ -73,7 +73,7 @@ public struct TranscriptViewport: Equatable, Sendable {
     /// Growth below a followed bottom, such as a sent image loading, and a follow still in flight
     /// keep following. Moving away from the bottom, or resizing while not following, stops it.
     public func isAtBottom(after old: TranscriptViewport, wasAtBottom: Bool, following: Bool) -> Bool {
-        if bottomGap <= 48 || following { return true }
+        if bottomGap <= TranscriptPlacement.followingThreshold || following { return true }
         let resized = contentHeight != old.contentHeight || height != old.height
         return resized || bottomGap > old.bottomGap ? false : wasAtBottom
     }
