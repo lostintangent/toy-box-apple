@@ -80,7 +80,7 @@ public final class ChannelInteraction {
 public struct RevealProgress: Equatable, Sendable {
     public enum Outcome: Equatable, Sendable {
         case loading
-        /// The message is in place and highlighted, not merely loaded.
+        /// Finished. A reveal never checks where it landed, so only a failed history page fails it.
         case revealed
         case failed(String)
     }

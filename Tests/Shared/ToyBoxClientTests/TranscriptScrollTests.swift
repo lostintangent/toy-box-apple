@@ -3,47 +3,8 @@ import ToyBoxKit
 import Foundation
 import Testing
 
-@Suite("Transcript reveal, reading and following")
+@Suite("Transcript reading and following")
 struct TranscriptScrollTests {
-    @Test func revealRejectsUnmeasuredAndPrependStaleTargets() throws {
-        let viewport = TranscriptViewport(top: 1_890, width: 503, height: 380, contentHeight: 5_148)
-        let stale = TranscriptMessageFrame(sequence: 2, rect: CGRect(x: 0, y: -1_800, width: 400, height: 57),
-                                           historyStart: 61, contentTop: 70)
-        #expect(TranscriptReveal.Layout(frame: nil, historyStart: 1, viewport: viewport, nativeTop: 1_890) == nil)
-        #expect(TranscriptReveal.Layout(frame: stale, historyStart: 1, viewport: viewport, nativeTop: 1_890) == nil)
-        var current = stale
-        current.historyStart = 1
-        current.rect.origin.y = 100
-        let layout = try #require(TranscriptReveal.Layout(
-            frame: current, historyStart: 1, viewport: viewport, nativeTop: 1_890))
-        #expect(TranscriptCoordinates.targetOffset(for: current, bottom: layout.bottom, topInset: 0) == -71.5)
-        #expect(TranscriptReveal.Layout(frame: current, historyStart: 1, viewport: .init(), nativeTop: 0) == nil)
-        var reveal = TranscriptReveal()
-        let first = reveal.receive(layout, isAligned: false)
-        let next = reveal.receive(layout, isAligned: false)
-        #expect(!first && !next)
-    }
-
-    @Test func revealCompletesOnlyAfterAnUnchangedNativeAlignment() throws {
-        let viewport = TranscriptViewport(top: 1_890, width: 503, height: 380, contentHeight: 5_148)
-        let frame = TranscriptMessageFrame(sequence: 2, rect: CGRect(x: 0, y: -1_800, width: 400, height: 57),
-                                           historyStart: 1, contentTop: 70)
-        let layout = try #require(TranscriptReveal.Layout(
-            frame: frame, historyStart: 1, viewport: viewport, nativeTop: 1_890))
-        #expect(layout.bottom == 218.5)
-        var reveal = TranscriptReveal()
-        var completions = [reveal.receive(layout, isAligned: true)]
-        var corrected = layout
-        corrected.frame.contentTop += 120
-        completions.append(reveal.receive(corrected, isAligned: true))
-        corrected.nativeTop += 40
-        completions.append(reveal.receive(corrected, isAligned: true))
-        completions.append(reveal.receive(nil, isAligned: false))
-        completions.append(reveal.receive(corrected, isAligned: true))
-        completions.append(reveal.receive(corrected, isAligned: true))
-        #expect(completions == [false, false, false, false, false, true])
-    }
-
     @Test func pagingAnchorsUseOnlyVisibleCommittedFrames() {
         let viewport = TranscriptViewport(width: 600, height: 400)
         let frames: [String: TranscriptMessageFrame] = [
@@ -132,10 +93,10 @@ struct TranscriptScrollTests {
 
 @Suite("Transcript landing policy")
 struct TranscriptLandingTests {
-    private func rows(_ range: ClosedRange<Int> = 1...20) -> [TranscriptRow] {
+    private func rows(_ range: ClosedRange<Int> = 1...20, unreadAfter: Int? = nil) -> [TranscriptRow] {
         TranscriptRowBuilder().rows(range.map {
             catchUpTestMessage($0, sender: $0.isMultiple(of: 2) ? .user : .agent("lead"))
-        }, lead: .lead(id: "lead"), members: [])
+        }, lead: .lead(id: "lead"), members: [], unreadAfter: unreadAfter)
     }
 
     private func frame(_ y: CGFloat) -> TranscriptMessageFrame {
@@ -151,30 +112,22 @@ struct TranscriptLandingTests {
             isColdOpening: isColdOpening, jumps: jumps, hasPendingJump: hasPendingJump)
     }
 
-    @Test func aWarmOpeningRequiresTheUnreadBoundaryToBeLoaded() {
-        let rows = rows(31...50)
-        #expect(TranscriptLanding.opening(unreadAfter: nil, oldestSequence: 31,
-                                         hasOlderMessages: true, rows: rows) == nil)
-        #expect(TranscriptLanding.opening(unreadAfter: 30, oldestSequence: nil,
-                                         hasOlderMessages: true, rows: rows) == nil)
-        #expect(TranscriptLanding.opening(unreadAfter: 20, oldestSequence: 31,
-                                         hasOlderMessages: true, rows: rows) == nil)
-        #expect(TranscriptLanding.opening(unreadAfter: 30, oldestSequence: 31,
-                                         hasOlderMessages: true, rows: rows)?.rowID == rows[0].id)
-        #expect(TranscriptLanding.opening(unreadAfter: 20, oldestSequence: 31,
-                                         hasOlderMessages: false, rows: rows)?.rowID == rows[0].id)
-        #expect(TranscriptLanding.opening(unreadAfter: 50, oldestSequence: 31,
-                                         hasOlderMessages: false, rows: rows) == nil)
+    @Test func anOpeningLandsOnTheRowNewSitsAbove() {
+        #expect(TranscriptLanding.opening(unreadAfter: nil, rows: rows(31...50))?.rowID == nil)
+        let rows = rows(31...50, unreadAfter: 40)
+        #expect(TranscriptLanding.opening(unreadAfter: 40, rows: rows)?.rowID == rows[10].id)
+        // Without New in the loaded page, as when it's unread from the start or caught up, it opens at the end.
+        for unreadAfter in [30, 50] {
+            #expect(TranscriptLanding.opening(unreadAfter: unreadAfter,
+                                             rows: self.rows(31...50, unreadAfter: unreadAfter)) == nil)
+        }
     }
 
-    @Test func aWarmOpeningSeedsOnlyTailsLongerThanEightRows() throws {
-        let rows = rows()
-        let short = try #require(TranscriptLanding.opening(unreadAfter: 12, oldestSequence: 1,
-                                                         hasOlderMessages: false, rows: rows))
-        #expect(short == .init(rowID: rows[12].id, unreadAfter: 12, seeds: false))
-        let long = try #require(TranscriptLanding.opening(unreadAfter: 11, oldestSequence: 1,
-                                                        hasOlderMessages: false, rows: rows))
-        #expect(long == .init(rowID: rows[11].id, unreadAfter: 11, seeds: true))
+    @Test func anOpeningSeedsOnlyTailsLongerThanEightRows() throws {
+        let long = try #require(TranscriptLanding.opening(unreadAfter: 10, rows: rows(unreadAfter: 10)))
+        #expect(long == .init(rowID: rows()[10].id, unreadAfter: 10, seeds: true))
+        let short = try #require(TranscriptLanding.opening(unreadAfter: 12, rows: rows(unreadAfter: 12)))
+        #expect(short == .init(rowID: rows()[12].id, unreadAfter: 12, seeds: false))
     }
 
     @Test func aColdOpeningMustTargetUnreadOnceEvenWhenProvisionalFramesLookLanded() {

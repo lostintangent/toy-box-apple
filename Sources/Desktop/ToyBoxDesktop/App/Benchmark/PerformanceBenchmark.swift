@@ -48,8 +48,7 @@ import QuartzCore
 /// where the end settles after the window narrows and widens while following. `scroll` also reports
 /// where a mid-transcript reader's row sits after the same resize, without a budget.
 /// - `place`: reveals a message a page and a half older than the first page, through the request a
-///   bookmark makes, checks that it settles centered, and reports its time, scroll writes and settle
-///   passes.
+///   bookmark makes, checks that its top settles 32 points below the visible top, and reports its time.
 /// - `key`: makes the window key, which a person's window is, and measures the whole process's CPU
 ///   while it sits there, first with the channel's own working agents and then with 20 working.
 ///   Animations that run only in the key window, like the working ellipsis, show up here.
@@ -74,7 +73,7 @@ final class PerformanceBenchmark {
         static let keyWindowCPU = 3.0
         static let arrivalGapPoints = 1.0
         static let olderPagePlacePoints = 0.5
-        static let revealCenterPoints = 1.0
+        static let revealTopPoints = 1.0
         static let resizeGapPoints = 1.0
     }
 
@@ -558,7 +557,8 @@ final class PerformanceBenchmark {
     }
 
     /// Reveals a message about a page and a half older than the oldest loaded, through the same
-    /// request a bookmark makes, and reports how many scroll writes and settle passes it took.
+    /// request a bookmark makes, and reports how far its top settles from `TranscriptReveal.margin`
+    /// below the visible top.
     private func measureReveal(in store: ChannelStore) async {
         guard let scroll = transcriptScrollView(), let source = BenchmarkScrollGeometry.source(in: scroll),
               let interaction = source.benchmarkInteraction else { fail("the transcript has no reveal source") }
@@ -567,7 +567,6 @@ final class PerformanceBenchmark {
         }
         let sequence = oldest - 150
         _ = await settled()
-        BenchmarkReveal.reset()
         let start = CACurrentMediaTime()
         let token = interaction.reveal(sequence: sequence)
         await until("revealing \(sequence) didn't finish", timeout: 20) {
@@ -575,25 +574,23 @@ final class PerformanceBenchmark {
         }
         let seconds = CACurrentMediaTime() - start
         let outcome = interaction.revealProgress?.token == token ? interaction.revealProgress?.outcome : nil
-        let counts = BenchmarkReveal.counts
         _ = await settled()
         let place = source.benchmarkPlaceSnapshot()
-        var offCenter = Double.infinity
-        if let id = store.messages.first(where: { $0.sequence == sequence })?.id,
-           let rect = place?.rows[id], let place {
-            offCenter = Double(abs(rect.midY - place.viewportHeight / 2))
+        var offTop = Double.infinity
+        if let id = store.messages.first(where: { $0.sequence == sequence })?.id, let rect = place?.rows[id] {
+            offTop = Double(abs(rect.minY - TranscriptReveal.margin))
         }
-        let landing = offCenter.isFinite
-            ? String(format: "center %.1f pt from the viewport's", offCenter) : "not built once settled"
+        let landing = offTop.isFinite
+            ? String(format: "top %.1f pt from %.0f pt below the visible top", offTop, TranscriptReveal.margin)
+            : "not built once settled"
         let result = switch outcome {
         case .revealed: "revealed"
         case .failed(let reason): "failed: \(reason)"
         case .loading, nil: "superseded"
         }
         check("Reveal \(sequence) from \(oldest) loaded",
-              "\(result) in \(format(seconds * 1000)), \(counts.writes) scroll writes over \(counts.turns) settle passes, "
-              + landing,
-              value: outcome == .revealed ? offCenter : .infinity, budget: Budget.revealCenterPoints, unit: " pt")
+              "\(result) in \(format(seconds * 1000)), \(landing)",
+              value: outcome == .revealed ? offTop : .infinity, budget: Budget.revealTopPoints, unit: " pt")
     }
 
     /// Narrows the window and widens it back, once following the latest message and once reading
@@ -1112,16 +1109,6 @@ struct BenchmarkPlace: Sendable {
             .min { ($0.value.minY, $0.key) < ($1.value.minY, $1.key) }
             .map { ($0.key, $0.value.minY) }
     }
-}
-
-/// What a reveal did between its request and its outcome.
-@MainActor
-enum BenchmarkReveal {
-    private(set) static var counts = (writes: 0, turns: 0)
-
-    static func reset() { counts = (0, 0) }
-    static func wrote() { counts.writes += 1 }
-    static func turned() { counts.turns += 1 }
 }
 
 struct BenchmarkScrollDelivery: Equatable, Sendable {

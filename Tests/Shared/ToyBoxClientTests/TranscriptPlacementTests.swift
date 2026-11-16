@@ -135,7 +135,6 @@ struct TranscriptPlacementTests {
         #expect(Model.layoutEvent(from: first, to: removed) == .layoutChanged)
         let measured = layout([frames()[5], frames()[6]])
         #expect(Model.layoutEvent(from: measured, to: layout([frames()[6], frames()[5]])) == nil)
-        #expect(Model.visibleRows(in: measured) == ["m5", "m6"])
     }
 
     #if !DEBUG
@@ -307,13 +306,12 @@ struct TranscriptPlacementTests {
             #expect(placed.origin == 250)
             #expect(480 - (250 + viewport.topInset) == anchor.offset)
         }
-        #expect(!Model.visibleRows(rows, viewport: viewport, origin: -50).contains("load-older"))
     }
 
     @Test(arguments: [
         (Model.Intent.landing(.row("m5", order: 5)), CGFloat(650), CGFloat(350)),
         (.reading(.init(row: "m5", order: 5, offset: 30)), 620, 320),
-        (.revealing("m5", order: 5), 500, 350),
+        (.revealing("m5", order: 5), 618, 318),
     ])
     func survivorFallbackSkipsAccessoriesIncludingTheExactIDAndLastRow(_ intent: Model.Intent,
                                                                       _ successor: CGFloat,
@@ -338,7 +336,6 @@ struct TranscriptPlacementTests {
     @Test func accessoryOnlyGeometryFallsBackToTheEndWithoutCreatingAReadingAnchor() {
         let rows = [Model.RowFrame(id: "empty", order: 0, top: 0, height: 240, isAnchorable: false)]
         #expect(Model.end(rows) == 256)
-        #expect(Model.visibleRows(rows, viewport: viewport, origin: -50).isEmpty)
         #expect(Model.firstRowStartingInView(-50, rows: rows, viewport: viewport) == nil)
         #expect(Model.firstRowStartingInView(0, rows: rows, viewport: viewport) == nil)
         let previous = Model.Intent.reading(.init(row: "m5", order: 5, offset: 30))
@@ -429,15 +426,16 @@ struct TranscriptPlacementTests {
         #expect(Model.reduce(reader.intent, .layoutChanged, rows: frames(21), viewport: viewport, origin: 800).origin == 800)
     }
 
-    @Test func revealCentersOnceThenPersistsUntilTheFirstReaderScroll() {
+    @Test func revealPlacesOnceThenPersistsUntilTheFirstReaderScroll() {
+        // m8's top, at 800, sits 32 points below the 50-point top bar.
         let revealed = Model.reduce(.following, .reveal("m8"), rows: frames(), viewport: viewport, origin: 0)
         #expect(revealed.intent == .revealing("m8", order: 8))
-        #expect(revealed.origin == 600)
+        #expect(revealed.origin == 718)
         let changed = Model.reduce(revealed.intent, .layoutChanged, rows: frames(height: 120),
-                                   viewport: viewport, origin: 600)
-        #expect(changed.origin == 770)
+                                   viewport: viewport, origin: 718)
+        #expect(changed.origin == 878)
         let reader = Model.reduce(changed.intent, .readerScrolled(to: 900),
-                                  rows: frames(height: 120), viewport: viewport, origin: 770)
+                                  rows: frames(height: 120), viewport: viewport, origin: 878)
         #expect(reader.origin == nil)
         #expect(Model.reduce(reader.intent, .layoutChanged, rows: frames(height: 120),
                               viewport: viewport, origin: 900).origin == 900)
@@ -445,16 +443,6 @@ struct TranscriptPlacementTests {
         #expect(missing.origin == nil)
         #expect(missing.intent == reader.intent)
         #expect(missing.unavailableTarget == "deleted")
-    }
-
-    @Test func aRevealTallerThanTheUnobscuredAreaStartsBelowTheTopInset() {
-        // 600 points tall, minus a 50-point top bar and a 150-point bottom overlay, leaves 400.
-        // m8 starts at 8 × 401 = 3,208, so its top sits just below the bar.
-        let tall = Model.reduce(.following, .reveal("m8"), rows: frames(height: 401), viewport: viewport, origin: 0)
-        #expect(tall.origin == 3_158)
-        let fits = Model.reduce(.following, .reveal("m8"), rows: frames(height: 400), viewport: viewport, origin: 0)
-        // A 400-point row still centers: 3,200 + 200 − (50 + 200).
-        #expect(fits.origin == 3_150)
     }
 
     @Test func aHiddenAnchorUsesTheNearestSuccessorThenPredecessorThenTheEnd() {
@@ -495,22 +483,6 @@ struct TranscriptPlacementTests {
         #expect(returned.origin == 812.5)
     }
 
-    @Test func visibilityExcludesBothBarsAndPreservesTheExistingReadThreshold() {
-        let rows: [Model.RowFrame] = [
-            .init(id: "under-top", order: 0, top: 0, height: 50),
-            .init(id: "short", order: 1, top: 40, height: 20),
-            .init(id: "visible", order: 2, top: 60, height: 300),
-            .init(id: "edge-24", order: 3, top: 426, height: 100),
-            .init(id: "edge-23", order: 4, top: 427, height: 100),
-            .init(id: "under-bottom", order: 5, top: 450, height: 100),
-        ]
-        #expect(Model.visibleRows(rows, viewport: viewport, origin: 0) == ["short", "visible", "edge-24"])
-        let covered = Model.Viewport(width: 600, height: 100, topInset: 50, bottomInset: 50)
-        #expect(Model.visibleRows(rows, viewport: covered, origin: 0).isEmpty)
-        let hidden = Model.Viewport(width: 0, height: 600, topInset: 50, bottomInset: 150)
-        #expect(Model.visibleRows(rows, viewport: hidden, origin: 0).isEmpty)
-    }
-
     @Test func placementClampsAtDocumentEdgesAndExplicitMissingTargetsDoNotMove() {
         let short = frames(2)
         let end = Model.reduce(.following, .layoutChanged, rows: short, viewport: viewport, origin: 0)
@@ -532,12 +504,13 @@ struct TranscriptPlacementTests {
     func layoutTargetLossFallsBackWithoutReportingAnUnavailableMessage(_ intent: Model.Intent) {
         let filtered = frames().filter { $0.order != 5 && $0.order != 6 }
         let after = Model.reduce(intent, .layoutChanged, rows: filtered, viewport: viewport, origin: 400)
-        #expect(after.origin == (intent == .revealing("m5", order: 5) ? 500 : 650))
+        let reveals = intent == .revealing("m5", order: 5)
+        #expect(after.origin == (reveals ? 618 : 650))
         #expect(after.unavailableTarget == nil)
         let small = Model.Viewport(width: 600, height: 200, topInset: 50, bottomInset: 50)
         let before = Model.reduce(intent, .layoutChanged, rows: Array(frames().prefix(5)),
                                   viewport: small, origin: 400)
-        #expect(before.origin == 350)
+        #expect(before.origin == (reveals ? 318 : 350))
         #expect(before.unavailableTarget == nil)
         let empty = Model.reduce(intent, .layoutChanged, rows: [], viewport: viewport, origin: 400)
         #expect(empty.intent == .following)

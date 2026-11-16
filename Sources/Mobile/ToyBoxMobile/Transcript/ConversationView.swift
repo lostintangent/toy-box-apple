@@ -30,8 +30,6 @@ final class TranscriptScroll {
     var holdsPlacementThroughInput = false
     private(set) var intent: Model.Intent = .landing(.end)
     private(set) var hasLanded = false
-    /// The reveal still waiting for native geometry to hold its row.
-    var pendingReveal: (token: UUID, row: String)?
     private var frames: [String: CGRect] = [:]
     private var column: CGFloat?
     private var lastLayout: Model.Layout?
@@ -158,20 +156,6 @@ final class TranscriptScroll {
             || Model.firstRowStartingInView(metrics.origin, rows: measured, viewport: metrics.viewport) != nil
     }
 
-    /// A reveal finishes once geometry holds its row where the model places it. Reader input or a
-    /// jump that replaces it first finishes it too, revealed only if the row is in view.
-    func finishedReveal() -> (token: UUID, isRevealed: Bool)? {
-        guard let pending = pendingReveal, let layout else { return nil }
-        if case .revealing(let id, _) = intent, id == pending.row {
-            guard let origin = Model.placement(for: intent, layout: layout).origin,
-                  abs(origin - layout.origin) <= 0.5 else { return nil }
-            pendingReveal = nil
-            return (pending.token, true)
-        }
-        pendingReveal = nil
-        return (pending.token, Model.visibleRows(in: layout).contains(pending.row))
-    }
-
     /// The paging row's height, so older history loads as soon as that row starts to show.
     static let pagingReach: CGFloat = 44
 
@@ -226,14 +210,11 @@ struct ConversationView: View {
     @ViewState private var rowBuilder = TranscriptRowBuilder()
     @ViewState private var scroll = TranscriptScroll()
     @ViewState private var position = ScrollPosition()
-    @ViewState private var arrivalUnreadAfter: Int?
-    @ViewState private var capturedArrival = false
-    /// This transcript's own visit ended, so its next read may move New to what arrived meanwhile.
-    @ViewState private var lookedAway = false
+    @ViewState private var visit = TranscriptVisit()
     @ViewState private var showsJumpToLatest = false
     @ViewState private var showsWorkingNow = false
     @ViewState private var showsBookmarks = false
-    @ViewState private var highlightedSequence: Int?
+    @ViewState private var revealer = TranscriptReveal()
     /// A reveal requested before landing, such as a request alert's, opens on its message. The
     /// rows stay hidden while it pages, so the reader never sees New first.
     @ViewState private var landsOnReveal = false
@@ -250,15 +231,15 @@ struct ConversationView: View {
     }()
 
     nonisolated private static let space = "transcript-content"
-    private static let revealInterrupted = "Scrolling moved away before the message was revealed."
 
-    private var items: [TranscriptItem] {
+    private var rows: [TranscriptRow] {
         guard let lead = store.roster.first else { return [] }
-        let rows = rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
-                                   unreadAfter: capturedArrival ? arrivalUnreadAfter : store.unreadAfter,
-                                   filter: interaction.messageView, bookmarks: store.bookmarks)
-        return transcriptItems(rows)
+        return rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
+                               unreadAfter: visit.unreadAfter(in: store),
+                               filter: interaction.messageView, bookmarks: store.bookmarks)
     }
+
+    private var items: [TranscriptItem] { transcriptItems(rows) }
 
     var body: some View {
         let items = items
@@ -279,7 +260,7 @@ struct ConversationView: View {
                 }
                 ForEach(items) { item in
                     TranscriptItemView(item: item, channel: channel, statusReactions: statusReactions,
-                                       isHighlighted: item.messages.contains { $0.sequence == highlightedSequence },
+                                       isHighlighted: item.messages.contains { $0.sequence == revealer.highlightedSequence },
                                        isExpanded: expanded.contains(item.id),
                                        findHighlight: item.messages.lazy.compactMap { findHighlights[$0.sequence] }.first,
                                        catchUp: item.divider?.unread == true ? card : nil,
@@ -431,20 +412,9 @@ struct ConversationView: View {
             startedReveal = request.token
             Task { await reveal(sequence: request.sequence, token: request.token) }
         }
-        .onChange(of: read.isLooking) { _, looking in
-            if !looking, scroll.hasLanded { lookedAway = true }
-        }
+        .onChange(of: read.isLooking) { _, looking in visit.look(looking, hasLanded: scroll.hasLanded) }
         .onChange(of: read.sequence, initial: true) { _, sequence in
-            guard let sequence else { return }
-            // The catch-up summary covered the span New replaced, so it ends with it.
-            if lookedAway {
-                lookedAway = false
-                if store.lookBack() {
-                    capturedArrival = false
-                    catchUp = nil
-                }
-            }
-            Task { await store.markRead(through: sequence) }
+            if let sequence, visit.read(through: sequence, in: store) { catchUp = nil }
         }
     }
 
@@ -502,15 +472,13 @@ struct ConversationView: View {
     /// unread boundary, which the next snapshot or resume captures.
     private func land(_ items: [TranscriptItem]) {
         guard !scroll.hasLanded, store.isLoaded, store.phase.isConnected, !items.isEmpty else { return }
-        if !capturedArrival {
-            arrivalUnreadAfter = store.unreadAfter
-            capturedArrival = true
-        }
-        let divider = items.first { $0.divider?.unread == true }
+        visit.capture(store.unreadAfter)
+        let opening = TranscriptLanding.opening(unreadAfter: visit.unreadAfter(in: store), rows: rows)
+        let divider = opening.flatMap { opening in items.first { $0.id == opening.rowID } }
         // The summary sits in the New divider's item, so landing on that item holds the card's top.
         if divider != nil, catchUp == nil, let state = store.state {
             catchUp = TranscriptCatchUpSession.make(
-                server: store.api.baseURL, state: state, unreadAfter: arrivalUnreadAfter, filter: interaction.messageView,
+                server: store.api.baseURL, state: state, unreadAfter: visit.unreadAfter(in: store), filter: interaction.messageView,
                 boundaryIsLoaded: true, availability: intelligence.availability,
                 isOn: IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages))
         }
@@ -548,10 +516,8 @@ struct ConversationView: View {
             withAnimation(.easeOut(duration: 0.2)) { showsJumpToLatest = away }
         }
         if !isMoving {
-            if let reveal = scroll.finishedReveal() {
-                landsOnReveal = false
-                interaction.finishReveal(reveal.token, reveal.isRevealed ? .revealed : .failed(Self.revealInterrupted))
-            }
+            // A reveal that opened the conversation shows its rows once they're in place.
+            if landsOnReveal, scroll.hasLanded { landsOnReveal = false }
             if !store.isLoadingOlder, store.hasOlderMessages, store.historyError == nil,
                scroll.loadsOlder(with: rowIdentities) {
                 Task { await loadOlder() }
@@ -575,42 +541,27 @@ struct ConversationView: View {
     }
 
     private func reveal(sequence: Int, token: UUID) async {
+        // A reveal that couldn't open the conversation falls back to the usual landing.
+        func landUnlessRevealed() {
+            guard !scroll.hasLanded else { return }
+            landsOnReveal = false
+            land(items)
+        }
         defer {
             interaction.consumeRevealRequest(token)
-            // A reveal that couldn't open the conversation falls back to the usual landing.
-            if !scroll.hasLanded {
-                landsOnReveal = false
-                land(items)
-            }
+            landUnlessRevealed()
         }
-        func target() -> TranscriptItem? { items.first { $0.messages.contains { $0.sequence == sequence } } }
-        var failure: String?
-        // Messages are never deleted, so a miss shows no notice. The defer lands as usual, and a
-        // failed page keeps its own history error.
-        func miss() {
-            interaction.finishReveal(token, .failed(failure ?? "Couldn't reveal this message."))
-        }
-        guard await store.catchUp(toReveal: sequence), interaction.revealRequestToken == token else { return }
-        failure = await store.loadHistory(through: sequence)
-        guard interaction.revealRequestToken == token else { return }
-        guard store.messages.contains(where: { $0.sequence == sequence }) else { return miss() }
-        if target() == nil { interaction.messageView = .all }
-        guard let item = target() else { return miss() }
-        // A match below a collapsed message's fold would otherwise stay hidden.
-        if find.isPresented { expanded.insert(item.id) }
-        scroll.sync(rowIdentities)
-        scroll.pendingReveal = (token, item.id)
-        let placement = scroll.update(.reveal(item.id))
-        guard placement != nil, placement?.unavailableTarget == nil else {
-            scroll.pendingReveal = nil
-            return miss()
-        }
-        place(placement)
-        // Find's own highlight marks the current match.
-        guard !find.isPresented else { return }
-        highlightedSequence = sequence
-        try? await Task.sleep(for: .seconds(2))
-        if highlightedSequence == sequence { highlightedSequence = nil }
+        await revealer.run(sequence, token: token, store: store, interaction: interaction,
+                           isCurrent: { interaction.revealRequestToken == token },
+                           shows: { message in items.contains { $0.messages.contains { $0.id == message.id } } },
+                           place: { message in
+            guard let item = items.first(where: { $0.messages.contains { $0.id == message.id } }) else { return }
+            // A match below a collapsed message's fold would otherwise stay hidden.
+            if find.isPresented { expanded.insert(item.id) }
+            scroll.sync(rowIdentities)
+            place(scroll.update(.reveal(item.id)))
+            landUnlessRevealed()
+        })
     }
 }
 
