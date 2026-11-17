@@ -46,16 +46,26 @@ final class TranscriptWindowObserver {
             forName: NSView.frameDidChangeNotification, object: clip, queue: nil) { [weak self] _ in
             MainActor.assumeIsolated { self?.containerResized() }
         })
+        // SwiftUI writes its own offset to the clip after it resizes the content, in the same pass. When the
+        // content's estimated height shrank and grew back during a drag, that offset is thousands of points up.
+        clip.postsBoundsChangedNotifications = true
+        notifications.append(NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification, object: clip, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.contentMoved() }
+        })
         guard let document = scroll.documentView else { return }
         document.postsFrameChangedNotifications = true
         notifications.append(NotificationCenter.default.addObserver(
             forName: NSView.frameDidChangeNotification, object: document, queue: nil) { [weak self] _ in
-            MainActor.assumeIsolated {
-                // Rewrapping for a new width resizes the content after the container, in the same pass.
-                guard let self, self.isResizing || self.window?.inLiveResize == true else { return }
-                self.pinToBottom()
-            }
+            // Rewrapping for a new width resizes the content after the container, in the same pass.
+            MainActor.assumeIsolated { self?.contentMoved() }
         })
+    }
+
+    /// The pin's own scroll lands on the end, so the bounds change it causes leaves nothing to move.
+    private func contentMoved() {
+        guard isResizing || window?.inLiveResize == true else { return }
+        pinToBottom()
     }
 
     private func containerResized() {

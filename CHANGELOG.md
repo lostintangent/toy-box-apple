@@ -1,5 +1,11 @@
 # Changelog
 
+## Mac 0.1.48
+
+### Bugs/Polish
+
+- While you're following the latest messages, dragging the window's edge now keeps them in view the whole time, instead of the conversation flashing far up as you drag.
+
 ## Mac 0.1.47
 
 ### Bugs/Polish
