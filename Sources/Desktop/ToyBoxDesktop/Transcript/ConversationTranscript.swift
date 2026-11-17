@@ -711,7 +711,7 @@ struct ConversationTranscript: View {
     ///
     /// Dragging the window's edge only promises the place back when the drag ends. Holding it every pass
     /// fought SwiftUI's own offset, which re-estimates move between passes, and lost the place, so the
-    /// hold stands down for the drag and puts the reader's row back once, with the same `scrollTo`.
+    /// hold stands down for the drag and puts the reader's row back once it ends, as `placeReadingRow` does.
     ///
     /// The hold keeps one row until the reader scrolls, because frames can lag the offset by a pass.
     private func holdReadingPlace(in frames: [String: TranscriptMessageFrame], using proxy: ScrollViewProxy) {
