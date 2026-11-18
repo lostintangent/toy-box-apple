@@ -28,6 +28,19 @@ git history keeps closed incidents.
   visibility, display sleep and session lock state. Composer owns both cases. The wheel-input case
   stays opt-in, because native wheel animation needs an awake, unlocked Mac.
 
+## Paging after a window drag
+
+- `TranscriptTests.pagingDownAfterADragHandsThePlaceBackToTheHold` is quarantined in t1259, behind
+  `TOY_BOX_TEST_TRANSCRIPT_DRAG_PAGING=1`. Owner: Transcript. Its assertions are unchanged, and the
+  default run skips it with its reason.
+- First seen in CI on #152's Mac `test` job,
+  [run 44408393445](https://github.com/lostintangent/toy-box-apple/actions/runs/44408393445), on
+  `aa08fc950`, which touches only the artifact viewer. Page Down moved, then Page Up didn't:
+  "Paging up went from 2306.0 back to 2306.0" (`TranscriptTests.swift:708`), after 15.9 seconds.
+- The cause is not established. t1259 follows whether a reader's Page Up after a window drag can do
+  nothing in the app, since that would be a bug shipped in Mac 0.1.48. Restoration needs the cause
+  found, with deterministic coverage.
+
 ## Artifact HTML origin probe
 
 - `ArtifactViewerTests.HTMLKeepsAnOpaqueOriginAndCanLoadOnlyTheServersFileResources` is quarantined
