@@ -53,9 +53,11 @@ public struct TranscriptViewport: Equatable, Sendable {
         }
     }
 
-    /// Resolves one geometry change. A resize at the bottom follows the latest message.
+    /// Resolves one geometry change. A resize at the bottom follows the latest message, unless the
+    /// reader moved up in the same change, such as a Page Up reported with a row measuring taller.
     public func update(after old: TranscriptViewport, wasAtBottom: Bool, canFollow: Bool) -> Update {
-        let follows = canFollow && wasAtBottom && (contentHeight != old.contentHeight || height != old.height)
+        let resized = contentHeight != old.contentHeight || height != old.height
+        let follows = canFollow && wasAtBottom && resized && top >= old.top
         return Update(isAtBottom: isAtBottom(after: old, wasAtBottom: wasAtBottom, following: follows),
                       follows: follows)
     }
