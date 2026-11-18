@@ -846,6 +846,23 @@ struct TranscriptTests {
         #expect(abs(top - TranscriptReveal.margin) <= 1, "m20's top at \(top)")
     }
 
+    @MainActor
+    @Test func aRevealOfAMessageYoursHidesShowsAllAndPlacesIt() async throws {
+        var messages = (1...90).map(transcriptTestMessage)
+        messages[19] = ChannelMessage(id: "m20", sequence: 20, timestamp: "2026-10-22T12:00:00Z", sender: .system,
+                                      content: .system(.init(type: "member_joined",
+                                                             member: .init(id: "member", name: "Member"))))
+        let harness = try await TranscriptHarness(messages: messages)
+        defer { await harness.close() }
+        harness.interaction.messageView = .yours
+        try await harness.settled()
+        let token = harness.interaction.reveal(sequence: 20)
+        try await harness.waitUntil { harness.interaction.revealProgress?.outcome != .loading }
+        #expect(harness.interaction.revealProgress == RevealProgress(token: token, sequence: 20, outcome: .revealed))
+        try await harness.settled()
+        #expect(harness.interaction.messageView == .all && harness.isVisible("m20"))
+    }
+
     /// A reveal waits for its row's first frame from the history it paged. A reconnect's snapshot that
     /// replaces that history ends the wait, so the transcript can't stay revealing with nothing to place.
     @MainActor

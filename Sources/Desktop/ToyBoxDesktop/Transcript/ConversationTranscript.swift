@@ -22,6 +22,8 @@ struct ConversationTranscript: View {
     @ViewState var pagingAnchor: PagingAnchor?
     @ViewState private var revealer = TranscriptReveal()
     @ViewState var isRevealing = false
+    /// The lazy child a reveal scrolls to while it waits for the row's first frame.
+    @ViewState private var revealScroll: RevealScroll?
     /// Find's bar floats over the top of the rows, so a reveal while it's open places below it.
     @ViewState private var findBarHeight: CGFloat = 0
     @ViewState private var expandedMessageIds: Set<String> = []
@@ -211,6 +213,10 @@ struct ConversationTranscript: View {
                 }
             }
             .onChange(of: interaction.jumpToLatestRequest) { jumpToLatest(using: proxy) }
+            // From an update, which has built the target's row, even one the reveal just showed or paged in.
+            .onChange(of: revealScroll) { _, scroll in
+                if let scroll { proxy.scrollTo(scroll.target, anchor: .center) }
+            }
             .onChange(of: interaction.messageView) {
                 catchUp?.isPinned = false
                 pagingAnchor = nil
@@ -644,7 +650,7 @@ struct ConversationTranscript: View {
         geometry.historyStart = historyStart
         if geometry.frames[id]?.historyStart != historyStart {
             scrollPosition = nil
-            proxy.scrollTo(lazyChildID(of: message.id), anchor: .center)
+            revealScroll = .init(target: lazyChildID(of: message.id))
             await geometry.frame(of: id, historyStart: historyStart)
         }
         guard !Task.isCancelled, let frame = geometry.frames[id], frame.historyStart == historyStart else { return }
@@ -1041,6 +1047,12 @@ final class TranscriptScrollGeometry {
         waiter = nil
         continuation?.resume()
     }
+}
+
+/// Each reveal's scroll, so revealing the same row again scrolls again.
+struct RevealScroll: Equatable {
+    var target: String
+    var id = UUID()
 }
 
 struct PagingAnchor: Equatable {
