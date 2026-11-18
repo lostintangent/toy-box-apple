@@ -6,6 +6,7 @@
 
 - Artifacts in a channel on another of your servers now open, instead of showing a "not found" error, and Open in Toy Box takes you to that channel on its own server.
 - Quick Send now shows the channel's icon next to its name, so you can tell at a glance where your message is going.
+- Jumping to a message that Message View is hiding now switches back to all messages and takes you to it, instead of getting stuck loading.
 
 ## iPhone 0.1.44
 
