@@ -38,6 +38,11 @@ public final class ChannelArtifactSession {
     public var isPresented: Bool { artifact != nil }
     public var isUnavailable: Bool { artifact != nil && pages?.selected == nil }
     public var resource: URL? { artifact?.url.flatMap { api?.resourceURL($0) } }
+    /// The open artifact on its channel's page in Toy Box, on the channel's own server.
+    public var toyBoxURL: URL? {
+        guard let artifact, let channelID else { return nil }
+        return api?.channelURL(channelID: channelID, files: [artifact.file])
+    }
     public var kind: ArtifactContentKind { artifact.map(ArtifactContentKind.init) ?? .file }
     /// The open Markdown artifact's text with its formatting flattened, for Siri. Other kinds give
     /// nothing: HTML is the raw page, scripts and all, and images and files have no text.

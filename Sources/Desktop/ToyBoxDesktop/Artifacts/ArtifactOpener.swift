@@ -170,13 +170,8 @@ final class ArtifactOpener {
         if !NSWorkspace.shared.open(file) { actionError = "The file could not be opened by its default application." }
     }
 
-    func toyBoxURL(app: AppModel) -> URL? {
-        guard let artifact, let channelID = session.channelID else { return nil }
-        return app.channelURL(channelID: channelID, files: [artifact.file])
-    }
-
-    func openInToyBox(app: AppModel) {
-        guard let url = toyBoxURL(app: app) else { return }
+    func openInToyBox() {
+        guard let url = session.toyBoxURL else { return }
         NSWorkspace.shared.open(url)
     }
 

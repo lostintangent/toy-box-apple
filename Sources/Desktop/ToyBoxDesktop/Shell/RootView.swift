@@ -391,7 +391,7 @@ struct RootView: View {
             newChannel: { handoff.cancel(); management.present(.newChannel(server: selectedServer)) },
             openNewWindow: { if let selection { openWindow(value: ChannelWindowValue(selection)) } },
             openInToyBox: {
-                if artifactOpener.isPresented { artifactOpener.openInToyBox(app: model) }
+                if artifactOpener.isPresented { artifactOpener.openInToyBox() }
                 else if let selection { model.openInToyBox(selection) }
             },
             openFolder: openableFolder(store: store).map { path in { model.folders.open(path) } },

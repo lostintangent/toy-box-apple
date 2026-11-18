@@ -219,7 +219,7 @@ struct ChannelDetailView: View {
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         if artifacts.isPresented {
-            ArtifactViewerToolbar(opener: artifacts, store: store, app: model, interaction: interaction)
+            ArtifactViewerToolbar(opener: artifacts, store: store, interaction: interaction)
         } else if viewing != nil {
             viewerToolbar
         } else {
