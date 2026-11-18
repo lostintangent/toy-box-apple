@@ -37,9 +37,11 @@ git history keeps closed incidents.
   [run 44408393445](https://github.com/lostintangent/toy-box-apple/actions/runs/44408393445), on
   `aa08fc950`, which touches only the artifact viewer. Page Down moved, then Page Up didn't:
   "Paging up went from 2306.0 back to 2306.0" (`TranscriptTests.swift:708`), after 15.9 seconds.
-- The cause is not established. t1259 follows whether a reader's Page Up after a window drag can do
-  nothing in the app, since that would be a bug shipped in Mac 0.1.48. Restoration needs the cause
-  found, with deterministic coverage.
+- The cause is not established, and it never reproduced locally, alone or in the full suite. The
+  candidate is that CI's Page Down reached the end, and SwiftUI then reported Page Up together with
+  a row measuring taller, which followed the latest message back to the end. t1259 fixed that rule,
+  with `TranscriptScrollTests.aReaderWhoMovesUpStopsFollowingEvenWhenRowsResizeInTheSameUpdate`.
+  Restoration needs CI to show this was the cause, or the cause found, with deterministic coverage.
 
 ## Artifact HTML origin probe
 

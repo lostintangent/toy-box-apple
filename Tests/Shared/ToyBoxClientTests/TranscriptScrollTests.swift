@@ -56,6 +56,17 @@ struct TranscriptScrollTests {
         #expect(viewport(gap: 40).isAtBottom(after: viewport(gap: 200), wasAtBottom: false, following: false))
     }
 
+    @Test func aReaderWhoMovesUpStopsFollowingEvenWhenRowsResizeInTheSameUpdate() {
+        let atBottom = TranscriptViewport(top: 2626, width: 600, height: 380, contentHeight: 3006)
+        let grown = TranscriptViewport(top: 2626, bottomGap: 21, width: 600, height: 380, contentHeight: 3027)
+        #expect(grown.update(after: atBottom, wasAtBottom: true, canFollow: true)
+            == .init(isAtBottom: true, follows: true))
+        // Page Up from the end, reported with a row below measuring taller.
+        let paged = TranscriptViewport(top: 2256, bottomGap: 391, width: 600, height: 380, contentHeight: 3027)
+        #expect(paged.update(after: atBottom, wasAtBottom: true, canFollow: true)
+            == .init(isAtBottom: false, follows: false))
+    }
+
     private func frame(sequence: Int, y: CGFloat, height: CGFloat) -> TranscriptMessageFrame {
         .init(sequence: sequence, rect: CGRect(x: 24, y: y, width: 300, height: height), historyStart: 1)
     }
