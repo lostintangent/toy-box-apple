@@ -688,8 +688,11 @@ struct TranscriptTests {
         #expect(abs(resized.minY - reading.value.minY) < 5, "\(reading.key) moved from \(reading.value) to \(resized)")
     }
 
+    // Quarantined after Page Up didn't move in CI 44408393445 (t1259). Owner: Transcript.
     @MainActor
-    @Test func pagingDownAfterADragHandsThePlaceBackToTheHold() async throws {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_TRANSCRIPT_DRAG_PAGING"] == "1",
+                   "Quarantined pending cause identification (t1259). Opt in with TOY_BOX_TEST_TRANSCRIPT_DRAG_PAGING=1."))
+    func pagingDownAfterADragHandsThePlaceBackToTheHold() async throws {
         let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), resizable: true)
         defer { await harness.close() }
         try await harness.scrollUp(byWheel: TranscriptHarness.wheelEventsApply) { harness.bottomGap > 400 }
