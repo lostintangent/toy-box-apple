@@ -159,12 +159,15 @@ final class TranscriptScroll {
     /// The paging row's height, so older history loads as soon as that row starts to show.
     static let pagingReach: CGFloat = 44
 
-    /// Whether the top of the content is in reach once geometry holds the model's placement. That
+    /// Whether the top of the content is in reach with nothing of ours still being placed. That
     /// covers a drag to the top, a landing or filter that can't fill the screen, and a short page.
-    /// While a landing or page is still being placed, its old geometry says nothing.
+    /// While a landing or page is still being placed, its old geometry says nothing. A reader's
+    /// anchor is never re-asserted at rest, so geometry that has moved past it, like a flick's last
+    /// frame after its phase ends or a tap on the status bar, is where the reader is.
     var reachesOlder: Bool {
-        guard hasLanded, let metrics, metrics.top < Self.pagingReach, let layout,
-              let origin = Model.placement(for: intent, layout: layout).origin else { return false }
+        guard hasLanded, let metrics, metrics.top < Self.pagingReach, let layout else { return false }
+        if case .reading = intent, !holdsPlacementThroughInput { return true }
+        guard let origin = Model.placement(for: intent, layout: layout).origin else { return false }
         return abs(origin - layout.origin) <= 0.5
     }
 
