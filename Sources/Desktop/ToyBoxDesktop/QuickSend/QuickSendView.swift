@@ -192,10 +192,15 @@ struct QuickSendView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Button { showsChooser.toggle() } label: {
-                HStack(spacing: 6) {
-                    Text(channelName).fontWeight(.medium).lineLimit(1)
-                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    if let selected {
+                        ChannelMark(channel(selected)?.avatar, api: catalog(selected)?.api, size: 24)
+                    }
+                    HStack(spacing: 6) {
+                        Text(channelName).fontWeight(.medium).lineLimit(1)
+                        Image(systemName: "chevron.down").font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .frame(height: 32)
                 .contentShape(Rectangle())

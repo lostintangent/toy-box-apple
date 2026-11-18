@@ -3312,7 +3312,10 @@ top. Content growth preserves that top edge. The host uses the system utility-wi
 Appearance, Text Size, Increase Contrast and Reduce Transparency follow the app and system.
 
 Content has 16-point padding, a 32-point channel row, a native transparent 16-point editor and a
-32-point controls row. Command-L opens the searchable channel chooser. Its results are a
+32-point controls row. The channel row's button leads with the chosen channel's 24-point icon, 8
+points before its name and chevron, the same icon its chooser row shows, so a channel looks the
+same with the chooser open or closed. Choose Channel, with nothing chosen, shows no icon.
+Command-L opens the searchable channel chooser. Its results are a
 transparent native inset list over the popover's material, with the system selection highlight
 and row metrics plus 4 points of vertical padding, no separators, and a height that fits its rows
 up to 252 points before scrolling. Each row shows the channel's 24-point icon, then its name
