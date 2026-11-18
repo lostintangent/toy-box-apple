@@ -93,4 +93,11 @@ struct ChannelAgentStatusTests {
         }
         #expect(ChannelAgent.Countdown.wake(for: .init(state: "waiting", wakeAt: raw), isAvailable: false) == nil)
     }
+
+    @Test func aWaitingPresenceKeepsTheWakeCommandItWaitsOnUntilItRuns() throws {
+        let json = #"{"state":"waiting","text":"CI","wakeAt":"2026-10-26T23:00:00Z","wakeCommand":"gh run watch 123"}"#
+        let agent = ChannelAgent(id: "ada", name: "Ada",
+                                 status: try JSONDecoder().decode(ChannelAgent.Status.self, from: Data(json.utf8)))
+        #expect(agent.presence(isRunning: false).wakeCommand == "gh run watch 123")
+    }
 }

@@ -29,7 +29,6 @@ package struct ChannelAgentWakeCountdown: View {
                 onSpokenChange(spoken)
             }
         }
-        .help("Checks again at \(wake.formatted(date: Calendar.current.isDateInToday(wake) ? .omitted : .abbreviated, time: .shortened))")
         .onDisappear { onSpokenChange(nil) }
     }
 }

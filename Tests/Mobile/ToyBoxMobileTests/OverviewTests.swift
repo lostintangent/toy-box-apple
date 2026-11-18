@@ -323,6 +323,14 @@ struct OverviewTests {
         interaction.isInspectorPresented = true
         try await waitUntil("the shown Overview resumes the countdown", in: host.view) { announcesCountdown() }
         state.revision += 1
+        state.lead.status = .init(state: "waiting", text: reason, wakeAt: wake, wakeCommand: "gh run watch 123")
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        try await waitUntil("a wake command takes the countdown's place", in: host.view) {
+            MobileAutomationTree(windows: [window]).elements.first {
+                $0.identifier == "overview-agent-\(agentID)"
+            }?.value == ChannelAgentWakeCommand.spoken
+        }
+        state.revision += 1
         state.lead.status = .init(state: "working", text: "Compiling", wakeAt: wake)
         store.working = [agentID]
         _ = try store.apply(.init(type: "snapshot", state: state))

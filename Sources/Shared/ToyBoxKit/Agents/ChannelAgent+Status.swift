@@ -5,14 +5,17 @@ extension ChannelAgent {
         public var state: String
         public var text: String?
         public var wakeAt: String?
+        /// The running wake command whose exit wakes a waiting agent.
+        public var wakeCommand: String?
         public var lookingAt: Int?
         public var workingOn: Int?
 
-        public init(state: String, text: String? = nil, wakeAt: String? = nil,
+        public init(state: String, text: String? = nil, wakeAt: String? = nil, wakeCommand: String? = nil,
                     lookingAt: Int? = nil, workingOn: Int? = nil) {
             self.state = state
             self.text = text
             self.wakeAt = wakeAt
+            self.wakeCommand = wakeCommand
             self.lookingAt = lookingAt
             self.workingOn = workingOn
         }
