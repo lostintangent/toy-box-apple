@@ -194,9 +194,9 @@ struct ArtifactViewer: View {
             .disabled(!canPrepareOriginal)
             Menu {
                 Button("Open in Toy Box", systemImage: "arrow.up.forward.app") {
-                    if let toyBoxURL { openURL(toyBoxURL) }
+                    if let url = session.toyBoxURL { openURL(url) }
                 }
-                .disabled(session.isUnavailable || toyBoxURL == nil)
+                .disabled(session.isUnavailable || session.toyBoxURL == nil)
                 Button("Reload", systemImage: "arrow.clockwise") { reader.reload(session) }
                     .disabled(session.isUnavailable || session.isLoading)
                 Button("Copy Link", systemImage: "link") { UIPasteboard.general.url = session.resource }
@@ -250,12 +250,6 @@ struct ArtifactViewer: View {
 
     private func select(_ id: String) {
         withAnimation(.easeInOut(duration: 0.2)) { _ = session.select(id) }
-    }
-
-    private var toyBoxURL: URL? {
-        guard let artifact = session.artifact, let channel = session.channelID,
-              let api = app.api, api.baseURL == session.server else { return nil }
-        return api.channelURL(channelID: channel, files: [artifact.file])
     }
 }
 

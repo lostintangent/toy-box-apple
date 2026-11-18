@@ -451,10 +451,6 @@ final class AppModel {
         guard let url = catalogs.first(at: channel.serverURL)?.api.channelURL(channelID: channel.channelID) else { return }
         NSWorkspace.shared.open(url)
     }
-
-    func channelURL(channelID: String, files: [WorkspaceFile] = []) -> URL? {
-        api?.channelURL(channelID: channelID, files: files)
-    }
 }
 
 struct ChannelNavigationRequest: Identifiable {

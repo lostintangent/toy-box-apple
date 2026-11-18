@@ -9,7 +9,6 @@ import WebKit
 
 struct ArtifactViewerCanvas: View {
     let store: ChannelStore
-    @Environment(AppModel.self) private var app
     @Environment(ArtifactOpener.self) private var opener
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ImageViewer.self) private var images
@@ -25,7 +24,7 @@ struct ArtifactViewerCanvas: View {
         .allowsHitTesting(opener.isPresented)
         .animation(opener.animates ? .easeInOut(duration: 0.2) : nil, value: opener.isPresented)
         .onChange(of: ObjectIdentifier(store), initial: true) {
-            opener.configure(api: app.api, channelID: store.id, artifacts: store.artifacts,
+            opener.configure(api: store.api, channelID: store.id, artifacts: store.artifacts,
                              interaction: interaction, imageViewer: images)
         }
         .onChange(of: store.artifacts) { _, artifacts in opener.update(artifacts) }
@@ -486,7 +485,6 @@ private struct ArtifactNavigationCapsule: View {
 struct ArtifactViewerToolbar: ToolbarContent {
     let opener: ArtifactOpener
     let store: ChannelStore
-    let app: AppModel
     let interaction: ChannelInteraction
 
     var body: some ToolbarContent {
@@ -511,8 +509,8 @@ struct ArtifactViewerToolbar: ToolbarContent {
     }
 
     @ViewBuilder private var titleMenu: some View {
-        Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { opener.openInToyBox(app: app) }
-            .disabled(opener.toyBoxURL(app: app) == nil)
+        Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { opener.openInToyBox() }
+            .disabled(opener.session.toyBoxURL == nil)
         Button("Reload", systemImage: "arrow.clockwise") { opener.reload() }
             .disabled(opener.isUnavailable)
         Button("Copy Link", systemImage: "link") { opener.copyLink() }.disabled(opener.resource == nil)

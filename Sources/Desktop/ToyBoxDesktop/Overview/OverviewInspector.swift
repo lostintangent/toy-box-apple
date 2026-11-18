@@ -223,7 +223,7 @@ private struct OverviewAbout: View {
                         OverviewFolderRow(
                             directory: directory,
                             availability: app.folderAvailability(path: directory, server: store.api.baseURL),
-                            channelURL: { [app, id = store.id] in app.channelURL(channelID: id) })
+                            channelURL: { [api = store.api, id = store.id] in api.channelURL(channelID: id) })
                     }
                     if let preview {
                         OverviewPreviewRow(preview: preview, api: store.api)

@@ -1,5 +1,17 @@
 # Changelog
 
+## Mac 0.1.49
+
+### Bugs/Polish
+
+- Artifacts in a channel on another of your servers now open, instead of showing a "not found" error, and Open in Toy Box takes you to that channel on its own server.
+
+## iPhone 0.1.44
+
+### Bugs/Polish
+
+- Open in Toy Box now works for artifacts in a channel on another of your servers, so you can jump straight to it in your browser.
+
 ## Mac 0.1.48
 
 ### Bugs/Polish
