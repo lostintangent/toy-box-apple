@@ -21,7 +21,7 @@ struct FileReferenceTests {
         #expect(plan.artifact(in: artifacts, folder: nil, sender: .agent("ada")) == ada)
         #expect(plan.artifact(in: artifacts, folder: nil, sender: .agent("lead")) == pixel)
         #expect(plan.artifact(in: artifacts, folder: nil, sender: .user) == pixel)
-        #expect(FileReference(path: "../plan.md").artifact(in: artifacts, folder: nil, sender: .agent("ada")) == nil)
+        #expect(FileReference(path: "../plan.md").artifact(in: artifacts, folder: nil, sender: .agent("ada")) == ada)
         #expect(FileReference(path: "notes.md").artifact(in: artifacts, folder: nil, sender: .agent("ada")) == nil)
     }
 
@@ -43,13 +43,17 @@ struct FileReferenceTests {
         #expect(FileReference(path: "/demo/Interaction notes.md").artifact(in: artifacts, folder: nil, sender: .user) == notes)
         #expect(FileReference(path: "/Users/x/.toy-box/sessions/abc/sub/a b.md")
             .artifact(in: artifacts, folder: nil, sender: .user) == nil)
+        #expect(FileReference(path: "/Users/x/.toy-box/sessions/abc/artifacts/")
+            .artifact(in: artifacts, folder: nil, sender: .agent("abc")) == nil)
         #expect(FileReference(path: "/demo/Other.md").artifact(in: artifacts, folder: nil, sender: .user) == nil)
     }
 
-    @Test func onlyADecodableFileLinkIsAReference() throws {
+    @Test func aFileLinkIsItsDecodedPathAsABrowserReadsIt() throws {
         #expect(FileReference(try #require(URL(string: "https://example.com/plan.md"))) == nil)
         #expect(FileReference(try #require(URL(string: "file:"))) == nil)
         #expect(FileReference(try #require(URL(string: "FILE:plan.md")))?.path == "plan.md")
+        #expect(FileReference(try #require(URL(string: "file:plan.md?v=2#intro")))?.path == "plan.md")
+        #expect(FileReference(try #require(URL(string: "file://localhost/demo/a%20b.md")))?.path == "/demo/a b.md")
     }
 
     private func session(_ id: String, _ path: String, shared: String? = nil) -> ChannelArtifact {
