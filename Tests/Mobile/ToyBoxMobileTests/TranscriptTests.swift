@@ -267,34 +267,85 @@ struct TranscriptTests {
         #expect(scroll.update(.land(.row("r10", order: 10)))?.origin == 1000 && scroll.hasLanded)
     }
 
-    @Test func aPageArrivingAtTheTopKeepsTheReadersRowInsteadOfItsOldFrame() {
+    /// The reader drags r1 70 points below the top, and a 500-point page arrives above while they do.
+    private func pageMidDrag() -> TranscriptScroll {
         let scroll = measuredScroll(20, firstOrder: 5, origin: 1400)
         let loaded = scroll.rows
         _ = scroll.update(.land(.end))
-        scroll.metrics?.origin = 30
         scroll.isReaderScrolling = true
+        scroll.metrics?.origin = 30
         _ = scroll.update()
+        scroll.sync((0..<5).map { .init(id: "p\($0)", order: $0) } + loaded)
+        return scroll
+    }
 
-        // UIKit keeps the offset as the page lands above, so r1's old frame would say nothing moved.
-        let paged = (0..<5).map { TranscriptPlacement.RowIdentity(id: "p\($0)", order: $0) } + loaded
-        scroll.sync(paged)
+    @Test func aPageAboveMovesTheReaderOnceAndTheirDragCarriesOn() {
+        let scroll = pageMidDrag()
+
+        // Every row below the page moved down by the 500 points the end grew, so r1 is placed at once.
         scroll.metrics?.documentEnd = 2500
-        #expect(scroll.update()?.needsMeasurement == "r1")
-        #expect(!scroll.reachesOlder)
-
-        for index in 0..<5 { scroll.measure("p\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
-        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index + 5) * 100, width: 386, height: 100)) }
         #expect(scroll.update()?.origin == 530)
         #expect(!scroll.reachesOlder)
+
+        // SwiftUI reports the rest of the drag as idle once the move lands, and the finger keeps going.
+        scroll.isReaderScrolling = false
+        scroll.metrics?.origin = 530
+        _ = scroll.update()
+        scroll.measure("r1", frame: CGRect(x: 0, y: 600, width: 386, height: 100))
+        for origin in stride(from: 516, through: 460, by: -14) {
+            scroll.metrics?.origin = CGFloat(origin)
+            _ = scroll.update()
+        }
+        // The page's last row lays out, and the reader isn't pulled back to where the page left them.
+        scroll.measure("p4", frame: CGRect(x: 0, y: 400, width: 386, height: 100))
+        #expect(scroll.update()?.origin == 460)
+    }
+
+    @Test func aKeyboardAfterAPageMidDragKeepsTheReadersRow() {
+        let scroll = pageMidDrag()
+        scroll.metrics?.documentEnd = 2500
+        _ = scroll.update()
+        scroll.isReaderScrolling = false
+        scroll.metrics?.origin = 530
+        _ = scroll.update()
+
+        let reading = scroll.intent
+
+        // The keyboard covers the bottom 300 points, then the scroll moves without the reader.
+        scroll.metrics?.viewport = .init(width: 386, height: 600, topInset: 0, bottomInset: 300)
+        #expect(scroll.update()?.origin == 530)
+        scroll.metrics?.origin = 520
+        _ = scroll.update()
+        #expect(scroll.intent == reading)
+    }
+
+    @Test func aPostureChangeAfterAPageMidDragKeepsTheReadersRow() {
+        let scroll = pageMidDrag()
+        scroll.metrics?.documentEnd = 2500
+        _ = scroll.update()
+        scroll.isReaderScrolling = false
+        scroll.metrics?.origin = 530
+        _ = scroll.update()
+
+        let reading = scroll.intent
+
+        // Unfolding widens the conversation, then the stack moves only the origin with its own anchor.
+        scroll.metrics?.viewport = .init(width: 571, height: 600, topInset: 0, bottomInset: 0)
+        _ = scroll.update()
+        scroll.metrics?.origin = 400
+        _ = scroll.update()
+        #expect(scroll.intent == reading)
     }
 
     @Test func aMergedPageLoadsOnceEvenWhenGeometryArrivesBeforeItsRows() {
-        let scroll = measuredScroll(20, firstOrder: 5, origin: 1400)
+        let scroll = measuredScroll(20, firstOrder: 10, origin: 1400)
         let loaded = scroll.rows
         _ = scroll.update(.land(.end))
         var store = loaded
         var loads = 0
+        // Like the conversation, a report syncs a merged page's rows before its geometry.
         func geometry(origin: CGFloat, documentEnd: CGFloat) {
+            if store != scroll.rows { scroll.sync(store) }
             scroll.metrics?.origin = origin
             scroll.metrics?.documentEnd = documentEnd
             _ = scroll.update()
@@ -305,17 +356,11 @@ struct TranscriptTests {
         geometry(origin: 40, documentEnd: 2000)
         #expect(loads == 1)
 
-        // The page merges, and geometry reports the grown content before `onChange(items)` syncs it.
-        store = (0..<5).map { .init(id: "p\($0)", order: $0) } + loaded
-        for origin in stride(from: 39, through: 28, by: -1) { geometry(origin: CGFloat(origin), documentEnd: 2500) }
-        #expect(scroll.reachesOlder, "The old rows make the grown content look settled.")
+        // The page merges and grows the content while the reader keeps dragging up.
+        store = (0..<10).map { .init(id: "p\($0)", order: $0) } + loaded
+        for origin in stride(from: 39, through: 28, by: -1) { geometry(origin: CGFloat(origin), documentEnd: 3000) }
         #expect(loads == 1)
-
-        scroll.sync(store)
-        for index in 0..<5 { scroll.measure("p\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
-        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index + 5) * 100, width: 386, height: 100)) }
-        geometry(origin: 28, documentEnd: 2500)
-        geometry(origin: 528, documentEnd: 2500)
+        geometry(origin: 1040, documentEnd: 3000)
         #expect(loads == 1)
     }
 

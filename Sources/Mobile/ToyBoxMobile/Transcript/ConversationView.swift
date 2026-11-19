@@ -19,7 +19,15 @@ final class TranscriptScroll {
     }
 
     var rows: [Model.RowIdentity] = []
-    var metrics: Metrics?
+    /// The store's message count when geometry last synced the rows.
+    var messageCount = 0
+    var metrics: Metrics? {
+        didSet {
+            guard let base = endBeforePage, let end = metrics?.documentEnd, end != base else { return }
+            frames = frames.mapValues { Model.keepingDistanceToEnd($0, from: base, to: end) }
+            endBeforePage = nil
+        }
+    }
     var isReaderScrolling = false
     var isScrollIdle = true
     /// Geometry reported while the scene isn't active comes from the system's snapshot passes,
@@ -28,33 +36,41 @@ final class TranscriptScroll {
     /// Keeps the model's placement through reader scrolling until geometry holds it: an anchor
     /// through a page insertion, or the end after a move that stopped a flick still reporting frames.
     var holdsPlacementThroughInput = false
+    /// Where a page's move started. The reader's finger can move in the same frame that move lands,
+    /// so it has landed once the scroll is nearer the placement than where it started.
+    private var pageMoveStart: CGFloat?
+    /// The content's end before a page above grew it, until geometry reports the growth.
+    private var endBeforePage: CGFloat?
+    /// The reader's row while a page above it is placed. The lazy stack reports the rows it had built
+    /// at estimated places until it lays them out again, so its frame only changes on screen.
+    private var settling: String?
+    /// The reader was scrolling when a page moved them. SwiftUI reports the rest of that input as idle,
+    /// until a new touch or a change of viewport, like the keyboard or a posture change.
+    private var scrollsPastPhase = false
     private(set) var intent: Model.Intent = .landing(.end)
     private(set) var hasLanded = false
     private var frames: [String: CGRect] = [:]
     private var column: CGFloat?
     private var lastLayout: Model.Layout?
-    /// The reader's row while a page above it settles, until its first frame on screen places it.
-    private var settling: String?
 
-    /// Adopts the transcript's current rows once. A reveal syncs before placing, because it can
-    /// resume after a page lands but before SwiftUI reports the change.
+    /// Adopts the transcript's current rows once. Geometry can report a page's growth before
+    /// `onChange(items)`, so it syncs first, and a reveal syncs before placing, because it can resume
+    /// after a page lands but before SwiftUI reports the change.
     func sync(_ current: [Model.RowIdentity], pinsLanding: Bool = false) {
         guard current != rows else { return }
-        var paged = false
         if let anchor = rows.first?.id, current.first?.id != anchor, current.contains(where: { $0.id == anchor }),
-           hasLanded {
+           hasLanded, let metrics {
             // Older history arrived above: keep the reader's row where it was.
             _ = update(.holdCurrentPosition)
             holdsPlacementThroughInput = true
-            // The page moved every row down, so the old frames would hold the anchor at the top.
-            frames.removeAll()
-            paged = true
+            pageMoveStart = metrics.origin
+            endBeforePage = metrics.documentEnd
+            if case .reading(let anchor) = intent { settling = anchor.row }
+            scrollsPastPhase = isReaderScrolling
         }
         if let last = rows.last?.id, current.last?.id != last, current.contains(where: { $0.id == last }), hasLanded {
             _ = update(.arrived(pinsLanding: pinsLanding))
         }
-        // Set after any arrival, whose update would clear it.
-        if paged, case .reading(let anchor) = intent { settling = anchor.row }
         rows = current
     }
 
@@ -66,6 +82,11 @@ final class TranscriptScroll {
         if frame.width != column {
             frames.removeAll()
             column = frame.width
+        }
+        if id == settling, let metrics {
+            guard frame.maxY > metrics.origin, frame.minY < metrics.origin + metrics.viewport.height else { return }
+            settling = nil
+            endBeforePage = nil
         }
         frames[id] = frame
     }
@@ -79,23 +100,27 @@ final class TranscriptScroll {
     var layout: Model.Layout? {
         guard let metrics, metrics.viewport.width > 0 else { return nil }
         return Model.Layout(rows: rows, frames: measured, viewport: metrics.viewport,
-                            origin: metrics.origin, documentEnd: max(0, metrics.documentEnd), settling: settling)
+                            origin: metrics.origin, documentEnd: max(0, metrics.documentEnd))
     }
 
     /// Reduces an explicit event, or derives reader input and geometry changes when there's none.
     func update(_ explicit: Model.Event? = nil) -> Model? {
         guard let layout else { return nil }
         defer { lastLayout = layout }
-        if holdsPlacementThroughInput, let origin = Model.placement(for: intent, layout: layout).origin,
-           abs(origin - layout.origin) <= 0.5 {
+        if holdsPlacementThroughInput, endBeforePage == nil,
+           let origin = Model.placement(for: intent, layout: layout).origin,
+           abs(origin - layout.origin) <= 0.5
+            || pageMoveStart.map({ abs(origin - layout.origin) < abs($0 - layout.origin) }) == true {
             holdsPlacementThroughInput = false
+            pageMoveStart = nil
+            settling = nil
         }
         let event: Model.Event
         if let explicit {
             event = explicit
         } else if !hasLanded || !isSceneActive {
             return nil
-        } else if isReaderScrolling && !holdsPlacementThroughInput {
+        } else if !holdsPlacementThroughInput, isReaderScrolling || readerMoved(from: lastLayout, to: layout) {
             event = .readerScrolled(to: layout.origin)
         } else if let last = lastLayout {
             guard let change = Model.layoutEvent(from: last, to: layout) ?? drift(from: last, to: layout) else {
@@ -107,7 +132,6 @@ final class TranscriptScroll {
         }
         if capturesPosition(event), !hasViewportGeometry { return nil }
         let placement = Model.reduce(intent, event, layout: layout)
-        if placement.needsMeasurement != settling { settling = nil }
         intent = placement.intent
         switch event {
         case .land: hasLanded = true
@@ -129,6 +153,19 @@ final class TranscriptScroll {
         return .layoutChanged
     }
 
+    /// Where the rest of the reader's input took the scroll after a page moved them mid-scroll.
+    /// Anything else that moves only the origin, like the stack dropping a placement, leaves the
+    /// reader's anchor alone, and so does our own move landing.
+    private func readerMoved(from last: Model.Layout?, to layout: Model.Layout) -> Bool {
+        guard scrollsPastPhase, case .reading = intent, let last else { return false }
+        guard last.viewport == layout.viewport else {
+            scrollsPastPhase = false
+            return false
+        }
+        let placed = Model.placement(for: intent, layout: layout).origin
+        return last.origin != layout.origin && placed.map { abs($0 - layout.origin) > 0.5 } != false
+    }
+
     /// Places once for the geometry the scene came back with.
     func sceneBecameActive() -> Model? {
         isSceneActive = true
@@ -137,6 +174,7 @@ final class TranscriptScroll {
 
     /// A new touch is the reader's own, unlike the frames of a flick that a jump stopped.
     func readerTouched() {
+        scrollsPastPhase = false
         if intent == .following { holdsPlacementThroughInput = false }
     }
 
@@ -156,16 +194,14 @@ final class TranscriptScroll {
             || Model.firstRowStartingInView(metrics.origin, rows: measured, viewport: metrics.viewport) != nil
     }
 
-    /// The paging row's height, so older history loads as soon as that row starts to show.
-    static let pagingReach: CGFloat = 44
-
-    /// Whether the top of the content is in reach with nothing of ours still being placed. That
-    /// covers a drag to the top, a landing or filter that can't fill the screen, and a short page.
-    /// While a landing or page is still being placed, its old geometry says nothing. A reader's
-    /// anchor is never re-asserted at rest, so geometry that has moved past it, like a flick's last
-    /// frame after its phase ends or a tap on the status bar, is where the reader is.
+    /// Whether the top of the content is within a screen, with nothing of ours still being placed, so a
+    /// page lands before the reader gets there. That covers scrolling up, a landing or filter that
+    /// can't fill the screen, and a short page. While a landing or page is still being placed, its old
+    /// geometry says nothing. A reader's anchor is never re-asserted at rest, so geometry that has
+    /// moved past it, like a flick's last frame after its phase ends or a tap on the status bar, is
+    /// where the reader is.
     var reachesOlder: Bool {
-        guard hasLanded, let metrics, metrics.top < Self.pagingReach, let layout else { return false }
+        guard hasLanded, let metrics, metrics.top < metrics.viewport.height, let layout else { return false }
         if case .reading = intent, !holdsPlacementThroughInput { return true }
         guard let origin = Model.placement(for: intent, layout: layout).origin else { return false }
         return abs(origin - layout.origin) <= 0.5
@@ -325,6 +361,11 @@ struct ConversationView: View {
                                 topInset: top, bottomInset: bottom),
                 origin: geometry.contentOffset.y, documentEnd: geometry.contentSize.height)
         } action: { _, metrics in
+            // A page above grows the content before `onChange(items)` runs, so its rows sync first.
+            if store.messages.count != scroll.messageCount {
+                scroll.messageCount = store.messages.count
+                scroll.sync(rowIdentities, pinsLanding: interaction.messageView == .all && catchUp != nil)
+            }
             scroll.metrics = metrics
             if !hasGeometry, scroll.layout != nil { hasGeometry = true }
             place(scroll.update())
