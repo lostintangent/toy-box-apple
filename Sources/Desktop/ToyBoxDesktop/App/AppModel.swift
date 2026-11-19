@@ -299,12 +299,11 @@ final class AppModel {
 
     /// Brings a channel forward from outside its windows, as notifications and the menu bar do. The
     /// frontmost window selects it, or a new window opens on it when there is none. Without a
-    /// channel, or with one on a server that's gone, the frontmost window just comes forward. Images
-    /// open in the window's viewer over the channel they belong to.
-    func activate(_ channel: ChannelTarget?, sequence: Int? = nil, images: ChannelNavigationRequest.Images? = nil) {
+    /// channel, or with one on a server that's gone, the frontmost window just comes forward.
+    func activate(_ channel: ChannelTarget?, sequence: Int? = nil) {
         let channel = channel.flatMap { catalogs.first(at: $0.serverURL) == nil ? nil : $0 }
         if let channel {
-            navigationRequest = .init(channel: channel, sequence: sequence, images: images)
+            navigationRequest = .init(channel: channel, sequence: sequence)
         }
         let app = NSApplication.shared
         guard app.isHidden else {
@@ -455,16 +454,7 @@ final class AppModel {
 }
 
 struct ChannelNavigationRequest: Identifiable {
-    /// A message's images and the one to show first.
-    struct Images {
-        let images: [ChannelAttachment]
-        let index: Int
-        let source: TranscriptImageSource
-        let api: ChannelAPI
-    }
-
     let id = UUID()
     let channel: ChannelTarget
     let sequence: Int?
-    var images: Images?
 }

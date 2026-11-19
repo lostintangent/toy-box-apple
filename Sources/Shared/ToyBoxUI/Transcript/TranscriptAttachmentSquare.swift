@@ -6,13 +6,16 @@ import SwiftUI
 /// A request preview's attachment: a 48-point square that an image fills, a video's poster with a
 /// play badge, or a file's icon. An image opens through `openImage`, into each app's viewer. A
 /// video presents each app's player and a file downloads into Quick Look, as their transcript
-/// tiles do.
+/// tiles do, or through `present` where the square can't present over itself.
 public struct TranscriptAttachmentSquare<Player: View>: View {
     let attachment: ChannelAttachment
     let api: ChannelAPI
     /// Set for an attachment the app's viewer shows.
     let openImage: (() -> Void)?
     let fallback: ChannelThumbnails.Fallback?
+    /// Set where the square sits in something that closes when covered, like a popover, so the
+    /// window presents a video's resource or a file's downloaded copy in its place.
+    let present: ((ChannelAttachment, URL) -> Void)?
     let player: () -> Player
     @ViewState private var thumbnail: CGImage?
     @ViewState private var failed = false
@@ -26,11 +29,13 @@ public struct TranscriptAttachmentSquare<Player: View>: View {
     private static var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 6, style: .continuous) }
 
     public init(attachment: ChannelAttachment, api: ChannelAPI, openImage: (() -> Void)?,
-                fallback: ChannelThumbnails.Fallback? = nil, @ViewBuilder player: @escaping () -> Player) {
+                fallback: ChannelThumbnails.Fallback? = nil, present: ((ChannelAttachment, URL) -> Void)? = nil,
+                @ViewBuilder player: @escaping () -> Player) {
         self.attachment = attachment
         self.api = api
         self.openImage = openImage
         self.fallback = fallback
+        self.present = present
         self.player = player
     }
 
@@ -89,8 +94,8 @@ public struct TranscriptAttachmentSquare<Player: View>: View {
     private func activate() {
         if let openImage {
             if thumbnail == nil && failed { retry += 1 } else { openImage() }
-        } else if videoURL != nil {
-            isPlaying = true
+        } else if let videoURL {
+            if let present { present(attachment, videoURL) } else { isPlaying = true }
         } else {
             Task { await openFile() }
         }
@@ -116,8 +121,9 @@ public struct TranscriptAttachmentSquare<Player: View>: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            preview = try await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: failed)
+            let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: failed)
             failed = false
+            if let present { present(attachment, file) } else { preview = file }
         } catch {
             failed = true
         }

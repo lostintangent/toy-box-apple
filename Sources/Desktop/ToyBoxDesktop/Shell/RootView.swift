@@ -145,6 +145,7 @@ struct RootView: View {
         .environment(interaction)
         .environment(imageViewer)
         .environment(\.isKeyWindow, isKeyWindow)
+        .presentedAttachments(interaction)
         .managementFlows(management)
         .focusedSceneValue(\.channelCommands, commandActions)
         .background(WindowObserver(onAttach: { window in
@@ -369,10 +370,6 @@ struct RootView: View {
         handoff.cancel()
         selection = request.channel
         if let sequence = request.sequence { interaction.reveal(sequence: sequence) }
-        if let images = request.images {
-            imageViewer.open(images: images.images, at: images.index, source: images.source, api: images.api,
-                             channel: request.channel)
-        }
         model.navigationRequest = nil
     }
 

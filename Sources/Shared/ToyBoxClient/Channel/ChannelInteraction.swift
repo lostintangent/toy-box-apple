@@ -33,6 +33,9 @@ public final class ChannelInteraction {
     /// Each transcript sets this while Find is open. The phone's Find bar takes the composer's place,
     /// and the Mac's reconnecting notice drops below its Find bar.
     public var isFinding = false
+    /// The window presents this, for a preview that can't host a video or a file over itself, like
+    /// a request's attachment in a popover that closes when covered.
+    public var presentedAttachment: PresentedAttachment?
 
     public init(isInspectorPresented: Bool = true) {
         self.isInspectorPresented = isInspectorPresented
@@ -75,6 +78,18 @@ public final class ChannelInteraction {
     public func jumpToLatest() { jumpToLatestRequest = UUID() }
     public func findInChannel() { findRequest = UUID() }
     public func findNext(_ direction: Int) { findNavigation = (direction, UUID()) }
+}
+
+/// An attachment and where to show it from: a video's resource, or a file's downloaded copy.
+public struct PresentedAttachment: Identifiable {
+    public let id = UUID()
+    public let attachment: ChannelAttachment
+    public let url: URL
+
+    public init(attachment: ChannelAttachment, url: URL) {
+        self.attachment = attachment
+        self.url = url
+    }
 }
 
 public struct RevealProgress: Equatable, Sendable {
