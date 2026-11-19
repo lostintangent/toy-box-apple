@@ -66,9 +66,11 @@ struct OverviewAgentRow: View {
 
     private var status: ChannelAgentPresence? { presence }
     private var wake: Date? { ChannelAgent.Countdown.wake(for: presence, isAvailable: isAvailable) }
+    private var wakeCommand: String? { isAvailable ? presence?.wakeCommand : nil }
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
     private var spokenStatus: String {
         let status = OverviewAgentStatusLine.spoken(status, isAvailable: isAvailable)
+        if wakeCommand != nil { return "\(status), \(ChannelAgentWakeCommand.spoken)" }
         guard wake != nil, isVisible, let wakeAnnouncement else { return status }
         return "\(status), \(wakeAnnouncement)"
     }
@@ -105,7 +107,12 @@ struct OverviewAgentRow: View {
             .accessibilityActions { actions }
 
             ZStack(alignment: .trailing) {
-                if let wake {
+                if wakeCommand != nil {
+                    ChannelAgentWakeCommand()
+                        .font(.system(size: 11 * textScale))
+                        .opacity(showsMenu ? 0 : 1)
+                        .accessibilityHidden(true)
+                } else if let wake {
                     ChannelAgentWakeCountdown(wake: wake, isActive: isVisible) { wakeAnnouncement = $0 }
                         .font(.system(size: 11 * textScale))
                         .opacity(showsMenu ? 0 : 1)
@@ -218,6 +225,22 @@ struct OverviewAgentAbout: View {
                     Text(OverviewAgentStatusLine.spoken(status, isAvailable: isAvailable))
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if isAvailable, let command = status?.wakeCommand {
+                    GridRow {
+                        Text("Wake command").foregroundStyle(.secondary)
+                        Text(command)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                if let wake = ChannelAgent.Countdown.wake(for: status, isAvailable: isAvailable) {
+                    GridRow {
+                        Text("Checks again").foregroundStyle(.secondary)
+                        Text(wake.formatted(date: Calendar.current.isDateInToday(wake) ? .omitted : .abbreviated, time: .shortened))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
                 GridRow {
                     Text("Model").foregroundStyle(.secondary)

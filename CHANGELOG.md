@@ -2,6 +2,10 @@
 
 ## Mac 0.1.49
 
+### Features
+
+- When an agent is waiting on a command, like a build or a CI run, you can now see it and the command itself, so you know it'll pick back up the moment the command finishes.
+
 ### Bugs/Polish
 
 - Artifacts in a channel on another of your servers now open, instead of showing a "not found" error, and Open in Toy Box takes you to that channel on its own server.
@@ -9,6 +13,10 @@
 - Jumping to a message that Message View is hiding now switches back to all messages and takes you to it, instead of getting stuck loading.
 
 ## iPhone 0.1.44
+
+### Features
+
+- When an agent is waiting on a command, like a build or a CI run, you can now see it and the command itself, so you know it'll pick back up the moment the command finishes.
 
 ### Bugs/Polish
 

@@ -2583,7 +2583,7 @@ tappable and its accessible target spans that height. Its label grows and wraps 
 | Presence | Status line | Trailing |
 | --- | --- | --- |
 | Working | Presence text, or "Working", in primary at 85%, after a 9-point heavy `ellipsis` in the agent's color, 4 points before the text. This is Messages' typing cue | Nothing |
-| Waiting | A static 9-point heavy `pause.fill` in a 12-point cue lane, then a 4-point gap and the reason in secondary, such as "Waiting for Moss's review". Center the glyph on the status font's cap height, not its line box, within 0.5 points on Mac. Tint only the glyph `#9A6700` in Light and `#F4BE66` in Dark, shared with iPhone | With a valid wake time, a leading `bell`, 4-point gap and "8m" in 11 secondary tabular digits, updated at minute boundaries, help "Checks again at 9:32 AM". "Due" once it passes |
+| Waiting | A static 9-point heavy `pause.fill` in a 12-point cue lane, then a 4-point gap and the reason in secondary, such as "Waiting for Moss's review". Center the glyph on the status font's cap height, not its line box, within 0.5 points on Mac. Tint only the glyph `#9A6700` in Light and `#F4BE66` in Dark, shared with iPhone | With a valid wake time, a leading `bell`, 4-point gap and "8m" in 11 secondary tabular digits, updated at minute boundaries. "Due" once it passes. A running wake command shows a `terminal` symbol in its place |
 | Idle | "Idle" in secondary | Nothing |
 
 Both apps share status copy and spoken state. Missing live presence reads "Status unavailable".
@@ -2604,9 +2604,16 @@ unavailable or absent/invalid wake times. `ChannelAgent.Countdown` owns the loca
 rounding the remaining duration up and showing Due once it passes, and one ToyBoxUI view draws it. Phone updates
 only at minute boundaries while its row is visible. Keep the bell/value group together and trailing
 even when phone name/status wrap at accessibility sizes. Add no row height at default text. Both
-rows speak "checks again in 8 minutes" or "check-in due". About's Checks again and Mac help show the
-exact date. The bell is decorative, not a second button. It means time until the next check-in,
+rows speak "checks again in 8 minutes" or "check-in due". About's Checks again shows the exact
+date. The bell is decorative, not a second button. It means time until the next check-in,
 unlike the task clock's elapsed time. No activity or progress is inferred.
+
+While a waiting agent's wake command runs, its exit wakes the agent, so the server sends the
+command as the presence's `wakeCommand`. On the same channels as the countdown, both rows show a
+decorative `terminal` in `ChannelInk.secondary` in the countdown's place, from one ToyBoxUI view,
+and speak "wakes when its command exits". On the Mac the hover menu replaces it too. Both Abouts
+show the command, selectable, as Wake command right after Status, then Checks again when there's
+also a check-in time.
 
 The working ellipsis pulses only while the window is key. Under Reduce Motion, and in every other
 window, it is static at full color. The pulse matches the system's iterative variable color on that
@@ -2621,30 +2628,30 @@ static frame stays pixel-identical to the 9-point heavy symbol, in the same plac
 every text scale.
 
 There are no rings around Team avatars. The row is one button that opens the member's About popover
-(name, full role, status and model) anchored to the avatar, never private session contents. On
-hover or keyboard focus, a borderless 14-point `ellipsis.circle` menu in secondary, with a 28 x 28
-target, replaces the trailing countdown. It offers Reply to [Name], About [Name], Edit Agent… and
-Remove Agent…. The lead offers Reply and About only, because its identity is intrinsic. The
-context menu has the same items. Add Agent… ends the list in a 36-point row: a 24-point dashed
-tertiary circle with an 11-point `plus`, and the label in 13 regular secondary. It opens Add
-Agent.
+(name, full role, status, wake command, check-in time and model) anchored to the avatar, never
+private session contents. On hover or keyboard focus, a borderless 14-point `ellipsis.circle` menu
+in secondary, with a 28 x 28 target, replaces the trailing countdown. It offers Reply to [Name],
+About [Name], Edit Agent… and Remove Agent…. The lead offers Reply and About only, because its
+identity is intrinsic. The context menu has the same items. Add Agent… ends the list in a 36-point
+row: a 24-point dashed tertiary circle with an 11-point `plus`, and the label in 13 regular
+secondary. It opens Add Agent.
 
-Phone Team rows are also one button, with no chevron, and their tap and the context menu's
-About [Name] open the same About content. When the window has a regular width it's a popover
-from the row, opening toward the conversation in the landscape column and above or below the row
-in the unfolded sheet, dismissed by tapping outside or the VoiceOver escape. The window decides,
-not the Overview sheet's own compact width, because UIKit adapts the popover to the window. It's
-320 points wide with 20-point padding and bounds a long role at 210 points, scaled with body text.
-A compact window adapts it to a sheet sized to its content, with the drag indicator and a close
-button labelled "Close About [Name]". Content taller than about half the Overview it rises over
-offers the medium and large detents instead. The sheet fills its width, never bounds the role and
-scrolls as one. Below the header ("Name" over "Lead · @handle" or "@handle"), a trailing-keyed
-grid shows Status, Checks again (the time alone today, otherwise the abbreviated date and time)
-and Model: "name · provider", selectable, then "[effort] reasoning" in secondary with Edit
-Agent's labels, or "Workspace default". At accessibility sizes the header stacks, the role is
-unbounded, each key sits above its value, and the popover takes the system's width and scrolls
-as one. VoiceOver reads the header as "Name, Lead, @handle" and each fact as one element. It
-updates live and never shows private session contents.
+Phone Team rows are also one button, with no chevron, and their tap and the context menu's About
+[Name] open the same About content. When the window has a regular width it's a popover from the row,
+opening toward the conversation in the landscape column and above or below the row in the unfolded
+sheet, dismissed by tapping outside or the VoiceOver escape. The window decides, not the Overview
+sheet's own compact width, because UIKit adapts the popover to the window. It's 320 points wide with
+20-point padding and bounds a long role at 210 points, scaled with body text. A compact window
+adapts it to a sheet sized to its content, with the drag indicator and a close button labelled
+"Close About [Name]". Content taller than about half the Overview it rises over offers the medium
+and large detents instead. The sheet fills its width, never bounds the role and scrolls as one.
+Below the header ("Name" over "Lead · @handle" or "@handle"), a trailing-keyed grid shows Status,
+Wake command, Checks again (the time alone today, otherwise the abbreviated date and time) and
+Model: "name · provider", selectable, then "[effort] reasoning" in secondary with Edit Agent's
+labels, or "Workspace default". At accessibility sizes the header stacks, the role is unbounded,
+each key sits above its value, and the popover takes the system's width and scrolls as one.
+VoiceOver reads the header as "Name, Lead, @handle" and each fact as one element. It updates live
+and never shows private session contents.
 
 **Working filter.** Team Members has the Tasks header's filter toggle, with the same glyph, ink,
 placement after the count, targets and focus behavior, so the user can see only who's working.

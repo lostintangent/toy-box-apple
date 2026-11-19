@@ -71,6 +71,7 @@ struct OverviewTeamRow: View {
     private var wake: Date? {
         ChannelAgent.Countdown.wake(for: store.presence[agent.id], isAvailable: !store.phase.isUnavailable)
     }
+    private var wakeCommand: String? { store.phase.isUnavailable ? nil : store.presence[agent.id]?.wakeCommand }
     private var status: ChannelAgent.StatusLine {
         .init(presence: store.presence[agent.id], isAvailable: !store.phase.isUnavailable)
     }
@@ -93,7 +94,11 @@ struct OverviewTeamRow: View {
                 }
                 .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if let wake {
+                if wakeCommand != nil {
+                    ChannelAgentWakeCommand()
+                        .font(.footnote)
+                        .accessibilityHidden(true)
+                } else if let wake {
                     ChannelAgentWakeCountdown(wake: wake, isActive: active) { wakeAnnouncement = $0 }
                         .font(.footnote)
                         .accessibilityHidden(true)
@@ -114,7 +119,8 @@ struct OverviewTeamRow: View {
         }
         // The button is already one element, and keeps its activation.
         .accessibilityLabel("\(agent.name), \(status.spoken)")
-        .accessibilityValue(wake != nil && active ? wakeAnnouncement ?? "" : "")
+        .accessibilityValue(wakeCommand != nil ? ChannelAgentWakeCommand.spoken
+                            : wake != nil && active ? wakeAnnouncement ?? "" : "")
         .accessibilityHint("Shows agent details")
         .accessibilityIdentifier("overview-agent-\(agent.id)")
         .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
@@ -187,6 +193,9 @@ struct OverviewAgentAbout: View {
         var facts = [Fact(key: "Status", lines: [
             ChannelAgent.StatusLine(presence: store.presence[agentID], isAvailable: available).spoken
         ])]
+        if available, let command = store.presence[agentID]?.wakeCommand {
+            facts.append(Fact(key: "Wake command", lines: [command], selectable: true))
+        }
         if let wake = ChannelAgent.Countdown.wake(for: store.presence[agentID], isAvailable: available) {
             facts.append(Fact(key: "Checks again", lines: [
                 wake.formatted(date: Calendar.current.isDateInToday(wake) ? .omitted : .abbreviated, time: .shortened)
