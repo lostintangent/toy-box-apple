@@ -97,6 +97,10 @@ public struct TranscriptAttachmentSquare<Player: View>: View {
     }
 
     private func loadThumbnail() async {
+        if let videoURL {
+            thumbnail = await TranscriptVideo<EmptyView>.loadPoster(for: attachment, url: videoURL, api: api)
+            return
+        }
         guard openImage != nil else { return }
         failed = false
         do {

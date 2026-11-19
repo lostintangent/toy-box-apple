@@ -139,6 +139,7 @@ private struct ChannelComposer: View {
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(ArtifactOpener.self) private var artifacts
+    @Environment(ImageViewer.self) private var viewer: ImageViewer?
     @ViewState private var inputHeight: CGFloat = 44
     @ViewState private var isDragging = false
     @ViewState private var showPicker = false
@@ -208,9 +209,9 @@ private struct ChannelComposer: View {
             dictation.draftChanged(to: revision)
         }
         .snapshotPose(pose)
-        // The viewer covers the conversation, so the request preview closes rather than float over
-        // it, like when a file link in the preview opens its artifact.
-        .onChange(of: artifacts.isPresented) { _, presented in
+        // A viewer covers the conversation, so the request preview closes rather than float over
+        // it, like when a file link or an image in the preview opens.
+        .onChange(of: artifacts.isPresented || viewer?.session != nil) { _, presented in
             guard presented else { return }
             requestHoverTask?.cancel()
             requestPreview = false

@@ -81,6 +81,8 @@ struct TranscriptRequestAttachments: View {
                     }
                 }
             }
+            // A new request in the same preview starts its tiles over, rather than keep the last one's.
+            .id(message.id)
         }
     }
 

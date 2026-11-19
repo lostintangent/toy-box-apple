@@ -130,7 +130,9 @@ struct ComposerRequestButton: View {
                 Text(question).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
             }
             .frame(maxHeight: 280)
-            TranscriptRequestAttachments(message: request, agents: store.roster, api: store.api, isInteractive: interactive)
+            // Display-only in the failure popover too, so the gallery never covers it. Reveal opens the
+            // request, where its attachments open as usual.
+            TranscriptRequestAttachments(message: request, agents: store.roster, api: store.api, isInteractive: false)
             if let outcome {
                 switch outcome {
                 case .loading: ProgressView("Revealing request\u{2026}").font(.footnote)

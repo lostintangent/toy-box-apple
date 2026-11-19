@@ -144,6 +144,8 @@ struct TranscriptGalleryShareItem: Transferable {
 
 struct TranscriptGalleryView: View {
     let gallery: TranscriptGallery
+    /// Names the screen closing returns to.
+    var backTitle = "Back to Conversation"
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openURL) private var openURL
@@ -211,7 +213,7 @@ struct TranscriptGalleryView: View {
     private func toolbar(_ session: TranscriptGallery.Session) -> some ToolbarContent {
         let original = reader.original(for: session)
         ToolbarItem(placement: .topBarLeading) {
-            Button("Back to Conversation", systemImage: "chevron.backward") { gallery.close() }
+            Button(backTitle, systemImage: "chevron.backward") { gallery.close() }
                 .labelStyle(.iconOnly)
         }
         ToolbarItem(placement: .principal) {

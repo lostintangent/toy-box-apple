@@ -93,10 +93,12 @@ struct TranscriptRequestAttachments: View {
                     }
                 }
             }
+            // A new request in the same preview starts its tiles over, rather than keep the last one's.
+            .id(message.id)
             .allowsHitTesting(isInteractive)
             .fullScreenCover(isPresented: Binding(get: { gallery.session != nil },
                                                   set: { if !$0 { gallery.close() } })) {
-                NavigationStack { TranscriptGalleryView(gallery: gallery) }
+                NavigationStack { TranscriptGalleryView(gallery: gallery, backTitle: "Back to Request") }
             }
         }
     }
