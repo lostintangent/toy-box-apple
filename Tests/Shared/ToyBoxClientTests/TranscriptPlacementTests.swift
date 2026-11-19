@@ -546,7 +546,7 @@ struct TranscriptPlacementTests {
         #expect(touch.held(in: paged) == 100)
         #expect(touch.shown(paged) == shown)
         #expect(touch.shown(messages(1...201)) == messages(101...201))
-        // Lifting the finger ends the touch, and the page lands with everything else.
+        // A finger down on an empty transcript holds nothing, so the first page shows.
         #expect(Model.Touch(showing: []).shown(paged) == paged)
     }
 }
