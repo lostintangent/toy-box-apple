@@ -1949,6 +1949,18 @@ Keep attachment order, leading/trailing alignment, the correct image index on op
 presented tile in view when returning. The hosts share the portable strip container where
 practical, each with its own native tiles. File and video actions keep minimum-44 targets.
 
+**Request attachments.** A request's attachments show wherever its question is previewed: the
+Mac's sidebar popover and Input Needed preview, and the phone's Needs You card and Input Needed
+preview. They sit between the words and the choices, always in view, as one row of 48-point
+square thumbnails 8 points apart that scrolls sideways once it overflows, like the web's. Each
+fills its square, with 6-point continuous corners and the transcript tile's hairline, labels,
+loading and failure states. A video adds a play badge, and any other file shows its document
+icon. Activating one opens it as the transcript does: images in the image viewer, paging through
+the request's images, videos in the player and other files in Quick Look. The Mac's popovers
+close as the viewer opens. The phone's Input Needed preview is a context menu preview, so there
+a tap reveals the request instead, where its attachments open as usual. The menu bar inbox and
+the widget keep the question as text.
+
 **Image viewer.** Images open in place, as in Photos, never in another app or a floating Quick
 Look panel. The viewer pages through the clicked message's images in attachment order and
 doesn't cross into other messages. Videos and files keep their own actions.
