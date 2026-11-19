@@ -160,6 +160,20 @@ struct TranscriptTests {
         #expect(scroll.update() == nil)
     }
 
+    @Test func reachingTheTopAtRestLoadsOlderHistory() {
+        let scroll = measuredScroll(40, origin: 3400)
+        _ = scroll.update(.land(.end))
+        scroll.isReaderScrolling = true
+        scroll.metrics?.origin = 1500
+        _ = scroll.update()
+
+        // A status bar tap, or a flick's last report after its phase ends, reaches the top at rest.
+        scroll.isReaderScrolling = false
+        scroll.metrics?.origin = 20
+        #expect(scroll.update() == nil)
+        #expect(scroll.loadsOlder(with: scroll.rows))
+    }
+
     @Test func aNewTouchReadsEvenBeforeAJumpSettlesAtTheEnd() {
         let scroll = measuredScroll(40, origin: 3400)
         _ = scroll.update(.land(.end))

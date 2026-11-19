@@ -21,6 +21,7 @@
 ### Bugs/Polish
 
 - Open in Toy Box now works for artifacts in a channel on another of your servers, so you can jump straight to it in your browser.
+- Scrolling up through a conversation now always loads older messages, even after a quick flick to the top, instead of sometimes stopping until you touch the screen again.
 
 ## Mac 0.1.48
 
