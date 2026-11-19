@@ -39,6 +39,7 @@ struct ChannelDetailView: View {
 
     var body: some View {
         conversation
+            .environment(\.transcriptFileLinks, TranscriptFileLinks(store: store) { artifacts.open($0) })
             // An open artifact hides the conversation without removing it, so its scroll position,
             // draft and paging survive. It's out of sight, VoiceOver, the pointer and the key view
             // loop, and Find stays with the viewer.

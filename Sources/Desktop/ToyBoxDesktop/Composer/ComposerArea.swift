@@ -426,7 +426,7 @@ private struct ChannelComposer: View {
                 Text("Input Needed").font(.headline)
                 ScrollView {
                     TranscriptMarkdown(content: request.text, agents: store.roster,
-                                       baseURL: store.api.baseURL)
+                                       baseURL: store.api.baseURL, sender: request.sender)
                 }
                     .frame(maxHeight: 180)
                 if let error = store.historyError {

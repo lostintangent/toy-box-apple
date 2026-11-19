@@ -219,6 +219,7 @@ struct TranscriptAgentMessage: View {
                             // target reaches below the bubble rather than up into the body's links.
                             TranscriptCollapsibleBody(isExpanded: isExpanded, endPadding: 10) {
                                 TranscriptBody(text: entry.body, agents: channel.agents, baseURL: channel.api.baseURL,
+                                               sender: entry.message.sender,
                                                surface: surface, findHighlight: findHighlight)
                             } toggle: {
                                 Button { setExpanded(!isExpanded) } label: {
@@ -235,6 +236,7 @@ struct TranscriptAgentMessage: View {
                             .padding(.top, 10)
                         } else {
                             TranscriptBody(text: entry.body, agents: channel.agents, baseURL: channel.api.baseURL,
+                                               sender: entry.message.sender,
                                                surface: surface, findHighlight: findHighlight)
                                 .padding(.vertical, 10)
                         }
@@ -405,6 +407,7 @@ struct TranscriptBody: View {
     let text: String
     var agents: [ChannelAgent] = []
     var baseURL: URL?
+    var sender: ChannelMessageSender?
     var surface = TranscriptSurface.canvas
     var findHighlight: TranscriptFindHighlight?
     @Environment(\.colorScheme) private var colorScheme
@@ -414,7 +417,7 @@ struct TranscriptBody: View {
     var body: some View {
         let ink = TranscriptMentionInk(surface: surface, isDark: colorScheme == .dark,
                                        isContrastIncreased: contrast == .increased)
-        TranscriptMarkdown(content: text, agents: agents, baseURL: baseURL, selectable: false,
+        TranscriptMarkdown(content: text, agents: agents, baseURL: baseURL, sender: sender, selectable: false,
                            findHighlight: findHighlight, lineSpacing: 0, textScale: bodySize / 14,
                            copyCode: { UIPasteboard.general.string = $0 }, mentionInk: ink.color)
             .foregroundStyle(.primary)
