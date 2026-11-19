@@ -4,9 +4,9 @@ import Foundation
 /// URL-escaped, and relative to the writer's working directory unless absolute.
 public struct FileReference: Equatable, Sendable {
     /// The path as written, unescaped.
-    public var path: String
+    public let path: String
 
-    public init(path: String) {
+    init(path: String) {
         self.path = path
     }
 
@@ -20,14 +20,12 @@ public struct FileReference: Equatable, Sendable {
         self.path = path
     }
 
-    /// The channel's shared artifact this reference names, in a message from `sender` in a channel
-    /// whose folder is `folder`, or nil when it names none. An absolute path names its file by its
-    /// `WorkspaceFile.id`, and a relative one joins the channel's folder. Without a folder, an agent
-    /// writes relative paths against its own artifacts folder, and an agent's session ID is its
-    /// agent ID, so the path names the sender's own artifact first, then the newest one at that
-    /// path in any agent's.
-    public func artifact(in artifacts: [ChannelArtifact], folder: String?,
-                         sender: ChannelMessageSender?) -> ChannelArtifact? {
+    /// The channel's shared artifact this reference names, in a channel whose folder is `folder`,
+    /// or nil when it names none. An absolute path names its file by its `WorkspaceFile.id`, and a
+    /// relative one joins the channel's folder. Without a folder, an agent writes relative paths
+    /// against its own artifacts folder, so the path names the newest artifact at that path in any
+    /// agent's.
+    public func artifact(in artifacts: [ChannelArtifact], folder: String?) -> ChannelArtifact? {
         func shared(_ file: WorkspaceFile) -> ChannelArtifact? {
             artifacts.first { $0.file.id == file.id }
         }
@@ -35,10 +33,6 @@ public struct FileReference: Equatable, Sendable {
         if let folder, !folder.isEmpty { return shared(WorkspaceFile(absolutePath: "\(folder)/\(path)")) }
         let relative = WorkspaceFile.components(of: path).joined(separator: "/")
         guard !relative.isEmpty else { return nil }
-        if let agent = sender?.agentId,
-           let own = shared(WorkspaceFile(kind: "session", sessionId: agent, path: relative)) {
-            return own
-        }
         return artifacts.newestFirst.first { $0.file.kind == "session" && $0.file.path == relative }
     }
 }

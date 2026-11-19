@@ -7,7 +7,6 @@ struct TranscriptMarkdown: View {
     let content: String
     var agents: [ChannelAgent] = []
     var baseURL: URL?
-    var sender: ChannelMessageSender?
     var selectable = true
     var findHighlight: TranscriptFindHighlight?
     var bodySize: CGFloat = 14
@@ -21,7 +20,7 @@ struct TranscriptMarkdown: View {
 
     var body: some View {
         ToyBoxUI.TranscriptMarkdown(
-            content: content, agents: agents, baseURL: baseURL, sender: sender, selectable: selectable,
+            content: content, agents: agents, baseURL: baseURL, selectable: selectable,
             findHighlight: findHighlight, bodySize: bodySize, codeSize: codeSize, lineSpacing: lineSpacing,
             textScale: textScale, preservesLineBreaks: preservesLineBreaks,
             copyCode: TranscriptClipboard.copy,

@@ -294,7 +294,7 @@ struct TranscriptMarkdownTests {
         let opened = Opened()
         var hostOpened: [URL] = []
         let message = { (content: String) in
-            TranscriptMarkdown(content: content, sender: .agent("ada"), copyCode: { _ in }, mentionInk: { _ in .purple })
+            TranscriptMarkdown(content: content, copyCode: { _ in }, mentionInk: { _ in .purple })
                 .frame(width: 480, height: 40, alignment: .topLeading)
         }
         let view = NSHostingView(rootView:
