@@ -209,9 +209,9 @@ private struct ChannelComposer: View {
             dictation.draftChanged(to: revision)
         }
         .snapshotPose(pose)
-        // A viewer covers the conversation, so the request preview closes rather than float over
-        // it, like when a file link or an image in the preview opens.
-        .onChange(of: artifacts.isPresented || viewer?.session != nil) { _, presented in
+        // A viewer or player covers the conversation, so the request preview closes rather than
+        // float over it, like when a file link or an attachment in the preview opens.
+        .onChange(of: artifacts.isPresented || viewer?.session != nil || interaction.presentedAttachment != nil) { _, presented in
             guard presented else { return }
             requestHoverTask?.cancel()
             requestPreview = false

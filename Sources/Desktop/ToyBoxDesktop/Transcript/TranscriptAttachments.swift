@@ -83,9 +83,7 @@ struct TranscriptRequestAttachments: View {
                         dismiss()
                     }
                 ) {
-                    if let address = attachment.url, let url = api.resourceURL(address) {
-                        TranscriptVideoSheet(attachment: attachment, url: url)
-                    }
+                    EmptyView()
                 }
             }
             // A new request in the same preview starts its tiles over, rather than keep the last one's.

@@ -80,15 +80,17 @@ public final class ChannelInteraction {
     public func findNext(_ direction: Int) { findNavigation = (direction, UUID()) }
 }
 
-/// An attachment and where to show it from: a video's resource, or a file's downloaded copy.
-public struct PresentedAttachment: Identifiable {
-    public let id = UUID()
-    public let attachment: ChannelAttachment
-    public let url: URL
+extension ChannelInteraction {
+    /// An attachment and where to show it from: a video's resource, or a file's downloaded copy.
+    public struct PresentedAttachment: Identifiable {
+        public let id = UUID()
+        public let attachment: ChannelAttachment
+        public let url: URL
 
-    public init(attachment: ChannelAttachment, url: URL) {
-        self.attachment = attachment
-        self.url = url
+        public init(attachment: ChannelAttachment, url: URL) {
+            self.attachment = attachment
+            self.url = url
+        }
     }
 }
 
