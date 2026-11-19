@@ -138,6 +138,7 @@ private struct ChannelComposer: View {
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(ArtifactOpener.self) private var artifacts
     @ViewState private var inputHeight: CGFloat = 44
     @ViewState private var isDragging = false
     @ViewState private var showPicker = false
@@ -207,6 +208,13 @@ private struct ChannelComposer: View {
             dictation.draftChanged(to: revision)
         }
         .snapshotPose(pose)
+        // The viewer covers the conversation, so the request preview closes rather than float over
+        // it, like when a file link in the preview opens its artifact.
+        .onChange(of: artifacts.isPresented) { _, presented in
+            guard presented else { return }
+            requestHoverTask?.cancel()
+            requestPreview = false
+        }
         .onDisappear {
             requestHoverTask?.cancel()
             dictation.deactivate()

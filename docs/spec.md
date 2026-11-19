@@ -2387,7 +2387,8 @@ Input Needed stays visible until a committed user response. It has an amber ques
 label, not a constantly moving spinner. Hover after a short native delay previews the retained
 request in a max-320 x 280 popover. Keyboard activation or click reveals and focuses its transcript
 row, paging backward as necessary, with a brief static highlight. If loading fails, retain the
-request preview and show Retry. Revealing a request never changes composer height.
+request preview and show Retry. Revealing a request never changes composer height. The preview
+closes when the artifact viewer opens.
 
 Paste, file picker and drag accept the same image formats as the server. A drop highlights the
 composer, not the whole window. Show attached images as 56-point thumbnails in a horizontal row,
