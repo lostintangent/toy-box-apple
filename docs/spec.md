@@ -1957,7 +1957,8 @@ fills its square, with 6-point continuous corners and the transcript tile's hair
 loading and failure states. A video adds a play badge, and any other file shows its document
 icon. Activating one opens it as the transcript does: images in the image viewer, paging through
 the request's images, videos in the player and other files in Quick Look. The Mac's popovers
-close as the viewer opens. The phone's Input Needed preview is a context menu preview, so there
+close as the viewer opens. The viewer always shows over the conversation its images belong to, so
+an image in the sidebar's popover opens its channel first, and Back leaves the user there. The phone's Input Needed preview is a context menu preview, so there
 a tap reveals the request instead, where its attachments open as usual. The menu bar inbox and
 the widget keep the question as text.
 
