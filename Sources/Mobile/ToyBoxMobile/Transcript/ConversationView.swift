@@ -19,7 +19,7 @@ final class TranscriptScroll {
     }
 
     var rows: [Model.RowIdentity] = []
-    /// The store's message count when geometry last synced the rows.
+    /// How many messages the transcript showed when geometry last synced the rows.
     var messageCount = 0
     var metrics: Metrics? {
         didSet {
@@ -255,6 +255,9 @@ struct ConversationView: View {
     /// Whether the scroll view has reported its geometry, which a reveal needs before it can place a row.
     @ViewState private var hasGeometry = false
     @ViewState private var expanded: Set<String> = []
+    /// The oldest message shown while a finger is down. UIScrollView's pan sets the offset from where
+    /// the drag began on its next touch, so a page that arrives under a finger waits for it to lift.
+    @ViewState private var touchFloor: Int?
     @ViewState private var catchUp: TranscriptCatchUpSession?
     @ViewState private var find: TranscriptFind = {
         let find = TranscriptFind()
@@ -266,12 +269,20 @@ struct ConversationView: View {
 
     private var rows: [TranscriptRow] {
         guard let lead = store.roster.first else { return [] }
-        return rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
+        let held = heldCount
+        return rowBuilder.rows(held == 0 ? store.messages : Array(store.messages.dropFirst(held)),
+                               lead: lead, members: Array(store.roster.dropFirst()),
                                unreadAfter: visit.unreadAfter(in: store),
                                filter: interaction.messageView, bookmarks: store.bookmarks)
     }
 
     private var items: [TranscriptItem] { TranscriptItem.items(rows) }
+
+    /// How many older messages wait for the reader's finger to lift.
+    private var heldCount: Int {
+        guard let touchFloor else { return 0 }
+        return store.messages.firstIndex { $0.sequence >= touchFloor } ?? 0
+    }
 
     var body: some View {
         let items = items
@@ -283,10 +294,12 @@ struct ConversationView: View {
         let bookmarks = Set(store.bookmarks)
         let isConnected = store.phase.isConnected
         let findHighlights = find.highlights(TranscriptFindHighlight.phone)
+        let held = heldCount
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                if store.hasOlderMessages && !items.isEmpty {
-                    TranscriptPagingAccessory(isLoading: store.isLoadingOlder, error: store.historyError) {
+                // A waiting page keeps its progress, so nothing above the rows changes under the finger.
+                if (store.hasOlderMessages || held > 0) && !items.isEmpty {
+                    TranscriptPagingAccessory(isLoading: store.isLoadingOlder || held > 0, error: store.historyError) {
                         Task { await store.loadOlder() }
                     }
                 }
@@ -362,8 +375,9 @@ struct ConversationView: View {
                 origin: geometry.contentOffset.y, documentEnd: geometry.contentSize.height)
         } action: { _, metrics in
             // A page above grows the content before `onChange(items)` runs, so its rows sync first.
-            if store.messages.count != scroll.messageCount {
-                scroll.messageCount = store.messages.count
+            let shown = store.messages.count - heldCount
+            if shown != scroll.messageCount {
+                scroll.messageCount = shown
                 scroll.sync(rowIdentities, pinsLanding: interaction.messageView == .all && catchUp != nil)
             }
             scroll.metrics = metrics
@@ -371,11 +385,12 @@ struct ConversationView: View {
             place(scroll.update())
         }
         .onScrollPhaseChange { _, phase in
-            scroll.isReaderScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            // Set at the touch, since rows built under the finger would already show the page.
+            let touching = phase == .tracking || phase == .interacting
+            touchFloor = touching ? touchFloor ?? store.messages.first?.sequence : nil
+            scroll.isReaderScrolling = touching || phase == .decelerating
             scroll.isScrollIdle = phase == .idle
-            if phase == .tracking || phase == .interacting {
-                scroll.readerTouched()
-            }
+            if touching { scroll.readerTouched() }
         }
         // A bar rather than an overlay, so the end of the conversation settles clear of them, a
         // revealed match lands above Find, and the scroll edge effect reaches up behind them.
@@ -558,7 +573,8 @@ struct ConversationView: View {
     }
 
     private func loadOlder() async {
-        guard scroll.hasLanded, !store.isLoadingOlder, store.hasOlderMessages, store.historyError == nil else { return }
+        guard scroll.hasLanded, !store.isLoadingOlder, store.hasOlderMessages, store.historyError == nil,
+              heldCount == 0 else { return }
         await store.loadOlder()
     }
 
