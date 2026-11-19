@@ -1959,8 +1959,8 @@ icon. Activating one opens it as the transcript does: images in the image viewer
 the request's images, videos in the player and other files in Quick Look. The Mac's popovers
 close as the viewer opens. The Mac's viewer shows over the conversation its images belong to, so
 an image in the sidebar's popover opens its channel first, and Back leaves the user there. The
-Needs You card stays in the list, so its images open the gallery full screen over it, and closing
-returns to the card. The phone's Input Needed preview is a context menu preview, so there
+Needs You card stays in the list, so its images open the gallery full screen over it, and its
+Back to Request returns to the card. The phone's Input Needed preview is a context menu preview, so there
 a tap reveals the request instead, where its attachments open as usual. The menu bar inbox and
 the widget keep the question as text.
 
