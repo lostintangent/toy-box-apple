@@ -57,22 +57,6 @@ struct TranscriptPlacementTests {
         }
     }
 
-    @Test func aSettlingReaderRowWaitsForItsFrameOnScreenAfterAnOlderPage() {
-        let intent = Model.Intent.reading(.init(row: "m15", order: 15, offset: 30))
-        let estimated = [Model.RowFrame(id: "m15", order: 15, top: 1_200, height: 100)]
-        func settling(origin: CGFloat) -> Model.Layout {
-            .init(rows: frames().map { .init(id: $0.id, order: $0.order, isAnchorable: true) },
-                  frames: estimated, viewport: viewport, origin: origin, documentEnd: 2_016, settling: "m15")
-        }
-        let offScreen = Model.reduce(intent, .layoutChanged, layout: settling(origin: 420))
-        #expect(offScreen.origin == nil)
-        #expect(offScreen.needsMeasurement == "m15")
-        #expect(Model.reduce(intent, .layoutChanged, layout: layout(estimated)).origin == 1_120)
-        let onScreen = Model.reduce(intent, .layoutChanged, layout: settling(origin: 1_000))
-        #expect(onScreen.origin == 1_120)
-        #expect(onScreen.needsMeasurement == nil)
-    }
-
     @Test func removedAnchorsChooseCanonicalSurvivorsBeforeLookingForFrames() {
         let intent = Model.Intent.reading(.init(row: "m5", order: 5, offset: 30))
         let successors = frames().filter { $0.order != 5 && $0.order != 6 }

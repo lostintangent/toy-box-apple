@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.45
+
+### Bugs/Polish
+
+- Scrolling up through a long conversation now flows straight into older messages, without pausing at the top while they load.
+
 ## Mac 0.1.49
 
 ### Features

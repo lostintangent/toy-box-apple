@@ -100,17 +100,13 @@ public struct TranscriptPlacement: Equatable, Sendable {
         public let origin: CGFloat
         /// The native document extent, already including the sole end clearance.
         public let documentEnd: CGFloat
-        /// A reader's row that older history just arrived above. Rows above it are still estimates,
-        /// so its frame places it only once it's laid out on screen.
-        public let settling: RowID?
         fileprivate let identities: [RowID: RowIdentity]
         fileprivate let measurements: [RowID: RowFrame]
         fileprivate let orderedFrames: [RowFrame]
 
         public init(rows: [RowIdentity], frames: [RowFrame], viewport: Viewport,
-                    origin: CGFloat, documentEnd: CGFloat, settling: RowID? = nil) {
+                    origin: CGFloat, documentEnd: CGFloat) {
             precondition(origin.isFinite && documentEnd.isFinite && documentEnd >= 0)
-            self.settling = settling
             self.rows = rows
             self.frames = frames
             self.viewport = viewport
@@ -210,6 +206,12 @@ public struct TranscriptPlacement: Equatable, Sendable {
             || old.viewport != new.viewport || old.documentEnd != new.documentEnd ? .layoutChanged : nil
     }
 
+    /// Where a row sits after a page lands above it. The page leaves every row below it as it was,
+    /// so each keeps its distance to the end, whatever the stack still estimates above.
+    public static func keepingDistanceToEnd(_ frame: CGRect, from oldEnd: CGFloat, to newEnd: CGFloat) -> CGRect {
+        frame.offsetBy(dx: 0, dy: newEnd - oldEnd)
+    }
+
     public static func distanceToEnd(in layout: Layout) -> CGFloat {
         return max(0, layout.documentEnd - layout.origin - layout.viewport.height + layout.viewport.bottomInset)
     }
@@ -267,10 +269,7 @@ public struct TranscriptPlacement: Equatable, Sendable {
             guard let identity = survivor(id: anchor.row, order: anchor.order, layout: layout) else {
                 return place(.following, layout: layout)
             }
-            // A settling row is brought on screen by identity, and its first frame there places the offset.
-            guard let row = layout.measurements[identity.id],
-                  identity.id != layout.settling
-                    || (row.bottom > layout.origin && row.top < layout.origin + viewport.height) else {
+            guard let row = layout.measurements[identity.id] else {
                 return TranscriptPlacement(intent: intent, origin: nil, needsMeasurement: identity.id)
             }
             proposed = row.top - viewport.topInset - anchor.offset
