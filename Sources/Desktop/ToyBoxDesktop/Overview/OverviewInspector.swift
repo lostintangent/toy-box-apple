@@ -442,6 +442,8 @@ struct OverviewPreviewRow: View {
         preview.kind == "screen" ? preview.screenId : nil
     }
 
+    private var opens: Bool { screenID != nil || target != nil }
+
     var body: some View {
         OverviewPropertyRow(symbol: "play.rectangle") {
             HStack(spacing: 0) {
@@ -449,7 +451,8 @@ struct OverviewPreviewRow: View {
                     Text(title).lineLimit(1).truncationMode(.middle)
                 }
                 .buttonStyle(.link)
-                .disabled(screenID == nil && target == nil)
+                .pointerStyle(opens ? .link : nil)
+                .disabled(!opens)
                 .help(preview.kind == "url"
                       ? (target?.absoluteString ?? preview.url ?? "Preview")
                       : "Opens this window preview")

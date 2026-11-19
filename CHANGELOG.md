@@ -1,5 +1,11 @@
 # Changelog
 
+## Mac 0.1.50
+
+### Bugs/Polish
+
+- The preview link in a channel's Overview now shows the pointing hand when you hover it, so you can tell it opens, like links in messages.
+
 ## iPhone 0.1.45
 
 ### Bugs/Polish
