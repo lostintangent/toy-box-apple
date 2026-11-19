@@ -1727,11 +1727,8 @@ agent's working directory unless absolute. When it names one of the channel's sh
 it's a link that opens that artifact in the artifact viewer, as an artifact title in a system row
 does. A relative path resolves against the channel's folder, and a path inside an agent's
 `.toy-box/sessions/<id>/artifacts/` folder names that session's artifact. In a channel with no
-folder, an agent writes relative paths against its own artifacts folder, so a relative path names
-the sender's own shared artifact at that path, since an agent's session ID is its agent ID and the
-lead's is the channel's ID. Otherwise it names the newest shared artifact at that path in any
-agent's artifacts folder, which covers the lead linking a member's file and links the user
-writes. Any other `file:` link shows its label as plain text, since the apps can only open shared
+folder, a relative path names the newest shared artifact at that path in any agent's artifacts
+folder. Any other `file:` link shows its label as plain text, since the apps can only open shared
 files. One ToyBoxKit rule resolves a reference against the channel's artifacts for both apps, the
 web pane follows the same rule, and the link follows the artifacts as they're shared and removed.
 Render headings, emphasis, lists, blockquotes, fenced code, inline code and tables, with
