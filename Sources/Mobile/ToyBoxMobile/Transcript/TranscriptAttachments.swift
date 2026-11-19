@@ -60,6 +60,50 @@ struct TranscriptAttachments: View {
     }
 }
 
+/// A request's attachments where its question is previewed, as 48-point squares. The Needs You card
+/// has no channel screen to show the gallery over, so an image opens it full screen from here.
+struct TranscriptRequestAttachments: View {
+    let message: ChannelMessage
+    let agents: [ChannelAgent]
+    let api: ChannelAPI
+    /// Off in a context menu's preview, where a tap reveals the request instead.
+    var isInteractive = true
+    @ViewState private var gallery = TranscriptGallery()
+
+    var body: some View {
+        let attachments = message.attachments ?? []
+        let images = TranscriptGallery.images(in: attachments)
+        if !attachments.isEmpty {
+            TranscriptAttachmentStrip(count: attachments.count, alignment: .leading, presented: nil) { offset in
+                let attachment = attachments[offset]
+                let position = attachments[..<offset].count(where: TranscriptGallery.isGalleryImage)
+                TranscriptAttachmentSquare(
+                    attachment: attachment, api: api,
+                    openImage: TranscriptGallery.isGalleryImage(attachment) ? {
+                        gallery.open(images: images, at: position,
+                                     source: TranscriptImageSource(message: message, agents: agents), api: api)
+                    } : nil
+                ) {
+                    if let address = attachment.url, let url = api.resourceURL(address) {
+                        if attachment.playsInSystemPlayer {
+                            TranscriptPlayer(url: url).ignoresSafeArea()
+                        } else {
+                            TranscriptWebPlayer(url: url, name: attachment.displayName)
+                        }
+                    }
+                }
+            }
+            // A new request in the same preview starts its tiles over, rather than keep the last one's.
+            .id(message.id)
+            .allowsHitTesting(isInteractive)
+            .fullScreenCover(isPresented: Binding(get: { gallery.session != nil },
+                                                  set: { if !$0 { gallery.close() } })) {
+                NavigationStack { TranscriptGalleryView(gallery: gallery, backTitle: "Back to Request") }
+            }
+        }
+    }
+}
+
 /// An image that reserves its box from the header before it decodes, so arriving pixels never
 /// resize it.
 struct TranscriptImage: View {

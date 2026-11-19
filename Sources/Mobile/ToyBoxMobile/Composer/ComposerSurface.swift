@@ -245,7 +245,7 @@ struct ComposerSurface: View {
             AudiencePill(text: draft.text, agents: store.roster,
                                  acknowledgesRequest: store.requestSequence != nil)
             if let request = store.request {
-                ComposerRequestButton(request: request, allowsPresentation: canPresentRequestPreview,
+                ComposerRequestButton(request: request, store: store, allowsPresentation: canPresentRequestPreview,
                                       wrapsLabel: dynamicTypeSize.isAccessibilitySize,
                                       willPresent: preparePresentation, didDismiss: restoreFocus)
                     .id(request.sequence)

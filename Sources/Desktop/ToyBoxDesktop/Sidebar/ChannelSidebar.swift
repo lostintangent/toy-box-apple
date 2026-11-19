@@ -277,7 +277,7 @@ struct ChannelSidebar: View {
                 answeringIsPinned = false
                 cards.leave()
             }
-        }), isPinned: $answeringIsPinned)
+        }), isPinned: $answeringIsPinned, select: { selection = target })
     }
 
     private func folderAvailability(_ channel: Channel, api: ChannelAPI) -> ChannelFolderAvailability? {

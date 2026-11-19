@@ -16,6 +16,8 @@ struct SidebarAnswers {
     @Binding var isOpen: Bool
     /// Set once the person clicks into the open popover, so leaving it no longer closes it.
     @Binding var isPinned: Bool
+    /// Selects the row's channel in this window, so an image opens over its conversation.
+    let select: () -> Void
 }
 
 /// The request alone, since the row beside it shows the channel: the whole question in the
@@ -55,6 +57,8 @@ struct SidebarRequestPopover: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { questionHeight = $0 }
             }
             .modifier(NeedsYouQuestion(words: questionHeight, lineHeight: lineHeight))
+            entry.request.map { TranscriptRequestAttachments(message: $0.message, agents: $0.agents, api: catalog.api,
+                                                                       channel: .init(target: entry.id.target, select: answers.select)) }
             footer
         }
         .padding(Self.inset)

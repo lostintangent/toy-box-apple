@@ -145,6 +145,7 @@ struct RootView: View {
         .environment(interaction)
         .environment(imageViewer)
         .environment(\.isKeyWindow, isKeyWindow)
+        .presentedAttachments(interaction)
         .managementFlows(management)
         .focusedSceneValue(\.channelCommands, commandActions)
         .background(WindowObserver(onAttach: { window in
@@ -208,7 +209,8 @@ struct RootView: View {
         .onChange(of: screenEntity, initial: true) { reportScreen() }
         .onChange(of: selection) { _, selection in
             if selection != nil { handoff.cancel() }
-            imageViewer.close(animated: false)
+            // Only a viewer that opened this channel itself stays, over its own conversation.
+            if selection == nil || imageViewer.session?.channel != selection { imageViewer.close(animated: false) }
             artifactOpener.close(animated: false)
             isOverviewSheetPresented = false
             model.updateWindow(windowID, channel: selection, isKey: isKeyWindow)

@@ -49,6 +49,83 @@ struct TranscriptAttachments: View {
     }
 }
 
+/// A request's attachments where its question is previewed, as 48-point squares, in a popover that
+/// closes once something covers it. So each closes the popover and opens from the window: an image
+/// in the viewer on the request's images, and a video or a file through `presentedAttachments`.
+struct TranscriptRequestAttachments: View {
+    let message: ChannelMessage
+    let agents: [ChannelAgent]
+    let api: ChannelAPI
+    /// Set where the preview sits outside its channel's conversation, so an image selects that
+    /// channel in this window first and the viewer shows over it.
+    var channel: ChannelSelection?
+    @Environment(ImageViewer.self) private var viewer: ImageViewer?
+    @Environment(ChannelInteraction.self) private var interaction: ChannelInteraction?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let attachments = message.attachments ?? []
+        // A file opens once it downloads, which may outlast the popover.
+        let interaction = interaction
+        let dismiss = dismiss
+        let positions = attachments.indices.filter { attachments[$0].isImage }
+        if !attachments.isEmpty {
+            TranscriptAttachmentStrip(count: attachments.count, alignment: .leading, presented: nil) { index in
+                let attachment = attachments[index]
+                TranscriptAttachmentSquare(
+                    attachment: attachment, api: api,
+                    openImage: positions.firstIndex(of: index).map { imageIndex in
+                        { open(positions.map { attachments[$0] }, at: imageIndex) }
+                    },
+                    fallback: TranscriptThumbnails.svg,
+                    present: { attachment, url in
+                        interaction?.presentedAttachment = .init(attachment: attachment, url: url)
+                        dismiss()
+                    }
+                ) {
+                    EmptyView()
+                }
+            }
+            // A new request in the same preview starts its tiles over, rather than keep the last one's.
+            .id(message.id)
+        }
+    }
+
+    private func open(_ images: [ChannelAttachment], at index: Int) {
+        let source = TranscriptImageSource(message: message, agents: agents)
+        channel?.select()
+        viewer?.open(images: images, at: index, source: source, api: api, channel: channel?.target)
+        dismiss()
+    }
+
+    struct ChannelSelection {
+        let target: ChannelTarget
+        let select: () -> Void
+    }
+}
+
+extension View {
+    /// Presents the window's `ChannelInteraction.presentedAttachment`, a video in its player sheet
+    /// or a file in Quick Look, so it opens even from a window with no channel selected.
+    func presentedAttachments(_ interaction: ChannelInteraction) -> some View {
+        modifier(PresentedAttachments(interaction: interaction))
+    }
+}
+
+private struct PresentedAttachments: ViewModifier {
+    let interaction: ChannelInteraction
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(item: Binding(get: { interaction.presentedAttachment.flatMap { $0.attachment.isVideo ? $0 : nil } },
+                                 set: { interaction.presentedAttachment = $0 })) {
+                TranscriptVideoSheet(attachment: $0.attachment, url: $0.url)
+            }
+            .quickLookPreview(Binding(get: { interaction.presentedAttachment.flatMap { $0.attachment.isVideo ? nil : $0.url } },
+                                      set: { if $0 == nil { interaction.presentedAttachment = nil } }))
+    }
+}
+
 /// How an image tile opens the viewer: its position among its message's images.
 struct TranscriptAttachmentViewing {
     let source: TranscriptImageSource

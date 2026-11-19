@@ -51,15 +51,19 @@ public struct TranscriptVideo<Player: View>: View {
         #else
         .sheet(isPresented: $isPlaying, content: player)
         #endif
-        .task(id: url) {
-            guard attachment.playsInSystemPlayer, ChannelThumbnails.remembered(for: attachment, api: api) == nil
-            else { return }
-            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 480, height: 320)
-            guard let image = try? await generator.image(at: .zero).image else { return }
-            poster = ChannelThumbnails.remember(image, for: attachment, api: api)
-        }
+        .task(id: url) { poster = await Self.loadPoster(for: attachment, url: url, api: api) }
+    }
+
+    /// The video's first frame, remembered for every tile that shows it. Nil once one is remembered,
+    /// or for a video the system's player can't decode.
+    static func loadPoster(for attachment: ChannelAttachment, url: URL, api: ChannelAPI) async -> CGImage? {
+        guard attachment.playsInSystemPlayer, ChannelThumbnails.remembered(for: attachment, api: api) == nil
+        else { return nil }
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 480, height: 320)
+        guard let image = try? await generator.image(at: .zero).image else { return nil }
+        return ChannelThumbnails.remember(image, for: attachment, api: api)
     }
 }
 

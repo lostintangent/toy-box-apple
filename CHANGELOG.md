@@ -1,5 +1,17 @@
 # Changelog
 
+## Mac 0.1.51
+
+### Features
+
+- When an agent's request includes screenshots or files, you can now see them right in the request and open them with a click, so you know what it's asking about before you answer.
+
+## iPhone 0.1.46
+
+### Features
+
+- When an agent's request includes screenshots or files, you can now see them right on its card and open them with a tap, so you know what it's asking about before you answer.
+
 ## Mac 0.1.50
 
 ### Features
