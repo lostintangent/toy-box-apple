@@ -62,9 +62,13 @@ function demoAvatar(channelID: string): Avatar | undefined {
   return chosen;
 }
 
-// The fixture stays the contract snapshot, so the demo adds the replies its library request would
-// carry, any avatar, and bookmarks the lead's handoff to two agents, which only a bookmark keeps in
-// the Yours view, and the request.
+// The library request's two floor plans, which the demo serves as the server serves an attachment.
+const requestImages = new Map(['library-entrance.png', 'library-desks.png'].map(name =>
+  [name, fs.readFileSync(path.join(import.meta.dir, '..', 'fixtures', name))]));
+
+// The fixture stays the contract snapshot, so the demo adds the replies and floor plans its library
+// request would carry, any avatar, and bookmarks the lead's handoff to two agents, which only a
+// bookmark keeps in the Yours view, and the request.
 export function loadDemoFixture(): FixtureSnapshot {
   const snapshot: FixtureSnapshot = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
   const replies = demoReplies();
@@ -72,6 +76,10 @@ export function loadDemoFixture(): FixtureSnapshot {
     if (message?.id !== 'fixture-request') continue;
     if (replies) message.replies = replies;
     else delete message.replies;
+    message.attachments = [...requestImages.keys()].map(name => ({
+      name, mimeType: 'image/png',
+      url: `/api/serve/machine/demo/.toy-box/channels/${snapshot.channel.id}/attachments/${message.id}/${name}`,
+    }));
   }
   snapshot.bookmarks = demoBookmarks([9, 15]);
   const avatar = demoAvatar(snapshot.channel.id);
@@ -114,13 +122,14 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), 
     type: 'text/markdown; charset=utf-8',
     content: `# ${artifact.title}\n\nThis public Channel artifact is part of the canonical client fixture.\n\nThe workshop keeps the public conversation, shared work, and team presence visible together.\n`,
   }]));
-  const previewImage = snapshot.messages.flatMap((message: Snapshot) => message.attachments ?? [])
-    .find((attachment: Snapshot) => typeof attachment === 'object' && attachment.mimeType === 'image/png');
-  for (const message of snapshot.messages) {
-    for (const {url} of message.attachments ?? []) {
-      if (url?.startsWith('/api/serve/') && previewImage) resources.set(url, {
-        type: 'image/png', content: Buffer.from(previewImage.base64, 'base64'),
-      });
+  const messages = [...olderMessages, ...snapshot.messages];
+  const previewImage = messages.flatMap((message: Snapshot) => message.attachments ?? [])
+    .find((attachment: Snapshot) => typeof attachment === 'object' && attachment.base64);
+  for (const message of messages) {
+    for (const {name, url} of message.attachments ?? []) {
+      if (!url?.startsWith('/api/serve/')) continue;
+      const image = requestImages.get(name) ?? (previewImage && Buffer.from(previewImage.base64, 'base64'));
+      if (image) resources.set(url, { type: 'image/png', content: image });
     }
   }
   const serveAvatar = (avatar: Avatar | undefined) => {
