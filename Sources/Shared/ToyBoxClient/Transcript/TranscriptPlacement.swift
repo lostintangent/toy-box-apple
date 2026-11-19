@@ -1,4 +1,5 @@
 import Foundation
+import ToyBoxKit
 
 /// Vertical document coordinates. Rows are supplied in conversation order, with increasing tops.
 /// The container applies placements during layout and never reports those writes as reader input.
@@ -306,5 +307,33 @@ public struct TranscriptPlacement: Equatable, Sendable {
 
     private static func anchorableIdentity(_ id: RowID, layout: Layout) -> RowIdentity? {
         layout.identities[id].flatMap { $0.isAnchorable ? $0 : nil }
+    }
+}
+
+extension TranscriptPlacement {
+    /// A finger on the phone's transcript. UIScrollView's pan sets the offset from where the drag
+    /// began on its next touch, which undoes a page landing made under the finger and shows the
+    /// page's top. So a page that arrives while a finger is down waits until it lifts, then lands
+    /// like any other.
+    public struct Touch: Equatable, Sendable {
+        /// The oldest message shown when the finger went down.
+        public let oldest: Int?
+
+        public init(showing messages: [ChannelMessage]) {
+            oldest = messages.first?.sequence
+        }
+
+        /// How many of the oldest messages arrived under the finger and wait for it to lift. An
+        /// arrival at the end shows as it comes.
+        public func held(in messages: [ChannelMessage]) -> Int {
+            guard let oldest else { return 0 }
+            return messages.firstIndex { $0.sequence >= oldest } ?? 0
+        }
+
+        /// The messages to show while the finger is down.
+        public func shown(_ messages: [ChannelMessage]) -> [ChannelMessage] {
+            let held = held(in: messages)
+            return held == 0 ? messages : Array(messages.dropFirst(held))
+        }
     }
 }
