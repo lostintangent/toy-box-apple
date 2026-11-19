@@ -1721,8 +1721,17 @@ accent-tinted bubble, the pending orange wash or the Not sent red wash. Under In
 with these targets.
 Everyone and Lead follow the same rule with the accent and the lead's color. Weight carries the
 cue for color-blind readers. Unknown mentions remain literal, not a false agent chip.
-Links have normal native link affordances. Render headings, emphasis, lists, blockquotes, fenced
-code, inline code and tables, with selectable text. Code blocks offer Copy Code, and tables may
+Links have normal native link affordances. A `file:` link is Toy Box's file reference,
+`[Name](file:PATH)`, which every agent is taught to write, with a URL-escaped path relative to the
+agent's working directory unless absolute. When it names one of the channel's shared artifacts,
+it's a link that opens that artifact in the artifact viewer, as an artifact title in a system row
+does. A relative path resolves against the channel's folder, and a path inside an agent's
+`.toy-box/sessions/<id>/artifacts/` folder names that session's artifact. In a channel with no
+folder, a relative path names the newest shared artifact at that path in an agent's artifacts
+folder. Any other `file:` link shows its label as plain text, since the apps can only open shared
+files. One ToyBoxKit rule resolves a reference against the channel's artifacts for both apps, and
+the link follows the artifacts as they're shared and removed. Render headings, emphasis, lists,
+blockquotes, fenced code, inline code and tables, with selectable text. Code blocks offer Copy Code, and tables may
 scroll horizontally. Never execute HTML, scripts or embedded remote content from Markdown.
 
 Only coordination entries marked collapsible truncate, at 160 points of body text, with a subtle
