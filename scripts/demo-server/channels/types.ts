@@ -9,7 +9,7 @@ export type Agent = {
 export type Message = {
     id: string; sequence: number; timestamp: string;
     sender: { type: string; agentId?: string }; content: string; request?: boolean; replies?: string[];
-    attachments?: { name: string; url: string }[];
+    attachments?: { name: string; url: string; mimeType?: string }[];
 };
 export type Snapshot = Omit<typeof fixture, "lead" | "members" | "messages" | "request" | "channel" | "presence"
     | "bookmarks"> & {

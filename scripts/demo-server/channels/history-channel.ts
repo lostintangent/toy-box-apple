@@ -28,6 +28,7 @@ export function createHistoryFixture(source: Snapshot, { now, origin }: { now: n
         ...snapshot.request, id: "history-request", sequence: historyMessageCount,
         timestamp: new Date(now).toISOString(),
         content: "Please confirm the history review. Reading or paging must not answer this request.",
+        attachments: undefined,
         replies: ["Confirm the history review", "Not yet", "Confirm the review, but keep read receipts open until paging finishes"],
     };
     history[historyMessageCount - 1] = request;
