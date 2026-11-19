@@ -437,6 +437,7 @@ private struct ChannelComposer: View {
                                        baseURL: store.api.baseURL)
                 }
                     .frame(maxHeight: 180)
+                TranscriptRequestAttachments(message: request, agents: store.roster, api: store.api)
                 if let error = store.historyError {
                     Label {
                         Text(error).foregroundStyle(.primary)

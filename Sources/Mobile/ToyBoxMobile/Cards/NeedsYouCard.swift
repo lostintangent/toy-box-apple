@@ -59,6 +59,10 @@ struct NeedsYouCard: View {
                 .accessibilityIdentifier("needs-you-question")
                 // The bubble's gap between its body and the actions.
                 .padding(.bottom, 10)
+                if let request = entry.request, let api = catalog?.api {
+                    TranscriptRequestAttachments(message: request.message, agents: request.agents, api: api)
+                        .padding(.bottom, 10)
+                }
                 footer
             }
         }

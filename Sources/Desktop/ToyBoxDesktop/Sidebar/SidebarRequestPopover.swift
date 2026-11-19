@@ -55,6 +55,7 @@ struct SidebarRequestPopover: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { questionHeight = $0 }
             }
             .modifier(NeedsYouQuestion(words: questionHeight, lineHeight: lineHeight))
+            entry.request.map { TranscriptRequestAttachments(message: $0.message, agents: $0.agents, api: catalog.api) }
             footer
         }
         .padding(Self.inset)

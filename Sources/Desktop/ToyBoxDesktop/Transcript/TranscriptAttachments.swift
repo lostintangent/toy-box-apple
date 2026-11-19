@@ -49,6 +49,43 @@ struct TranscriptAttachments: View {
     }
 }
 
+/// A request's attachments where its question is previewed, as 48-point squares. An image opens
+/// the window's viewer on the request's images and closes the popover the preview sits in, since
+/// the viewer covers the conversation beneath it.
+struct TranscriptRequestAttachments: View {
+    let message: ChannelMessage
+    let agents: [ChannelAgent]
+    let api: ChannelAPI
+    @Environment(ImageViewer.self) private var viewer: ImageViewer?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let attachments = message.attachments ?? []
+        let positions = attachments.indices.filter { attachments[$0].isImage }
+        if !attachments.isEmpty {
+            TranscriptAttachmentStrip(count: attachments.count, alignment: .leading, presented: nil) { index in
+                let attachment = attachments[index]
+                TranscriptAttachmentSquare(
+                    attachment: attachment, api: api,
+                    openImage: positions.firstIndex(of: index).map { imageIndex in
+                        { open(positions.map { attachments[$0] }, at: imageIndex) }
+                    },
+                    fallback: TranscriptThumbnails.svg
+                ) {
+                    if let address = attachment.url, let url = api.resourceURL(address) {
+                        TranscriptVideoSheet(attachment: attachment, url: url)
+                    }
+                }
+            }
+        }
+    }
+
+    private func open(_ images: [ChannelAttachment], at index: Int) {
+        viewer?.open(images: images, at: index, source: TranscriptImageSource(message: message, agents: agents), api: api)
+        dismiss()
+    }
+}
+
 /// How an image tile opens the viewer: its position among its message's images.
 struct TranscriptAttachmentViewing {
     let source: TranscriptImageSource

@@ -62,6 +62,8 @@ struct ComposerRequestPreviewState {
 
 struct ComposerRequestButton: View {
     let request: ChannelMessage
+    /// The request's channel, whose roster and server its attachments show with.
+    let store: ChannelStore
     let allowsPresentation: Bool
     var wrapsLabel = false
     var willPresent: () -> Void
@@ -128,6 +130,7 @@ struct ComposerRequestButton: View {
                 Text(question).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
             }
             .frame(maxHeight: 280)
+            TranscriptRequestAttachments(message: request, agents: store.roster, api: store.api, isInteractive: interactive)
             if let outcome {
                 switch outcome {
                 case .loading: ProgressView("Revealing request\u{2026}").font(.footnote)
