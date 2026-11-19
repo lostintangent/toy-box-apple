@@ -28,6 +28,9 @@ final class ImageViewer {
         let images: [ChannelAttachment]
         let names: [String]
         let api: ChannelAPI
+        /// The channel the images belong to, set when the viewer opens that channel itself, so the
+        /// switch to it keeps the viewer. Any other switch closes it.
+        let channel: ChannelTarget?
         /// The strip's thumbnail frames, which the canvas zooms out of and back into.
         let thumbnails: ImageViewerThumbnailFrames?
         let openedFrom: CGRect?
@@ -130,13 +133,13 @@ final class ImageViewer {
     // MARK: Opening, paging and closing
 
     func open(images: [ChannelAttachment], at index: Int, source: TranscriptImageSource, api: ChannelAPI,
-              thumbnails: ImageViewerThumbnailFrames? = nil) {
+              thumbnails: ImageViewerThumbnailFrames? = nil, channel: ChannelTarget? = nil) {
         guard images.indices.contains(index) else { return }
         cancelLoads()
         cancelAnalysis()
         let names = images.indices.map { images[$0].imageName(index: $0, count: images.count) }
-        session = Session(source: source, images: images, names: names, api: api, thumbnails: thumbnails,
-                          openedFrom: thumbnails?.frames[index])
+        session = Session(source: source, images: images, names: names, api: api, channel: channel,
+                          thumbnails: thumbnails, openedFrom: thumbnails?.frames[index])
         self.index = index
         isClosing = false
         hasSettledOpening = false

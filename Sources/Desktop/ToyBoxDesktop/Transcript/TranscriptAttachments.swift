@@ -56,7 +56,11 @@ struct TranscriptRequestAttachments: View {
     let message: ChannelMessage
     let agents: [ChannelAgent]
     let api: ChannelAPI
+    /// Set where the preview sits outside its channel's conversation, so an image opens that
+    /// channel first and the viewer shows over it.
+    var channel: ChannelTarget?
     @Environment(ImageViewer.self) private var viewer: ImageViewer?
+    @Environment(AppModel.self) private var model: AppModel?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -81,7 +85,12 @@ struct TranscriptRequestAttachments: View {
     }
 
     private func open(_ images: [ChannelAttachment], at index: Int) {
-        viewer?.open(images: images, at: index, source: TranscriptImageSource(message: message, agents: agents), api: api)
+        let source = TranscriptImageSource(message: message, agents: agents)
+        if let channel, let model {
+            model.activate(channel, images: .init(images: images, index: index, source: source, api: api))
+        } else {
+            viewer?.open(images: images, at: index, source: source, api: api)
+        }
         dismiss()
     }
 }

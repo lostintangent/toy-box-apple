@@ -208,7 +208,8 @@ struct RootView: View {
         .onChange(of: screenEntity, initial: true) { reportScreen() }
         .onChange(of: selection) { _, selection in
             if selection != nil { handoff.cancel() }
-            imageViewer.close(animated: false)
+            // Only a viewer that opened this channel itself stays, over its own conversation.
+            if selection == nil || imageViewer.session?.channel != selection { imageViewer.close(animated: false) }
             artifactOpener.close(animated: false)
             isOverviewSheetPresented = false
             model.updateWindow(windowID, channel: selection, isKey: isKeyWindow)
@@ -368,6 +369,10 @@ struct RootView: View {
         handoff.cancel()
         selection = request.channel
         if let sequence = request.sequence { interaction.reveal(sequence: sequence) }
+        if let images = request.images {
+            imageViewer.open(images: images.images, at: images.index, source: images.source, api: images.api,
+                             channel: request.channel)
+        }
         model.navigationRequest = nil
     }
 
