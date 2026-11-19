@@ -3,34 +3,26 @@ import Testing
 @testable import ToyBoxKit
 
 struct FileReferenceTests {
-    @Test func anEscapedRelativeLinkNamesTheSendersOwnArtifact() throws {
+    @Test func anEscapedRelativeLinkWithoutAFolderNamesTheNewestArtifactAtThatPath() throws {
         let markdown = MarkdownBlock.parsedInlineMarkdown("[Itinerary](file:Holiday%20itinerary%202026.html)")
         let url = try #require(markdown.runs.compactMap(\.link).first)
         let reference = try #require(FileReference(url))
         #expect(reference.path == "Holiday itinerary 2026.html")
-        let itinerary = session("studio", "Holiday itinerary 2026.html")
-        #expect(reference.artifact(in: [itinerary], folder: nil, sender: .agent("studio")) == itinerary)
-    }
-
-    @Test func aRelativeLinkWithoutAFolderPrefersTheSendersArtifactOverTheNewest() {
-        let ada = session("ada", "plan.md", shared: "2026-11-18T10:00:00Z")
-        let pixel = session("pixel", "plan.md", shared: "2026-11-18T12:00:00Z")
-        let older = session("moss", "plan.md", shared: "2026-11-18T08:00:00Z")
-        let artifacts = [older, ada, pixel]
-        let plan = FileReference(path: "./plan.md")
-        #expect(plan.artifact(in: artifacts, folder: nil, sender: .agent("ada")) == ada)
-        #expect(plan.artifact(in: artifacts, folder: nil, sender: .agent("lead")) == pixel)
-        #expect(plan.artifact(in: artifacts, folder: nil, sender: .user) == pixel)
-        #expect(FileReference(path: "../plan.md").artifact(in: artifacts, folder: nil, sender: .agent("ada")) == ada)
-        #expect(FileReference(path: "notes.md").artifact(in: artifacts, folder: nil, sender: .agent("ada")) == nil)
+        let older = session("studio", "Holiday itinerary 2026.html", shared: "2026-11-18T10:00:00Z")
+        let newest = session("pixel", "Holiday itinerary 2026.html", shared: "2026-11-18T12:00:00Z")
+        let artifacts = [older, newest, session("moss", "plan.md", shared: "2026-11-18T14:00:00Z")]
+        #expect(reference.artifact(in: artifacts, folder: nil) == newest)
+        #expect(FileReference(path: "../drafts/../Holiday itinerary 2026.html")
+            .artifact(in: artifacts, folder: nil) == newest)
+        #expect(FileReference(path: "notes.md").artifact(in: artifacts, folder: nil) == nil)
     }
 
     @Test func aRelativeLinkJoinsTheChannelsFolder() {
         let notes = machine("/work/app/docs/notes.md")
         let artifacts = [notes, session("ada", "docs/notes.md")]
         #expect(FileReference(path: "docs/./drafts/../notes.md")
-            .artifact(in: artifacts, folder: "/work/app/", sender: .agent("ada")) == notes)
-        #expect(FileReference(path: "notes.md").artifact(in: artifacts, folder: "/work/app", sender: .agent("ada")) == nil)
+            .artifact(in: artifacts, folder: "/work/app/") == notes)
+        #expect(FileReference(path: "notes.md").artifact(in: artifacts, folder: "/work/app") == nil)
     }
 
     @Test func anAbsoluteLinkNamesASessionArtifactInsideItsArtifactsFolderAndOtherwiseAMachineFile() throws {
@@ -39,13 +31,13 @@ struct FileReferenceTests {
         let artifacts = [sketch, notes]
         let url = try #require(URL(string: "file:/Users/x/.toy-box/sessions/abc/artifacts/sub/a%20b.md"))
         let inSession = try #require(FileReference(url))
-        #expect(inSession.artifact(in: artifacts, folder: "/work", sender: .user) == sketch)
-        #expect(FileReference(path: "/demo/Interaction notes.md").artifact(in: artifacts, folder: nil, sender: .user) == notes)
+        #expect(inSession.artifact(in: artifacts, folder: "/work") == sketch)
+        #expect(FileReference(path: "/demo/Interaction notes.md").artifact(in: artifacts, folder: nil) == notes)
         #expect(FileReference(path: "/Users/x/.toy-box/sessions/abc/sub/a b.md")
-            .artifact(in: artifacts, folder: nil, sender: .user) == nil)
+            .artifact(in: artifacts, folder: nil) == nil)
         #expect(FileReference(path: "/Users/x/.toy-box/sessions/abc/artifacts/")
-            .artifact(in: artifacts, folder: nil, sender: .agent("abc")) == nil)
-        #expect(FileReference(path: "/demo/Other.md").artifact(in: artifacts, folder: nil, sender: .user) == nil)
+            .artifact(in: artifacts, folder: nil) == nil)
+        #expect(FileReference(path: "/demo/Other.md").artifact(in: artifacts, folder: nil) == nil)
     }
 
     @Test func aFileLinkIsItsDecodedPathAsABrowserReadsIt() throws {

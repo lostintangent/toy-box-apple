@@ -7,8 +7,6 @@ public struct TranscriptMarkdown: View {
     public let content: String
     public var agents: [ChannelAgent]
     public var baseURL: URL?
-    /// Who wrote the message, which a relative `file:` link resolves against.
-    public var sender: ChannelMessageSender?
     /// Each selectable `Text` mounts its own platform text view, which is most of what a long
     /// message costs to scroll into view, so transcript rows turn this on when the pointer first
     /// reaches them.
@@ -24,14 +22,13 @@ public struct TranscriptMarkdown: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.transcriptFileLinks) private var fileLinks
     public init(content: String, agents: [ChannelAgent] = [], baseURL: URL? = nil,
-                sender: ChannelMessageSender? = nil, selectable: Bool = true, findHighlight: TranscriptFindHighlight? = nil,
+                selectable: Bool = true, findHighlight: TranscriptFindHighlight? = nil,
                 bodySize: CGFloat = 14, codeSize: CGFloat = 12, lineSpacing: CGFloat = 3,
                 textScale: CGFloat = 1, preservesLineBreaks: Bool = true,
                 copyCode: @escaping (String) -> Void, mentionInk: @escaping (ChannelAgent?) -> Color) {
         self.content = content
         self.agents = agents
         self.baseURL = baseURL
-        self.sender = sender
         self.selectable = selectable
         self.findHighlight = findHighlight
         self.bodySize = bodySize
@@ -63,7 +60,7 @@ public struct TranscriptMarkdown: View {
         .lineSpacing(lineSpacing * textScale)
         .modifier(TranscriptTextSelection(enabled: selectable))
         .environment(\.openURL, OpenURLAction { url in
-            if let fileLinks, let artifact = fileLinks.artifact(url, sender: sender) {
+            if let fileLinks, let artifact = fileLinks.artifact(url) {
                 fileLinks.open(artifact)
                 return .handled
             }
@@ -222,7 +219,7 @@ extension TranscriptMarkdown {
         guard source.range(of: "file:", options: .caseInsensitive) != nil else { return value }
         var value = value
         for run in value.runs where run.link?.scheme?.lowercased() == "file" {
-            if run.link.flatMap({ fileLinks?.artifact($0, sender: sender) }) == nil {
+            if run.link.flatMap({ fileLinks?.artifact($0) }) == nil {
                 value[run.range].link = nil
             }
         }

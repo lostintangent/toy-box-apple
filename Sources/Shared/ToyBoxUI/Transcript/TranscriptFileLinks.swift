@@ -14,9 +14,9 @@ public struct TranscriptFileLinks: Equatable, Sendable {
         self.open = open
     }
 
-    /// The shared artifact `url` names in a message from `sender`, or nil for any other link.
-    @MainActor func artifact(_ url: URL, sender: ChannelMessageSender?) -> ChannelArtifact? {
-        FileReference(url)?.artifact(in: store.artifacts, folder: store.details?.directory, sender: sender)
+    /// The shared artifact `url` names, or nil for any other link.
+    @MainActor func artifact(_ url: URL) -> ChannelArtifact? {
+        FileReference(url)?.artifact(in: store.artifacts, folder: store.details?.directory)
     }
 
     /// Whoever sets this keeps one way to open artifacts for as long as it shows one channel.
