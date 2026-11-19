@@ -255,9 +255,8 @@ struct ConversationView: View {
     /// Whether the scroll view has reported its geometry, which a reveal needs before it can place a row.
     @ViewState private var hasGeometry = false
     @ViewState private var expanded: Set<String> = []
-    /// The oldest message shown while a finger is down. UIScrollView's pan sets the offset from where
-    /// the drag began on its next touch, so a page that arrives under a finger waits for it to lift.
-    @ViewState private var touchFloor: Int?
+    /// A finger on the transcript, under which a page that arrives waits for it to lift.
+    @ViewState private var touch: TranscriptPlacement.Touch?
     @ViewState private var catchUp: TranscriptCatchUpSession?
     @ViewState private var find: TranscriptFind = {
         let find = TranscriptFind()
@@ -269,8 +268,7 @@ struct ConversationView: View {
 
     private var rows: [TranscriptRow] {
         guard let lead = store.roster.first else { return [] }
-        let held = heldCount
-        return rowBuilder.rows(held == 0 ? store.messages : Array(store.messages.dropFirst(held)),
+        return rowBuilder.rows(touch?.shown(store.messages) ?? store.messages,
                                lead: lead, members: Array(store.roster.dropFirst()),
                                unreadAfter: visit.unreadAfter(in: store),
                                filter: interaction.messageView, bookmarks: store.bookmarks)
@@ -278,11 +276,7 @@ struct ConversationView: View {
 
     private var items: [TranscriptItem] { TranscriptItem.items(rows) }
 
-    /// How many older messages wait for the reader's finger to lift.
-    private var heldCount: Int {
-        guard let touchFloor else { return 0 }
-        return store.messages.firstIndex { $0.sequence >= touchFloor } ?? 0
-    }
+    private var heldCount: Int { touch?.held(in: store.messages) ?? 0 }
 
     var body: some View {
         let items = items
@@ -387,7 +381,7 @@ struct ConversationView: View {
         .onScrollPhaseChange { _, phase in
             // Set at the touch, since rows built under the finger would already show the page.
             let touching = phase == .tracking || phase == .interacting
-            touchFloor = touching ? touchFloor ?? store.messages.first?.sequence : nil
+            touch = touching ? touch ?? .init(showing: store.messages) : nil
             scroll.isReaderScrolling = touching || phase == .decelerating
             scroll.isScrollIdle = phase == .idle
             if touching { scroll.readerTouched() }

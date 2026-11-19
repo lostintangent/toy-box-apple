@@ -1,4 +1,5 @@
 import ToyBoxClient
+import ToyBoxKit
 import Foundation
 import Testing
 
@@ -530,6 +531,23 @@ struct TranscriptPlacementTests {
         #expect(Model.layoutEvent(from: Model.complete(rows, viewport: viewport, origin: 1_536),
                                  to: Model.complete(rows, viewport: wider, origin: 1_536)) == .layoutChanged)
         #expect(Model.reduce(.following, .layoutChanged, rows: rows, viewport: wider, origin: 1_536).origin == 1_566)
+    }
+
+    @Test func aPageThatArrivesUnderAFingerWaitsForItToLiftWhileArrivalsAtTheEndShow() {
+        func messages(_ sequences: ClosedRange<Int>) -> [ChannelMessage] {
+            sequences.map { .init(id: "m\($0)", sequence: $0, timestamp: "2026-11-18T12:00:00Z",
+                                  sender: .user, content: .text("Message \($0)")) }
+        }
+        let shown = messages(101...200)
+        let touch = Model.Touch(showing: shown)
+        #expect(touch.shown(shown) == shown)
+
+        let paged = messages(1...200)
+        #expect(touch.held(in: paged) == 100)
+        #expect(touch.shown(paged) == shown)
+        #expect(touch.shown(messages(1...201)) == messages(101...201))
+        // Lifting the finger ends the touch, and the page lands with everything else.
+        #expect(Model.Touch(showing: []).shown(paged) == paged)
     }
 }
 
