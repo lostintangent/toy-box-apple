@@ -1,3 +1,4 @@
+@testable import ToyBoxClient
 import ToyBoxKit
 import Foundation
 import SwiftUI
@@ -276,6 +277,57 @@ struct TranscriptMarkdownTests {
         }
         try await waitUntil(in: view) { !opened.isEmpty }
         #expect(opened == [url])
+    }
+
+    @MainActor
+    @Test func aClickOnAFileLinkOpensTheArtifactItNamesAndAnUnsharedFileIsPlainText() async throws {
+        @MainActor final class Opened { var artifacts: [ChannelArtifact] = [] }
+        let plan = ChannelArtifact(file: .init(kind: "session", sessionId: "ada", path: "plan.md"), title: "Plan")
+        let store = ChannelStore(id: "links", api: try ChannelAPI(serverURL: "https://links.invalid"))
+        _ = try store.apply(.init(type: "snapshot", state: ChannelState(
+            revision: 1,
+            channel: Channel(id: "links", name: "Links", model: .init(provider: "test", name: "test"),
+                             updatedAt: "2026-11-18T12:00:00Z"),
+            lead: .lead(id: "lead", profile: .init(name: "Lead", role: "Coordinator",
+                                                  avatar: .init(mark: "M4 12H20", color: "#123456"))),
+            artifacts: [plan])))
+        let opened = Opened()
+        var hostOpened: [URL] = []
+        let message = { (content: String) in
+            TranscriptMarkdown(content: content, sender: .agent("ada"), copyCode: { _ in }, mentionInk: { _ in .purple })
+                .frame(width: 480, height: 40, alignment: .topLeading)
+        }
+        let view = NSHostingView(rootView:
+            VStack(spacing: 0) {
+                message("[Old notes](file:notes.md) aren't shared, so this line is plain text.")
+                message("[The plan](file:plan.md) is shared, and the rest of this line is plain text.")
+            }
+            .environment(\.transcriptFileLinks, TranscriptFileLinks(store: store) { opened.artifacts.append($0) })
+            .environment(\.openURL, OpenURLAction { hostOpened.append($0); return .handled }))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 80), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        window.orderFrontRegardless()
+        defer { window.close() }
+        // Window points over each message's first word, the unshared link above the shared one.
+        let unshared = NSPoint(x: 20, y: 71)
+        let link = NSPoint(x: 20, y: 31)
+        try await waitUntil("the shared file's link has its own click target", in: view) {
+            view.hitTest(link) != nil && view.hitTest(link) !== view.hitTest(NSPoint(x: 240, y: 31))
+        }
+        #expect(view.hitTest(unshared) === view.hitTest(NSPoint(x: 240, y: 71)))
+        for point in [unshared, link] {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                window.sendEvent(try #require(NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+            }
+        }
+        try await waitUntil(in: view) { !opened.artifacts.isEmpty }
+        #expect(opened.artifacts == [plan])
+        #expect(hostOpened.isEmpty)
     }
 
     @MainActor

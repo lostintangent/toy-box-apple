@@ -7,6 +7,8 @@ public struct TranscriptMarkdown: View {
     public let content: String
     public var agents: [ChannelAgent]
     public var baseURL: URL?
+    /// Who wrote the message, which a relative `file:` link resolves against.
+    public var sender: ChannelMessageSender?
     /// Each selectable `Text` mounts its own platform text view, which is most of what a long
     /// message costs to scroll into view, so transcript rows turn this on when the pointer first
     /// reaches them.
@@ -20,14 +22,16 @@ public struct TranscriptMarkdown: View {
     private let copyCode: (String) -> Void
     private let mentionInk: (ChannelAgent?) -> Color
     @Environment(\.openURL) private var openURL
+    @Environment(\.transcriptFileLinks) private var fileLinks
     public init(content: String, agents: [ChannelAgent] = [], baseURL: URL? = nil,
-                selectable: Bool = true, findHighlight: TranscriptFindHighlight? = nil,
+                sender: ChannelMessageSender? = nil, selectable: Bool = true, findHighlight: TranscriptFindHighlight? = nil,
                 bodySize: CGFloat = 14, codeSize: CGFloat = 12, lineSpacing: CGFloat = 3,
                 textScale: CGFloat = 1, preservesLineBreaks: Bool = true,
                 copyCode: @escaping (String) -> Void, mentionInk: @escaping (ChannelAgent?) -> Color) {
         self.content = content
         self.agents = agents
         self.baseURL = baseURL
+        self.sender = sender
         self.selectable = selectable
         self.findHighlight = findHighlight
         self.bodySize = bodySize
@@ -59,6 +63,10 @@ public struct TranscriptMarkdown: View {
         .lineSpacing(lineSpacing * textScale)
         .modifier(TranscriptTextSelection(enabled: selectable))
         .environment(\.openURL, OpenURLAction { url in
+            if let fileLinks, let artifact = fileLinks.artifact(url, sender: sender) {
+                fileLinks.open(artifact)
+                return .handled
+            }
             let resolved = url.scheme == nil
                 ? baseURL.flatMap { URL(string: url.relativeString, relativeTo: $0)?.absoluteURL } : url
             guard let resolved, ["http", "https", "mailto"].contains(resolved.scheme?.lowercased() ?? "") else {
@@ -199,11 +207,26 @@ public struct TranscriptMarkdown: View {
 
     private func inline(_ text: String, size: CGFloat? = nil, fragment: TranscriptMarkdownText.Fragment,
                         highlights: TranscriptMarkdownHighlights?) -> some View {
-        let result = transcriptInlineMarkdown(text, agents: agents, textScale: textScale,
-                                              fontSize: size ?? bodySize, codeSize: codeSize,
-                                              mentionInk: mentionInk)
+        let result = linkingFiles(transcriptInlineMarkdown(text, agents: agents, textScale: textScale,
+                                                           fontSize: size ?? bodySize, codeSize: codeSize,
+                                                           mentionInk: mentionInk), source: text)
         return TranscriptLinkedText(value: highlights?.applying(to: result, fragment: fragment) ?? result,
                                     selectable: selectable)
+    }
+}
+
+extension TranscriptMarkdown {
+    /// Keeps a `file:` link only while it names one of the channel's shared artifacts, so any
+    /// other shows its label as plain text.
+    private func linkingFiles(_ value: AttributedString, source: String) -> AttributedString {
+        guard source.range(of: "file:", options: .caseInsensitive) != nil else { return value }
+        var value = value
+        for run in value.runs where run.link?.scheme?.lowercased() == "file" {
+            if run.link.flatMap({ fileLinks?.artifact($0, sender: sender) }) == nil {
+                value[run.range].link = nil
+            }
+        }
+        return value
     }
 }
 

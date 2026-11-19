@@ -418,8 +418,8 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
     }
 
     private var markdown: some View {
-        TranscriptMarkdown(content: entry.body, agents: agents, baseURL: api.baseURL, selectable: selectsText,
-                           findHighlight: findHighlight)
+        TranscriptMarkdown(content: entry.body, agents: agents, baseURL: api.baseURL, sender: entry.message.sender,
+                           selectable: selectsText, findHighlight: findHighlight)
             .environment(\.transcriptSurface, surface)
             .fixedSize(horizontal: false, vertical: true)
     }

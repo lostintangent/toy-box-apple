@@ -2,11 +2,19 @@
 
 ## Mac 0.1.50
 
+### Features
+
+- When an agent's message links to a file it shared, clicking the link now opens the file right in the channel, so you can read what they're pointing at without hunting for it.
+
 ### Bugs/Polish
 
 - The preview link in a channel's Overview now shows the pointing hand when you hover it, so you can tell it opens, like links in messages.
 
 ## iPhone 0.1.45
+
+### Features
+
+- When an agent's message links to a file it shared, tapping the link now opens the file right in the channel, so you can read what they're pointing at without hunting for it.
 
 ### Bugs/Polish
 

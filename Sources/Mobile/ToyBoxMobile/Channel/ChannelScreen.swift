@@ -158,6 +158,7 @@ struct ChannelScreen: View {
                     }
             }
         }
+        .environment(\.transcriptFileLinks, TranscriptFileLinks(store: store) { artifacts.open($0) })
     }
 
     @ToolbarContentBuilder
