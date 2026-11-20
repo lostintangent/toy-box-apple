@@ -141,7 +141,7 @@ final class TranscriptScroll {
         } else if !holdsPlacementThroughInput, isReaderScrolling || readerMoved(from: lastLayout, to: layout) {
             event = .readerScrolled(to: layout.origin)
         } else if let last = lastLayout {
-            guard let change = Model.layoutEvent(from: last, to: layout) ?? drift(to: layout) else {
+            guard let change = Model.layoutEvent(from: last, to: layout) ?? drift(from: last, to: layout) else {
                 traceRestingPastEnd(layout)
                 return nil
             }
@@ -168,15 +168,18 @@ final class TranscriptScroll {
         return placement
     }
 
-    /// Following and landing at the end never rest anywhere else. A lazy stack that's still
-    /// re-estimating rows, as after a posture change, can drop a placement and keep its own anchor,
-    /// and content that shrinks mid-scroll can leave the scroll past its end. Either way, once the
-    /// scroll is idle away from the end, place it again. A reader's anchor is never re-asserted this way.
-    private func drift(to layout: Model.Layout) -> Model.Event? {
-        guard intent == .following || intent == .landing(.end), isScrollIdle,
-              let origin = Model.placement(for: intent, layout: layout).origin,
+    /// Coming to rest places again only a position the reader didn't choose: a landing at the end
+    /// that rests anywhere else, or any scroll resting past the end, as when the content shrinks
+    /// mid-scroll. A lazy stack that's still re-estimating rows, as after a posture change, can also
+    /// drop a placement at the end and move the scroll without the reader. Following the reader set
+    /// short of the end stays where they stopped, and so does a reader's anchor.
+    private func drift(from last: Model.Layout, to layout: Model.Layout) -> Model.Event? {
+        guard isScrollIdle, let origin = Model.placement(for: intent, layout: layout).origin,
               abs(origin - layout.origin) > Self.settled else { return nil }
-        return .layoutChanged
+        let end = max(-layout.viewport.topInset, layout.documentEnd - layout.viewport.height + layout.viewport.bottomInset)
+        let pastEnd = layout.origin > end + Self.settled
+        let unchosen = intent == .landing(.end) || intent == .following && layout.origin != last.origin
+        return pastEnd || unchosen ? .layoutChanged : nil
     }
 
     /// Where the rest of the reader's input took the scroll after a page moved them mid-scroll.
@@ -431,7 +434,7 @@ struct ConversationView: View {
             scroll.isReaderScrolling = touching || phase == .decelerating
             scroll.isScrollIdle = phase == .idle
             if touching { scroll.readerTouched() }
-            // Coming to rest is when following and landing at the end check where the scroll is.
+            // Coming to rest is when a landing, or a scroll past the end, checks where it is.
             if phase == .idle, let placement = scroll.update() { place(placement) }
         }
         // A bar rather than an overlay, so the end of the conversation settles clear of them, a

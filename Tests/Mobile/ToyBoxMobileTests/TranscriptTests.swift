@@ -149,6 +149,21 @@ struct TranscriptTests {
         #expect(scroll.update()?.origin == 2400)
     }
 
+    @Test func aReaderWhoStopsJustShortOfTheEndStaysThere() {
+        let scroll = measuredScroll(40, origin: 3400)
+        #expect(scroll.update(.land(.end))?.origin == 3400)
+
+        scroll.isReaderScrolling = true
+        scroll.isScrollIdle = false
+        scroll.metrics?.origin = 3370
+        _ = scroll.update()
+
+        scroll.isReaderScrolling = false
+        scroll.isScrollIdle = true
+        #expect(scroll.update() == nil)
+        #expect(scroll.distanceToEnd == 30)
+    }
+
     @Test func aPostureChangeKeepsOnlyTheFramesTheStackMeasuresAgain() {
         let scroll = TranscriptScroll()
         scroll.rows = (0..<10).map { .init(id: "r\($0)", order: $0) }
