@@ -12,9 +12,67 @@ final class ComposerSession {
     let composer: ChannelComposerSession
     let dictation: Dictation
     let editor = ComposerEditor()
+    var mentionHighlight: String?
+    var dismissedMention: AgentMentions.Query?
+    var restoresFocusAfterPresentation = false
+    /// Height of the composer glass. The list used to be an overlay on that view, so this is the
+    /// height it was proposed and still the cap that keeps it from growing up the transcript.
+    var mentionListMaxHeight: CGFloat = 0
+    /// Height of the composer bar, used to sit the list 8 points above the glass now that the
+    /// overlay comes after `.safeAreaBar`.
+    var mentionBarHeight: CGFloat = 0
     private var photoImportCount = 0
     var store: ChannelStore { composer.store }
     var draft: ComposerDraft { composer.draft }
+
+    var mentionQuery: AgentMentions.Query? {
+        guard editor.isFocused, !editor.hasMarkedText, !dictation.isSessionActive else { return nil }
+        return .match(text: draft.text, selection: editor.selection)
+    }
+
+    var mentionChoices: [AgentMentions.Choice] {
+        guard let query = mentionQuery, query != dismissedMention else { return [] }
+        return AgentMentions.Choice.choices(matching: query.text, among: store.roster)
+    }
+
+    func preparePresentation() {
+        restoresFocusAfterPresentation = editor.isFocused
+        dictation.deactivate()
+    }
+
+    func presentCreate(_ name: String, using management: ManagementPresenter) {
+        preparePresentation()
+        if let target = store.target { management.present(.addMember(target, name: name)) }
+    }
+
+    func presentEdit(agentId: String, using management: ManagementPresenter) {
+        preparePresentation()
+        if let target = store.target { management.present(.editMember(target, agentId: agentId)) }
+    }
+
+    func acceptMention(_ choice: AgentMentions.Choice, using management: ManagementPresenter) {
+        guard let query = mentionQuery else { return }
+        if choice.isCreate {
+            guard store.phase.isConnected else { return }
+            dismissedMention = query
+            presentCreate(choice.name, using: management)
+        } else {
+            editor.replace(query.range, with: "\(choice.handle) ")
+        }
+    }
+
+    func handleMentionKey(_ key: ComposerCompletionKey, using management: ManagementPresenter) -> Bool {
+        let choices = mentionChoices
+        guard !choices.isEmpty else { return false }
+        let index = choices.firstIndex { $0.id == mentionHighlight } ?? 0
+        switch key {
+        case .previous: mentionHighlight = choices[max(0, index - 1)].id
+        case .next: mentionHighlight = choices[min(choices.count - 1, index + 1)].id
+        case .accept: acceptMention(choices[index], using: management)
+        case .dismiss: dismissedMention = mentionQuery
+        }
+        return true
+    }
 
     init(store: ChannelStore, draft: ComposerDraft? = nil, dictationSystem: DictationSystem? = nil) {
         composer = ChannelComposerSession(

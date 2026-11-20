@@ -4,6 +4,7 @@
 
 ### Bugs/Polish
 
+- Picking someone from the @ list now works with a tap, a scroll or Return, so mentioning an agent no longer misses or lands on the conversation behind it.
 - Opening a conversation now always shows its latest messages, never a blank screen or a view stopped partway up, even right after typing in another channel.
 
 ## Mac 0.1.51

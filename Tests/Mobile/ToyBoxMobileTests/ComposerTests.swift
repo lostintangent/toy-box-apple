@@ -89,18 +89,23 @@ struct ComposerTests {
         view.insertText("\n")
         #expect(view.text == "A draft\n")
         #expect(sends == 0)
+        view.completionIsVisible = true
+        view.insertText("\n")
+        #expect(view.text == "A draft\n")
+        #expect(accepted == 1)
+        view.completionIsVisible = false
         view.hardwareReturn()
         #expect(sends == 1)
         view.completionIsVisible = true
         view.hardwareReturn()
-        #expect(accepted == 1)
+        #expect(accepted == 2)
         #expect(sends == 1)
         view.sendMessage()
         #expect(sends == 2)
         view.completionIsVisible = false
         view.onCompletionKey = { _ in accepted += 1; return true }
         view.hardwareReturn()
-        #expect(accepted == 2)
+        #expect(accepted == 3)
         #expect(sends == 2)
         let returns = view.keyCommands?.filter {
             $0.action == #selector(ComposerTextView.hardwareReturn)

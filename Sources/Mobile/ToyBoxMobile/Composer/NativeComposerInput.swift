@@ -497,6 +497,11 @@ final class ComposerTextView: UITextView {
 
     override func insertText(_ text: String) {
         coordinator?.commitDictationBeforeEdit()
+        // Drive scripts and the software Return key insert a newline. Hardware Return is a key command.
+        if text == "\n", completionIsVisible, markedTextRange == nil {
+            _ = onCompletionKey?(.accept)
+            return
+        }
         super.insertText(text)
     }
 
