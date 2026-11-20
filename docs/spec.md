@@ -2277,17 +2277,17 @@ its own fill. Idle Dictate draws its `mic` in primary ink, like Attach Image, so
 the row reads at full contrast over bright content. Input Needed stays unfilled with the Mac's
 filled orange question-circle.
 
-At larger phone text sizes, measure the full context without truncation. If audience and
-Input Needed cannot fit together, put the audience on its own row and the full wrapping
-request label on a separate minimum-44 row above Attach, Dictate and Send. Neither context
-row has a fixed height. Keep Input Needed's orange question-circle and text, not an icon-only
-substitute. Attach uses an explicit 17-point symbol within its 44-point target, like Send,
+The audience and Input Needed stay in the action row with Attach, Dictate and Send at every
+text size, never on a row of their own. When their labels don't fit, both drop their text
+together: the audience shows only its avatars, up to three, or its orange warning when no one
+will be notified, and Input Needed only its orange question-circle. Each keeps its full
+accessibility label, and a tap or long press on it does what it did before. Attach uses an explicit 17-point symbol within its 44-point target, like Send,
 rather than inheriting an overflowing body glyph. When the full ordinary hint cannot fit at
 the actual body font, use the short visual hint "Message", preserving the native editor's
 full accessibility label and any real dictation state. Do not shrink or ellipsize the hint.
 Attach, Dictate and Send expose the native large-content viewer for enlarged labeled
 controls on long press at large text sizes.
-At short keyboard heights, let the upper context/accessory region scroll while retaining one
+At short keyboard heights, let the upper accessory region scroll while retaining one
 measured editor line and the Send row. No font caps, fixed composer height or extra glass.
 
 Phone conversation dragging dismisses the keyboard interactively. Tapping genuinely empty
