@@ -1,5 +1,11 @@
 # Changelog
 
+## Mac 0.1.52
+
+### Bugs/Polish
+
+- Switching to a channel with a few new messages that don't fit on screen now opens on the first of them instead of skipping to the end, so you never miss what arrived while you were away.
+
 ## iPhone 0.1.47
 
 ### Bugs/Polish
