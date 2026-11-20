@@ -561,8 +561,10 @@ struct ConversationTranscript: View {
                 break landing
             }
         }
-        // A scroll that moved nothing leaves the initial bottom anchor active. End it before a summary grows.
-        guard !Task.isCancelled, opening.seededRowID == nil, viewport.bottomGap < 1 else { return }
+        // A scroll that moved nothing leaves the initial bottom anchor active. End it before a summary
+        // grows, but only with the row in place, since it would replace a scroll to the row still queued.
+        guard !Task.isCancelled, opening.seededRowID == nil, viewport.bottomGap < 1,
+              TranscriptLanding.isPlaced(row, frames: placedFrames, viewport: viewport) else { return }
         scrollToLatest(using: proxy)
         _ = await layoutTurns.settled()
     }
