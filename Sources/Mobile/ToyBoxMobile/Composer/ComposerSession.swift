@@ -12,9 +12,46 @@ final class ComposerSession {
     let composer: ChannelComposerSession
     let dictation: Dictation
     let editor = ComposerEditor()
+    var mentionHighlight: String?
+    var dismissedMention: AgentMentions.Query?
+    var restoresFocusAfterPresentation = false
     private var photoImportCount = 0
     var store: ChannelStore { composer.store }
     var draft: ComposerDraft { composer.draft }
+
+    var mentionQuery: AgentMentions.Query? {
+        guard editor.isFocused, !editor.hasMarkedText, !dictation.isSessionActive else { return nil }
+        return .match(text: draft.text, selection: editor.selection)
+    }
+
+    var mentionChoices: [AgentMentions.Choice] {
+        guard let query = mentionQuery, query != dismissedMention else { return [] }
+        return AgentMentions.Choice.choices(matching: query.text, among: store.roster)
+    }
+
+    func acceptMention(_ choice: AgentMentions.Choice, presentCreate: (String) -> Void) {
+        guard let query = mentionQuery else { return }
+        if choice.isCreate {
+            guard store.phase.isConnected else { return }
+            dismissedMention = query
+            presentCreate(choice.name)
+        } else {
+            editor.replace(query.range, with: "\(choice.handle) ")
+        }
+    }
+
+    func handleMentionKey(_ key: ComposerCompletionKey, presentCreate: (String) -> Void) -> Bool {
+        let choices = mentionChoices
+        guard !choices.isEmpty else { return false }
+        let index = choices.firstIndex { $0.id == mentionHighlight } ?? 0
+        switch key {
+        case .previous: mentionHighlight = choices[max(0, index - 1)].id
+        case .next: mentionHighlight = choices[min(choices.count - 1, index + 1)].id
+        case .accept: acceptMention(choices[index], presentCreate: presentCreate)
+        case .dismiss: dismissedMention = mentionQuery
+        }
+        return true
+    }
 
     init(store: ChannelStore, draft: ComposerDraft? = nil, dictationSystem: DictationSystem? = nil) {
         composer = ChannelComposerSession(

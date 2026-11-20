@@ -149,6 +149,14 @@ struct ChannelScreen: View {
                     .id(ObjectIdentifier(store))
                     // Like the Mac's, rows pass softly under the floating title and bar buttons.
                     .scrollEdgeEffectStyle(.soft, for: .top)
+                    // The list draws above the composer, over the working capsule. Hosting it here
+                    // means UIKit hit-tests it, which the composer bar's own overlay could not.
+                    // Do not ignore the bottom safe area: that extends the list into the composer.
+                    .overlay(alignment: .bottomLeading) {
+                        if !interaction.isFinding {
+                            ComposerMentionList(session: model.composerSession(for: store))
+                        }
+                    }
                     .safeAreaBar(edge: .bottom, spacing: 0) {
                         if !interaction.isFinding {
                             ComposerSurface(session: model.composerSession(for: store))

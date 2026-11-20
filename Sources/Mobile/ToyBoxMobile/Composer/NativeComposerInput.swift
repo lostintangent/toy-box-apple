@@ -242,6 +242,11 @@ struct NativeComposerInput: UIViewRepresentable {
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange,
                       replacementText text: String) -> Bool {
             commitDictationBeforeEdit()
+            // Hardware Return is a key command. The software keyboard's Return arrives as a newline.
+            if text == "\n", parent.completionIsVisible, textView.markedTextRange == nil {
+                _ = parent.onCompletionKey(.accept)
+                return false
+            }
             return true
         }
     }
@@ -497,6 +502,11 @@ final class ComposerTextView: UITextView {
 
     override func insertText(_ text: String) {
         coordinator?.commitDictationBeforeEdit()
+        // Drive scripts and the software Return key insert a newline. Hardware Return is a key command.
+        if text == "\n", completionIsVisible, markedTextRange == nil {
+            _ = onCompletionKey?(.accept)
+            return
+        }
         super.insertText(text)
     }
 

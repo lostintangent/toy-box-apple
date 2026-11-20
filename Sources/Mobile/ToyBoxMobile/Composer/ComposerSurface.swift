@@ -20,12 +20,7 @@ struct ComposerSurface: View {
     @ViewState private var reattachingImageID: UUID?
     @ViewState private var reattachment: Task<Void, Never>?
     @ViewState private var photoItems: [PhotosPickerItem] = []
-    @ViewState private var restoresFocus = false
     @ViewState private var dragging = false
-    @ViewState private var highlightedChoice: String?
-    @ViewState private var dismissedCompletion: AgentMentions.Query?
-    @ViewState private var completionHeight: CGFloat = 264
-    @ViewState private var completionViewportHeight: CGFloat = 0
 
     private var draft: ComposerDraft { session.draft }
     private var store: ChannelStore { session.store }
@@ -47,14 +42,8 @@ struct ComposerSurface: View {
     private var canPresentRequestPreview: Bool {
         canRestoreReaderFocus && !isReaderCovered
     }
-    private var mentionQuery: AgentMentions.Query? {
-        guard editor.isFocused, !editor.hasMarkedText, !dictation.isSessionActive else { return nil }
-        return .match(text: draft.text, selection: editor.selection)
-    }
-    private var choices: [AgentMentions.Choice] {
-        guard let query = mentionQuery, query != dismissedCompletion else { return [] }
-        return AgentMentions.Choice.choices(matching: query.text, among: store.roster)
-    }
+    private var mentionQuery: AgentMentions.Query? { session.mentionQuery }
+    private var choices: [AgentMentions.Choice] { session.mentionChoices }
     private var hasNotices: Bool {
         draft.error != nil || draft.isOverLimit || session.isLoadingImages
             || store.phase == .deleted
@@ -63,13 +52,6 @@ struct ComposerSurface: View {
 
     var body: some View {
         container
-        .overlay(alignment: .topLeading) {
-            if !choices.isEmpty {
-                completion
-                    .padding(.horizontal, 12)
-                    .offset(y: -completionViewportHeight - 8)
-            }
-        }
         .padding(.horizontal, sizeClass == .compact ? 12 : 16)
         .padding(.bottom, ComposerBottomSpacing.value(
             compact: sizeClass == .compact, keyboardVisible: keyboardIsVisible))
@@ -111,8 +93,8 @@ struct ComposerSurface: View {
             if !covered { restoreFocus() }
         }
         .onChange(of: mentionQuery) { _, _ in
-            dismissedCompletion = nil
-            highlightedChoice = choices.first?.id
+            session.dismissedMention = nil
+            session.mentionHighlight = choices.first?.id
         }
         .onChange(of: interaction.pendingComposerFocusRequest, initial: true) { _, token in
             guard let token else { return }
@@ -167,7 +149,7 @@ struct ComposerSurface: View {
                 }
                 NativeComposerInput(
                     text: Bindable(draft).text, editor: editor, completionIsVisible: !choices.isEmpty,
-                    onSend: send, onCompletionKey: handleCompletionKey,
+                    onSend: send, onCompletionKey: { session.handleMentionKey($0, presentCreate: presentMentionCreate) },
                     onPasteImages: { providers in for provider in providers { draft.attachProvider(provider) } },
                     onEscape: dictation.phase == .idle ? nil : {
                         Task { await dictation.stop(.escape) }
@@ -324,6 +306,52 @@ struct ComposerSurface: View {
         }
     }
 
+    private func presentMentionCreate(_ name: String) {
+        preparePresentation()
+        if let target = store.target { management.present(.addMember(target, name: name)) }
+    }
+
+    private func send() {
+        guard scenePhase == .active, session.canSend else { return }
+        Task { await session.send() }
+    }
+
+    private func preparePresentation() {
+        session.restoresFocusAfterPresentation = editor.isFocused
+        dictation.deactivate()
+    }
+    private func restoreFocus() {
+        guard !interaction.isRequestPreviewPresented else { return }
+        if scenePhase == .active { Task { await dictation.refreshLanguageSupport() } }
+        if session.restoresFocusAfterPresentation && canPresentRequestPreview { editor.focus() }
+        session.restoresFocusAfterPresentation = false
+    }
+    private func registerDraft() {
+        interaction.hasDraft = draft.hasContent
+        interaction.copyDraft = { UIPasteboard.general.string = draft.text }
+    }
+}
+
+/// Drawn over ConversationView, whose UIView already covers this rect, so taps hit the list instead of
+/// the working capsule. Offset and padding match the old composer overlay so the list does not move.
+struct ComposerMentionList: View {
+    @Bindable var session: ComposerSession
+    @Environment(ManagementPresenter.self) private var management
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @ViewState private var completionHeight: CGFloat = 264
+
+    private var store: ChannelStore { session.store }
+    private var choices: [AgentMentions.Choice] { session.mentionChoices }
+
+    var body: some View {
+        if !choices.isEmpty {
+            completion
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+                .padding(.horizontal, sizeClass == .compact ? 12 : 16)
+        }
+    }
+
     private var completion: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -342,19 +370,19 @@ struct ComposerSurface: View {
             }
             .scrollBounceBehavior(.basedOnSize)
             .buttonStyle(.plain)
-            .onChange(of: highlightedChoice) { _, id in
+            .accessibilityIdentifier("composer-mention-list")
+            .onChange(of: session.mentionHighlight) { _, id in
                 if let id { proxy.scrollTo(id, anchor: .center) }
             }
         }
         .frame(maxWidth: 320)
         .frame(maxHeight: min(264, completionHeight))
-        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { completionViewportHeight = $0 }
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private func completionRow(_ choice: AgentMentions.Choice) -> some View {
-        Button { accept(choice) } label: {
+        Button { session.acceptMention(choice, presentCreate: presentCreate) } label: {
             HStack(spacing: 10) {
                 if let agent = choice.agent { AgentAvatarView(agent: agent, size: 24) }
                 else {
@@ -373,7 +401,7 @@ struct ComposerSurface: View {
         .accessibilityIdentifier("composer-mention-\(choice.id)")
         .padding(.vertical, 6)
         .padding(.horizontal, 12)
-        .background(highlightedChoice == choice.id ? Color(uiColor: .secondarySystemFill) : .clear)
+        .background(session.mentionHighlight == choice.id ? Color(uiColor: .secondarySystemFill) : .clear)
         .contextMenu {
             if let agent = choice.agent, choice.isMember {
                 Button("Edit Agent") {
@@ -385,49 +413,14 @@ struct ComposerSurface: View {
         }
     }
 
-    private func handleCompletionKey(_ key: ComposerCompletionKey) -> Bool {
-        let choices = choices
-        guard !choices.isEmpty else { return false }
-        let index = choices.firstIndex { $0.id == highlightedChoice } ?? 0
-        switch key {
-        case .previous: highlightedChoice = choices[max(0, index - 1)].id
-        case .next: highlightedChoice = choices[min(choices.count - 1, index + 1)].id
-        case .accept: accept(choices[index])
-        case .dismiss: dismissedCompletion = mentionQuery
-        }
-        return true
-    }
-
-    private func accept(_ choice: AgentMentions.Choice) {
-        guard let query = mentionQuery else { return }
-        if choice.isCreate {
-            guard store.phase.isConnected else { return }
-            dismissedCompletion = query
-            preparePresentation()
-            if let target = store.target { management.present(.addMember(target, name: choice.name)) }
-        } else {
-            editor.replace(query.range, with: "\(choice.handle) ")
-        }
-    }
-
-    private func send() {
-        guard scenePhase == .active, session.canSend else { return }
-        Task { await session.send() }
+    private func presentCreate(_ name: String) {
+        preparePresentation()
+        if let target = store.target { management.present(.addMember(target, name: name)) }
     }
 
     private func preparePresentation() {
-        restoresFocus = editor.isFocused
-        dictation.deactivate()
-    }
-    private func restoreFocus() {
-        guard !interaction.isRequestPreviewPresented else { return }
-        if scenePhase == .active { Task { await dictation.refreshLanguageSupport() } }
-        if restoresFocus && canPresentRequestPreview { editor.focus() }
-        restoresFocus = false
-    }
-    private func registerDraft() {
-        interaction.hasDraft = draft.hasContent
-        interaction.copyDraft = { UIPasteboard.general.string = draft.text }
+        session.restoresFocusAfterPresentation = session.editor.isFocused
+        session.dictation.deactivate()
     }
 }
 
