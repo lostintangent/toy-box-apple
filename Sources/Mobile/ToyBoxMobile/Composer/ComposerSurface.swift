@@ -193,35 +193,36 @@ struct ComposerSurface: View {
 
     private var controls: some View {
         ViewThatFits(in: .horizontal) {
-            actionRow(showsContextLabel: true)
-            actionRow(showsContextLabel: false)
+            actionRow(showsAudienceLabel: true, showsRequestLabel: true)
+            actionRow(showsAudienceLabel: false, showsRequestLabel: true)
+            actionRow(showsAudienceLabel: false, showsRequestLabel: false)
         }
     }
 
-    private func actionRow(showsContextLabel: Bool) -> some View {
+    private func actionRow(showsAudienceLabel: Bool, showsRequestLabel: Bool) -> some View {
         HStack(spacing: 4) {
             attachmentMenu
-            context(showsLabel: showsContextLabel)
+            context(showsAudienceLabel: showsAudienceLabel, showsRequestLabel: showsRequestLabel)
             Spacer(minLength: 0)
             ComposerDictateButton(dictation: dictation)
             sendButton
         }
     }
 
-    private func context(showsLabel: Bool) -> some View {
+    private func context(showsAudienceLabel: Bool, showsRequestLabel: Bool) -> some View {
         HStack(spacing: 4) {
             AudiencePill(
                 text: draft.text,
                 agents: store.roster,
                 acknowledgesRequest: store.requestSequence != nil,
-                showsLabel: showsLabel
+                showsLabel: showsAudienceLabel
             )
             if let request = store.request {
                 ComposerRequestButton(
                     request: request,
                     store: store,
                     allowsPresentation: canPresentRequestPreview,
-                    showsLabel: showsLabel,
+                    showsLabel: showsRequestLabel,
                     willPresent: session.preparePresentation,
                     didDismiss: restoreFocus
                 )
