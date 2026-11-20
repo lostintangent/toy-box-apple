@@ -145,28 +145,22 @@ struct ChannelScreen: View {
             } else {
                 // Scroll position, paging and read state belong to one channel, so a split view's
                 // switch builds a new transcript instead of carrying them over.
-                ConversationView(store: store)
-                    .id(ObjectIdentifier(store))
-                    // Like the Mac's, rows pass softly under the floating title and bar buttons.
-                    .scrollEdgeEffectStyle(
-                        .soft,
-                        for: model.composerSession(for: store).mentionChoices.isEmpty
-                            ? .top : [.top, .bottom]
-                    )
-                    .safeAreaBar(edge: .bottom, spacing: 0) {
-                        if !interaction.isFinding {
-                            ComposerSurface(session: model.composerSession(for: store))
-                                .id(ObjectIdentifier(store))
-                                .findSwapTransition()
+                ZStack(alignment: .bottomLeading) {
+                    ConversationView(store: store)
+                        .id(ObjectIdentifier(store))
+                        // Like the Mac's, rows pass softly under the floating title and bar buttons.
+                        .scrollEdgeEffectStyle(.soft, for: .top)
+                        .safeAreaBar(edge: .bottom, spacing: 0) {
+                            if !interaction.isFinding {
+                                ComposerSurface(session: model.composerSession(for: store))
+                                    .id(ObjectIdentifier(store))
+                                    .findSwapTransition()
+                            }
                         }
+                    if !interaction.isFinding {
+                        ComposerMentionList(session: model.composerSession(for: store))
                     }
-                    // After the bar, so the bar stays on the scroll view and keeps the bottom edge
-                    // effect. The conversation UIView covers this rect, so the list still gets taps.
-                    .overlay(alignment: .bottomLeading) {
-                        if !interaction.isFinding {
-                            ComposerMentionList(session: model.composerSession(for: store))
-                        }
-                    }
+                }
             }
         }
         .environment(\.transcriptFileLinks, TranscriptFileLinks(store: store) { artifacts.open($0) })
