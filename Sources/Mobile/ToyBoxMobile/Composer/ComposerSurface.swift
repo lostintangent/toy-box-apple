@@ -149,7 +149,7 @@ struct ComposerSurface: View {
                 }
                 NativeComposerInput(
                     text: Bindable(draft).text, editor: editor, completionIsVisible: !choices.isEmpty,
-                    onSend: send, onCompletionKey: { session.handleMentionKey($0, presentCreate: presentMentionCreate) },
+                    onSend: send, onCompletionKey: { session.handleMentionKey($0, using: management) },
                     onPasteImages: { providers in for provider in providers { draft.attachProvider(provider) } },
                     onEscape: dictation.phase == .idle ? nil : {
                         Task { await dictation.stop(.escape) }
@@ -180,7 +180,7 @@ struct ComposerSurface: View {
             if hasNotices { notices.padding(.vertical, 8) }
             if !draft.images.isEmpty {
                 ComposerImageStrip(draft: draft) { id in
-                    preparePresentation()
+                    session.preparePresentation()
                     reattachingImageID = id
                     showFiles = true
                 }
@@ -229,7 +229,7 @@ struct ComposerSurface: View {
             if let request = store.request {
                 ComposerRequestButton(request: request, store: store, allowsPresentation: canPresentRequestPreview,
                                       wrapsLabel: dynamicTypeSize.isAccessibilitySize,
-                                      willPresent: preparePresentation, didDismiss: restoreFocus)
+                                      willPresent: session.preparePresentation, didDismiss: restoreFocus)
                     .id(request.sequence)
                     .id(draftID)
             }
@@ -238,9 +238,9 @@ struct ComposerSurface: View {
 
     private var attachmentMenu: some View {
         Menu {
-            Button("Choose Photos", systemImage: "photo.on.rectangle") { preparePresentation(); showPhotos = true }
+            Button("Choose Photos", systemImage: "photo.on.rectangle") { session.preparePresentation(); showPhotos = true }
             Button("Choose Files", systemImage: "folder") {
-                preparePresentation()
+                session.preparePresentation()
                 reattachingImageID = nil
                 showFiles = true
             }
@@ -306,20 +306,11 @@ struct ComposerSurface: View {
         }
     }
 
-    private func presentMentionCreate(_ name: String) {
-        preparePresentation()
-        if let target = store.target { management.present(.addMember(target, name: name)) }
-    }
-
     private func send() {
         guard scenePhase == .active, session.canSend else { return }
         Task { await session.send() }
     }
 
-    private func preparePresentation() {
-        session.restoresFocusAfterPresentation = editor.isFocused
-        dictation.deactivate()
-    }
     private func restoreFocus() {
         guard !interaction.isRequestPreviewPresented else { return }
         if scenePhase == .active { Task { await dictation.refreshLanguageSupport() } }
@@ -382,7 +373,7 @@ struct ComposerMentionList: View {
     }
 
     private func completionRow(_ choice: AgentMentions.Choice) -> some View {
-        Button { session.acceptMention(choice, presentCreate: presentCreate) } label: {
+        Button { session.acceptMention(choice, using: management) } label: {
             HStack(spacing: 10) {
                 if let agent = choice.agent { AgentAvatarView(agent: agent, size: 24) }
                 else {
@@ -405,23 +396,13 @@ struct ComposerMentionList: View {
         .contextMenu {
             if let agent = choice.agent, choice.isMember {
                 Button("Edit Agent") {
-                    preparePresentation()
-                    if let target = store.target { management.present(.editMember(target, agentId: agent.id)) }
+                    session.presentEdit(agentId: agent.id, using: management)
                 }
                 .disabled(!store.phase.isConnected)
             }
         }
     }
 
-    private func presentCreate(_ name: String) {
-        preparePresentation()
-        if let target = store.target { management.present(.addMember(target, name: name)) }
-    }
-
-    private func preparePresentation() {
-        session.restoresFocusAfterPresentation = session.editor.isFocused
-        session.dictation.deactivate()
-    }
 }
 
 struct ComposerPlaceholder: View {

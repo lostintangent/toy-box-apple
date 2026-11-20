@@ -116,36 +116,6 @@ struct ComposerTests {
         #expect(!returns.contains { $0.modifierFlags == .shift || $0.modifierFlags == .alternate })
     }
 
-    @Test func softwareReturnAcceptsAVisibleMentionAndOtherwiseInsertsANewline() {
-        var text = "Hello @"
-        var accepted = 0
-        let editor = ComposerEditor()
-        let input = NativeComposerInput(
-            text: Binding(get: { text }, set: { text = $0 }), editor: editor,
-            completionIsVisible: true,
-            onSend: {},
-            onCompletionKey: { key in
-                if case .accept = key { accepted += 1; return true }
-                return false
-            },
-            onPasteImages: { _ in }
-        )
-        let coordinator = NativeComposerInput.Coordinator(parent: input)
-        let view = ComposerTextView()
-        let end = NSRange(location: (text as NSString).length, length: 0)
-        view.setMarkedText("\u{306B}", selectedRange: NSRange(location: 1, length: 0))
-        #expect(view.markedTextRange != nil)
-        #expect(coordinator.textView(view, shouldChangeTextIn: end, replacementText: "\n") == true)
-        #expect(accepted == 0)
-        view.unmarkText()
-        #expect(coordinator.textView(view, shouldChangeTextIn: end, replacementText: "\n") == false)
-        #expect(accepted == 1)
-
-        coordinator.parent.completionIsVisible = false
-        #expect(coordinator.textView(view, shouldChangeTextIn: end, replacementText: "\n") == true)
-        #expect(accepted == 1)
-    }
-
     @Test func markedTextCannotDispatchOrAcceptAMention() {
         let view = ComposerTextView()
         var sends = 0

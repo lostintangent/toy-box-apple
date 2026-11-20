@@ -242,11 +242,6 @@ struct NativeComposerInput: UIViewRepresentable {
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange,
                       replacementText text: String) -> Bool {
             commitDictationBeforeEdit()
-            // Hardware Return is a key command. The software keyboard's Return arrives as a newline.
-            if text == "\n", parent.completionIsVisible, textView.markedTextRange == nil {
-                _ = parent.onCompletionKey(.accept)
-                return false
-            }
             return true
         }
     }

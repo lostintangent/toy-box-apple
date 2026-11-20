@@ -29,25 +29,40 @@ final class ComposerSession {
         return AgentMentions.Choice.choices(matching: query.text, among: store.roster)
     }
 
-    func acceptMention(_ choice: AgentMentions.Choice, presentCreate: (String) -> Void) {
+    func preparePresentation() {
+        restoresFocusAfterPresentation = editor.isFocused
+        dictation.deactivate()
+    }
+
+    func presentCreate(_ name: String, using management: ManagementPresenter) {
+        preparePresentation()
+        if let target = store.target { management.present(.addMember(target, name: name)) }
+    }
+
+    func presentEdit(agentId: String, using management: ManagementPresenter) {
+        preparePresentation()
+        if let target = store.target { management.present(.editMember(target, agentId: agentId)) }
+    }
+
+    func acceptMention(_ choice: AgentMentions.Choice, using management: ManagementPresenter) {
         guard let query = mentionQuery else { return }
         if choice.isCreate {
             guard store.phase.isConnected else { return }
             dismissedMention = query
-            presentCreate(choice.name)
+            presentCreate(choice.name, using: management)
         } else {
             editor.replace(query.range, with: "\(choice.handle) ")
         }
     }
 
-    func handleMentionKey(_ key: ComposerCompletionKey, presentCreate: (String) -> Void) -> Bool {
+    func handleMentionKey(_ key: ComposerCompletionKey, using management: ManagementPresenter) -> Bool {
         let choices = mentionChoices
         guard !choices.isEmpty else { return false }
         let index = choices.firstIndex { $0.id == mentionHighlight } ?? 0
         switch key {
         case .previous: mentionHighlight = choices[max(0, index - 1)].id
         case .next: mentionHighlight = choices[min(choices.count - 1, index + 1)].id
-        case .accept: acceptMention(choices[index], presentCreate: presentCreate)
+        case .accept: acceptMention(choices[index], using: management)
         case .dismiss: dismissedMention = mentionQuery
         }
         return true
