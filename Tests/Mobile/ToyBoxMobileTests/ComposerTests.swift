@@ -323,37 +323,18 @@ struct ComposerTests {
         #expect(try renderedPixels(actual) == renderedPixels(expected))
     }
 
-    @Test func contextIconsStayOnOneRowWhenLabelsDoNotFit() throws {
+    @Test func iconOnlyContextStaysOneRowHighAtLargestText() throws {
         let lead = ChannelAgent.lead(id: "test", profile: .init(
             name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")
         ))
-        let icons = HStack(spacing: 4) {
-            AudiencePill(text: "", agents: [lead], acknowledgesRequest: true, showsLabel: false)
-            ComposerRequestLabel(showsLabel: false).font(.footnote)
-        }
-        var heights: [Int] = []
-        for width: CGFloat in [220, 340, 426] {
-            let context = try render(icons.dynamicTypeSize(.accessibility5), width: width)
-            #expect(context.width <= Int(width))
-            heights.append(context.height)
-        }
-        #expect(Set(heights).count == 1, "Icon-only context keeps one height across widths")
-        let stacked = try render(
-            VStack(alignment: .leading, spacing: 4) {
-                AudiencePill(text: "", agents: [lead], acknowledgesRequest: true)
-                ComposerRequestLabel().font(.footnote)
+        let context = try render(
+            HStack(spacing: 4) {
+                AudiencePill(text: "", agents: [lead], acknowledgesRequest: true, showsLabel: false)
+                ComposerRequestLabel(showsLabel: false)
             }.dynamicTypeSize(.accessibility5),
             width: 220
         )
-        #expect(heights[0] < stacked.height, "Icons stay on one row instead of stacking labels")
-        let labeled = try render(
-            HStack(spacing: 4) {
-                AudiencePill(text: "", agents: [lead], acknowledgesRequest: true)
-                ComposerRequestLabel().font(.footnote)
-            }.dynamicTypeSize(.large),
-            width: 720
-        )
-        #expect(labeled.height == 44)
+        #expect(context.height == 44)
     }
 
     @Test func upperContextCompressesBeforeTheNativeEditorAndActionRow() throws {

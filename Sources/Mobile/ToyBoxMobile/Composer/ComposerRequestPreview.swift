@@ -181,16 +181,18 @@ struct ComposerRequestLabel: View {
                     icon
                 }
                 .lineLimit(1)
+                .frame(minHeight: 44)
             } else {
                 icon
-                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
         }
-        .frame(minHeight: 44)
     }
 
     private var icon: some View {
         Image(systemName: "questionmark.circle.fill")
+            .font(.system(size: 17))
             .foregroundStyle(Channel.Attention.waiting.color(in: colorScheme))
     }
 }
