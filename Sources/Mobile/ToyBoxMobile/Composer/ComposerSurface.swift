@@ -56,6 +56,7 @@ struct ComposerSurface: View {
         .padding(.bottom, ComposerBottomSpacing.value(
             compact: sizeClass == .compact, keyboardVisible: keyboardIsVisible))
         .frame(maxWidth: .infinity)
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { session.mentionBarHeight = $0 }
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, matching: .images,
                       preferredItemEncoding: .current)
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.image],
@@ -325,7 +326,7 @@ struct ComposerSurface: View {
 }
 
 /// Drawn over ConversationView, whose UIView already covers this rect, so taps hit the list instead of
-/// the working capsule. Offset and padding match the old composer overlay so the list does not move.
+/// the working capsule. Bottom padding is the composer bar plus 8, matching the old overlay.
 struct ComposerMentionList: View {
     @Bindable var session: ComposerSession
     @Environment(ManagementPresenter.self) private var management
@@ -337,9 +338,10 @@ struct ComposerMentionList: View {
 
     var body: some View {
         if !choices.isEmpty {
+            let barHeight = session.mentionBarHeight
             completion
                 .padding(.horizontal, 12)
-                .padding(.bottom, 8)
+                .padding(.bottom, 8 + barHeight)
                 .padding(.horizontal, sizeClass == .compact ? 12 : 16)
         }
     }

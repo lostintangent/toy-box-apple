@@ -148,20 +148,23 @@ struct ChannelScreen: View {
                 ConversationView(store: store)
                     .id(ObjectIdentifier(store))
                     // Like the Mac's, rows pass softly under the floating title and bar buttons.
-                    .scrollEdgeEffectStyle(.soft, for: .top)
-                    // The list draws above the composer, over the working capsule. Hosting it here
-                    // means UIKit hit-tests it, which the composer bar's own overlay could not.
-                    // Do not ignore the bottom safe area: that extends the list into the composer.
-                    .overlay(alignment: .bottomLeading) {
-                        if !interaction.isFinding {
-                            ComposerMentionList(session: model.composerSession(for: store))
-                        }
-                    }
+                    .scrollEdgeEffectStyle(
+                        .soft,
+                        for: model.composerSession(for: store).mentionChoices.isEmpty
+                            ? .top : [.top, .bottom]
+                    )
                     .safeAreaBar(edge: .bottom, spacing: 0) {
                         if !interaction.isFinding {
                             ComposerSurface(session: model.composerSession(for: store))
                                 .id(ObjectIdentifier(store))
                                 .findSwapTransition()
+                        }
+                    }
+                    // After the bar, so the bar stays on the scroll view and keeps the bottom edge
+                    // effect. The conversation UIView covers this rect, so the list still gets taps.
+                    .overlay(alignment: .bottomLeading) {
+                        if !interaction.isFinding {
+                            ComposerMentionList(session: model.composerSession(for: store))
                         }
                     }
             }

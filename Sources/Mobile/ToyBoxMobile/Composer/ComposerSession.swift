@@ -18,6 +18,9 @@ final class ComposerSession {
     /// Height of the composer glass. The list used to be an overlay on that view, so this is the
     /// height it was proposed and still the cap that keeps it from growing up the transcript.
     var mentionListMaxHeight: CGFloat = 0
+    /// Height of the composer bar, used to sit the list 8 points above the glass now that the
+    /// overlay comes after `.safeAreaBar`.
+    var mentionBarHeight: CGFloat = 0
     private var photoImportCount = 0
     var store: ChannelStore { composer.store }
     var draft: ComposerDraft { composer.draft }
