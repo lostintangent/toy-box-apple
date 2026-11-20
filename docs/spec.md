@@ -2387,6 +2387,9 @@ composer, and Option-Tab still inserts a tab. Accepting inserts one trailing spa
 member's secondary Edit action opens a sheet without accepting the mention. A Create action
 explicitly says it creates and starts a new agent. During creation show progress on that row,
 disable duplicate acceptance, preserve typed text on failure and show the error in the popover.
+On the phone the list takes every touch inside it, so a tap accepts its row and a drag scrolls it,
+and nothing behind it, like the working capsule or Jump to Latest, ever receives them. While it
+shows, the keyboard's Return accepts the highlighted row instead of inserting a newline.
 
 The audience pill reads "To Lead", the canonical audience label, or "No one will be notified" in
 amber. At narrow widths, show avatars plus a count and preserve the full names in help and
