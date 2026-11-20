@@ -163,6 +163,7 @@ struct ComposerSurface: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { session.mentionListMaxHeight = $0 }
         .overlay {
             if dragging {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -367,7 +368,7 @@ struct ComposerMentionList: View {
             }
         }
         .frame(maxWidth: 320)
-        .frame(maxHeight: min(264, completionHeight))
+        .frame(maxHeight: min(264, completionHeight, session.mentionListMaxHeight > 0 ? session.mentionListMaxHeight : 264))
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
