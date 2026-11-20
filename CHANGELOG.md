@@ -5,6 +5,7 @@
 ### Bugs/Polish
 
 - Picking someone from the @ list now works with a tap, a scroll or Return, so mentioning an agent no longer misses or lands on the conversation behind it.
+- On a narrow screen or at large text sizes, the composer now keeps who you're writing to and Input Needed on the same line as Send instead of stacking them, leaving more room for your message and the conversation.
 - Opening a conversation now always shows its latest messages, never a blank screen or a view stopped partway up, even right after typing in another channel.
 
 ## Mac 0.1.51
