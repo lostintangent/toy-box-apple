@@ -131,6 +131,39 @@ struct TranscriptTests {
         #expect(scroll.distanceToEnd == 0)
     }
 
+    @Test(arguments: [true, false])
+    func contentThatShrinksMidScrollStillSettlesAtItsEnd(readerScrolling: Bool) {
+        let scroll = measuredScroll(40, origin: 3400)
+        #expect(scroll.update(.land(.end))?.origin == 3400)
+
+        // The content comes in shorter while the scroll isn't idle, leaving the origin past its end.
+        scroll.isReaderScrolling = readerScrolling
+        scroll.isScrollIdle = false
+        for index in 0..<40 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 75, width: 386, height: 75)) }
+        scroll.metrics?.documentEnd = 3000
+        _ = scroll.update()
+
+        // At rest, still past the end, it places at the real end.
+        scroll.isReaderScrolling = false
+        scroll.isScrollIdle = true
+        #expect(scroll.update()?.origin == 2400)
+    }
+
+    @Test func aReaderWhoStopsJustShortOfTheEndStaysThere() {
+        let scroll = measuredScroll(40, origin: 3400)
+        #expect(scroll.update(.land(.end))?.origin == 3400)
+
+        scroll.isReaderScrolling = true
+        scroll.isScrollIdle = false
+        scroll.metrics?.origin = 3370
+        _ = scroll.update()
+
+        scroll.isReaderScrolling = false
+        scroll.isScrollIdle = true
+        #expect(scroll.update() == nil)
+        #expect(scroll.distanceToEnd == 30)
+    }
+
     @Test func aPostureChangeKeepsOnlyTheFramesTheStackMeasuresAgain() {
         let scroll = TranscriptScroll()
         scroll.rows = (0..<10).map { .init(id: "r\($0)", order: $0) }
