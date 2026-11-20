@@ -129,16 +129,15 @@ struct ComposerSurface: View {
 
     private var container: some View {
         VStack(spacing: 0) {
-            if dynamicTypeSize.isAccessibilitySize {
-                ComposerUpperRegion {
-                    accessories
-                    context.padding(.horizontal, 8)
-                }
-            } else if hasNotices || !draft.images.isEmpty {
-                ViewThatFits(in: .vertical) {
-                    accessories
-                    ScrollView { accessories }
-                        .scrollBounceBehavior(.basedOnSize)
+            if hasNotices || !draft.images.isEmpty {
+                if dynamicTypeSize.isAccessibilitySize {
+                    ComposerUpperRegion { accessories }
+                } else {
+                    ViewThatFits(in: .vertical) {
+                        accessories
+                        ScrollView { accessories }
+                            .scrollBounceBehavior(.basedOnSize)
+                    }
                 }
             }
             ZStack(alignment: .topLeading) {
@@ -192,46 +191,40 @@ struct ComposerSurface: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    @ViewBuilder
     private var controls: some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            actionControls
-        } else {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 4) {
-                    attachmentMenu
-                    context
-                    Spacer(minLength: 0)
-                    ComposerDictateButton(dictation: dictation)
-                    sendButton
-                }
-                VStack(spacing: 0) {
-                    HStack(spacing: 4) { context; Spacer(minLength: 0) }.frame(minHeight: 44)
-                    actionControls
-                }
-            }
+        ViewThatFits(in: .horizontal) {
+            actionRow(showsContextLabel: true)
+            actionRow(showsContextLabel: false)
         }
     }
 
-    private var actionControls: some View {
+    private func actionRow(showsContextLabel: Bool) -> some View {
         HStack(spacing: 4) {
             attachmentMenu
+            context(showsLabel: showsContextLabel)
             Spacer(minLength: 0)
             ComposerDictateButton(dictation: dictation)
             sendButton
         }
     }
 
-    private var context: some View {
-        let layout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(ComposerContextLayout()) : AnyLayout(HStackLayout(spacing: 4))
-        return layout {
-            AudiencePill(text: draft.text, agents: store.roster,
-                                 acknowledgesRequest: store.requestSequence != nil)
+    private func context(showsLabel: Bool) -> some View {
+        HStack(spacing: 4) {
+            AudiencePill(
+                text: draft.text,
+                agents: store.roster,
+                acknowledgesRequest: store.requestSequence != nil,
+                showsLabel: showsLabel
+            )
             if let request = store.request {
-                ComposerRequestButton(request: request, store: store, allowsPresentation: canPresentRequestPreview,
-                                      wrapsLabel: dynamicTypeSize.isAccessibilitySize,
-                                      willPresent: session.preparePresentation, didDismiss: restoreFocus)
+                ComposerRequestButton(
+                    request: request,
+                    store: store,
+                    allowsPresentation: canPresentRequestPreview,
+                    showsLabel: showsLabel,
+                    willPresent: session.preparePresentation,
+                    didDismiss: restoreFocus
+                )
                     .id(request.sequence)
                     .id(draftID)
             }
@@ -445,45 +438,6 @@ struct ComposerUpperRegion<Content: View>: View {
         .scrollBounceBehavior(.basedOnSize)
         .frame(maxHeight: contentHeight)
     }
-}
-
-struct ComposerContextLayout: Layout {
-    private let spacing: CGFloat = 4
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        measurement(proposal: proposal, subviews: subviews).size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let measured = measurement(proposal: .init(width: bounds.width, height: nil), subviews: subviews)
-        var origin = bounds.origin
-        for (subview, size) in zip(subviews, measured.children) {
-            if measured.isHorizontal {
-                subview.place(at: .init(x: origin.x, y: bounds.midY), anchor: .leading,
-                              proposal: .init(size))
-                origin.x += size.width + spacing
-            } else {
-                subview.place(at: origin, anchor: .topLeading,
-                              proposal: .init(width: bounds.width, height: size.height))
-                origin.y += size.height + spacing
-            }
-        }
-    }
-
-    private func measurement(
-        proposal: ProposedViewSize, subviews: Subviews
-    ) -> (size: CGSize, children: [CGSize], isHorizontal: Bool) {
-        let ideal = subviews.map { $0.sizeThatFits(.unspecified) }
-        let gaps = CGFloat(max(0, ideal.count - 1)) * spacing
-        let idealWidth = ideal.reduce(0) { $0 + $1.width } + gaps
-        let width = max(0, proposal.width ?? idealWidth)
-        if idealWidth <= width {
-            return (.init(width: idealWidth, height: ideal.map(\.height).max() ?? 0), ideal, true)
-        }
-        let fitted = subviews.map { $0.sizeThatFits(.init(width: width, height: nil)) }
-        return (.init(width: width, height: fitted.reduce(0) { $0 + $1.height } + gaps), fitted, false)
-    }
-
 }
 
 enum ComposerBottomSpacing {

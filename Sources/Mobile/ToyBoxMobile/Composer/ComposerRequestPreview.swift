@@ -65,7 +65,7 @@ struct ComposerRequestButton: View {
     /// The request's channel, whose roster and server its attachments show with.
     let store: ChannelStore
     let allowsPresentation: Bool
-    var wrapsLabel = false
+    var showsLabel = true
     var willPresent: () -> Void
     var didDismiss: () -> Void
     @Environment(ChannelInteraction.self) private var interaction
@@ -83,7 +83,7 @@ struct ComposerRequestButton: View {
 
     var body: some View {
         Button(action: reveal) {
-            ComposerRequestLabel(wraps: wrapsLabel)
+            ComposerRequestLabel(showsLabel: showsLabel)
         }
         .font(.footnote)
         .buttonStyle(.borderless)
@@ -169,19 +169,29 @@ struct ComposerRequestButton: View {
 }
 
 struct ComposerRequestLabel: View {
-    var wraps = false
+    var showsLabel = true
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Label {
-            Text("Input Needed").foregroundStyle(Color.primary)
-        } icon: {
-            Image(systemName: "questionmark.circle.fill")
-                .foregroundStyle(Channel.Attention.waiting.color(in: colorScheme))
+        Group {
+            if showsLabel {
+                Label {
+                    Text("Input Needed").foregroundStyle(Color.primary)
+                } icon: {
+                    icon
+                }
+                .lineLimit(1)
+            } else {
+                icon
+                    .fixedSize(horizontal: true, vertical: false)
+            }
         }
-        .lineLimit(wraps ? nil : 1)
-        .fixedSize(horizontal: false, vertical: wraps)
         .frame(minHeight: 44)
+    }
+
+    private var icon: some View {
+        Image(systemName: "questionmark.circle.fill")
+            .foregroundStyle(Channel.Attention.waiting.color(in: colorScheme))
     }
 }
 
