@@ -2278,10 +2278,11 @@ the row reads at full contrast over bright content. Input Needed stays unfilled 
 filled orange question-circle.
 
 The audience and Input Needed stay in the action row with Attach, Dictate and Send at every
-text size, never on a row of their own. When their labels don't fit, both drop their text
-together: the audience shows only its avatars, up to three, or its orange warning when no one
-will be notified, and Input Needed only its orange question-circle, drawn like Attach as a
-17-point symbol in its 44-point target. Each keeps its full
+text size, never on a row of their own. When their labels don't fit, they drop their text in
+steps. First the audience shows only its avatars, up to three, or its orange warning when no one
+will be notified, while Input Needed keeps its words. Only if that still doesn't fit does Input
+Needed show just its orange question-circle, drawn like Attach as a 17-point symbol in its
+44-point target. Each keeps its full
 accessibility label, and a tap or long press on it does what it did before. Attach uses an explicit 17-point symbol within its 44-point target, like Send,
 rather than inheriting an overflowing body glyph. When the full ordinary hint cannot fit at
 the actual body font, use the short visual hint "Message", preserving the native editor's
