@@ -3,9 +3,10 @@ import ToyBoxKit
 import SwiftUI
 
 /// A server's model providers in the server's order: each one's version, then its plan and how much
-/// of each limit it has used, or why it isn't ready, then Check for Updates and the server's Restart
-/// once an update installs something new. The page showing it calls `ServerProviders.appear()`, and a
-/// server that lists no providers shows no section. See Model Providers in docs/spec.md.
+/// of each limit it has used, or why it isn't ready, then Check for Updates and, once an update
+/// installs something new, a sentence asking for a restart. The page showing it calls
+/// `ServerProviders.appear()`, and a server that lists no providers shows no section. See Model
+/// Providers in docs/spec.md.
 public struct ModelProvidersSection: View {
     let catalog: ChannelCatalogStore
 
@@ -14,8 +15,6 @@ public struct ModelProvidersSection: View {
     }
 
     private var providers: ServerProviders { catalog.providers }
-    /// The server's release, whose Restart runs the versions an update installed.
-    private var update: ServerUpdate { catalog.update }
 
     public var body: some View {
         if !providers.entries.isEmpty {
@@ -42,25 +41,15 @@ public struct ModelProvidersSection: View {
         return "Restart \(catalog.name) to use the new \(count == 1 ? "version" : "versions")."
     }
 
-    /// Only a server with an installed release can restart onto the versions an update installed.
-    private var offersRestart: Bool {
-        restartMessage != nil && update.release?.isUpdatable == true
-    }
-
     #if os(macOS)
     /// A bar under the providers, led by the restart sentence once an update installs something new.
+    /// The window shows the Version row above it, whose Restart turns prominent instead.
     @ViewBuilder private var updates: some View {
         let message = restartMessage
         if providers.offersUpdateCheck || message != nil {
             HStack(spacing: 8) {
                 if let message { Text(message).foregroundStyle(.secondary) }
                 Spacer(minLength: 8)
-                if offersRestart {
-                    Button("Restart") { Task { await update.restart() } }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .disabled(!update.canRestart)
-                }
                 if providers.offersUpdateCheck {
                     Button("Check for Updates") { Task { await providers.checkForUpdates() } }
                         .buttonStyle(.bordered)
@@ -73,8 +62,10 @@ public struct ModelProvidersSection: View {
         }
     }
     #else
-    /// Rows after the providers, with the restart sentence as the section's footer.
+    /// Rows after the providers, with the restart sentence as the section's footer. The Version row
+    /// is a screen above, so the section has its own Restart, which does the same.
     @ViewBuilder private var updates: some View {
+        let update = catalog.update
         if providers.offersUpdateCheck {
             let isChecking = providers.isCheckingForUpdates
             Button("Check for Updates", systemImage: "arrow.triangle.2.circlepath") {
@@ -85,7 +76,8 @@ public struct ModelProvidersSection: View {
             .foregroundStyle(isChecking ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
             .accessibilityLabel("Check for model provider updates")
         }
-        if offersRestart {
+        // Only a server with an installed release can restart onto the versions an update installed.
+        if providers.newVersions > 0, update.release?.isUpdatable == true {
             Button("Restart", systemImage: "arrow.clockwise") { Task { await update.restart() } }
                 .disabled(!update.canRestart)
                 .foregroundStyle(update.canRestart ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))

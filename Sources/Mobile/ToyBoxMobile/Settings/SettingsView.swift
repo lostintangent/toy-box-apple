@@ -156,33 +156,7 @@ private struct ServerRow: View {
             if cantConnect {
                 Text("Can't connect").foregroundStyle(.secondary).lineLimit(1)
             }
-            ServerUpdateStatus(update: update, showsVersion: isConnected).fixedSize()
-        }
-    }
-}
-
-/// The end of a server's row: its version, a spinner while it checks or reconnects, or the release
-/// it runs and the one a restart starts once a restart is pending.
-private struct ServerUpdateStatus: View {
-    let update: ServerUpdate
-    /// A server that can't connect says so instead.
-    let showsVersion: Bool
-
-    var body: some View {
-        switch update.phase {
-        case .checking?:
-            ProgressView().accessibilityRepresentation { Text("Checking for updates") }
-        case .reconnecting?:
-            ProgressView().accessibilityRepresentation { Text("Reconnecting") }
-        case .restartPending?:
-            if showsVersion, let release = update.release, let installed = release.installedVersion {
-                Text("\(release.version) → \(installed)").foregroundStyle(.secondary)
-                    .accessibilityLabel("\(release.version), \(installed) after restart")
-            }
-        case .idle?, nil:
-            if showsVersion, let version = update.release?.version {
-                Text(version).foregroundStyle(.secondary)
-            }
+            ServerUpdateStatus(catalog).fixedSize()
         }
     }
 }
