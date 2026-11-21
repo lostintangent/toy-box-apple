@@ -151,7 +151,13 @@ final class TranscriptScroll {
         }
         if capturesPosition(event), !hasViewportGeometry { return nil }
         let before = intent
-        let placement = Model.reduce(intent, event, layout: layout)
+        var placement = Model.reduce(intent, event, layout: layout)
+        // Asking for a row the stack hasn't built from past the end can leave the scroll past the end
+        // again, as the content shrinks under SwiftUI's estimate. The end is built with the rows above
+        // it, so it comes first, and the row is placed from there.
+        if placement.needsMeasurement != nil, restsPastEnd(layout) {
+            placement = Model(intent: placement.intent, origin: endOrigin(layout))
+        }
         // Reader input reports every frame, so its intent is traced once the scroll comes to rest.
         if !capturesPosition(event) {
             Self.trace("\(event) \(describe(layout)) intent \(before) -> \(placement.intent) "
@@ -170,16 +176,28 @@ final class TranscriptScroll {
 
     /// Coming to rest places again only a position the reader didn't choose: a landing at the end
     /// that rests anywhere else, or any scroll resting past the end, as when the content shrinks
-    /// mid-scroll. A lazy stack that's still re-estimating rows, as after a posture change, can also
-    /// drop a placement at the end and move the scroll without the reader. Following the reader set
-    /// short of the end stays where they stopped, and so does a reader's anchor.
+    /// mid-scroll, even while its target row is still unbuilt. A lazy stack that's still
+    /// re-estimating rows, as after a posture change, can also drop a placement at the end and move
+    /// the scroll without the reader. Following the reader set short of the end stays where they
+    /// stopped, and so does a reader's anchor.
     private func drift(from last: Model.Layout, to layout: Model.Layout) -> Model.Event? {
-        guard isScrollIdle, let origin = Model.placement(for: intent, layout: layout).origin,
-              abs(origin - layout.origin) > Self.settled else { return nil }
-        let end = max(-layout.viewport.topInset, layout.documentEnd - layout.viewport.height + layout.viewport.bottomInset)
-        let pastEnd = layout.origin > end + Self.settled
+        guard isScrollIdle else { return nil }
+        guard let origin = Model.placement(for: intent, layout: layout).origin else {
+            return restsPastEnd(layout) ? .layoutChanged : nil
+        }
+        guard abs(origin - layout.origin) > Self.settled else { return nil }
         let unchosen = intent == .landing(.end) || intent == .following && layout.origin != last.origin
-        return pastEnd || unchosen ? .layoutChanged : nil
+        return restsPastEnd(layout) || unchosen ? .layoutChanged : nil
+    }
+
+    private func endOrigin(_ layout: Model.Layout) -> CGFloat {
+        max(-layout.viewport.topInset, layout.documentEnd - layout.viewport.height + layout.viewport.bottomInset)
+    }
+
+    /// Past the end is never where a placement left the scroll, so resting there means the scroll
+    /// didn't apply, and nothing is drawn.
+    private func restsPastEnd(_ layout: Model.Layout) -> Bool {
+        isScrollIdle && layout.origin > endOrigin(layout) + Self.settled
     }
 
     /// Where the rest of the reader's input took the scroll after a page moved them mid-scroll.
@@ -213,8 +231,7 @@ final class TranscriptScroll {
     /// The signature of an open that missed the end: geometry at rest, past the content's end,
     /// with nothing placed.
     private func traceRestingPastEnd(_ layout: Model.Layout) {
-        let end = layout.documentEnd - layout.viewport.height + layout.viewport.bottomInset
-        guard isScrollIdle, layout.origin > max(-layout.viewport.topInset, end) + Self.settled else { return }
+        guard restsPastEnd(layout) else { return }
         Self.trace("rests past end, nothing placed \(describe(layout)) intent \(intent)")
     }
 

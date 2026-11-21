@@ -149,6 +149,32 @@ struct TranscriptTests {
         #expect(scroll.update()?.origin == 2400)
     }
 
+    @Test func aLandingLeftPastTheEndOnAnUnbuiltRowAsksForTheEndThenTheRow() {
+        let scroll = measuredScroll(40, origin: 3400)
+        scroll.sync((0..<40).map { .init(id: "r\($0)", order: $0) } + (0..<5).map { .init(id: "n\($0)", order: 40 + $0) })
+        scroll.metrics?.documentEnd = 8000
+        #expect(scroll.update(.land(.row("n0", order: 40)))?.needsMeasurement == "n0")
+
+        // The build scroll goes by SwiftUI's estimate, then the content shrinks beneath it with n0 still unbuilt.
+        scroll.metrics?.origin = 7400
+        _ = scroll.update()
+        scroll.metrics?.documentEnd = 6000
+        #expect(scroll.update()?.origin == 5400)
+        #expect(scroll.update()?.origin == 5400)
+
+        // The end builds the last rows, but not n0, so the row is asked for again from there.
+        for index in 2..<5 { scroll.measure("n\(index)", frame: CGRect(x: 0, y: 4000 + CGFloat(index) * 300, width: 386, height: 300)) }
+        scroll.metrics?.documentEnd = 5500
+        scroll.metrics?.origin = 4900
+        let ask = scroll.update()
+        #expect(ask?.needsMeasurement == "n0" && ask?.origin == nil)
+
+        scroll.measure("n0", frame: CGRect(x: 0, y: 4000, width: 386, height: 300))
+        scroll.metrics?.origin = 4000
+        let landed = scroll.update()
+        #expect(landed?.origin == 4000 && !scroll.moves(landed))
+    }
+
     @Test func aReaderWhoStopsJustShortOfTheEndStaysThere() {
         let scroll = measuredScroll(40, origin: 3400)
         #expect(scroll.update(.land(.end))?.origin == 3400)
