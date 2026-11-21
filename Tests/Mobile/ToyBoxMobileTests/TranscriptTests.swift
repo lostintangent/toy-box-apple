@@ -175,6 +175,28 @@ struct TranscriptTests {
         #expect(landed?.origin == 4000 && !scroll.moves(landed))
     }
 
+    @Test func beforeLandingEachNewViewportAsksForTheCachedEndByItsView() {
+        let scroll = measuredScroll(40, origin: 3400)
+        let first = scroll.update()
+        #expect(first?.origin == 3400 && scroll.moves(first))
+
+        // The stack re-estimates the content and moves only the offset, which asks for nothing.
+        scroll.metrics?.documentEnd = 6000
+        scroll.metrics?.origin = 5400
+        #expect(scroll.update() == nil)
+
+        // The push settles with the bars' insets, still at the estimated end, so the end is asked for by its view.
+        scroll.metrics?.viewport = .init(width: 386, height: 678, topInset: 82, bottomInset: 134)
+        scroll.metrics?.origin = 5456
+        let settled = scroll.update()
+        #expect(settled?.origin == 5456 && scroll.moves(settled))
+
+        // A reader scrolling before the landing is left alone.
+        scroll.isReaderScrolling = true
+        scroll.metrics?.viewport = .init(width: 386, height: 600, topInset: 82, bottomInset: 134)
+        #expect(scroll.update() == nil)
+    }
+
     @Test func aReaderWhoStopsJustShortOfTheEndStaysThere() {
         let scroll = measuredScroll(40, origin: 3400)
         #expect(scroll.update(.land(.end))?.origin == 3400)
@@ -281,10 +303,10 @@ struct TranscriptTests {
     }
 
     @Test func aRequestAlertsRevealIsTheFirstLandingEvenSeveralPagesBack() {
-        // The newest page opens at the bottom with its New divider at r10, but nothing lands there.
+        // The newest page opens at its end with its New divider at r10, but nothing lands there.
         let scroll = measuredScroll(20, firstOrder: 300, origin: 1400)
         let latest = scroll.rows
-        #expect(scroll.update() == nil && !scroll.hasLanded)
+        #expect(scroll.update()?.origin == 1400 && !scroll.hasLanded)
 
         // Three pages arrive above without holding any row, since the reader hasn't seen one.
         let paged = (0..<300).map { TranscriptPlacement.RowIdentity(id: "p\($0)", order: $0) } + latest

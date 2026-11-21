@@ -135,9 +135,15 @@ final class TranscriptScroll {
         let event: Model.Event
         if let explicit {
             event = explicit
-        } else if !hasLanded || !isSceneActive {
+        } else if !isSceneActive {
             traceRestingPastEnd(layout)
             return nil
+        } else if !hasLanded {
+            guard lastLayout?.viewport != layout.viewport else {
+                traceRestingPastEnd(layout)
+                return nil
+            }
+            return restingAtEnd(layout)
         } else if !holdsPlacementThroughInput, isReaderScrolling || readerMoved(from: lastLayout, to: layout) {
             event = .readerScrolled(to: layout.origin)
         } else if let last = lastLayout {
@@ -215,9 +221,21 @@ final class TranscriptScroll {
 
     /// Places once for the geometry the scene came back with.
     func sceneBecameActive() -> Model? {
+        let returning = !isSceneActive
         isSceneActive = true
         Self.trace("scene active, landed \(hasLanded)")
-        return hasLanded ? update(.layoutChanged) : nil
+        if !hasLanded { return returning ? layout.flatMap(restingAtEnd) : nil }
+        return update(.layoutChanged)
+    }
+
+    /// Until it lands, the cached conversation rests at its end. The initial anchor puts it there
+    /// once, but a new viewport, as when the push settles or the scene comes back, re-estimates the
+    /// content and moves only the offset, which can leave no row built. So each new viewport asks
+    /// for the end again, unless the reader is scrolling.
+    private func restingAtEnd(_ layout: Model.Layout) -> Model? {
+        guard intent == .landing(.end), !isReaderScrolling else { return nil }
+        Self.trace("rest at end before landing \(describe(layout))")
+        return Model(intent: intent, origin: endOrigin(layout))
     }
 
     private func describe(_ layout: Model.Layout) -> String {
@@ -279,6 +297,8 @@ final class TranscriptScroll {
     /// Whether a placement asks the scroll view to move, so the current geometry is about to be replaced.
     func moves(_ placement: Model?) -> Bool {
         guard let placement else { return false }
+        // Before landing, the end is only SwiftUI's estimate, so asking for it always moves.
+        if !hasLanded, placement.origin != nil { return true }
         if let origin = placement.origin { return metrics.map { abs(origin - $0.origin) > Self.settled } ?? false }
         return placement.needsMeasurement != nil
     }
