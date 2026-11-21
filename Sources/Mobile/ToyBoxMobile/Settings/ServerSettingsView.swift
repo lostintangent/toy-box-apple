@@ -3,8 +3,9 @@ import ToyBoxKit
 import SwiftUI
 import ToyBoxUI
 
-/// One server in Settings: its name, then its address and status, then its release. The address is
-/// only how this iPhone reaches the server, so it can be copied but not edited.
+/// One server in Settings: its name, then its address and status, then its release and its model
+/// providers. The address is only how this iPhone reaches the server, so it can be copied but not
+/// edited.
 struct ServerSettingsView: View {
     @Environment(AppModel.self) private var model
     let catalog: ChannelCatalogStore
@@ -14,7 +15,10 @@ struct ServerSettingsView: View {
             Section("Name") { ServerNameRows(catalog, in: model.servers) }
             ServerAddressSection(catalog: catalog)
             ServerVersionSection(update: catalog.update)
+            ModelProvidersSection(catalog.providers)
         }
+        .accessibilityIdentifier("server-settings")
+        .task { await catalog.providers.appear() }
         .navigationTitle(catalog.name)
         .navigationBarTitleDisplayMode(.inline)
     }

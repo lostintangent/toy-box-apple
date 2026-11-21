@@ -2,12 +2,20 @@
 
 ## iPhone 0.1.48
 
+### Features
+
+- You can now check each model provider on your server from its page in Settings, with its version, your plan and how much of each usage limit you've used, so you know before an agent runs out.
+
 ### Bugs/Polish
 
 - Coming back to Toy Box and opening a conversation now shows it right away, keeping the messages you already had on screen while it reconnects and then starting from the first new one, instead of sometimes leaving a blank screen until you scrolled.
 - Settings now opens with your servers and Disconnect, then notifications and on-device intelligence, so what you reach for most comes first.
 
 ## Mac 0.1.52
+
+### Features
+
+- You can now check each model provider on your server from the Servers tab in Settings, with its version, your plan and how much of each usage limit you've used, so you know before an agent runs out.
 
 ### Bugs/Polish
 
