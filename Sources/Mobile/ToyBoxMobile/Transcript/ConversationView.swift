@@ -57,6 +57,11 @@ final class TranscriptScroll {
     private var scrollsPastPhase = false
     private(set) var intent: Model.Intent = .landing(.end)
     private(set) var hasLanded = false
+    /// While Find is open, arrivals never move the conversation, so the result being read stays put.
+    private(set) var isFinding = false
+    /// What the reader was doing when Find opened, which closing puts back unless they scrolled or
+    /// revealed a result meanwhile.
+    private var beforeFind: Model.Intent?
     private var frames: [String: CGRect] = [:]
     private var column: CGFloat?
     private var lastLayout: Model.Layout?
@@ -77,7 +82,8 @@ final class TranscriptScroll {
             scrollsPastPhase = isReaderScrolling
         }
         if let last = rows.last?.id, current.last?.id != last, current.contains(where: { $0.id == last }), hasLanded {
-            _ = update(.arrived(pinsLanding: pinsLanding))
+            // While Find is open, an arrival never moves the conversation, even below a revealed result.
+            _ = update(isFinding ? .holdCurrentPosition : .arrived(pinsLanding: pinsLanding))
         }
         rows = current
     }
@@ -126,13 +132,18 @@ final class TranscriptScroll {
         let event: Model.Event
         if let explicit {
             event = explicit
+            switch explicit {
+            case .layoutChanged, .holdCurrentPosition, .arrived: break
+            default: beforeFind = nil
+            }
         } else if !isSceneActive {
             return nil
         } else if !hasLanded {
             guard lastLayout?.viewport != layout.viewport else { return nil }
             return restingAtEnd(layout)
         } else if !holdsPlacementThroughInput, isReaderScrolling || readerMoved(from: lastLayout, to: layout) {
-            event = .readerScrolled(to: layout.origin)
+            beforeFind = nil
+            event = isFinding ? .holdCurrentPosition : .readerScrolled(to: layout.origin)
         } else if let last = lastLayout {
             guard let change = Model.layoutEvent(from: last, to: layout) ?? drift(from: last, to: layout) else {
                 return nil
@@ -197,6 +208,25 @@ final class TranscriptScroll {
         }
         let placed = Model.placement(for: intent, layout: layout).origin
         return last.origin != layout.origin && placed.map { abs($0 - layout.origin) > Self.settled } != false
+    }
+
+    /// Opening Find leaves the placement alone, so its keyboard keeps the end in view like the
+    /// composer's. Closing puts back what the reader was doing, or where they moved to, following
+    /// again within the threshold of the end like any reader who stops there.
+    func findChanged(isPresented: Bool) -> Model? {
+        guard isPresented != isFinding else { return nil }
+        isFinding = isPresented
+        guard hasLanded else { return nil }
+        guard !isPresented else {
+            beforeFind = intent
+            return nil
+        }
+        if let before = beforeFind {
+            beforeFind = nil
+            intent = before
+            return update(.layoutChanged)
+        }
+        return metrics.flatMap { update(.readerScrolled(to: $0.origin)) }
     }
 
     /// Places once for the geometry the scene came back with.
@@ -495,6 +525,7 @@ struct ConversationView: View {
         }
         .onDisappear {
             find.close()
+            _ = scroll.findChanged(isPresented: false)
             interaction.isFinding = false
         }
         .onChange(of: interaction.jumpToLatestRequest) { jumpToLatest() }
@@ -527,6 +558,7 @@ struct ConversationView: View {
             if presented { find.present() }
             return
         }
+        place(scroll.findChanged(isPresented: presented))
         if !presented {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
