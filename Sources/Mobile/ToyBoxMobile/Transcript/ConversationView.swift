@@ -1,4 +1,3 @@
-import os
 import ToyBoxClient
 import ToyBoxIntelligence
 import ToyBoxKit
@@ -11,10 +10,6 @@ import ToyBoxUI
 final class TranscriptScroll {
     typealias Model = TranscriptPlacement
 
-    /// Each event and placement, at `.notice` so it persists on the phone and a miss can be read
-    /// afterward from `log collect`.
-    private static let log = Logger(subsystem: "dev.toybox.mobile", category: "TranscriptScroll")
-
     static let endID = "transcript-end"
 
     /// How near a placement the scroll is once it's there. SwiftUI rounds the content size up to a
@@ -22,10 +17,6 @@ final class TranscriptScroll {
     /// point and a pixel short of the model's end. Asking again would move nothing at rest, and
     /// mid-transition it can land somewhere else.
     static let settled: CGFloat = 1.5
-
-    static func trace(_ line: String) {
-        log.notice("\(line, privacy: .public)")
-    }
 
     struct Metrics: Equatable {
         var viewport: Model.Viewport
@@ -136,19 +127,14 @@ final class TranscriptScroll {
         if let explicit {
             event = explicit
         } else if !isSceneActive {
-            traceRestingPastEnd(layout)
             return nil
         } else if !hasLanded {
-            guard lastLayout?.viewport != layout.viewport else {
-                traceRestingPastEnd(layout)
-                return nil
-            }
+            guard lastLayout?.viewport != layout.viewport else { return nil }
             return restingAtEnd(layout)
         } else if !holdsPlacementThroughInput, isReaderScrolling || readerMoved(from: lastLayout, to: layout) {
             event = .readerScrolled(to: layout.origin)
         } else if let last = lastLayout {
             guard let change = Model.layoutEvent(from: last, to: layout) ?? drift(from: last, to: layout) else {
-                traceRestingPastEnd(layout)
                 return nil
             }
             event = change
@@ -156,18 +142,12 @@ final class TranscriptScroll {
             event = .layoutChanged
         }
         if capturesPosition(event), !hasViewportGeometry { return nil }
-        let before = intent
         var placement = Model.reduce(intent, event, layout: layout)
         // Asking for a row the stack hasn't built from past the end can leave the scroll past the end
         // again, as the content shrinks under SwiftUI's estimate. The end is built with the rows above
         // it, so it comes first, and the row is placed from there.
         if placement.needsMeasurement != nil, restsPastEnd(layout) {
             placement = Model(intent: placement.intent, origin: endOrigin(layout))
-        }
-        // Reader input reports every frame, so its intent is traced once the scroll comes to rest.
-        if !capturesPosition(event) {
-            Self.trace("\(event) \(describe(layout)) intent \(before) -> \(placement.intent) "
-                + "placed \(placement.origin.map { "\($0)" } ?? "nil") measure \(placement.needsMeasurement ?? "nil")")
         }
         intent = placement.intent
         switch event {
@@ -223,7 +203,6 @@ final class TranscriptScroll {
     func sceneBecameActive() -> Model? {
         let returning = !isSceneActive
         isSceneActive = true
-        Self.trace("scene active, landed \(hasLanded)")
         if !hasLanded { return returning ? layout.flatMap(restingAtEnd) : nil }
         return update(.layoutChanged)
     }
@@ -234,23 +213,7 @@ final class TranscriptScroll {
     /// for the end again, unless the reader is scrolling.
     private func restingAtEnd(_ layout: Model.Layout) -> Model? {
         guard intent == .landing(.end), !isReaderScrolling else { return nil }
-        Self.trace("rest at end before landing \(describe(layout))")
         return Model(intent: intent, origin: endOrigin(layout))
-    }
-
-    private func describe(_ layout: Model.Layout) -> String {
-        let viewport = layout.viewport
-        return "origin \(layout.origin) end \(layout.documentEnd) viewport \(viewport.width)x\(viewport.height) "
-            + "insets \(viewport.topInset)/\(viewport.bottomInset) rows \(layout.rows.count) "
-            + "measured \(measured.count) idle \(isScrollIdle) reader \(isReaderScrolling) "
-            + "scene \(isSceneActive) landed \(hasLanded)"
-    }
-
-    /// The signature of an open that missed the end: geometry at rest, past the content's end,
-    /// with nothing placed.
-    private func traceRestingPastEnd(_ layout: Model.Layout) {
-        guard restsPastEnd(layout) else { return }
-        Self.trace("rests past end, nothing placed \(describe(layout)) intent \(intent)")
     }
 
     /// A new touch is the reader's own, unlike the frames of a flick that a jump stopped.
@@ -464,7 +427,6 @@ struct ConversationView: View {
             place(scroll.update())
         }
         .onScrollPhaseChange { _, phase in
-            TranscriptScroll.trace("scroll phase \(phase), intent \(scroll.intent)")
             // Set at the touch, since rows built under the finger would already show the page.
             let touching = phase == .tracking || phase == .interacting
             touch = touching ? touch ?? .init(showing: store.messages) : nil
@@ -515,7 +477,6 @@ struct ConversationView: View {
         }
         .onChange(of: store.phase.isConnected) { land(items) }
         .onChange(of: scenePhase, initial: true) {
-            TranscriptScroll.trace("scene phase \(scenePhase), application \(UIApplication.shared.applicationState.rawValue)")
             if scenePhase == .active { place(scroll.sceneBecameActive()) } else { scroll.isSceneActive = false }
         }
         .onChange(of: store.sending.map(\.id)) { old, _ in
@@ -617,10 +578,7 @@ struct ConversationView: View {
     private func place(_ placement: TranscriptPlacement?) {
         // An explicit event while the scene isn't active, like a post confirmed in the background,
         // still sets the intent, and the one placement on return carries it out.
-        guard scroll.isSceneActive else {
-            if let placement { TranscriptScroll.trace("placement held, scene inactive \(placement.intent)") }
-            return
-        }
+        guard scroll.isSceneActive else { return }
         let isMoving = scroll.moves(placement)
         if let origin = placement?.origin {
             if isMoving, let metrics = scroll.metrics {
@@ -629,10 +587,8 @@ struct ConversationView: View {
                 // end comes from its content size, which can still be an estimate, and an offset
                 // alone can leave the rows there unbuilt, as when the keyboard leaves mid-landing.
                 if origin >= endOrigin - TranscriptScroll.settled {
-                    TranscriptScroll.trace("scroll to end")
                     position.scrollTo(id: TranscriptScroll.endID, anchor: .bottom)
                 } else {
-                    TranscriptScroll.trace("scroll to y \(origin + metrics.viewport.topInset)")
                     position.scrollTo(y: origin + metrics.viewport.topInset)
                 }
             } else {
@@ -640,7 +596,6 @@ struct ConversationView: View {
             }
         } else if let id = placement?.needsMeasurement, position.viewID(type: String.self) != id {
             // Frames from the layout before the scroll lands ask again, and one scroll serves them all.
-            TranscriptScroll.trace("scroll to row \(id)")
             position.scrollTo(id: id, anchor: .top)
         }
         if let away = scroll.showsJumpToLatest(after: placement), away != showsJumpToLatest {
