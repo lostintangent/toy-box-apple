@@ -15,7 +15,9 @@ struct ChannelConnectionsTests {
         let api = try mock.api()
         let stores = ids.map { ChannelStore(id: $0, api: api) }
         for store in stores { connections.hold(store) }
-        try await eventually { stores.allSatisfy(\.phase.isConnected) }
+        try await eventually(observing: mock) {
+            stores.allSatisfy(\.phase.isConnected) && mock.pendingResponseCount == stores.count
+        }
         return stores
     }
 
@@ -113,7 +115,7 @@ struct ChannelConnectionsTests {
         let connections = ChannelConnections(linger: .zero)
         let store = ChannelStore(id: "a", api: try mock.api())
         connections.hold(store)
-        try await eventually { store.phase.isConnected }
+        try await eventually(observing: mock) { store.phase.isConnected && mock.pendingResponseCount == 1 }
         #expect(store.unreadAfter == 0)
         #expect(mock.sendPendingBody(try MockResponse.stream([.init(type: "read", revision: 2, seenThrough: 2)]).body) == 1)
         try await eventually { store.state?.channel.seenThrough == 2 }
