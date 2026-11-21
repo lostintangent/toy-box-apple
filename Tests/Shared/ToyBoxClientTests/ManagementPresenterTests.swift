@@ -47,6 +47,30 @@ struct ManagementPresenterTests {
         #expect(presenter.channelForm.name == "Workshop")
     }
 
+    @Test func aSavedEditShowsThroughTheCatalogStreamItLeavesOpen() async throws {
+        let channel = testState().channel
+        let edited = { var edited = channel; edited.name = "Edited"; return edited }()
+        let mock = MockTransport(catalogOnly: true) { request, _ in
+            request.httpMethod == "PATCH"
+                ? try .json(edited)
+                : try .catalogStream(ChannelCatalog(lead: testLeadProfile, channels: [channel]))
+        }
+        let catalog = ChannelCatalogStore(api: try mock.api())
+        catalog.startPolling()
+        defer { catalog.stopPolling() }
+        try await eventually { catalog.phase == .connected }
+        let presenter = ManagementPresenter()
+        presenter.present(.editChannel(try #require(catalog.target(channel.id))))
+        presenter.channelForm = ChannelForm(ChannelDetails(channel))
+        presenter.channelForm.name = "Edited"
+        await presenter.save(on: catalog)
+        #expect(presenter.flow == nil)
+
+        #expect(mock.sendPendingBody(try catalogFrame("channel.upserted", ("channel", edited))) == 1)
+        try await eventually { catalog.channels.map(\.name) == ["Edited"] }
+        #expect(mock.requests.map(\.httpMethod) == ["GET", "PATCH"])
+    }
+
     @Test func aFailedWriteKeepsItsFlowAndEntries() async throws {
         let catalog = ChannelCatalogStore(api: try transport(memberStatus: 500).api())
         let presenter = ManagementPresenter()
