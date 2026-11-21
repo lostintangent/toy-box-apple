@@ -60,7 +60,7 @@ struct ServerProvidersTests {
         #expect(Set(subscriptionRequests(mock)) == ["copilot", "codex", "local"])
     }
 
-    @Test func appearReadsEachReadyProviderAtMostOnceAMinuteAndRetrySkipsTheWait() async throws {
+    @Test func appearReadsEachReadyProviderAtMostOnceAMinute() async throws {
         let clock = Clock()
         let mock = MockTransport { request, _ in
             switch request.url?.path {
@@ -80,15 +80,12 @@ struct ServerProvidersTests {
         #expect(mock.requests.filter { $0.url?.path == "/api/v1/providers" }.count == 2)
         #expect(subscriptionRequests(mock) == ["codex"])
 
-        await store.retry("codex")
-        #expect(subscriptionRequests(mock) == ["codex", "codex"])
-
         clock.now += ServerProviders.refreshInterval
         await store.appear()
-        #expect(subscriptionRequests(mock) == ["codex", "codex", "codex"])
+        #expect(subscriptionRequests(mock) == ["codex", "codex"])
     }
 
-    @Test func aFailedReadStaysWithItsOwnProvider() async throws {
+    @Test func aFailedReadShowsNoUsageAndTheNextAppearReadsItAgain() async throws {
         let mock = MockTransport { request, _ in
             switch request.url?.path {
             case "/api/v1/providers":
@@ -115,8 +112,12 @@ struct ServerProvidersTests {
         #expect(store.entries.map(\.usage) == [
             .loaded(.init(plan: "pro")),
             .loaded(.init(plan: "max", limits: [.init(name: "Weekly", usedPercent: 10)])),
-            .failed("Usage unavailable."),
+            nil,
         ])
+
+        await store.appear()
+        #expect(subscriptionRequests(mock).sorted() == ["claude", "codex", "cursor", "cursor"],
+                "Only the failed read is read again within the minute")
     }
 
     // MARK: Updates
@@ -128,10 +129,7 @@ struct ServerProvidersTests {
         .init(id: "ollama", name: "Ollama", status: .unavailable, enabled: true),
         .init(id: "chatgpt", name: "ChatGPT", status: .ready, version: "0.1.0", enabled: false),
     ]
-    nonisolated private static let npmFailure = """
-        npm ERR! code ETIMEDOUT
-        npm ERR! network request to https://registry.npmjs.org/@google%2fgemini-cli failed
-        """
+    nonisolated private static let copilotUpdate = "/api/v1/providers/copilot/update"
 
     /// What a server after 0.4.10 answers on each route. Tests change it as the server would.
     private final class Server: Sendable {
@@ -181,8 +179,19 @@ struct ServerProvidersTests {
         let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 0.01, grace: 60))
         catalog.startPolling()
         try await eventually { catalog.phase == .connected && !catalog.update.isAwaitingServer }
+        try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/channels") == 1 }
         await catalog.providers.appear()
         return (catalog, mock)
+    }
+
+    /// Finishes Copilot's held update, then waits for `check` to end. Past 30 seconds the check is
+    /// cancelled, failing the test rather than hanging the run, since Swift Testing's time limit
+    /// doesn't end a wait for a task the test started.
+    private func finishCopilot(_ mock: MockTransport, _ check: Task<Void, Never>) async {
+        #expect(mock.finishPendingResponses(path: Self.copilotUpdate) == 1)
+        let deadline = Task { try await Task.sleep(for: .seconds(30)); check.cancel() }
+        await check.value
+        deadline.cancel()
     }
 
     private func updateRequests(_ mock: MockTransport) -> [String] {
@@ -228,13 +237,13 @@ struct ServerProvidersTests {
         #expect(!catalog.providers.offersUpdateCheck, "Off and Not Installed providers don't update")
     }
 
-    @Test func checkForUpdatesUpdatesEveryProviderOnAndInstalledOnceAndSaysHowEachWent() async throws {
+    @Test func checkForUpdatesUpdatesEveryProviderOnAndInstalledOnceAndShowsWhatEachInstalled() async throws {
         let server = Server()
         try server.set {
             $0.updates = [
                 "copilot": MockResponse(body: Data(#"{"version":"1.0.115","updated":true}"#.utf8), keepOpen: true),
                 "codex": try .json(ModelProviderUpdate(version: "0.170.0", updated: false)),
-                "gemini": try .json(["error": Self.npmFailure], status: 500),
+                "gemini": MockResponse(status: 500, body: Data(#"{"error":"Unable to update gemini."}"#.utf8)),
             ]
         }
         let (catalog, mock) = try await connect(server)
@@ -242,18 +251,16 @@ struct ServerProvidersTests {
         let providers = catalog.providers
 
         let check = Task { await providers.checkForUpdates() }
-        try await eventually { providers.entries.map(\.update) == [.updating, .upToDate, .failed(Self.npmFailure), nil, nil] }
+        try await eventually(observing: mock) { mock.pendingCount(for: Self.copilotUpdate) == 1 }
+        try await eventually { providers.entries.map(\.update) == [.updating, nil, nil, nil, nil] }
         #expect(providers.isCheckingForUpdates, "Check for Updates stays dim until every update ends")
-        #expect(providers.restartMessage == nil)
-        #expect(mock.requests.first { $0.url?.path == "/api/v1/providers/copilot/update" }?.timeoutInterval
+        #expect(mock.requests.first { $0.url?.path == Self.copilotUpdate }?.timeoutInterval
                     == ChannelAPI.updateTimeout, "The server says nothing until the CLI finishes")
         await providers.checkForUpdates()
 
-        mock.finishPendingResponses(path: "/api/v1/providers/copilot/update")
-        await check.value
-        #expect(providers.entries.map(\.update) == [
-            .updated(from: "1.0.114", to: "1.0.115"), .upToDate, .failed(Self.npmFailure), nil, nil,
-        ])
+        await finishCopilot(mock, check)
+        #expect(providers.entries.map(\.update) == [.updated(from: "1.0.114", to: "1.0.115"), nil, nil, nil, nil],
+                "Nothing newer and a failure both show the version again")
         #expect(!providers.isCheckingForUpdates)
         #expect(providers.restartMessage == "Restart Studio to use the new version.")
         #expect(updateRequests(mock).sorted() == ["codex", "copilot", "gemini"],
@@ -273,7 +280,7 @@ struct ServerProvidersTests {
             $0.updates = [
                 "copilot": MockResponse(body: try JSONEncoder().encode(ModelProviderUpdate(version: "1.0.115", updated: true)),
                                         keepOpen: true),
-                "codex": try .json(ModelProviderUpdate(version: "0.170.0", updated: false)),
+                "codex": try .json(ModelProviderUpdate(version: "0.171.0", updated: true)),
                 "gemini": try .json(ModelProviderUpdate(version: "0.21.3", updated: false)),
             ]
         }
@@ -282,15 +289,17 @@ struct ServerProvidersTests {
         let providers = catalog.providers
 
         let check = Task { await providers.checkForUpdates() }
-        try await eventually { providers.entries.map(\.update) == [.updating, .upToDate, .upToDate, nil, nil] }
+        try await eventually(observing: mock) { mock.pendingCount(for: Self.copilotUpdate) == 1 }
+        try await eventually {
+            providers.entries.map(\.update) == [.updating, .updated(from: "0.170.0", to: "0.171.0"), nil, nil, nil]
+        }
         providers.clearUpdates()
         #expect(providers.entries.map(\.update) == [.updating, nil, nil, nil, nil])
         #expect(providers.isCheckingForUpdates)
         await providers.checkForUpdates()
         #expect(updateRequests(mock).count == 3, "Another check waits for this one, so nothing is sent twice")
 
-        mock.finishPendingResponses(path: "/api/v1/providers/copilot/update")
-        await check.value
+        await finishCopilot(mock, check)
         #expect(providers.entries.map(\.update) == [.updated(from: "1.0.114", to: "1.0.115"), nil, nil, nil, nil])
     }
 
@@ -300,7 +309,7 @@ struct ServerProvidersTests {
             $0.updates = [
                 "copilot": try .json(ModelProviderUpdate(version: "1.0.115", updated: true)),
                 "codex": try .json(ModelProviderUpdate(version: "0.170.0", updated: false)),
-                "gemini": try .json(["error": Self.npmFailure], status: 500),
+                "gemini": MockResponse(status: 500, body: Data(#"{"error":"Unable to update gemini."}"#.utf8)),
             ]
         }
         let (catalog, mock) = try await connect(server)
@@ -308,11 +317,12 @@ struct ServerProvidersTests {
         let providers = catalog.providers
         await providers.checkForUpdates()
         #expect(providers.restartMessage != nil)
+        #expect(providers.entries.map(\.update) == [.updated(from: "1.0.114", to: "1.0.115"), nil, nil, nil, nil])
 
         server.set { $0.isDown = true }
         #expect(mock.finishPendingResponses(path: "/api/v1/channels") == 1)
         try await eventually { catalog.update.phase == .reconnecting }
-        #expect(providers.entries.map(\.update) == [.updating, .updating, .updating, nil, nil])
+        #expect(providers.entries.map(\.update) == [.updating, nil, nil, nil, nil])
         #expect(providers.restartMessage == nil)
         #expect(providers.isCheckingForUpdates)
 
@@ -328,7 +338,7 @@ struct ServerProvidersTests {
         }
         try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/providers") == 1 }
         try await eventually { !catalog.update.isAwaitingServer }
-        #expect(providers.entries.map(\.update) == [.updating, .updating, .updating, nil, nil],
+        #expect(providers.entries.map(\.update) == [.updating, nil, nil, nil, nil],
                 "The versions it read before the reconnect may be stale")
 
         mock.finishPendingResponses(path: "/api/v1/providers")
@@ -340,6 +350,7 @@ struct ServerProvidersTests {
         let reads = listReads(mock)
         let serverReads = mock.requests.filter { $0.url?.path == "/api/v1/server" }.count
         server.set { $0.list = nil }
+        try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/channels") == 1 }
         #expect(mock.finishPendingResponses(path: "/api/v1/channels") == 1)
         try await eventually(observing: mock) {
             mock.requests.filter { $0.url?.path == "/api/v1/server" }.count == serverReads + 1

@@ -4,10 +4,11 @@ import Observation
 
 /// A server's model providers, their usage and their updates, which Settings shows.
 /// Reads start when Settings shows the server. Each enabled, ready provider's subscription is read
-/// on its own, at most once a minute, so a slow CLI never holds up the others. Retry skips the wait.
-/// Check for Updates updates every provider that's on and installed at once, and each result stays
-/// until the next check, until Settings closes and calls `clearUpdates()`, or until the server
-/// reconnects, when the list is read again for the versions it runs.
+/// on its own, at most once a minute, so a slow CLI never holds up the others. Usage belongs to the
+/// list and has no failure of its own, so a failed read shows none and the next `appear()` reads it
+/// again. Check for Updates updates every provider that's on and installed at once, and what each
+/// installed stays until the next check, until Settings closes and calls `clearUpdates()`, or until
+/// the server reconnects, when the list is read again for the versions it runs.
 @MainActor @Observable
 public final class ServerProviders {
     public enum Usage: Equatable, Sendable {
@@ -15,27 +16,24 @@ public final class ServerProviders {
         case loaded(ModelProviderSubscription)
         /// An account on an API key, which the server answers as `null`.
         case none
-        case failed(String)
     }
 
-    /// How a provider's last update went.
+    /// A provider's update, while it runs and once it installs something new. One that finds nothing
+    /// newer, or fails, leaves no update, so the row shows its version again.
     public enum Update: Equatable, Sendable {
         /// A spinner in the version's place while the server installs whatever is newer, or while
         /// it reconnects after an update and the list is read again.
         case updating
-        case upToDate
         /// The update installed `to`, which runs once the server restarts. `from` is the version the
         /// list showed, nil when it showed none.
         case updated(from: String?, to: String)
-        /// The update failed, with the words to show, in the server's words for a refusal or failure.
-        case failed(String)
     }
 
     public struct Entry: Identifiable, Equatable, Sendable {
         public var provider: ModelProvider
-        /// Nil unless the provider is enabled and ready, so Settings can read usage.
+        /// Nil while there's none to show: the provider isn't enabled and ready, or its read failed.
         public var usage: Usage?
-        /// Nil unless the last Check for Updates updated this provider.
+        /// Nil unless this provider is updating, or the last Check for Updates installed something new.
         public var update: Update?
         public var id: String { provider.id }
     }
@@ -60,7 +58,7 @@ public final class ServerProviders {
     @ObservationIgnored private var inFlight: Set<String> = []
     /// The providers whose update the server hasn't answered.
     private var updating: Set<String> = []
-    /// How each finished update went, by provider.
+    /// What each finished update installed, by provider, only for those that installed something new.
     private var results: [String: Update] = [:]
     /// The server reconnected while results showed, and the list it runs now hasn't been read.
     private var isRereading = false
@@ -90,35 +88,24 @@ public final class ServerProviders {
         fetchedAt = fetchedAt.filter { live.contains($0.key) }
         await withTaskGroup(of: Void.self) { group in
             for id in list.filter(\.readsUsage).map(\.id) {
-                group.addTask { await self.refresh(id, force: false) }
+                group.addTask { await self.refresh(id) }
             }
         }
     }
 
-    /// Reads this provider's subscription now, even if it was read within the minute.
-    public func retry(_ id: String) async {
-        guard list.contains(where: { $0.id == id && $0.readsUsage }) else { return }
-        await refresh(id, force: true)
-    }
-
-    private func refresh(_ id: String, force: Bool) async {
+    private func refresh(_ id: String) async {
         if inFlight.contains(id) { return }
-        if !force, let fetchedAt = fetchedAt[id], now().timeIntervalSince(fetchedAt) < Self.refreshInterval {
-            return
-        }
+        if let fetchedAt = fetchedAt[id], now().timeIntervalSince(fetchedAt) < Self.refreshInterval { return }
         inFlight.insert(id)
-        if force || usage[id] == nil { usage[id] = .loading }
         defer { inFlight.remove(id) }
+        if usage[id] == nil { usage[id] = .loading }
         do {
-            if let subscription = try await api.providerSubscription(id: id) {
-                usage[id] = .loaded(subscription)
-            } else {
-                usage[id] = Usage.none
-            }
+            let subscription = try await api.providerSubscription(id: id)
+            usage[id] = subscription.map(Usage.loaded) ?? Usage.none
+            fetchedAt[id] = now()
         } catch {
-            usage[id] = .failed(error.localizedDescription)
+            usage[id] = nil
         }
-        fetchedAt[id] = now()
     }
 
     /// Check for Updates shows on a connected server that updates its providers while any provider
@@ -170,12 +157,8 @@ public final class ServerProviders {
 
     private func update(_ provider: ModelProvider) async {
         defer { updating.remove(provider.id) }
-        do {
-            let answer = try await api.updateProvider(id: provider.id)
-            results[provider.id] = answer.updated ? .updated(from: provider.version, to: answer.version) : .upToDate
-        } catch {
-            results[provider.id] = .failed(error.localizedDescription)
-        }
+        guard let answer = try? await api.updateProvider(id: provider.id), answer.updated else { return }
+        results[provider.id] = .updated(from: provider.version, to: answer.version)
     }
 
     /// The catalog's stream delivered its first catalog, so the server may have restarted onto new

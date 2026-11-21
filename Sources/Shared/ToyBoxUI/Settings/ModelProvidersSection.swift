@@ -17,7 +17,7 @@ public struct ModelProvidersSection: View {
         if !providers.entries.isEmpty {
             Section("Model Providers") {
                 ForEach(providers.entries) { entry in
-                    ModelProviderRow(entry: entry) { await providers.retry(entry.id) }
+                    ModelProviderRow(entry: entry)
                 }
             }
         }
@@ -26,7 +26,6 @@ public struct ModelProvidersSection: View {
 
 private struct ModelProviderRow: View {
     let entry: ServerProviders.Entry
-    let retry: () async -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -54,20 +53,6 @@ private struct ModelProviderRow: View {
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            case .failed?:
-                HStack {
-                    Text("Couldn't read usage").foregroundStyle(.secondary)
-                    Spacer(minLength: 8)
-                    Button("Retry") { Task { await retry() } }
-                        #if os(macOS)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        #else
-                        // Only the button answers a tap, not the whole row.
-                        .buttonStyle(.borderless)
-                        #endif
-                }
-                .font(.subheadline)
             case .loaded(let subscription)?:
                 if !subscription.limits.isEmpty { ModelProviderLimits(limits: subscription.limits) }
             case .none?, nil:

@@ -16,16 +16,11 @@ const subscriptions: Record<string, Subscription> = {
     },
 };
 
-// What each provider's CLI update does: Copilot installs a newer version once, Gemini's npm can't
-// reach the registry, and the rest are current. Each takes its own time, as CLIs do.
+// What each provider's CLI update does: Copilot installs a newer version once, Gemini's fails, and
+// the rest are current. Each takes its own time, as CLIs do.
 const newer: Record<string, string> = { copilot: "1.0.115" };
 const updateDelays: Record<string, number> = { copilot: 3000, gemini: 2500 };
 const defaultUpdateDelay = 1500;
-const geminiFailure = [
-    "npm ERR! code ETIMEDOUT",
-    "npm ERR! network request to https://registry.npmjs.org/@google%2fgemini-cli failed, reason: connect ETIMEDOUT 104.16.1.35:443",
-    "npm ERR! network This is a problem related to network connectivity.",
-].join("\n");
 
 function reply(response: ServerResponse, status: number, body: unknown) {
     response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -47,13 +42,12 @@ export function createDemoProviderRoutes() {
         { id: "chatgpt", name: "ChatGPT", status: "ready", version: "0.1.0", enabled: false },
     ];
 
-    // Like the real server, a provider that isn't installed is refused, and a failed update says
-    // why. The real server answers every CLI failure "Unable to update <id>.", and Gemini's npm
-    // output stands in for a long, multi-line error.
+    // Like the real server, a provider that isn't installed is refused, and a failed update answers
+    // "Unable to update <id>.", which the apps show as nothing newer.
     async function update(provider: Provider, response: ServerResponse) {
         if (provider.status === "unavailable") return reply(response, 422, { error: `${provider.name} isn't installed.` });
         await new Promise(resolve => setTimeout(resolve, updateDelays[provider.id] ?? defaultUpdateDelay));
-        if (provider.id === "gemini") return reply(response, 500, { error: geminiFailure });
+        if (provider.id === "gemini") return reply(response, 500, { error: "Unable to update gemini." });
         const before = provider.version;
         provider.version = newer[provider.id] ?? provider.version;
         reply(response, 200, { version: provider.version, updated: provider.version !== before });
