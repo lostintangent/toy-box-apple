@@ -5,6 +5,7 @@
 ### Features
 
 - You can now check each model provider on your server from its page in Settings, with its version, your plan and how much of each usage limit you've used, so you know before an agent runs out.
+- You can now update your server's model providers from its page in Settings, then restart the server from the same place to start using the new versions, so your agents always run the latest.
 
 ### Bugs/Polish
 
@@ -17,6 +18,7 @@
 ### Features
 
 - You can now check each model provider on your server from the Servers tab in Settings, with its version, your plan and how much of each usage limit you've used, so you know before an agent runs out.
+- You can now update your server's model providers from the Servers tab in Settings, then restart the server from the same place to start using the new versions, so your agents always run the latest.
 
 ### Bugs/Polish
 
