@@ -249,6 +249,35 @@ struct TranscriptTests {
         #expect(arrive() == 3800)
     }
 
+    /// Find's keyboard keeps the end in view, like the composer's. An arrival while Find is open waits
+    /// below it, and closing puts back what the reader was doing unless they moved or revealed a result.
+    @Test func closingFindPutsBackWhatTheReaderWasDoingUnlessTheyMoved() {
+        let scroll = measuredScroll(40, origin: 3400)
+        _ = scroll.update(.land(.end))
+        #expect(scroll.findChanged(isPresented: true) == nil)
+        scroll.metrics?.viewport = .init(width: 386, height: 600, topInset: 0, bottomInset: 300)
+        #expect(scroll.update()?.origin == 3700)
+        scroll.metrics?.origin = 3700
+
+        scroll.sync((0...40).map { .init(id: "r\($0)", order: $0) })
+        scroll.measure("r40", frame: CGRect(x: 0, y: 4000, width: 386, height: 100))
+        scroll.metrics?.documentEnd = 4100
+        #expect(scroll.update()?.origin ?? 3700 == 3700)
+
+        // Closing follows to the arrival before the keyboard has left, and the keyboard leaving keeps the end.
+        #expect(scroll.findChanged(isPresented: false)?.origin == 3800)
+        scroll.metrics?.origin = 3800
+        scroll.metrics?.viewport = viewport
+        #expect(scroll.update()?.origin == 3500)
+        scroll.metrics?.origin = 3500
+
+        // A result the reader revealed is where closing leaves them.
+        #expect(scroll.findChanged(isPresented: true) == nil)
+        #expect(scroll.update(.reveal("r30"))?.origin == 2968)
+        scroll.metrics?.origin = 2968
+        #expect(scroll.findChanged(isPresented: false)?.origin ?? 2968 == 2968)
+    }
+
     @Test func aPostureChangeKeepsOnlyTheFramesTheStackMeasuresAgain() {
         let scroll = TranscriptScroll()
         scroll.rows = (0..<10).map { .init(id: "r\($0)", order: $0) }
