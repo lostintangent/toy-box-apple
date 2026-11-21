@@ -307,6 +307,35 @@ struct TranscriptTests {
         #expect(scroll.update() == nil)
     }
 
+    /// A catch-up card keeps the top of its landing through an arrival, where any other landing the
+    /// end holds follows it.
+    @Test(arguments: [true, false])
+    func aCatchUpLandingKeepsItsTopThroughAnArrival(pinsLanding: Bool) {
+        let scroll = measuredScroll(40, origin: 3400)
+        #expect(scroll.update(.land(.row("r37", order: 37)))?.origin == 3400)
+        scroll.sync((0...40).map { .init(id: "r\($0)", order: $0) }, pinsLanding: pinsLanding)
+        scroll.measure("r40", frame: CGRect(x: 0, y: 4000, width: 386, height: 500))
+        scroll.metrics?.documentEnd = 4500
+        #expect(scroll.update()?.origin == (pinsLanding ? 3700 : 3900))
+    }
+
+    @Test func returningToTheAppPlacesOnceForTheGeometryItCameBackWith() {
+        let scroll = measuredScroll(40, origin: 3400)
+        _ = scroll.update(.land(.end))
+
+        // The system's snapshot passes lay the scene out again while it's away, and none of them places.
+        scroll.isSceneActive = false
+        scroll.metrics?.viewport = .init(width: 386, height: 900, topInset: 0, bottomInset: 0)
+        scroll.metrics?.origin = 0
+        #expect(scroll.update() == nil)
+        scroll.metrics?.viewport = viewport
+        #expect(scroll.update() == nil)
+
+        #expect(scroll.sceneBecameActive()?.origin == 3400)
+        scroll.metrics?.origin = 3400
+        #expect(scroll.update() == nil)
+    }
+
     @Test func reachingTheTopAtRestLoadsOlderHistory() {
         let scroll = measuredScroll(40, origin: 3400)
         _ = scroll.update(.land(.end))

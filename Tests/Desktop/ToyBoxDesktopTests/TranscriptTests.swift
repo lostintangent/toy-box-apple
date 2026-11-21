@@ -380,6 +380,31 @@ struct TranscriptTests {
         #expect(abs(harness.scrollView.contentView.bounds.minY - origin) < 1, "Retry moved the reader")
     }
 
+    /// While its page loads, the Load Older row is one line. A failure grows it to fit Retry, reaching
+    /// the top again retries, and once history ends the row is gone, with no Beginning label or space left.
+    @MainActor
+    @Test func theLoadOlderRowGrowsForAFailureRetriesAtTheTopAndLeavesNothingAtTheBeginning() async throws {
+        let harness = try await TranscriptHarness(messages: (31...60).map(transcriptTestMessage),
+                                                  history: (1...30).map(transcriptTestMessage), holdsHistory: true)
+        defer { await harness.close() }
+        func top(_ id: String) throws -> CGFloat { try #require(harness.capture.frames[id]).contentTop }
+        try await harness.scrollUp(byWheel: false) { harness.store.isLoadingOlder }
+        let loading = try top("m31")
+
+        harness.failHistory()
+        try await harness.waitUntil { harness.store.historyError != nil }
+        try await harness.settled()
+        let failed = try top("m31")
+        #expect(failed > loading + 4, "The failure and Retry don't fit in the row")
+
+        try await harness.scrollDown(byWheel: false) { harness.scrollView.contentView.bounds.minY > 200 }
+        try await harness.scrollUp(byWheel: false) { harness.store.messages.first?.sequence == 1 }
+        try #require(!harness.store.hasOlderMessages)
+        try await harness.scrollUp(byWheel: false) { (harness.frames["m1"]?.rect.minY ?? -1) >= 0 }
+        let beginning = try top("m1")
+        #expect(abs(beginning - (loading - 32)) < 1, "The beginning sits at \(beginning), not \(loading - 32)")
+    }
+
     /// Rule 4. A message on its way is drawn exactly as it will be once sent, with the same bubble and
     /// gap, and the day divider when it's the first message today, so confirming it changes nothing on
     /// screen. The send is held at the server until the pending message has settled, then its event
@@ -2980,6 +3005,15 @@ private final class TranscriptHarness {
         for response in held { response.request.finish(with: response.body) }
     }
 
+    /// Fails the held pages as an unavailable server does, and answers every page after them.
+    func failHistory() {
+        let held = TranscriptServerProtocol.fixtures.withLock { fixtures in
+            defer { fixtures[host]?.held = []; fixtures[host]?.holdsHistory = false }
+            return fixtures[host]?.held ?? []
+        }
+        for response in held { response.request.failUnavailable() }
+    }
+
     func close() async {
         if let turnObserver { CFRunLoopRemoveObserver(CFRunLoopGetMain(), turnObserver, .commonModes) }
         turnObserver = nil
@@ -3086,8 +3120,16 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
                 modes: [RunLoop.Mode.common.rawValue])
     }
 
+    func failUnavailable() {
+        guard let thread else { return }
+        perform(#selector(failLoading), on: thread, with: nil, waitUntilDone: false, modes: [RunLoop.Mode.common.rawValue])
+    }
+
     @objc private func load(_ data: NSData) { client?.urlProtocol(self, didLoad: data as Data) }
     @objc private func finishLoading(_ body: NSData) { respond(status: 200, body: body as Data) }
+    @objc private func failLoading() {
+        respond(status: 503, body: Data(#"{"error":"The server is unavailable."}"#.utf8))
+    }
 
     private func respond(status: Int, type: String = "application/json", body: Data? = nil) {
         guard let url = request.url, let response = HTTPURLResponse(
@@ -3159,3 +3201,4 @@ private final class HoveredMessage {
 
     func close() { window.close() }
 }
+
