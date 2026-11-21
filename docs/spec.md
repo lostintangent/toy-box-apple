@@ -254,8 +254,30 @@ and are there again when it comes back.
   a bar, its percent and when it resets, like "in 3 days". Usage loads when the page shows the
   server, at most once a minute for each provider, and each provider loads on its own. "Loading
   usage…" shows while it reads, and "Couldn't read usage" with Retry if the read fails. An account
-  on an API key shows no plan and no bars. The section has no update buttons or enable toggles, and
-  a server that doesn't list its providers shows no section.
+  on an API key shows no plan and no bars. A server that doesn't list its providers shows no
+  section, and the section has no enable toggles, which stay in the web.
+  On a connected server newer than 0.4.10, whose `POST /api/v1/providers/:providerId/update`
+  installs whatever is newer for one provider, the section ends with one Check for Updates, like
+  the server list's: on the Mac at the trailing end of a bar under the providers, and on the phone
+  as a row after them with `arrow.triangle.2.circlepath`, which VoiceOver reads as "Check for model
+  provider updates". It's there while any provider is on and installed, and it updates all of
+  those at once, one request each and sent once, skipping Off and Not Installed, which stay as they
+  are. Each provider being updated shows a spinner in its version's place, and the button dims
+  until every update ends.
+  Then a row reads Up to date when the server answers `updated: false`, or the version it ran and
+  the one it installed, like "1.0.114 → 1.0.115", in secondary ink, which VoiceOver reads as
+  "1.0.114, 1.0.115 after restart". A failed update shows the server's error in words under the
+  name, after a yellow `exclamationmark.triangle.fill`, its first line on the Mac with the rest
+  in its help tag and up to three lines on the phone. On the phone, when the name, versions and
+  plan can't share a line, the versions drop to their own line under the name. A provider keeps
+  running its old version until the server restarts, so once any update reports a change, the
+  section says "Restart Studio Demo to use the new version.", or "versions" when more than one
+  changed, with the server's own Restart beside it: the sentence leads the Mac's bar, with a
+  prominent Restart before Check for Updates, and on the phone it's the section's footer, under a
+  Restart row with `arrow.clockwise` after Check for Updates. That Restart is the Version row's,
+  restarting this server only, and a server without an installed release shows the sentence
+  alone. Results stay until the next check, until Settings closes, or until the server restarts,
+  when the rows spin while it reconnects and then read its new versions.
 - **Connecting.** The user connects once, by entering the address of any one of their Toy Box
   Macs, and the app shows that server and every peer that answers (see Peer servers). Connect is
   only there while the app has no server: the phone's Welcome, and on the Mac the sidebar's
