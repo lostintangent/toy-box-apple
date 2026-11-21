@@ -244,6 +244,17 @@ and are there again when it comes back.
   the user connected through first. A server's address can't be edited, because a server is
   its `id` and its name, and the address is only how this device reaches it. Server URL shows it
   as a plain value in secondary ink that can be selected and copied.
+- **Model Providers** ends each server's page on the phone, and the selected server's details on
+  the Mac's Servers tab, which scrolls when it outgrows the window. It's a read-only section
+  listing the server's providers in the server's order. A row reads the provider's name with its
+  version after it in secondary ink, then on the far right its plan, like Pro, Max or Enterprise.
+  A provider that isn't ready shows its status there instead: Signed Out, Failed, Unavailable, or
+  Off when it's disabled. A failed provider shows its error under its name. Under a ready
+  provider, each usage limit takes one line, like the web: its name, a bar, its percent and when
+  it resets, like "in 3 days". Usage loads when the page shows the server, at most once a minute
+  for each provider, and each provider loads on its own. "Loading usage…" shows while it reads,
+  and "Couldn't read usage" with Retry if the read fails. An account on an API key shows no plan
+  and no bars. The section has no update buttons or enable toggles.
 - **Connecting.** The user connects once, by entering the address of any one of their Toy Box
   Macs, and the app shows that server and every peer that answers (see Peer servers). Connect is
   only there while the app has no server: the phone's Welcome, and on the Mac the sidebar's
