@@ -253,8 +253,9 @@ and are there again when it comes back.
   under its name. Under a ready provider, each usage limit takes one line, like the web: its name,
   a bar, its percent and when it resets, like "in 3 days". Usage loads when the page shows the
   server, at most once a minute for each provider, and each provider loads on its own. "Loading
-  usage…" shows while it reads, and "Couldn't read usage" with Retry if the read fails. An account
-  on an API key shows no plan and no bars. A server that doesn't list its providers shows no
+  usage…" shows while it reads. An account on an API key shows no plan and no bars, and so does a
+  read that fails, with no error and no Retry, because a provider that can't answer shows Failed
+  on its row, and the next read tries again. A server that doesn't list its providers shows no
   section, and the section has no enable toggles, which stay in the web.
   On a connected server newer than 0.4.10, whose `POST /api/v1/providers/:providerId/update`
   installs whatever is newer for one provider, the section ends with one Check for Updates, like
