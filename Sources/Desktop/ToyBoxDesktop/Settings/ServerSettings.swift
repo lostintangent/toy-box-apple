@@ -172,7 +172,7 @@ private struct ServerDetails: View {
             }
         }
         .task { await catalog.providers.appear() }
-        ModelProvidersSection(catalog.providers)
+        ModelProvidersSection(catalog.providers, update: update)
     }
 
     static func status(_ phase: ChannelCatalogPhase) -> String {

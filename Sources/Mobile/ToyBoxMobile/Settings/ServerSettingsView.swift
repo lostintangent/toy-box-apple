@@ -15,7 +15,7 @@ struct ServerSettingsView: View {
             Section("Name") { ServerNameRows(catalog, in: model.servers) }
             ServerAddressSection(catalog: catalog)
             ServerVersionSection(update: catalog.update)
-            ModelProvidersSection(catalog.providers)
+            ModelProvidersSection(catalog.providers, update: catalog.update)
         }
         .accessibilityIdentifier("server-settings")
         .task { await catalog.providers.appear() }
