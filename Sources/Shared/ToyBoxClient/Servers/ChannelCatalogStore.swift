@@ -47,6 +47,8 @@ public final class ChannelCatalogStore {
     public var members: [ChannelAgent] { state?.members ?? [] }
     /// The server's release, and checking for a newer one and restarting onto it.
     public let update: ServerUpdate
+    /// The server's model providers and their usage, which Settings shows.
+    public let providers: ServerProviders
     /// The IDs of the agents running now on this server, the one source of who's working in every
     /// channel. It's empty while the catalog is unavailable, so activity clears instead of going stale.
     public private(set) var working: Set<String> = []
@@ -119,6 +121,7 @@ public final class ChannelCatalogStore {
         self.api = api
         self.name = name ?? Self.name(of: api.baseURL.absoluteString)
         self.update = ServerUpdate(api: api)
+        self.providers = ServerProviders(api: api, now: now)
         self.reconnectPolicy = reconnectPolicy
         self.now = now
         self.networkPath = networkPath

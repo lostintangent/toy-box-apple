@@ -186,6 +186,17 @@ public struct ChannelAPI: Sendable {
         try await get(["api", "v1", "models"])
     }
 
+    /// Every provider Toy Box supports, in Settings order.
+    public func providers() async throws -> [ModelProvider] {
+        let list: ModelProviderList = try await get(["api", "v1", "providers"])
+        return list.providers
+    }
+
+    /// The signed-in account's plan and limits, or `nil` for an account on an API key.
+    public func providerSubscription(id: String) async throws -> ModelProviderSubscription? {
+        try await get(["api", "v1", "providers", id, "subscription"])
+    }
+
     public func screens() async throws -> ScreenList {
         try await get(["api", "v1", "screens"])
     }
