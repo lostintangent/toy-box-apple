@@ -507,6 +507,7 @@ struct ConversationView: View {
         }
         .onDisappear {
             find.close()
+            _ = scroll.findChanged(isPresented: false)
             interaction.isFinding = false
         }
         .onChange(of: interaction.jumpToLatestRequest) { jumpToLatest() }
