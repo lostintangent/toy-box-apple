@@ -133,8 +133,7 @@ struct SettingsView: View {
     }
 }
 
-/// A server's dot and name, then that it can't connect, or its release. A failed check or restart
-/// reads under the name, up to three lines, and VoiceOver reads all of it. See Updating a server in
+/// A server's dot and name, then that it can't connect, or its release. See Updating a server in
 /// docs/spec.md.
 private struct ServerRow: View {
     let catalog: ChannelCatalogStore
@@ -143,26 +142,15 @@ private struct ServerRow: View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
         let update = catalog.update
         let isConnected = catalog.phase.failure == nil
-        let failure: String? = if case .failed(let words)? = update.outcome { words } else { nil }
         // The dot already says it can't connect, so the row says so only when it shows nothing else.
-        let cantConnect = !isConnected && failure == nil && update.phase != .checking && update.phase != .reconnecting
+        let cantConnect = !isConnected && update.phase != .checking && update.phase != .reconnecting
         HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: Self.dotSpacing) {
-                    Circle().fill(footer.dot).frame(width: Self.dotSize, height: Self.dotSize)
-                        .accessibilityHidden(true)
-                    Text(catalog.name).lineLimit(1)
-                        // The dot's meaning, read once for the row.
-                        .accessibilityValue(footer.accessibilityValue)
-                }
-                if let failure {
-                    Text("\(Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)) \(failure)")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                        .padding(.leading, Self.dotSize + Self.dotSpacing)
-                        .accessibilityLabel(failure)
-                }
+            HStack(spacing: 10) {
+                Circle().fill(footer.dot).frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
+                Text(catalog.name).lineLimit(1)
+                    // The dot's meaning, read once for the row.
+                    .accessibilityValue(footer.accessibilityValue)
             }
             Spacer(minLength: 0)
             if cantConnect {
@@ -171,14 +159,10 @@ private struct ServerRow: View {
             ServerUpdateStatus(update: update, showsVersion: isConnected).fixedSize()
         }
     }
-
-    private static let dotSize: CGFloat = 8
-    private static let dotSpacing: CGFloat = 10
 }
 
-/// The end of a server's row: its version, a spinner while it checks or reconnects, Up to date after
-/// a check that found nothing newer, or the release it runs and the one a restart starts once a
-/// restart is pending.
+/// The end of a server's row: its version, a spinner while it checks or reconnects, or the release
+/// it runs and the one a restart starts once a restart is pending.
 private struct ServerUpdateStatus: View {
     let update: ServerUpdate
     /// A server that can't connect says so instead.
@@ -196,9 +180,7 @@ private struct ServerUpdateStatus: View {
                     .accessibilityLabel("\(version.version), \(installed) after restart")
             }
         case .idle?, nil:
-            if update.outcome == .upToDate {
-                Text("Up to date").foregroundStyle(.secondary)
-            } else if showsVersion, let version = update.version?.version {
+            if showsVersion, let version = update.version?.version {
                 Text(version).foregroundStyle(.secondary)
             }
         }

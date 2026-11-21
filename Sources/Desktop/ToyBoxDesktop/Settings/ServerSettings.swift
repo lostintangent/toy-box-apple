@@ -110,9 +110,9 @@ struct ServerSettings: View {
     static func address(_ catalog: ChannelCatalogStore) -> String { catalog.api.baseURL.absoluteString }
 }
 
-/// The end of a server's row: its version, a spinner while it checks or reconnects, how its last
-/// check or restart ended, or the release it runs and the one a restart starts once a restart is
-/// pending. See Updating a server in docs/spec.md.
+/// The end of a server's row: its version, a spinner while it checks or reconnects, or the release
+/// it runs and the one a restart starts once a restart is pending. See Updating a server in
+/// docs/spec.md.
 private struct ServerUpdateStatus: View {
     let update: ServerUpdate
 
@@ -124,31 +124,15 @@ private struct ServerUpdateStatus: View {
             case .reconnecting?:
                 ProgressView().controlSize(.small).accessibilityLabel("Reconnecting")
             case .restartPending?:
-                if case .failed(let words)? = update.outcome {
-                    failure(words)
-                } else if let version = update.version, let installed = version.installedVersion {
+                if let version = update.version, let installed = version.installedVersion {
                     Text("\(version.version) → \(installed)").foregroundStyle(.secondary)
                         .accessibilityLabel("\(version.version), \(installed) after restart")
                 }
             case .idle?, nil:
-                switch update.outcome {
-                case .upToDate?: Text("Up to date").foregroundStyle(.secondary)
-                case .failed(let words)?: failure(words)
-                case nil: if let version = update.version?.version { Text(version).foregroundStyle(.secondary) }
-                }
+                if let version = update.version?.version { Text(version).foregroundStyle(.secondary) }
             }
         }
         .lineLimit(1)
-    }
-
-    private func failure(_ words: String) -> some View {
-        Label {
-            Text(words).foregroundStyle(.secondary)
-        } icon: {
-            Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)
-        }
-        .labelStyle(.titleAndIcon)
-        .help(words)
     }
 }
 
