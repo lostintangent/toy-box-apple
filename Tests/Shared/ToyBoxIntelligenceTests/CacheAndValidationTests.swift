@@ -17,7 +17,6 @@ struct IntelligenceCacheTests {
         #expect(cache.value(for: "b") == nil)
         #expect(cache.value(for: "a") == 1)
         #expect(cache.value(for: "c") == 3)
-        #expect(cache.count == 2)
     }
 
     @Test func descriptionsPersistAcrossLaunches() async throws {
@@ -64,9 +63,9 @@ struct AltTextValidationTests {
 
     @Test func boilerplateOpeningsAreRemoved() {
         #expect(AltTextPrompt.validated(kind: "photo", description: "Image of a beach at sunset", recognizedText: "")
-                == AltText(text: "A beach at sunset."))
+                == "A beach at sunset.")
         #expect(AltTextPrompt.validated(kind: "photo", description: "This image shows a tree in a field.", recognizedText: "")
-                == AltText(text: "A tree in a field."))
+                == "A tree in a field.")
     }
 
     @Test func textAndNamesMustMatchRecognition() {
@@ -80,7 +79,7 @@ struct AltTextValidationTests {
         #expect(AltTextPrompt.validated(kind: "screenshot",
                                         description: "A settings window with a \u{201C}Show in menu bar\u{201D} option under General.",
                                         recognizedText: recognized)
-                == AltText(text: "A settings window with a \u{201C}Show in menu bar\u{201D} option under General."))
+                == "A settings window with a \u{201C}Show in menu bar\u{201D} option under General.")
         #expect(AltTextPrompt.validated(kind: "chart", description: "A chart showing 42% growth.", recognizedText: "growth 24%") == nil)
     }
 
@@ -90,15 +89,15 @@ struct AltTextValidationTests {
                                         description: "Screen showing a workspace with tasks and team members in a meeting.",
                                         recognizedText: "Overview Tasks Ada Moss Review the handoff") == nil)
         #expect(AltTextPrompt.validated(kind: "screenshot", description: "A calendar with a meeting at noon.",
-                                        recognizedText: "Design meeting 12:00")?.text == "A calendar with a meeting at noon.")
+                                        recognizedText: "Design meeting 12:00") == "A calendar with a meeting at noon.")
         #expect(AltTextPrompt.validated(kind: "screenshot", description: "A task board with team members and statuses.",
-                                        recognizedText: "Tasks")?.text == "A task board with team members and statuses.")
+                                        recognizedText: "Tasks") == "A task board with team members and statuses.")
     }
 
     @Test func descriptionsStayShort() {
         let first = "A chat window with a sidebar of channels and an open conversation."
         let long = first + " It also shows a long list of messages, reactions, attachments, avatars, timestamps, read receipts and other small details."
-        #expect(AltTextPrompt.validated(kind: "screenshot", description: long, recognizedText: "") == AltText(text: first))
+        #expect(AltTextPrompt.validated(kind: "screenshot", description: long, recognizedText: "") == first)
         let runOn = String(repeating: "a very long clause ", count: 12)
         #expect(AltTextPrompt.validated(kind: "screenshot", description: runOn, recognizedText: "") == nil)
     }

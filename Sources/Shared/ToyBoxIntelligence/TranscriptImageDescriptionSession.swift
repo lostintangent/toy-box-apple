@@ -11,8 +11,6 @@ public final class TranscriptImageDescriptionSession {
     private var texts: [String: String] = [:]
     @ObservationIgnored private var finished: Set<String> = []
 
-    public init() {}
-
     public static func isActive(voiceOver: Bool, isOn: Bool, using service: any ChannelIntelligenceService) -> Bool {
         voiceOver && isOn && service.availability.isAvailable
     }
@@ -23,7 +21,7 @@ public final class TranscriptImageDescriptionSession {
 
     public func describe(_ request: AltTextRequest, using service: any ChannelIntelligenceService) async {
         guard !Task.isCancelled, !finished.contains(request.key) else { return }
-        let text = await service.altText(request)?.text
+        let text = await service.altText(request)
         // A tile that scrolled away gives up its place in the queue and asks again when it returns.
         guard !Task.isCancelled else { return }
         finished.insert(request.key)

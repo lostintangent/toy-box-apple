@@ -4,7 +4,7 @@ import FoundationModels
 /// How a generation ended, beyond its result: whether it may be cached, and what happened on the
 /// way, for evaluation.
 struct CatchUpOutcome: Sendable {
-    var result: CatchUpResult
+    var result: CatchUp?
     var cacheable: Bool
     var trace = CatchUpTrace()
 }
@@ -22,30 +22,19 @@ struct CatchUpTrace: Sendable {
 }
 
 /// The ways a generation can fail, mapped from Foundation Models errors.
-enum GenerationFailure: Equatable, Sendable {
-    case cancelled
+enum GenerationFailure: Sendable {
     case tooLong
     /// The model declined the content. Asking again gives the same answer.
     case refused
-    case unavailable(IntelligenceUnavailableReason)
-    /// Rate limits, timeouts and anything unexpected. Worth trying again later.
+    /// Cancellation, an unready model, rate limits, timeouts and anything unexpected. Worth trying
+    /// again later.
     case transient
 
     init(_ error: any Error) {
-        switch error {
-        case is CancellationError:
-            self = .cancelled
-        case let error as LanguageModelError:
-            switch error {
-            case .contextSizeExceeded: self = .tooLong
-            case .guardrailViolation, .refusal: self = .refused
-            case .unsupportedLanguageOrLocale: self = .unavailable(.unsupportedLanguage)
-            default: self = .transient
-            }
-        case is SystemLanguageModel.Error:
-            self = .unavailable(.modelNotReady)
-        default:
-            self = Task.isCancelled ? .cancelled : .transient
+        switch error as? LanguageModelError {
+        case .contextSizeExceeded: self = .tooLong
+        case .guardrailViolation, .refusal: self = .refused
+        default: self = .transient
         }
     }
 }
@@ -97,11 +86,11 @@ struct CatchUpGeneration: Sendable {
         }
         guard var prompt = fitted else {
             trace.error = "Prompt doesn't fit"
-            return CatchUpOutcome(result: .declined, cacheable: true, trace: trace)
+            return CatchUpOutcome(result: nil, cacheable: true, trace: trace)
         }
 
         while true {
-            if Task.isCancelled { return CatchUpOutcome(result: .declined, cacheable: false, trace: trace) }
+            if Task.isCancelled { return CatchUpOutcome(result: nil, cacheable: false, trace: trace) }
             trace.attempts += 1
             trace.shownLines = prompt.entries.count
             trace.promptTokens = try? await model.tokenCount(for: Prompt(prompt.text))
@@ -121,15 +110,13 @@ struct CatchUpGeneration: Sendable {
                 switch GenerationFailure(error) {
                 case .tooLong:
                     guard trace.attempts == 1, let half = prompt.halved() else {
-                        return CatchUpOutcome(result: .declined, cacheable: true, trace: trace)
+                        return CatchUpOutcome(result: nil, cacheable: true, trace: trace)
                     }
                     prompt = half
                 case .refused:
-                    return CatchUpOutcome(result: .declined, cacheable: true, trace: trace)
-                case .unavailable(let reason):
-                    return CatchUpOutcome(result: .unavailable(reason), cacheable: false, trace: trace)
-                case .cancelled, .transient:
-                    return CatchUpOutcome(result: .declined, cacheable: false, trace: trace)
+                    return CatchUpOutcome(result: nil, cacheable: true, trace: trace)
+                case .transient:
+                    return CatchUpOutcome(result: nil, cacheable: false, trace: trace)
                 }
             }
         }

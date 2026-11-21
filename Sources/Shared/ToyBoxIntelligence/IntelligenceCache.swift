@@ -8,10 +8,8 @@ struct LRUCache<Key: Hashable & Sendable, Value: Sendable>: Sendable {
     private var order: [Key] = []
 
     init(limit: Int) {
-        self.limit = max(1, limit)
+        self.limit = limit
     }
-
-    var count: Int { values.count }
 
     mutating func value(for key: Key) -> Value? {
         guard let value = values[key] else { return nil }

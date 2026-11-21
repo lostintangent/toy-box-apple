@@ -855,8 +855,8 @@ private final class AvatarImageProtocol: URLProtocol, @unchecked Sendable {
 
 private struct UnavailableIntelligence: ChannelIntelligenceService {
     var availability: IntelligenceAvailability { .unavailable(.modelNotReady) }
-    func catchUp(_ request: CatchUpRequest) async -> CatchUpResult { .unavailable(.modelNotReady) }
-    func altText(_ request: AltTextRequest) async -> AltText? { nil }
+    func catchUp(_ request: CatchUpRequest) async -> CatchUp? { nil }
+    func altText(_ request: AltTextRequest) async -> String? { nil }
 }
 
 private let testServer = "https://server.test"

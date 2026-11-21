@@ -10,7 +10,8 @@ public final class LiveChannelIntelligence: ChannelIntelligenceService {
     let model = SystemLanguageModel.default
     let queue = GenerationQueue()
     /// Shared by the transcript's card and Siri, so a channel summarized in one is instant in the other.
-    let catchUps = Mutex(LRUCache<CatchUpRequest.Key, CatchUpResult>(limit: 32))
+    /// A cached nil remembers a decline that asking again would repeat.
+    let catchUps = Mutex(LRUCache<CatchUpRequest.Key, CatchUp?>(limit: 32))
     let altTexts: AltTextStore
 
     init(altTexts: AltTextStore = AltTextStore()) {
@@ -21,19 +22,17 @@ public final class LiveChannelIntelligence: ChannelIntelligenceService {
         IntelligenceAvailability(model.availability, supportsLocale: model.supportsLocale(.current))
     }
 
-    public func catchUp(_ request: CatchUpRequest) async -> CatchUpResult {
+    public func catchUp(_ request: CatchUpRequest) async -> CatchUp? {
         await catchUpOutcome(request).result
     }
 
-    public func altText(_ request: AltTextRequest) async -> AltText? {
+    public func altText(_ request: AltTextRequest) async -> String? {
         await altTextOutcome(request)?.text
     }
 
     /// The catch-up with its trace, for evaluation.
     func catchUpOutcome(_ request: CatchUpRequest) async -> CatchUpOutcome {
-        if case .unavailable(let reason) = availability {
-            return CatchUpOutcome(result: .unavailable(reason), cacheable: false)
-        }
+        guard availability.isAvailable else { return CatchUpOutcome(result: nil, cacheable: false) }
         if let cached = catchUps.withLock({ $0.value(for: request.key) }) {
             return CatchUpOutcome(result: cached, cacheable: true)
         }
@@ -43,7 +42,7 @@ public final class LiveChannelIntelligence: ChannelIntelligenceService {
             if outcome.cacheable { self.catchUps.withLock { $0.set(outcome.result, for: request.key) } }
             return outcome
         }
-        return outcome ?? CatchUpOutcome(result: .declined, cacheable: false)
+        return outcome ?? CatchUpOutcome(result: nil, cacheable: false)
     }
 
     /// The description with its details, for evaluation. Nil when unavailable or cancelled.
@@ -51,7 +50,7 @@ public final class LiveChannelIntelligence: ChannelIntelligenceService {
         guard availability.isAvailable, model.capabilities.contains(.vision) else { return nil }
         let key = [request.key, "v\(AltTextPrompt.version)", model.variant.displayName].joined(separator: "\n")
         if let entry = await altTexts.entry(for: key) {
-            return AltTextOutcome(text: entry.text.map(AltText.init), cacheable: true)
+            return AltTextOutcome(text: entry.text, cacheable: true)
         }
         let generation = AltTextGeneration(model: model)
         let store = altTexts
@@ -60,7 +59,7 @@ public final class LiveChannelIntelligence: ChannelIntelligenceService {
         return await queue.run(key: "alt-text\n\(key)", priority: priority) {
             let outcome = await generation.run(url)
             if outcome.cacheable, !Task.isCancelled {
-                await store.store(AltTextStore.Entry(text: outcome.text?.text), for: key)
+                await store.store(AltTextStore.Entry(text: outcome.text), for: key)
             }
             return outcome
         }

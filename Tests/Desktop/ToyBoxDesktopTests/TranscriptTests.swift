@@ -506,7 +506,7 @@ struct TranscriptTests {
         let ready = CatchUp(needsYou: nil, changes: (31...33).map {
             .init(text: "Update \($0) moved along, with enough detail to wrap the line.", sources: [$0])
         }, through: latest)
-        let service = summarizes ? StubChannelIntelligence(results: [.ready(ready)], holdsCatchUp: true)
+        let service = summarizes ? StubChannelIntelligence(results: [ready], holdsCatchUp: true)
             : StubChannelIntelligence(availability: .unavailable(.deviceNotEligible))
         let log = TranscriptOpeningLog()
         let harness = try await TranscriptHarness(messages: messages, seenThrough: 30,
@@ -2514,7 +2514,7 @@ struct TranscriptCatchUpTests {
         let ready = CatchUp(needsYou: nil, changes: (11...16).map {
             .init(text: "Lead moved update \($0) along, with enough detail to wrap the line.", sources: [$0])
         }, through: 40)
-        let service = StubChannelIntelligence(results: [.ready(ready)], holdsCatchUp: true)
+        let service = StubChannelIntelligence(results: [ready], holdsCatchUp: true)
         let messages = (1...40).map { catchUpTestMessage($0, repeats: $0 > 9 ? 3 : 1) }
         let harness = try await TranscriptHarness(messages: messages, seenThrough: 9, height: 800,
                                                   legacyScrollers: legacyScrollers, intelligence: service)
@@ -2566,12 +2566,12 @@ private final class TranscriptReopenLog {
 
 private final class StubChannelIntelligence: ChannelIntelligenceService {
     let availability: IntelligenceAvailability
-    private let results: Mutex<[CatchUpResult]>
+    private let results: Mutex<[CatchUp?]>
     private let calls = Mutex(0)
     private let hold: Mutex<(isHeld: Bool, waiting: [CheckedContinuation<Void, Never>])>
 
     /// `holdsCatchUp` keeps every catch-up answer waiting until `releaseCatchUp()`.
-    init(availability: IntelligenceAvailability = .available, results: [CatchUpResult] = [],
+    init(availability: IntelligenceAvailability = .available, results: [CatchUp?] = [],
          holdsCatchUp: Bool = false) {
         self.availability = availability
         self.results = Mutex(results)
@@ -2590,7 +2590,7 @@ private final class StubChannelIntelligence: ChannelIntelligenceService {
     var catchUpCount: Int { calls.withLock { $0 } }
 
     /// Answers with each result in turn, then keeps answering with the last.
-    func catchUp(_ request: CatchUpRequest) async -> CatchUpResult {
+    func catchUp(_ request: CatchUpRequest) async -> CatchUp? {
         calls.withLock { $0 += 1 }
         await withCheckedContinuation { continuation in
             let isHeld = hold.withLock { hold in
@@ -2599,10 +2599,10 @@ private final class StubChannelIntelligence: ChannelIntelligenceService {
             }
             if !isHeld { continuation.resume() }
         }
-        return results.withLock { $0.count > 1 ? $0.removeFirst() : $0.first ?? .declined }
+        return results.withLock { $0.count > 1 ? $0.removeFirst() : $0.first ?? nil }
     }
 
-    func altText(_ request: AltTextRequest) async -> AltText? { nil }
+    func altText(_ request: AltTextRequest) async -> String? { nil }
 }
 
 func catchUpTestMessage(_ sequence: Int, sender: ChannelMessageSender = .agent("lead"),

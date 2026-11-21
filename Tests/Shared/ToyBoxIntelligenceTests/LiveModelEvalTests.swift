@@ -125,7 +125,7 @@ struct LiveModelEvalTests {
         let result = await service.catchUp(request)
         let catchUpTime = ContinuousClock.now - asked
         let (text, descriptionTime) = await description.value
-        #expect(result.catchUp != nil)
+        #expect(result != nil)
         #expect(text != nil)
         report("## Preemption\nA catch-up asked for 1 s into an image description was ready in \(Self.seconds(catchUpTime)). "
                + "The description started over and arrived \(Self.seconds(descriptionTime)) after it was first asked for.\n")
@@ -169,7 +169,7 @@ struct LiveModelEvalTests {
             #expect(again == outcome.text)
             let raw = outcome.rawDescription ?? outcome.error ?? ""
             let recognized = " (OCR \(Self.seconds(outcome.recognition)), \(outcome.recognizedText.count) chars)"
-            lines.append("| \(url.lastPathComponent) | \(outcome.kind ?? "") | \(raw) | \(outcome.text?.text ?? "nothing") | "
+            lines.append("| \(url.lastPathComponent) | \(outcome.kind ?? "") | \(raw) | \(outcome.text ?? "nothing") | "
                          + "\(Self.seconds(outcome.duration)), cached \(Self.milliseconds(ContinuousClock.now - cached))\(recognized) |")
         }
         report(lines.joined(separator: "\n") + "\n")
@@ -199,13 +199,12 @@ struct LiveModelEvalTests {
             lines.append("Dropped (\(rejection.reason.rawValue)): \u{201C}\(rejection.text)\u{201D}")
         }
         if let error = trace.error { lines.append("Error: \(error)") }
-        switch outcome.result {
-        case .ready(let catchUp):
+        if let catchUp = outcome.result {
             lines.append("Card:")
             if let needsYou = catchUp.needsYou { lines.append("- ❓ \(needsYou.text) \(needsYou.sources)") }
             lines += catchUp.changes.map { "- \($0.text) \($0.sources)" }
-        case let other:
-            lines.append("Result: \(other)")
+        } else {
+            lines.append("No card.")
         }
         report(lines.joined(separator: "\n") + "\n")
     }

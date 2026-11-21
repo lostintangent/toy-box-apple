@@ -66,7 +66,7 @@ private extension CatchUpDigest.Message {
             return "@" + agent.name
         })
         sequence = message.sequence
-        speaker = CatchUpDescriber(state: state).name(message.sender)
+        speaker = CatchUpDescriber(agents: state.agents, leadId: state.lead.id).name(message.sender)
         self.text = text
         self.written = written
         self.mentioned = mentioned

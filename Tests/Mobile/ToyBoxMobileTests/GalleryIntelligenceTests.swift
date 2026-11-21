@@ -161,9 +161,9 @@ private actor GalleryDescriptionService: ChannelIntelligenceService {
         self.availability = availability
         self.text = text
     }
-    func catchUp(_ request: CatchUpRequest) async -> CatchUpResult { .declined }
-    func altText(_ request: AltTextRequest) async -> AltText? {
+    func catchUp(_ request: CatchUpRequest) async -> CatchUp? { nil }
+    func altText(_ request: AltTextRequest) async -> String? {
         calls += 1
-        return text.map(AltText.init)
+        return text
     }
 }

@@ -6,10 +6,8 @@ import Foundation
 /// reader is waiting on, so it takes the model from a running image description, whose callers go
 /// back in line for a fresh run.
 actor GenerationQueue {
-    enum Priority: Int, Comparable, Sendable {
+    enum Priority: Comparable, Sendable {
         case visible, focused, catchUp
-
-        static func < (lhs: Priority, rhs: Priority) -> Bool { lhs.rawValue < rhs.rawValue }
     }
 
     private final class Job {
