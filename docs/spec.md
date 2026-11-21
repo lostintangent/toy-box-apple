@@ -461,6 +461,8 @@ not Channels:
 | Request | Use |
 | --- | --- |
 | `GET /api/v1/models` | `{models, defaultModel}` for model pickers. A 404 here means "models unavailable", never a reason to invent a model |
+| `GET /api/v1/providers` | `{providers}`, every provider Toy Box supports in its Settings order, each `{id, name, status, error?, version?, enabled}`. `status` is `ready`, `signedOut`, `failed` or `unavailable`, and `error` is the native error when discovery failed. A provider whose CLI isn't installed is `unavailable`, with no version and `enabled: false` |
+| `GET /api/v1/providers/:id/subscription` | `{plan, limits}`, each limit `{name, usedPercent, resetsAt?}` with `resetsAt` in epoch milliseconds, or `null` for an account on an API key. Empty `limits` is a plan with nothing metered. Each read asks the provider's CLI, so the apps read only enabled, `ready` providers, each at most once a minute, and a failure (500 `{error}`) is that provider's alone |
 
 Management routes (documented in Toy Box's Channels `AGENTS.md`):
 
