@@ -87,18 +87,8 @@ public final class ServerUpdate {
         case reconnecting
     }
 
-    /// How the last check or restart ended. It stays until the next check, until Settings closes and
-    /// calls `clearOutcome()`, or until a read finds the server's releases changed.
-    public enum Outcome: Equatable, Sendable {
-        /// The check found nothing newer.
-        case upToDate
-        /// The check or restart failed, with the words to show.
-        case failed(String)
-    }
-
     /// The server's last answer. Nil until it answers.
     public private(set) var version: ServerVersion?
-    public private(set) var outcome: Outcome?
     private var isChecking = false
     /// The catalog's stream isn't live and hasn't failed for the grace, or it has just reconnected
     /// and the read that follows hasn't answered. Its catalog keeps it current.
@@ -128,25 +118,13 @@ public final class ServerUpdate {
 
     /// Asks the server to install whatever is newer, which can take minutes, and offers Restart if
     /// it did. A server already waiting to restart checks too, since something newer than its
-    /// installed release may have shipped. A failure shows its error, in the server's words for
-    /// a rejection.
+    /// installed release may have shipped. A failure changes nothing, like a check that finds
+    /// nothing newer.
     public func check() async {
         guard !isChecking, version?.installedVersion != nil else { return }
         isChecking = true
-        outcome = nil
         defer { isChecking = false }
-        do {
-            let current = try await api.updateServer()
-            apply(current)
-            if !current.isRestartPending { outcome = .upToDate }
-        } catch {
-            outcome = .failed(error.localizedDescription)
-        }
-    }
-
-    /// Settings closed, so the row forgets how its last check or restart ended.
-    public func clearOutcome() {
-        if outcome != nil { outcome = nil }
+        if let current = try? await api.updateServer() { apply(current) }
     }
 
     /// A connected server with an installed release can restart, onto a newer release once one is
@@ -157,7 +135,7 @@ public final class ServerUpdate {
 
     /// Asks the server to restart onto its installed release. One that accepts answers, then drops
     /// every connection at once, so the row reconnects as it would for any disconnect and then shows
-    /// the release the server came back running. A rejection keeps Restart, with the server's words.
+    /// the release the server came back running. A rejection changes nothing, so the row keeps Restart.
     /// A restart whose answer never arrives needs nothing, since the catalog's connection reports a
     /// server that doesn't come back.
     public func restart() async {
@@ -172,7 +150,7 @@ public final class ServerUpdate {
 
     /// Restarts the server the list's one Restart queued, and returns once the server answers
     /// running the release it had installed, or after about 30 s, when the row shows wherever it is.
-    /// A rejection returns at once, with Restart and the server's words.
+    /// A rejection returns at once, so the row stops spinning and keeps Restart.
     func restartQueued() async {
         defer { restartingOnto = nil }
         guard let target = restartingOnto, catalog?.phase == .connected, await sendRestart() else { return }
@@ -189,16 +167,13 @@ public final class ServerUpdate {
         for await running in Observations({ self.version?.version }) where running == release { return }
     }
 
-    /// Sends the restart, and returns false when the server rejects it, showing its words. An answer
-    /// that never arrives counts as accepted, since a server that accepts drops every connection.
+    /// Sends the restart, and returns false when the server rejects it. An answer that never arrives
+    /// counts as accepted, since a server that accepts drops every connection.
     @discardableResult private func sendRestart() async -> Bool {
-        outcome = nil
         do {
             try await api.restartServer()
         } catch {
-            guard case .http? = error as? ChannelAPIError else { return true }
-            outcome = .failed(error.localizedDescription)
-            return false
+            if case .http? = error as? ChannelAPIError { return false }
         }
         return true
     }
@@ -229,7 +204,6 @@ public final class ServerUpdate {
 
     /// The server's releases, as it answered them.
     func apply(_ current: ServerVersion) {
-        if current != version { outcome = nil }
         version = current
     }
 }
@@ -247,10 +221,9 @@ extension [ChannelCatalogStore] {
 
     /// Asks every connected server with an installed release to install whatever is newer, all at
     /// once, and returns when every check ends. Servers that are offline or reconnecting, or have no
-    /// installed release, are skipped, and every row's last outcome clears.
+    /// installed release, are skipped.
     @MainActor public func checkForUpdates() async {
         guard !isCheckingForUpdates else { return }
-        for catalog in self { catalog.update.clearOutcome() }
         let checking = filter {
             $0.phase == .connected && !$0.update.isReconnecting && $0.update.version?.installedVersion != nil
         }
