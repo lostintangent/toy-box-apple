@@ -91,22 +91,6 @@ private struct ModelProviderRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             header.accessibilityElement(children: .combine)
-            if case .failed(let words)? = entry.update {
-                // Not a Label, which a Form gives its wide icon column.
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)
-                    Text(words).foregroundStyle(.secondary)
-                }
-                .font(.subheadline)
-                .accessibilityElement(children: .combine)
-                #if os(macOS)
-                .lineLimit(1)
-                .help(words)
-                #else
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
-                #endif
-            }
             if entry.provider.enabled, entry.provider.status == .failed, let error = entry.provider.error {
                 Text(error)
                     .font(.subheadline)
@@ -160,8 +144,8 @@ private struct ModelProviderRow: View {
         #endif
     }
 
-    /// The provider's version, or a spinner while it updates, or how its last update ended. A
-    /// failed update keeps the version, with its words under the name.
+    /// The provider's version, a spinner while it updates, or the version it ran and the one an
+    /// update installed.
     @ViewBuilder private var version: some View {
         Group {
             switch entry.update {
@@ -171,13 +155,11 @@ private struct ModelProviderRow: View {
                 Text(verbatim: "00").font(.body).hidden()
                     .overlay { ProgressView().controlSize(.small) }
                     .accessibilityRepresentation { Text("Updating") }
-            case .upToDate?:
-                Text("Up to date")
             case .updated(let from?, let to)?:
                 Text("\(from) → \(to)").accessibilityLabel("\(from), \(to) after restart")
             case .updated(nil, let to)?:
                 Text("→ \(to)").accessibilityLabel("\(to) after restart")
-            case .failed?, nil:
+            case nil:
                 if let version = entry.provider.version { Text(version) }
             }
         }
