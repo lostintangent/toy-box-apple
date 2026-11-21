@@ -265,12 +265,12 @@ and are there again when it comes back.
   those at once, one request each and sent once, skipping Off and Not Installed, which stay as they
   are. Each provider being updated shows a spinner in its version's place, and the button dims
   until every update ends.
-  Then a row reads Up to date when the server answers `updated: false`, or the version it ran and
-  the one it installed, like "1.0.114 → 1.0.115", in secondary ink, which VoiceOver reads as
-  "1.0.114, 1.0.115 after restart". A failed update shows the server's error in words under the
-  name, after a yellow `exclamationmark.triangle.fill`, its first line on the Mac with the rest
-  in its help tag and up to three lines on the phone. On the phone, when the name, versions and
-  plan can't share a line, the versions drop to their own line under the name. A provider keeps
+  Then a row whose update installed something new reads the version it ran and the one it
+  installed, like "1.0.114 → 1.0.115", in secondary ink, which VoiceOver reads as "1.0.114,
+  1.0.115 after restart". Every other row shows its version again, with no Up to date and no
+  error, because a ready provider's update doesn't fail and a broken one already shows Failed. On
+  the phone, when the name, versions and plan can't share a line, the versions drop to their own
+  line under the name. A provider keeps
   running its old version until the server restarts, so once any update reports a change, the
   section says "Restart Studio Demo to use the new version.", or "versions" when more than one
   changed, with the server's own Restart beside it: the sentence leads the Mac's bar, with a
