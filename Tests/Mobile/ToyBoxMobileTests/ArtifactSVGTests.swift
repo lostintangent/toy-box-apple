@@ -121,9 +121,8 @@ private struct DrawFailure: Error {}
 @MainActor
 @Suite("Phone SVG page reuse", .timeLimit(.minutes(1)))
 struct SVGPageRendererTests {
-    private func makeRenderer(deadline: Duration = .seconds(60), idleLifetime: Duration = .seconds(3600),
-                              made: RenderLog) -> SVGPageRenderer<RenderPage> {
-        SVGPageRenderer(deadline: deadline, idleLifetime: idleLifetime) {
+    private func makeRenderer(made: RenderLog) -> SVGPageRenderer<RenderPage> {
+        SVGPageRenderer {
             made.record("page")
             return RenderPage(number: made.events.count)
         }
@@ -139,25 +138,6 @@ struct SVGPageRendererTests {
         #expect(try await pageNumber(renderer) == 1)
         #expect(try await pageNumber(renderer) == 1)
         await #expect(throws: DrawFailure.self) { try await renderer.render { _ in throw DrawFailure() } }
-        #expect(try await pageNumber(renderer) == 2)
-    }
-
-    @Test func aDrawPastTheDeadlineIsCancelledAndItsPageIsReplaced() async throws {
-        let made = RenderLog()
-        let draws = RenderLog()
-        let renderer = makeRenderer(deadline: .milliseconds(10), made: made)
-        await #expect(throws: ChannelAPIError.invalidMessage("The SVG preview took too long to render.")) {
-            try await renderer.render { _ in
-                do {
-                    try await Task.sleep(for: .seconds(3600))
-                } catch {
-                    await draws.record("cancelled")
-                    throw error
-                }
-                return Data()
-            }
-        }
-        #expect(draws.events == ["cancelled"])
         #expect(try await pageNumber(renderer) == 2)
     }
 
@@ -187,20 +167,5 @@ struct SVGPageRendererTests {
         _ = try await first.value
         _ = try await second.value
         #expect(draws.events == ["first began", "first ended", "second began"])
-    }
-
-    @Test func anIdlePageIsReleasedUnlessAnotherRenderArrivesFirst() async throws {
-        let made = RenderLog()
-        let renderer = makeRenderer(made: made)
-        #expect(try await pageNumber(renderer) == 1)
-        let cancelled = renderer.idleRelease
-        #expect(try await pageNumber(renderer) == 1)
-        await cancelled?.value
-        #expect(try await pageNumber(renderer) == 1)
-
-        let idle = makeRenderer(idleLifetime: .zero, made: made)
-        #expect(try await pageNumber(idle) == 2)
-        await idle.idleRelease?.value
-        #expect(try await pageNumber(idle) == 3)
     }
 }

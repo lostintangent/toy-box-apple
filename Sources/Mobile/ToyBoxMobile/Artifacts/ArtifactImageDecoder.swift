@@ -149,29 +149,22 @@ final class SVGDimensions: NSObject, XMLParserDelegate {
 /// web content process, which costs seconds of CPU before it draws anything.
 @MainActor
 final class SVGPageRenderer<Page: Sendable> {
-    private let deadline: Duration
-    private let idleLifetime: Duration
     private let makePage: () async throws -> Page
     private var page: Page?
     private var busy = false
     private var waiting: [CheckedContinuation<Void, Never>] = []
-    private(set) var idleRelease: Task<Void, Never>?
 
-    init(deadline: Duration, idleLifetime: Duration, makePage: @escaping () async throws -> Page) {
-        self.deadline = deadline
-        self.idleLifetime = idleLifetime
+    init(makePage: @escaping () async throws -> Page) {
         self.makePage = makePage
     }
 
-    func render(_ draw: @escaping @Sendable (Page) async throws -> Data) async throws -> Data {
+    func render(_ draw: @Sendable (Page) async throws -> Data) async throws -> Data {
         if busy {
             await withCheckedContinuation { waiting.append($0) }
         } else {
             busy = true
         }
         defer { finish() }
-        idleRelease?.cancel()
-        idleRelease = nil
         try Task.checkCancellation()
         let page: Page
         if let current = self.page {
@@ -181,16 +174,7 @@ final class SVGPageRenderer<Page: Sendable> {
             self.page = page
         }
         do {
-            let deadline = deadline
-            let data = try await withThrowingTaskGroup { group in
-                group.addTask { try await draw(page) }
-                group.addTask {
-                    try await Task.sleep(for: deadline)
-                    throw ChannelAPIError.invalidMessage("The SVG preview took too long to render.")
-                }
-                defer { group.cancelAll() }
-                return try await group.next()!
-            }
+            let data = try await draw(page)
             // A cancelled draw may still stop its page after this, so only an undisturbed one is kept.
             if Task.isCancelled { self.page = nil }
             return data
@@ -206,11 +190,6 @@ final class SVGPageRenderer<Page: Sendable> {
             return
         }
         busy = false
-        idleRelease = Task { [weak self, idleLifetime] in
-            try? await Task.sleep(for: idleLifetime)
-            guard !Task.isCancelled else { return }
-            self?.page = nil
-        }
     }
 }
 
@@ -223,7 +202,7 @@ private enum SVGImageRenderer {
         }
     }
 
-    private static let pages = SVGPageRenderer(deadline: .seconds(15), idleLifetime: .seconds(30), makePage: makePage)
+    private static let pages = SVGPageRenderer(makePage: makePage)
 
     static func render(_ data: Data, size: CGSize) async throws -> Data {
         let viewport = ArtifactImageDecoder.pixelSize(size, maximum: 1024)
