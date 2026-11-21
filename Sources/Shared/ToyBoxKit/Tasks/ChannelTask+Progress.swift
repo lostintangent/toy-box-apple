@@ -4,7 +4,6 @@ extension ChannelTask {
     public struct Progress: Equatable, Sendable {
         public var done: Int
         public var total: Int
-        public var fraction: Double { total == 0 ? 0 : Double(done) / Double(total) }
     }
 }
 

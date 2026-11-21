@@ -22,13 +22,6 @@ public struct ArtifactPageList: Equatable, Sendable {
         return true
     }
 
-    @discardableResult
-    public mutating func move(by offset: Int) -> Bool {
-        guard let index, artifacts.indices.contains(index + offset) else { return false }
-        selectedID = artifacts[index + offset].id
-        return true
-    }
-
     public mutating func update(_ artifacts: [ChannelArtifact]) {
         self.artifacts = artifacts.newestFirst
     }

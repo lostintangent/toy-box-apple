@@ -35,20 +35,6 @@ struct ChannelAttachmentTests {
         #expect(ChannelImageDecoder.thumbnail(data: Data("not an image".utf8), maxPixelSize: 224) == nil)
     }
 
-    @Test func thumbnailKeySpacesStaySeparateAndAFailedDecodeIsRemembered() throws {
-        let id = UUID()
-        let data = try #require(Data(base64Encoded: try encodedImage(width: 40, height: 20, type: .png)))
-        let image = try #require(ChannelImageDecoder.thumbnail(data: data, maxPixelSize: 40))
-        ChannelThumbnailCache.remember(image, for: .attachment(id.uuidString))
-        #expect(ChannelThumbnailCache.image(for: .draftImage(id)) == nil)
-        var decodes = 0
-        for _ in 0..<2 {
-            #expect(ChannelThumbnailCache.image(for: .draftImage(id)) { decodes += 1; return nil } == nil)
-        }
-        #expect(decodes == 1)
-        #expect(ChannelThumbnailCache.image(for: .attachment(id.uuidString)) === image)
-    }
-
     @Test func aSharperScaleDecodesAgainAndTheSharperThumbnailIsKept() async throws {
         let payload = try encodedImage(width: 1000, height: 500, type: .png)
         let attachment = ChannelAttachment(name: "wide.png", mimeType: "image/png", base64: payload)
@@ -104,7 +90,7 @@ struct ChannelAttachmentTests {
         let retina = try ChannelThumbnails.decode(file, scale: 2).image
 
         for round in 0..<50 {
-            let key = ChannelThumbnailCache.Key.draftImage(UUID())
+            let key = UUID().uuidString
             let images = round.isMultiple(of: 2) ? [retina, standard] : [standard, retina]
             let kept = await withTaskGroup(of: CGImage.self) { group in
                 for index in 0..<8 {

@@ -16,7 +16,6 @@
     "demo": "bun scripts/demo-server/index.ts",
     "demo:history": "bun scripts/demo-server/history.ts",
     "demo:perf": "bun scripts/demo-server/perf.ts",
-    "cron-fixtures": "bun scripts/shared/cron-fixtures.ts",
     "release": "bun scripts/desktop/release/index.ts",
     "setup-secrets": "bun scripts/desktop/setup-secrets.ts",
     "release-notes": "bun scripts/shared/release-notes.ts",

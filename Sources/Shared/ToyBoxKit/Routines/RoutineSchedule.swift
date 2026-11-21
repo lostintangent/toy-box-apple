@@ -1,15 +1,11 @@
 import Foundation
 
-public enum CronScheduleError: Error, Equatable, LocalizedError, Sendable {
+enum CronScheduleError: Error, Equatable, LocalizedError {
     case invalidExpression(String)
-    case noOccurrence
-    case invalidDate
 
-    public var errorDescription: String? {
+    var errorDescription: String? {
         switch self {
         case .invalidExpression(let reason): "Invalid cron schedule: \(reason)"
-        case .noOccurrence: "No cron occurrence was found within the parser's search limit."
-        case .invalidDate: "The cron schedule could not resolve a calendar date."
         }
     }
 }
@@ -41,11 +37,8 @@ public struct RoutineSchedule {
         var nth: Double?
 
         var isWildcard: Bool { raw == "*" || raw == "?" }
-        var hasLast: Bool { raw.contains("L") }
         var isHashed: Bool { raw.firstMatch(of: /H(?:$|[^A-Za-z])/) != nil }
         var minimum: Int { values[0] }
-        func contains(_ value: Int) -> Bool { values.contains(value) }
-        func next(after value: Int) -> Int? { values.first { $0 > value } }
     }
 
     public let expression: String
@@ -57,7 +50,7 @@ public struct RoutineSchedule {
     private var month: Field { fields[4] }
     private var weekday: Field { fields[5] }
 
-    public init(_ expression: String, hashSeed: String? = nil) throws {
+    public init(_ expression: String) throws {
         self.expression = expression
         let aliases = [
             "@yearly": "0 0 0 1 1 *", "@annually": "0 0 0 1 1 *",
@@ -72,10 +65,9 @@ public struct RoutineSchedule {
         if atoms.isEmpty { atoms = [""] }
         guard atoms.count <= 6 else { throw Self.invalid("expected at most six fields") }
         atoms.insert(contentsOf: ["0", "*", "*", "*", "*", "*"].prefix(6 - atoms.count), at: 0)
-        var random = CronRandom(seed: hashSeed)
         var parsed: [Unit: Field] = [:]
         for unit in [Unit.second, .minute, .hour, .month, .day, .weekday] {
-            var values = try Self.parse(atoms[unit.rawValue], unit: unit, random: random.next())
+            var values = try Self.parse(atoms[unit.rawValue], unit: unit, random: .random(in: 0..<1))
             if unit == .day, let months = parsed[.month]?.values, months.count == 1 {
                 let maximum = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][months[0] - 1]
                 let filtered = values.filter {
@@ -238,185 +230,5 @@ public struct RoutineSchedule {
 
     private static func leadingInteger(_ value: String) -> Int? {
         Int(value.prefix { $0.isASCII && $0.isNumber })
-    }
-
-    public func next(after date: Date, timeZone: TimeZone = .current) throws -> Date {
-        guard date.timeIntervalSince1970.isFinite, abs(date.timeIntervalSince1970) <= 8_640_000_000_000 else {
-            throw CronScheduleError.invalidDate
-        }
-        var cursor = CronCursor(date: date, timeZone: timeZone, hourCount: hour.values.count)
-        let start = date.timeIntervalSince1970
-        cursor.date = Date(timeIntervalSince1970: floor(start))
-        if cursor.date < date { try cursor.advance(.second) }
-        for _ in 0..<9999 {
-            if try !matchesDay(cursor) { try cursor.advance(.day); continue }
-            if !month.contains(cursor.component(.month)) { try cursor.advance(.month); continue }
-            if !hour.contains(cursor.component(.hour)), !cursor.matchesSkippedHour(hour.values) {
-                cursor.clearGap()
-                if let next = hour.next(after: cursor.component(.hour)) {
-                    if try cursor.isTransitionDay {
-                        let steps = next - cursor.component(.hour)
-                        for _ in 0..<steps {
-                            try cursor.advance(.hour)
-                            if cursor.component(.hour) >= next { break }
-                        }
-                    } else { try cursor.set(.hour, to: next) }
-                    try cursor.set(.minute, to: minute.minimum)
-                    try cursor.set(.second, to: second.minimum)
-                } else { try cursor.advance(.day) }
-                continue
-            }
-            if cursor.repeatedHour == cursor.component(.hour), !cursor.matchesSkippedHour(hour.values) {
-                cursor.repeatedHour = nil
-                try cursor.advance(.hour)
-                continue
-            }
-            if !minute.contains(cursor.component(.minute)) {
-                if let next = minute.next(after: cursor.component(.minute)) {
-                    try cursor.set(.minute, to: next)
-                } else {
-                    try cursor.advance(.hour)
-                    try cursor.set(.minute, to: minute.minimum)
-                }
-                try cursor.set(.second, to: second.minimum)
-                continue
-            }
-            if !second.contains(cursor.component(.second)) {
-                if let next = second.next(after: cursor.component(.second)) {
-                    try cursor.set(.second, to: next)
-                } else {
-                    try cursor.advance(.minute)
-                    try cursor.set(.second, to: second.minimum)
-                }
-                continue
-            }
-            if cursor.date.timeIntervalSince1970 == start {
-                try cursor.advance(.second)
-                continue
-            }
-            return cursor.date
-        }
-        throw CronScheduleError.noOccurrence
-    }
-
-    private func matchesDay(_ cursor: CronCursor) throws -> Bool {
-        let date = cursor.component(.day)
-        let weekdayNumber = cursor.component(.weekday) - 1
-        let monthLength = try cursor.monthLength
-        let matchesDate = day.contains(date) || (day.hasLast && date == monthLength)
-        let matchesNth = weekday.nth.map { Double((date + 6) / 7) == $0 } ?? true
-        let lastWeekday = weekday.hasLast && date > monthLength - 7
-            && (weekday.values.map(String.init) + weekday.special).contains {
-                $0.first?.wholeNumberValue.map { $0 % 7 == weekdayNumber } == true
-            }
-        let matchesWeekday = (weekday.contains(weekdayNumber) && matchesNth) || lastWeekday
-        if !day.isWildcard && !weekday.isWildcard { return matchesDate || matchesWeekday }
-        if !weekday.isWildcard { return matchesWeekday }
-        return matchesDate
-    }
-}
-
-private struct CronCursor {
-    var date: Date
-    let calendar: Calendar
-    let hourCount: Int
-    var repeatedHour: Int?
-    private var skippedHour: Int?
-    private var landingHour: Int?
-
-    init(date: Date, timeZone: TimeZone, hourCount: Int) {
-        self.date = date
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
-        self.calendar = calendar
-        self.hourCount = hourCount
-    }
-
-    func component(_ component: Calendar.Component) -> Int { calendar.component(component, from: date) }
-    var monthLength: Int {
-        get throws {
-            guard let range = calendar.range(of: .day, in: .month, for: date) else {
-                throw CronScheduleError.invalidDate
-            }
-            return range.count
-        }
-    }
-    var isTransitionDay: Bool {
-        get throws {
-            guard let day = calendar.dateInterval(of: .day, for: date) else {
-                throw CronScheduleError.invalidDate
-            }
-            return calendar.timeZone.secondsFromGMT(for: day.start)
-                != calendar.timeZone.secondsFromGMT(for: day.end.addingTimeInterval(-1))
-        }
-    }
-
-    mutating func clearGap() { skippedHour = nil; landingHour = nil }
-
-    func matchesSkippedHour(_ values: [Int]) -> Bool {
-        guard var skipped = skippedHour, landingHour == component(.hour) else { return false }
-        for _ in 0..<24 {
-            if skipped == landingHour { return false }
-            if values.contains(skipped) { return true }
-            skipped = (skipped + 1) % 24
-        }
-        return false
-    }
-
-    mutating func set(_ component: Calendar.Component, to value: Int) throws {
-        let units: Set<Calendar.Component> = [.era, .year, .month, .day, .hour, .minute, .second]
-        var desired = calendar.dateComponents(units, from: date)
-        desired.setValue(value, for: component)
-        guard let resolved = calendar.date(from: desired) else { throw CronScheduleError.invalidDate }
-        let offset = calendar.timeZone.secondsFromGMT(for: resolved) - calendar.timeZone.secondsFromGMT(for: date)
-        let sameOffset = resolved.addingTimeInterval(Double(offset))
-        // Keep the current occurrence of an ambiguous wall time, matching Luxon's setters.
-        date = calendar.dateComponents(units, from: sameOffset) == desired ? sameOffset : resolved
-    }
-
-    mutating func advance(_ unit: Calendar.Component) throws {
-        if unit == .day || unit == .month {
-            guard let next = calendar.date(byAdding: unit, value: 1, to: date),
-                  let interval = calendar.dateInterval(of: unit, for: next) else {
-                throw CronScheduleError.invalidDate
-            }
-            date = interval.start
-            return
-        }
-        let previousHour = component(.hour)
-        let previousOffset = calendar.timeZone.secondsFromGMT(for: date)
-        let seconds = unit == .hour ? 3600.0 : unit == .minute ? 60.0 : 1.0
-        date.addTimeInterval(seconds)
-        if unit == .hour { try set(.minute, to: 0); try set(.second, to: 0) }
-        if unit == .minute { try set(.second, to: 0) }
-        let currentHour = component(.hour)
-        let crossed = (currentHour - previousHour + 24) % 24
-        if hourCount != 24 {
-            if calendar.timeZone.secondsFromGMT(for: date) > previousOffset, crossed >= 2 {
-                skippedHour = (previousHour + 1) % 24
-                landingHour = currentHour
-            } else if crossed == 0, component(.minute) == 0, component(.second) == 0 {
-                repeatedHour = currentHour
-            }
-        }
-    }
-}
-
-private struct CronRandom {
-    private var state: UInt32
-
-    init(seed: String?) {
-        if let seed, !seed.isEmpty {
-            state = seed.utf16.reduce(UInt32(2_166_136_261)) { ($0 ^ UInt32($1)) &* 16_777_619 }
-        } else {
-            state = UInt32(truncatingIfNeeded: UInt64.random(in: 0..<10_000_000_000))
-        }
-    }
-
-    mutating func next() -> Double {
-        state &+= 0x6d2b79f5
-        var value = (state ^ (state >> 15)) &* (state | 1)
-        value ^= value &+ ((value ^ (value >> 7)) &* (value | 61))
-        return Double(value ^ (value >> 14)) / 4_294_967_296
     }
 }

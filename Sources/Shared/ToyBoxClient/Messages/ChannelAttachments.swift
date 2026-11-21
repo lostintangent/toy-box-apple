@@ -193,81 +193,39 @@ public enum ChannelImageDecoder {
 }
 
 /// Every decoded thumbnail, kept within one memory budget so a row or tray item that comes back
-/// draws at once. A failed decode is remembered too, so it isn't retried on every build. Each app
-/// draws the `CGImage` itself.
+/// draws at once. Each app draws the `CGImage` itself.
 ///
 /// Attachments are keyed by their address or inline payload itself rather than its digest. `body`
 /// looks them up, and hashing a multi-megabyte payload there costs milliseconds, while an
-/// `NSString` lookup samples the string and compares the payload's storage. Draft images are keyed
-/// by `NSUUID`, so the two key spaces can't collide and no key is ever copied.
-public enum ChannelThumbnailCache {
-    public enum Key: Sendable {
-        case attachment(String)
-        case draftImage(UUID)
-
-        fileprivate var object: AnyObject {
-            switch self {
-            case .attachment(let identity): identity as NSString
-            case .draftImage(let id): id as NSUUID
-            }
-        }
-    }
-
-    private final class Entry {
-        let image: CGImage?
-        init(_ image: CGImage?) { self.image = image }
-    }
-
-    nonisolated(unsafe) private static let storage: NSCache<AnyObject, Entry> = {
-        let cache = NSCache<AnyObject, Entry>()
+/// `NSString` lookup samples the string and compares the payload's storage, so no key is ever copied.
+enum ChannelThumbnailCache {
+    nonisolated(unsafe) private static let storage: NSCache<NSString, CGImage> = {
+        let cache = NSCache<NSString, CGImage>()
         cache.totalCostLimit = 64 << 20
-        // A failed decode costs nothing, so the count bounds those.
         cache.countLimit = 512
         return cache
     }()
 
-    /// The remembered thumbnail, or nil when there is none, including after a failed decode.
-    public static func image(for key: Key) -> CGImage? {
-        storage.object(forKey: key.object)?.image
-    }
-
-    /// The remembered result for `key`, or `decode`'s result, which is remembered even when nil.
-    public static func image(for key: Key, decode: () -> CGImage?) -> CGImage? {
-        let object = key.object
-        if let entry = storage.object(forKey: object) { return entry.image }
-        let image = decode()
-        store(image, for: object)
-        return image
-    }
-
-    @discardableResult
-    public static func remember(_ image: CGImage, for key: Key) -> CGImage {
-        store(image, for: key.object)
-        return image
+    static func image(for identity: String) -> CGImage? {
+        storage.object(forKey: identity as NSString)
     }
 
     /// Remembers `image` unless a larger one is already kept, and returns whichever is kept. The
     /// comparison and store are one step, so overlapping decodes can't replace a sharper result.
-    public static func rememberSharper(_ image: CGImage, for key: Key) -> CGImage {
+    static func rememberSharper(_ image: CGImage, for identity: String) -> CGImage {
         sharperWrites.withLock { _ in
-            let object = key.object
-            if let kept = storage.object(forKey: object)?.image,
+            let key = identity as NSString
+            if let kept = storage.object(forKey: key),
                max(kept.width, kept.height) > max(image.width, image.height) {
                 return kept
             }
-            store(image, for: object)
+            // The cache keeps its key alive, which for an inline image is the whole payload.
+            storage.setObject(image, forKey: key, cost: image.bytesPerRow * image.height + key.length * 2)
             return image
         }
     }
 
     private static let sharperWrites = Mutex(())
-
-    private static func store(_ image: CGImage?, for key: AnyObject) {
-        // The cache keeps its key alive, which for an inline image is the whole payload.
-        let keyCost = (key as? NSString).map { $0.length * 2 } ?? 0
-        storage.setObject(Entry(image), forKey: key,
-                          cost: (image.map { $0.bytesPerRow * $0.height } ?? 0) + keyCost)
-    }
 }
 
 /// Transcript thumbnails: decoded to fill the transcript's box at the display's scale, off the
@@ -293,7 +251,7 @@ public enum ChannelThumbnails {
     /// Any remembered thumbnail, to draw at once while a sharper one may still be decoding.
     public static func remembered(for attachment: ChannelAttachment, api: ChannelAPI) -> CGImage? {
         ChannelAttachmentCache.identity(for: attachment, api: api).flatMap {
-            ChannelThumbnailCache.image(for: .attachment($0))
+            ChannelThumbnailCache.image(for: $0)
         }
     }
 
@@ -311,7 +269,7 @@ public enum ChannelThumbnails {
     @discardableResult
     public static func remember(_ image: CGImage, for attachment: ChannelAttachment, api: ChannelAPI) -> CGImage {
         guard let identity = ChannelAttachmentCache.identity(for: attachment, api: api) else { return image }
-        return ChannelThumbnailCache.rememberSharper(image, for: .attachment(identity))
+        return ChannelThumbnailCache.rememberSharper(image, for: identity)
     }
 
     public static func decode(_ file: URL, scale: CGFloat,

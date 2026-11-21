@@ -3,65 +3,6 @@ import Testing
 @testable import ToyBoxKit
 
 struct RoutineScheduleTests {
-    private struct Corpus: Decodable {
-        var parser: String
-        var fixtures: [Fixture]
-    }
-
-    private struct Fixture: Decodable {
-        var expression: String
-        var from: String
-        var timeZone: String
-        var hashSeed: String?
-        var next: [String]
-        var error: String?
-    }
-
-    @Test func canonicalCronParserFixtures() throws {
-        let url = try #require(Bundle.module.url(forResource: "cron-occurrences", withExtension: "json",
-                                                subdirectory: "Fixtures"))
-        let corpus = try JSONDecoder().decode(Corpus.self, from: Data(contentsOf: url))
-        #expect(corpus.parser == "cron-parser@5.10.2")
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        for fixture in corpus.fixtures {
-            let zone = try #require(TimeZone(identifier: fixture.timeZone))
-            var from = try #require(formatter.date(from: fixture.from)
-                ?? ISO8601DateFormatter().date(from: fixture.from))
-            let context = "\(fixture.expression) from \(fixture.from) in \(fixture.timeZone)"
-            for expectedText in fixture.next {
-                let expected = try #require(formatter.date(from: expectedText))
-                let actual = try RoutineSchedule(fixture.expression, hashSeed: fixture.hashSeed)
-                    .next(after: from, timeZone: zone)
-                #expect(actual == expected, Comment(rawValue: "\(context), expected \(expectedText), got \(formatter.string(from: actual))"))
-                from = expected
-            }
-            if let error = fixture.error {
-                #expect(throws: CronScheduleError.self, Comment(rawValue: "\(context), reference error: \(error)")) {
-                    try RoutineSchedule(fixture.expression, hashSeed: fixture.hashSeed)
-                        .next(after: from, timeZone: zone)
-                }
-            }
-        }
-    }
-
-    @Test func exactBoundaryIsExclusiveAndFractionalTimesRoundForward() throws {
-        let zone = try #require(TimeZone(secondsFromGMT: 0))
-        let date = Date(timeIntervalSince1970: 1_770_000_000)
-        #expect(try RoutineSchedule("* * * * * *").next(after: date, timeZone: zone)
-                == date.addingTimeInterval(1))
-        #expect(try RoutineSchedule("* * * * * *").next(after: date.addingTimeInterval(0.125), timeZone: zone)
-                == date.addingTimeInterval(1))
-    }
-
-    @Test func invalidDatesFailExplicitly() {
-        for value in [Double.nan, .infinity, -.infinity, 8_640_000_000_001] {
-            #expect(throws: CronScheduleError.invalidDate) {
-                try RoutineSchedule("* * * * *").next(after: Date(timeIntervalSince1970: value))
-            }
-        }
-    }
-
     @Test func summariesUseTheSpecifiedPhrasesForCommonSchedules() throws {
         let cases = [
             ("0 9 * * 1-5", "Weekdays at 9:00 AM"),
