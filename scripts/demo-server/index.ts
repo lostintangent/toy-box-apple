@@ -6,12 +6,14 @@ import { type Snapshot } from "./channels/types.ts";
 import { createDemoPushRoutes } from "./channels/push-routes.ts";
 import { writeHistoryPage } from "./channels/history-channel.ts";
 import { createDemoScreens } from "./channels/screens.ts";
+import { createDemoProviderRoutes } from "./channels/provider-routes.ts";
 import { createDemoServerRoutes } from "./channels/server-routes.ts";
 
 export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snapshot" | "onChange">, port: number) {
     const push = createDemoPushRoutes();
     const screens = createDemoScreens();
     const release = createDemoServerRoutes(demo.server, { id: `studio-demo-${port}`, computer: "Studio Demo" });
+    const providers = createDemoProviderRoutes();
     demo.server.on("upgrade", screens.upgrade);
     const catalog = createCatalogRoute(() => {
         const { lead: { name, role, avatar }, channel, request, members, presence } = demo.snapshot();
@@ -57,51 +59,7 @@ export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snap
             }));
             return;
         }
-        if (request.method === "GET" && url.pathname === "/api/v1/providers") {
-            response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-            response.end(JSON.stringify({
-                providers: [
-                    { id: "copilot", name: "GitHub Copilot", status: "ready", version: "1.0.114", enabled: true },
-                    { id: "codex", name: "OpenAI Codex", status: "ready", version: "0.170.0", enabled: true },
-                    { id: "claude", name: "Claude Agent", status: "ready", version: "2.1.328", enabled: true },
-                    { id: "gemini", name: "Gemini", status: "signedOut", enabled: true },
-                    { id: "cursor", name: "Cursor", status: "ready", version: "1.0.0", enabled: true },
-                    { id: "windsurf", name: "Windsurf", status: "failed", error: "CLI exited 1.", version: "1.2.0", enabled: true },
-                    { id: "ollama", name: "Ollama", status: "unavailable", enabled: false },
-                    { id: "chatgpt", name: "ChatGPT", status: "ready", version: "0.1.0", enabled: false },
-                ],
-            }));
-            return;
-        }
-        const subscription = /^\/api\/v1\/providers\/([^/]+)\/subscription$/.exec(url.pathname);
-        if (request.method === "GET" && subscription) {
-            const id = decodeURIComponent(subscription[1]);
-            if (id === "cursor") {
-                response.writeHead(500, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-                response.end(JSON.stringify({ error: "Usage unavailable." }));
-                return;
-            }
-            const body: Record<string, { plan: string, limits: { name: string, usedPercent: number, resetsAt?: number }[] }> = {
-                copilot: { plan: "enterprise", limits: [] },
-                codex: { plan: "pro", limits: [{ name: "Weekly", usedPercent: 0, resetsAt: 1795722169000 }] },
-                claude: {
-                    plan: "max",
-                    limits: [
-                        { name: "Weekly", usedPercent: 10, resetsAt: 1795568399982 },
-                        { name: "Weekly Fable", usedPercent: 20, resetsAt: 1795568399982 },
-                    ],
-                },
-            };
-            const subscriptionBody = body[id];
-            if (subscriptionBody) {
-                response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-                response.end(JSON.stringify(subscriptionBody));
-                return;
-            }
-            response.writeHead(404, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-            response.end(JSON.stringify({ error: "Provider not found." }));
-            return;
-        }
+        if (providers.handle(request, response, url)) return;
         originalHandler(request, response);
     });
     return { push, catalog, screens, release };

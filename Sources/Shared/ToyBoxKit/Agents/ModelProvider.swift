@@ -30,6 +30,24 @@ public struct ModelProvider: Codable, Equatable, Identifiable, Sendable {
     /// Whether Settings reads this provider's subscription. Only an enabled, ready provider has an
     /// account the CLI can ask.
     public var readsUsage: Bool { enabled && status == .ready }
+
+    /// Whether Check for Updates updates this provider: it's on and installed, whatever its
+    /// sign-in, so Off and Not Installed stay as they are.
+    public var isUpdatable: Bool { enabled && status != .unavailable }
+}
+
+/// What `POST /api/v1/providers/:providerId/update` answers once the provider's CLI has installed
+/// whatever is newer.
+public struct ModelProviderUpdate: Codable, Equatable, Sendable {
+    /// The version installed now, which runs once the server restarts.
+    public var version: String
+    /// Whether the update installed a different version.
+    public var updated: Bool
+
+    public init(version: String, updated: Bool) {
+        self.version = version
+        self.updated = updated
+    }
 }
 
 /// What `GET /api/v1/providers` answers.

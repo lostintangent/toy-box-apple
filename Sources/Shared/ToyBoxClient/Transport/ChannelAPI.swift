@@ -197,6 +197,16 @@ public struct ChannelAPI: Sendable {
         try await get(["api", "v1", "providers", id, "subscription"])
     }
 
+    /// Installs whatever is newer for one provider, sent once and never retried. The server says
+    /// nothing until its CLI finishes, so this waits up to `updateTimeout`. A refusal or failure
+    /// throws with the server's words.
+    public func updateProvider(id: String) async throws -> ModelProviderUpdate {
+        var request = URLRequest(url: endpoint(["api", "v1", "providers", id, "update"]),
+                                 timeoutInterval: Self.updateTimeout)
+        request.httpMethod = "POST"
+        return try await JSONDecoder().decode(ModelProviderUpdate.self, from: data(for: request))
+    }
+
     public func screens() async throws -> ScreenList {
         try await get(["api", "v1", "screens"])
     }
