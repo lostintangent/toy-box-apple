@@ -37,8 +37,7 @@ struct SettingsView: View {
             intelligenceAvailability = intelligence.availability
             model.openAtLogin.refresh()
         }
-        // Each server's provider updates are forgotten once Settings closes.
-        .onDisappear { for catalog in model.catalogs { catalog.providers.clearUpdates() } }
+        .onDisappear { model.catalogs.clearUpdates() }
         .task {
             for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
                 intelligenceAvailability = intelligence.availability

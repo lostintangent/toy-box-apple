@@ -342,8 +342,7 @@ private struct AppCoverPresentation: ViewModifier {
         )) { cover in
             if cover == .settings {
                 NavigationStack { SettingsView() }
-                    // Each server's provider updates are forgotten once Settings closes.
-                    .onDisappear { for catalog in model.catalogs { catalog.providers.clearUpdates() } }
+                    .onDisappear { model.catalogs.clearUpdates() }
             } else {
                 ScreenSheet(server: model.selectedServer)
             }

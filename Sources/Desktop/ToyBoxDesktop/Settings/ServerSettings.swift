@@ -92,7 +92,7 @@ struct ServerSettings: View {
             .accessibilityLabel(catalog.name)
             .accessibilityValue(footer.accessibilityValue)
             Spacer(minLength: 0)
-            ServerUpdateStatus(update: catalog.update)
+            ServerUpdateStatus(catalog).controlSize(.small).lineLimit(1)
         }
         .frame(height: 20)
         // No items, so no menu, while the server can't restart.
@@ -108,32 +108,6 @@ struct ServerSettings: View {
     }
 
     static func address(_ catalog: ChannelCatalogStore) -> String { catalog.api.baseURL.absoluteString }
-}
-
-/// The end of a server's row: its version, a spinner while it checks or reconnects, or the release
-/// it runs and the one a restart starts once a restart is pending. See Updating a server in
-/// docs/spec.md.
-private struct ServerUpdateStatus: View {
-    let update: ServerUpdate
-
-    var body: some View {
-        HStack(spacing: 6) {
-            switch update.phase {
-            case .checking?:
-                ProgressView().controlSize(.small).accessibilityLabel("Checking for updates")
-            case .reconnecting?:
-                ProgressView().controlSize(.small).accessibilityLabel("Reconnecting")
-            case .restartPending?:
-                if let release = update.release, let installed = release.installedVersion {
-                    Text("\(release.version) → \(installed)").foregroundStyle(.secondary)
-                        .accessibilityLabel("\(release.version), \(installed) after restart")
-                }
-            case .idle?, nil:
-                if let version = update.release?.version { Text(version).foregroundStyle(.secondary) }
-            }
-        }
-        .lineLimit(1)
-    }
 }
 
 /// One server's name, address, status and release, then its model providers. Each server gets its
@@ -162,10 +136,16 @@ private struct ServerDetails: View {
                     HStack(spacing: 8) {
                         Text(release.version).foregroundStyle(.secondary).textSelection(.enabled)
                         if release.isUpdatable {
-                            Button("Restart") { Task { await update.restart() } }
-                                .buttonStyle(.bordered)
+                            let restart = Button("Restart") { Task { await update.restart() } }
                                 .controlSize(.small)
                                 .disabled(!update.canRestart)
+                            // The page's one Restart, which Model Providers asks for once an update
+                            // installs a new version.
+                            if catalog.providers.newVersions > 0 {
+                                restart.buttonStyle(.borderedProminent)
+                            } else {
+                                restart.buttonStyle(.bordered)
+                            }
                         }
                     }
                 }
