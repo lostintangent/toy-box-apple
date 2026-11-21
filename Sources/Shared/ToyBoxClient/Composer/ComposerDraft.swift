@@ -407,31 +407,6 @@ public final class ComposerDraft {
         return true
     }
 
-    func restore(content: String, attachments: [ChannelAttachment]) {
-        for image in images { ComposerThumbnails.remove(id: image.id) }
-        restoring = true
-        text = content
-        images = attachments.map { attachment in
-            let data: Data
-            if let encoded = attachment.base64, let decoded = Data(base64Encoded: encoded),
-               let mimeType = attachment.mimeType, !mimeType.isEmpty {
-                data = decoded
-            } else {
-                data = Data()
-            }
-            return ComposerImage(name: attachment.name ?? "Attached image",
-                                 mimeType: attachment.mimeType ?? "", data: data)
-        }
-        revision = UUID()
-        failedImageIDs = []
-        restoring = false
-        if hasUnreadableImage {
-            error = "Some images from this send are unavailable. Remove them and attach the images again before sending."
-        }
-        normalizeUnsentImages()
-        save()
-    }
-
     public func clear(ifUnchanged revision: UUID) {
         guard self.revision == revision else { return }
         for image in images { ComposerThumbnails.remove(id: image.id) }

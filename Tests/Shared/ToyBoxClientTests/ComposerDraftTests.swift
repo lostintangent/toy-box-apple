@@ -72,32 +72,6 @@ struct ComposerDraftTests {
         }
     }
 
-    @Test func restoringASendRetainsUnreadableImagesUntilReattachment() async throws {
-        try await withDraft { draft, url in
-            let readable = try sampleImage()
-            let attachments: [ChannelAttachment] = [
-                .init(name: "Missing.png", mimeType: "image/png"),
-                .init(name: "Corrupt.png", mimeType: "image/png",
-                      base64: Data([1, 2, 3]).base64EncodedString()),
-                .init(name: "Missing type.png", base64: readable.data.base64EncodedString()),
-                readable.attachment,
-            ]
-            draft.restore(content: "Keep every attachment", attachments: attachments)
-            #expect(draft.images.count == attachments.count)
-            #expect(draft.hasUnreadableImage)
-            #expect(draft.images.last?.data == readable.data)
-            #expect(draft.error?.contains("before sending") == true)
-            try await saved(draft)
-            let restored = makeDraft(fileURL: url)
-            #expect(restored.images.count == attachments.count)
-            #expect(restored.hasUnreadableImage)
-            #expect(restored.error?.contains("attach") == true)
-            for image in draft.images where !isReadableImage(image.data) { draft.removeImage(id: image.id) }
-            #expect(draft.images.count == 1)
-            #expect(!draft.hasUnreadableImage)
-        }
-    }
-
     @Test func storageKeysNormalizeAndIsolateServersAndChannels() throws {
         let upper = try #require(URL(string: "HTTP://LOCALHOST:80/prefix///"))
         let normalized = try #require(URL(string: "http://localhost/prefix"))
@@ -303,18 +277,14 @@ struct ComposerDraftTests {
         }.value
         for image in images {
             try await withDraft { draft, url in
-                // This draft reads only the sample PNG, so it saves these images as they are.
-                draft.restore(content: "Legacy caption", attachments: [image.attachment])
-                let original = try #require(draft.images.first)
-                let legacyThumbnail = try #require(await draft.loadThumbnail(for: original))
-                try await saved(draft)
-                let restored = imageIODraft(fileURL: url)
+                let legacyThumbnail = try #require(await draft.loadThumbnail(for: image))
+                let restored = imageIODraft(fileURL: try ComposerDraft.writeSaved("Legacy caption", images: [image], to: url))
                 #expect(restored.isLoadingImages)
-                #expect(restored.thumbnail(for: original) === legacyThumbnail)
+                #expect(restored.thumbnail(for: image) === legacyThumbnail)
                 restored.text += " edited during conversion"
                 try await finishLoading(restored)
                 let prepared = try #require(restored.images.first)
-                #expect(prepared.id == original.id)
+                #expect(prepared.id == image.id)
                 #expect(prepared.mimeType == "image/jpeg")
                 #expect(prepared.data.count <= 5_000_000)
                 let source = try #require(CGImageSourceCreateWithData(prepared.data as CFData, nil))
@@ -336,16 +306,18 @@ struct ComposerDraftTests {
 
     @Test func failedRestoredImagePreparationRetainsTheOriginalAndBlocksSending() async throws {
         let image = ComposerImage(name: "Unreadable.heic", mimeType: "image/heic", data: Data("Unreadable".utf8))
-        let draft = ComposerDraft(imageIsReadable: { _ in true })
-        draft.restore(content: "Keep this caption", attachments: [image.attachment])
-        #expect(draft.isLoadingImages)
-        try await finishLoading(draft)
-        #expect(draft.text == "Keep this caption")
-        #expect(draft.images.first?.data == image.data)
-        #expect(draft.hasUnreadableImage)
-        #expect(draft.error?.contains(image.name) == true)
-        let restored = try #require(draft.images.first)
-        #expect(draft.thumbnail(for: restored) == nil)
+        try await withDraft { _, url in
+            let draft = ComposerDraft(fileURL: try ComposerDraft.writeSaved("Keep this caption", images: [image], to: url),
+                                      imageIsReadable: { _ in true })
+            #expect(draft.isLoadingImages)
+            try await finishLoading(draft)
+            #expect(draft.text == "Keep this caption")
+            #expect(draft.images.first?.data == image.data)
+            #expect(draft.hasUnreadableImage)
+            #expect(draft.error?.contains(image.name) == true)
+            let restored = try #require(draft.images.first)
+            #expect(draft.thumbnail(for: restored) == nil)
+        }
     }
 
     @Test func reattachmentReplacesOnlyItsSlotAndPersistsNormalizedBytes() async throws {
@@ -353,11 +325,8 @@ struct ComposerDraftTests {
             try Self.generatedImage(width: 64, height: 32, type: .heic)
         }.value
         try await withDraft { _, url in
-            let draft = imageIODraft(fileURL: url)
-            let readable = try sampleImage()
-            draft.restore(content: "Keep this caption", attachments: [
-                readable.attachment, .init(name: "Missing.png", mimeType: "image/png"), readable.attachment,
-            ])
+            let images = [try sampleImage(), .init(name: "Missing.png", mimeType: "image/png", data: Data()), try sampleImage()]
+            let draft = imageIODraft(fileURL: try ComposerDraft.writeSaved("Keep this caption", images: images, to: url))
             let original = draft.images
             let slot = original[1]
             #expect(draft.thumbnail(for: slot) == nil)
@@ -387,10 +356,8 @@ struct ComposerDraftTests {
 
     @Test func failedReattachmentKeepsItsSlotWithANamedError() async throws {
         try await withDraft { _, url in
-            let draft = imageIODraft()
-            draft.restore(content: "Keep this caption", attachments: [
-                .init(name: "Missing.png", mimeType: "image/png"),
-            ])
+            let missing = ComposerImage(name: "Missing.png", mimeType: "image/png", data: Data())
+            let draft = imageIODraft(fileURL: try ComposerDraft.writeSaved("Keep this caption", images: [missing], to: url))
             let original = draft.images
             let slot = try #require(original.first)
             for name in ["Corrupt.png", "Unsupported.txt", "Does not exist.png"] {
@@ -409,11 +376,12 @@ struct ComposerDraftTests {
     @Test func reattachmentNeverClearsARepeatedDraftPersistenceFailure() async throws {
         try await withDraft { _, url in
             let blocked = url.deletingLastPathComponent().appendingPathComponent("blocked")
+            let missing = ComposerImage(name: "Missing.png", mimeType: "image/png", data: Data())
+            let draft = imageIODraft(fileURL: try ComposerDraft.writeSaved("Keep this caption", images: [missing],
+                                                                           to: blocked.appendingPathComponent("draft.json")))
+            try FileManager.default.removeItem(at: blocked)
             try Data("Not a directory".utf8).write(to: blocked)
-            let draft = imageIODraft(fileURL: blocked.appendingPathComponent("draft.json"))
-            draft.restore(content: "Keep this caption", attachments: [
-                .init(name: "Missing.png", mimeType: "image/png"),
-            ])
+            draft.text += " and this edit"
             try await saved(draft)
             let slot = try #require(draft.images.first)
             let previousError = try #require(draft.error)
@@ -441,15 +409,14 @@ struct ComposerDraftTests {
         let release = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
         defer { release.continuation.finish() }
         try await withDraft { _, url in
-            let draft = ComposerDraft(imageIsReadable: { !$0.isEmpty }, rasterizeImage: { _, _ in
+            let missing = ComposerImage(name: "Missing.svg", mimeType: "image/svg+xml", data: Data())
+            let draftURL = try ComposerDraft.writeSaved("Keep this caption", images: [missing], to: url)
+            let draft = ComposerDraft(fileURL: draftURL, imageIsReadable: { !$0.isEmpty }, rasterizeImage: { _, _ in
                 started.continuation.yield()
                 var releases = release.stream.makeAsyncIterator()
                 _ = await releases.next()
                 return bitmap
             })
-            draft.restore(content: "Keep this caption", attachments: [
-                .init(name: "Missing.svg", mimeType: "image/svg+xml"),
-            ])
             let original = try #require(draft.images.first)
             let replacement = url.deletingLastPathComponent().appendingPathComponent("First.svg")
             try Data("<svg/>".utf8).write(to: replacement)
@@ -561,5 +528,20 @@ struct ComposerDraftTests {
     private func remove(_ url: URL) {
         do { try FileManager.default.removeItem(at: url) }
         catch { Issue.record("Composer test cleanup failed: \(error.localizedDescription)") }
+    }
+}
+
+extension ComposerDraft {
+    /// Saves a draft as an earlier launch left it, where an image without bytes is one whose file
+    /// is gone, and returns where it's saved.
+    static func writeSaved(_ text: String, images: [ComposerImage], to url: URL) throws -> URL {
+        let folder = url.deletingPathExtension()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for image in images where !image.data.isEmpty {
+            try image.data.write(to: folder.appendingPathComponent(image.id.uuidString))
+        }
+        let metadata = images.map { ["id": $0.id.uuidString, "name": $0.name, "mimeType": $0.mimeType] }
+        try JSONSerialization.data(withJSONObject: ["text": text, "images": metadata]).write(to: url)
+        return url
     }
 }
