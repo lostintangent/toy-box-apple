@@ -175,12 +175,12 @@ private struct ServerUpdateStatus: View {
         case .reconnecting?:
             ProgressView().accessibilityRepresentation { Text("Reconnecting") }
         case .restartPending?:
-            if showsVersion, let version = update.version, let installed = version.installedVersion {
-                Text("\(version.version) → \(installed)").foregroundStyle(.secondary)
-                    .accessibilityLabel("\(version.version), \(installed) after restart")
+            if showsVersion, let release = update.release, let installed = release.installedVersion {
+                Text("\(release.version) → \(installed)").foregroundStyle(.secondary)
+                    .accessibilityLabel("\(release.version), \(installed) after restart")
             }
         case .idle?, nil:
-            if showsVersion, let version = update.version?.version {
+            if showsVersion, let version = update.release?.version {
                 Text(version).foregroundStyle(.secondary)
             }
         }
