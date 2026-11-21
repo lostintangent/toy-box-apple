@@ -3152,8 +3152,8 @@ toggles specified under Settings additions.
 Notifications has an "Allow notifications" toggle over "Requests for your response" and
 "Completed tasks". Both apps default to requests on and completions off, without changing saved choices. On iPhone,
 the request and completion switches are hidden while Allow notifications is off. On Mac they stay
-visible and disabled. Turning notifications off preserves both choices. The phone's Notifications section has no
-footer.
+visible and disabled. Turning notifications off preserves both choices. The phone's About section lists App, Version
+and Build, with no note under them.
 Release builds also show Updates, with "Automatically check for updates" and "Automatically
 download and install updates" bound to Sparkle's own settings. Automatic installation is disabled
 while automatic checks are off or the updater disallows it. These controls are hidden without a
