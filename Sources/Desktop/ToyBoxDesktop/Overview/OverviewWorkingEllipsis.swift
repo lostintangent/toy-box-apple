@@ -110,13 +110,10 @@ final class OverviewEllipsisPulseView: NSView {
 
     override func layout() {
         super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
         if layer?.mask !== pulse.layer {
             layer?.mask = pulse.layer
         }
         pulse.layout(in: bounds, splits: splits)
-        CATransaction.commit()
     }
 
     override func viewDidMoveToWindow() {
@@ -131,20 +128,9 @@ final class OverviewEllipsisPulseView: NSView {
         let renderer = ImageRenderer(content: OverviewWorkingEllipsis.symbol(size: size, color: .black))
         renderer.scale = scale
         guard let image = renderer.cgImage else { return nil }
-        let rendering = Rendering(image: image, splits: splits(in: image, scale: scale).map { $0 / scale })
+        let rendering = Rendering(image: image, splits: ChannelEllipsisPulseMask.splits(in: image, scale: scale)
+            .map { $0 / scale })
         renderings[metrics] = rendering
         return rendering
-    }
-
-    /// Where the segments meet, in pixels: the middle of the empty columns between two dots. At 1x,
-    /// antialiasing can leave no empty column, so the faintest one goes to the dot beside its heavier
-    /// neighbor, whose edge is nearer.
-    static func splits(in image: CGImage, scale: CGFloat) -> [CGFloat] {
-        ChannelEllipsisPulseMask.splits(in: image, scale: scale)
-    }
-
-    /// Each pixel column's total alpha.
-    static func columnInk(in image: CGImage) -> [Int] {
-        ChannelEllipsisPulseMask.columnInk(in: image)
     }
 }

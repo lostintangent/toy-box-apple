@@ -415,7 +415,7 @@ struct ManagementTests {
             channel.tasks = [.init(id: "parent", title: "Parent task", status: tasks.status, children: [
                 .init(id: "child", title: "Child task", status: tasks.childStatus)
             ])]
-            return OverviewTaskList(state: ChannelState(revision: 1, channel: channel, lead: .lead(id: channel.id)),
+            return OverviewTaskList(tasks: channel.tasks, agents: [], artifacts: [], channelId: channel.id,
                                     showsOnlyInProgress: tasks.showsOnlyInProgress, onArtifactOpen: { _ in })
                 .frame(width: 280, height: 120, alignment: .topLeading)
                 .background(Color.white)
@@ -461,7 +461,7 @@ struct ManagementTests {
     func everyTextSizeSplitsTheEllipsisBetweenItsDots(displayScale: Double) throws {
         for textScale in stride(from: 0.85, through: 1.4, by: 0.05) {
             let rendering = try #require(OverviewEllipsisPulseView.rendering(size: 9 * textScale, scale: displayScale))
-            let ink = OverviewEllipsisPulseView.columnInk(in: rendering.image)
+            let ink = ChannelEllipsisPulseMask.columnInk(in: rendering.image)
             let width = CGFloat(rendering.image.width) / displayScale
             #expect(rendering.splits.count == 2, "\(textScale) at \(displayScale)x")
             for (index, split) in rendering.splits.enumerated() {
@@ -548,12 +548,8 @@ struct ManagementTests {
         let bitmap: RenderedPixels
 
         init(_ tasks: [ChannelTask], width: Int) throws {
-            var channel = Channel(id: "tasks", name: "Tasks", model: .init(provider: "test", name: "test"),
-                                  latestSequence: 1, seenThrough: 1, updatedAt: "2026-10-22T08:00:00Z")
-            channel.tasks = tasks
-            let state = ChannelState(revision: 1, channel: channel, lead: .lead(id: channel.id))
             let renderer = ImageRenderer(content:
-                OverviewTaskList(state: state, onArtifactOpen: { _ in })
+                OverviewTaskList(tasks: tasks, agents: [], artifacts: [], channelId: "tasks", onArtifactOpen: { _ in })
                     .frame(width: CGFloat(width))
                     .padding(Self.padding)
                     .background(Color.white)

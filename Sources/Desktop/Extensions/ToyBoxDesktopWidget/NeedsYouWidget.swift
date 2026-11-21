@@ -11,13 +11,7 @@ struct NeedsYouProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<NeedsYouEntry>) -> Void) {
-        let now = Date(), snapshot = WidgetSnapshotReader.load()
-        var entries = [NeedsYouEntry(date: now, snapshot: snapshot)]
-        if let snapshot, !snapshot.isStale(at: now) {
-            entries.append(.init(date: snapshot.updatedAt.addingTimeInterval(NeedsYouSnapshot.freshnessInterval),
-                                 snapshot: snapshot))
-        }
-        completion(.init(entries: entries, policy: .after(now.addingTimeInterval(15 * 60))))
+        completion(NeedsYouEntry.timeline(snapshot: WidgetSnapshotReader.load(), now: .now))
     }
 }
 

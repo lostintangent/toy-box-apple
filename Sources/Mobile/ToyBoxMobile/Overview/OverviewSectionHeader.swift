@@ -17,14 +17,6 @@ enum OverviewInlineDisclosure {
     }
 }
 
-struct OverviewListRowBoundary: ViewModifier {
-    let isLast: Bool
-
-    func body(content: Content) -> some View {
-        content.listRowSeparator(isLast ? .hidden : .visible, edges: .bottom)
-    }
-}
-
 struct OverviewSectionRows<Content: View>: View {
     let summary: ChannelOverviewSummary
     let section: OverviewSection

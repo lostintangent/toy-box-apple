@@ -45,21 +45,10 @@ struct OverviewTaskList: View {
         self.onArtifactOpen = onArtifactOpen
     }
 
-    init(state: ChannelState, showsOnlyInProgress: Bool = false, onArtifactOpen: @escaping (ChannelArtifact) -> Void) {
-        self.init(tasks: state.channel.tasks, agents: state.agents, artifacts: state.artifacts,
-                  channelId: state.channel.id, showsOnlyInProgress: showsOnlyInProgress,
-                  onArtifactOpen: onArtifactOpen)
-    }
-
-    /// The one filter rule, shared by every level. A kept task renders from its full value.
-    static func keeps(_ task: ChannelTask, showsOnlyInProgress: Bool) -> Bool {
-        !showsOnlyInProgress || task.holdsWorkInProgress
-    }
-
     var body: some View {
         // Slots come from the whole list, so turning the filter on or off never moves a row's slot.
         let entries = slots.entries(tasks, in: channelId)
-        let shown = entries.filter { OverviewTaskList.keeps($0.item, showsOnlyInProgress: showsOnlyInProgress) }
+        let shown = entries.filter { !showsOnlyInProgress || $0.item.holdsWorkInProgress }
         Group {
             if tasks.isEmpty {
                 OverviewEmptyText("No tasks yet")
@@ -101,7 +90,7 @@ struct OverviewTaskRow: View {
     @ViewState private var isTimingVisible = false
 
     init(task: ChannelTask, key: String, agents: [ChannelAgent], artifacts: [ChannelArtifact],
-         showsOnlyInProgress: Bool = false, disclosure: Binding<ChannelTask.Disclosure>,
+         showsOnlyInProgress: Bool, disclosure: Binding<ChannelTask.Disclosure>,
          onArtifactOpen: @escaping (ChannelArtifact) -> Void) {
         self.task = task
         self.key = key
@@ -117,7 +106,7 @@ struct OverviewTaskRow: View {
     private var children: [ChannelTask] { task.children ?? [] }
     /// The children this row shows. Progress and the diff still count every child.
     private var visibleChildren: [ChannelTask] {
-        children.filter { OverviewTaskList.keeps($0, showsOnlyInProgress: showsOnlyInProgress) }
+        showsOnlyInProgress ? children.holdingWorkInProgress : children
     }
     private var owner: ChannelTask.Owner? { task.owner(in: agents) }
     private var progress: (done: Int, total: Int)? {

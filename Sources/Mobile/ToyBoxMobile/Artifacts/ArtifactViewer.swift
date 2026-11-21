@@ -320,19 +320,15 @@ private struct ArtifactHTMLDocument: View {
         }
         .task(id: LoadIdentity(file: content.file, retry: retry)) {
             reader.webRenderer = renderer
-            await loadDocument()
+            guard let text = content.text else { return }
+            await renderer.load(text, directory: content.directory, server: content.server, resource: content.resource,
+                                state: reader.webReadingStates[content.artifact.id])
         }
         .onDisappear {
             if let state = renderer.readingState { reader.webReadingStates[content.artifact.id] = state }
             renderer.stop()
             if reader.webRenderer === renderer { reader.webRenderer = nil }
         }
-    }
-
-    private func loadDocument() async {
-        guard let text = content.text else { return }
-        await renderer.load(text, directory: content.directory, server: content.server, resource: content.resource,
-                            state: reader.webReadingStates[content.artifact.id])
     }
 
     private struct LoadIdentity: Hashable {

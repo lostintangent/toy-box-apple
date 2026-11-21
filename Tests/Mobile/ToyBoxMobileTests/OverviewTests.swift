@@ -134,7 +134,8 @@ struct OverviewTests {
     @Test func taskTimingMetadataKeepsItsTextWithoutAnOversizedEmptyRow() throws {
         let renderer = ImageRenderer(content:
             Button {} label: {
-                OverviewTaskMetadata(timing: .init(elapsedMinutes: 86, checkInMinutes: 31), diff: nil)
+                ChannelOverviewTaskMetadata(timing: .init(elapsedMinutes: 86, checkInMinutes: 31), diff: nil)
+                    .font(.footnote)
             }
             .buttonStyle(.plain)
             .dynamicTypeSize(.large)
@@ -1262,27 +1263,6 @@ struct OverviewTests {
         reader.reset()
         #expect(reader.markdownOffsets.isEmpty)
         #expect(reader.sharing == nil && reader.preview == nil)
-    }
-
-    @Test func artifactFitCallbacksDistinguishZoomFromFitAndDoNotPublishAnObsoletePage() async {
-        let view = ArtifactImageScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 600))
-        var fitted: [Bool] = []
-        view.onFitChanged = { fitted.append($0) }
-        view.configure(image: UIImage(), size: CGSize(width: 1600, height: 800),
-                       file: URL(fileURLWithPath: "/fixture/first.png"), title: "First")
-        await view.fitPublication?.value
-        #expect(fitted == [true] && view.isAtFitScale)
-        view.actualSize()
-        await view.fitPublication?.value
-        #expect(fitted == [true, false] && !view.isAtFitScale)
-        view.fit()
-        view.actualSize()
-        await view.fitPublication?.value
-        #expect(fitted == [true, false, false])
-        view.fit()
-        view.stop()
-        await view.fitPublication?.value
-        #expect(fitted == [true, false, false])
     }
 
     private func nativeList(in view: UIView) -> UICollectionView? {

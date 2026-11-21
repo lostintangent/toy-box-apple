@@ -6,14 +6,12 @@ struct ChannelActivityLogo: View {
         case fullColor, monochrome
     }
 
-    var style: Style = .fullColor
+    let style: Style
     @Environment(\.colorScheme) private var colorScheme
 
     // Exact 1024-unit geometry from Resources/Shared/AppIcon.icon/Assets.
-    static let headData = "M380 305.2 H644 A187 187 0 0 1 831 492.2 V591.2 A187 187 0 0 1 644 778.2 H426.2 C391 824.4 336 864 261.2 879.4 C294.2 837.6 305.2 795.8 300.8 758.4 A187 187 0 0 1 193 591.2 V492.2 A187 187 0 0 1 380 305.2 Z"
-    static let smileData = "M465.8 617.6 A66 66 0 0 0 558.2 617.6"
-    private static let head = try! SVGPath.parse(headData)
-    private static let smile = try! SVGPath.parse(smileData)
+    private static let head = try! SVGPath.parse("M380 305.2 H644 A187 187 0 0 1 831 492.2 V591.2 A187 187 0 0 1 644 778.2 H426.2 C391 824.4 336 864 261.2 879.4 C294.2 837.6 305.2 795.8 300.8 758.4 A187 187 0 0 1 193 591.2 V492.2 A187 187 0 0 1 380 305.2 Z")
+    private static let smile = try! SVGPath.parse("M465.8 617.6 A66 66 0 0 0 558.2 617.6")
     private static let stem = Path(roundedRect: .init(x: 492.2, y: 210.6, width: 39.6, height: 121),
                                    cornerRadius: 19.8)
     private static let antenna = Path(ellipseIn: .init(x: 461.4, y: 144.6, width: 101.2, height: 101.2))

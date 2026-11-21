@@ -27,18 +27,6 @@ public struct ArtifactContent: Sendable {
 
     public var directory: URL { resource.deletingLastPathComponent().appendingPathComponent("") }
 
-    public init(artifact: ChannelArtifact, kind: ArtifactContentKind, resource: URL, server: URL,
-                file: URL, text: String?, bitmap: CGImage?, imageSize: CGSize?) {
-        self.artifact = artifact
-        self.kind = kind
-        self.resource = resource
-        self.server = server
-        self.file = file
-        self.text = text
-        self.bitmap = bitmap
-        self.imageSize = imageSize
-    }
-
     public static func load(_ artifact: ChannelArtifact, api: ChannelAPI, preparedFile: URL? = nil,
                             decodeImage: ImageDecoder, download: Download = ArtifactDownload.file) async throws -> Self {
         guard let resource = artifact.url.flatMap(api.resourceURL) else {

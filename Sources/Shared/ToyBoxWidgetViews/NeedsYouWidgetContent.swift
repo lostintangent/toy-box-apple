@@ -10,6 +10,17 @@ package struct NeedsYouEntry: TimelineEntry {
         self.date = date
         self.snapshot = snapshot
     }
+
+    /// Now, and the moment a current snapshot goes stale, so the widget says so without a host
+    /// refresh. WidgetKit asks again in 15 minutes.
+    package static func timeline(snapshot: NeedsYouSnapshot?, now: Date) -> Timeline<Self> {
+        var entries = [Self(date: now, snapshot: snapshot)]
+        if let snapshot, snapshot.isAvailable, !snapshot.isStale(at: now) {
+            entries.append(.init(date: snapshot.updatedAt.addingTimeInterval(NeedsYouSnapshot.freshnessInterval),
+                                 snapshot: snapshot))
+        }
+        return .init(entries: entries, policy: .after(now.addingTimeInterval(15 * 60)))
+    }
 }
 
 package struct NeedsYouWidgetContent: View {
@@ -39,14 +50,13 @@ package struct NeedsYouWidgetContent: View {
                 } else {
                     VStack(alignment: .leading, spacing: family == .systemLarge ? 12 : 8) {
                         ForEach(Array(snapshot.requests.prefix(limit))) { request in
-                            if let url = NeedsYouRequestLink(serverURL: request.serverURL,
-                                channelID: request.channelID, sequence: request.sequence).url {
+                            let link = NeedsYouRequestLink(serverURL: request.serverURL,
+                                                           channelID: request.channelID, sequence: request.sequence)
+                            if let url = link.url {
                                 HStack(alignment: .center, spacing: 8) {
                                     Link(destination: url) { requestRow(request) }
                                         .accessibilityLabel("\(request.channelName): \(request.quote)")
-                                    if family != .systemSmall, let replyURL = NeedsYouRequestLink(
-                                        serverURL: request.serverURL, channelID: request.channelID,
-                                        sequence: request.sequence).replyURL {
+                                    if family != .systemSmall, let replyURL = link.replyURL {
                                         Link(destination: replyURL) {
                                             Image(systemName: "arrowshape.turn.up.left")
                                                 .font(.system(size: 13, weight: .medium))

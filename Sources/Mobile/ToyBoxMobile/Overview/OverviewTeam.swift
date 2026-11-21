@@ -45,7 +45,7 @@ struct OverviewTeamSection: View {
             .listRowInsets(.vertical, 0)
             .accessibilityIdentifier("overview-add-agent")
             .disabled(!store.phase.isConnected)
-            .modifier(OverviewListRowBoundary(isLast: true))
+            .listRowSeparator(.hidden, edges: .bottom)
         }
     }
 }
