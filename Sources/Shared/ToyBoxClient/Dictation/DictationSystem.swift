@@ -16,8 +16,8 @@ import Speech
     package var makeRecognizer: (Locale, [String], DictationAudioSource) -> any DictationRecognizing
     package var announce: (String) -> Void
     package var openSettings: (DictationAccess) -> Void
-    package var silenceTimeout: Duration
-    package var finalizeTimeout: Duration
+    package var silenceTimeout: Duration = .seconds(30)
+    package var finalizeTimeout: Duration = .seconds(3)
     package var refreshNotifications: [Notification.Name] = [
         AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification,
     ]
@@ -32,9 +32,7 @@ import Speech
         makeSource: @escaping () -> DictationAudioSource,
         makeRecognizer: @escaping (Locale, [String], DictationAudioSource) -> any DictationRecognizing,
         announce: @escaping (String) -> Void,
-        openSettings: @escaping (DictationAccess) -> Void,
-        silenceTimeout: Duration = .seconds(30),
-        finalizeTimeout: Duration = .seconds(3)
+        openSettings: @escaping (DictationAccess) -> Void
     ) {
         self.supportedLocale = supportedLocale
         self.hasMicrophone = hasMicrophone
@@ -46,8 +44,6 @@ import Speech
         self.makeRecognizer = makeRecognizer
         self.announce = announce
         self.openSettings = openSettings
-        self.silenceTimeout = silenceTimeout
-        self.finalizeTimeout = finalizeTimeout
     }
 }
 
@@ -93,7 +89,7 @@ extension DictationSystem {
     /// Deterministic services for snapshot states and tests, with scripted words instead of audio.
     package static func scripted(microphone: DictationMicrophoneAccess = .granted, hasMicrophone: Bool = true,
                          downloadProgress: Double? = nil, results: [(String, Bool)] = [],
-                         level: Double = 0.75, finishes: Bool = true) -> DictationSystem {
+                         finishes: Bool = true) -> DictationSystem {
         DictationSystem(
             supportedLocale: { Locale(identifier: "en_US") },
             hasMicrophone: { hasMicrophone },
@@ -107,7 +103,7 @@ extension DictationSystem {
             },
             makeSource: { SilentDictationSource() },
             makeRecognizer: { _, _, _ in
-                ScriptedDictationRecognizer(results: results, level: level, finishes: finishes)
+                ScriptedDictationRecognizer(results: results, finishes: finishes)
             },
             announce: { _ in },
             openSettings: { _ in }

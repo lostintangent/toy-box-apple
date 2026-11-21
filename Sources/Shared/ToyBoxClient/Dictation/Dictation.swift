@@ -215,10 +215,8 @@ package final class Dictation {
                 phase = .idle
                 return
             }
-            if !isTracking {
-                isTracking = true
-                observe()
-            }
+            isTracking = true
+            observe()
             let checkedCurrentInput = await refreshDevicesAndAccess()
             guard self.generation == generation else { return }
             guard checkedCurrentInput else {
@@ -491,27 +489,20 @@ package final class Dictation {
     }
 
     private func fail(_ message: String?) {
-        guard isSessionActive || phase != .idle else { return }
         recognizer?.cancel()
         transcript.discardTentative()
-        if isSessionActive {
-            endSession()
-        } else {
-            phase = .idle
-        }
+        endSession()
         if let message { notice = .failed(message) }
     }
 
     private func endSession() {
-        let wasListening = phase == .listening || phase == .finishing
+        let wasListening = isListening
         generation += 1
         silenceWatch?.cancel()
         recognizer = nil
         finishing = nil
-        if isSessionActive {
-            isSessionActive = false
-            target?.endDictation(transcript.finalized)
-        }
+        isSessionActive = false
+        target?.endDictation(transcript.finalized)
         transcript = .init()
         hasWords = false
         level = 0

@@ -40,11 +40,6 @@ final class ComposerSession {
         dictation.deactivate()
     }
 
-    func presentCreate(_ name: String, using management: ManagementPresenter) {
-        preparePresentation()
-        if let target = store.target { management.present(.addMember(target, name: name)) }
-    }
-
     func presentEdit(agentId: String, using management: ManagementPresenter) {
         preparePresentation()
         if let target = store.target { management.present(.editMember(target, agentId: agentId)) }
@@ -55,7 +50,8 @@ final class ComposerSession {
         if choice.isCreate {
             guard store.phase.isConnected else { return }
             dismissedMention = query
-            presentCreate(choice.name, using: management)
+            preparePresentation()
+            if let target = store.target { management.present(.addMember(target, name: choice.name)) }
         } else {
             editor.replace(query.range, with: "\(choice.handle) ")
         }
@@ -111,7 +107,6 @@ final class ComposerSession {
     }
 
     func importPhotos(_ items: [PhotosPickerItem]) async {
-        guard !items.isEmpty else { return }
         photoImportCount += 1
         defer { photoImportCount -= 1 }
         var failures: [String] = []

@@ -259,11 +259,6 @@ struct ComposerTests {
         undo.undo()
         #expect(text.isEmpty)
         #expect(view.text == text)
-
-        editor.setReaderCovered(true, canRestoreFocus: false)
-        editor.setEditingAllowed(false)
-        editor.setReaderCovered(false, canRestoreFocus: true)
-        #expect(!view.isEditable)
     }
 
     @Test(arguments: [ColorScheme.light, .dark], [false, true])

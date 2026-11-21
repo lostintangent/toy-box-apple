@@ -1,7 +1,5 @@
 import AVFoundation
 import ToyBoxClient
-import OSLog
-import ToyBoxUI
 import UIKit
 
 extension DictationSystem {
@@ -11,15 +9,7 @@ extension DictationSystem {
             makeSource: { TranscriptReadAloud.Microphone(MicrophoneDictationSource(), releasingAudio: false) },
             announce: { UIAccessibility.post(notification: .announcement, argument: $0) },
             openSettings: { _ in
-                guard let url = URL(string: UIApplication.openSettingsURLString) else {
-                    preconditionFailure("The native application Settings URL must be valid.")
-                }
-                UIApplication.shared.open(url, options: [:]) { opened in
-                    if !opened {
-                        Logger(subsystem: "dev.toybox.mobile", category: "Dictation")
-                            .error("Application Settings could not be opened.")
-                    }
-                }
+                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
             }
         )
         system.refreshNotifications += [

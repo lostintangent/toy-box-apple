@@ -302,7 +302,7 @@ private struct TalkCard<Row: View>: View {
                     .foregroundStyle(ChannelInk.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            CardControls(canCancel: recorder.phase != .sending, canSend: recorder.canSend,
+            CardControls(canSend: recorder.canSend,
                          isSending: recorder.phase == .sending, sendLabel: "Send to Lead",
                          cancel: recorder.cancel, send: send)
                 // Send's circle, not its hit target, ends on the card's content.
@@ -753,7 +753,7 @@ private struct TalkList<Row: View>: ViewModifier {
             .onChange(of: recorder.target) { _, target in
                 if target == nil { hold.release() }
             }
-            .onAppear { recorder.activate() }
+            .onAppear { recorder.dictation.activate() }
             .onDisappear { recorder.deactivate() }
             .task(id: scenePhase) {
                 if scenePhase == .active { await recorder.dictation.refreshLanguageSupport() }

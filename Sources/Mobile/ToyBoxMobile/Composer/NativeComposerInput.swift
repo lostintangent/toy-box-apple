@@ -2,7 +2,6 @@ import ToyBoxClient
 import Observation
 import OSLog
 import SwiftUI
-import ToyBoxUI
 import UIKit
 import UniformTypeIdentifiers
 
@@ -36,19 +35,17 @@ final class ComposerEditor {
     private(set) var isFocused = false
     private var readerFocus = ComposerReaderFocus()
     var isReaderCovered: Bool { readerFocus.isCovered }
-    @ObservationIgnored private var allowsEditing = true
     @ObservationIgnored private var pendingFocus = false
     @ObservationIgnored weak var textView: ComposerTextView?
 
     func focus() {
-        guard !isReaderCovered, allowsEditing else { return }
+        guard !isReaderCovered else { return }
         pendingFocus = true
         applyPendingFocus()
     }
 
     fileprivate func applyPendingFocus() {
-        guard pendingFocus, !isReaderCovered, allowsEditing,
-              let textView, textView.window != nil else { return }
+        guard pendingFocus, !isReaderCovered, let textView, textView.window != nil else { return }
         if textView.becomeFirstResponder() { pendingFocus = false }
     }
 
@@ -58,18 +55,12 @@ final class ComposerEditor {
             readerFocus.cover(ownsFocus: textView?.isFirstResponder == true)
             textView?.resignFirstResponder()
             if let textView { update(from: textView) }
-            setEditingAllowed(allowsEditing)
+            textView?.isEditable = false
         } else {
             let restore = readerFocus.uncover(canRestoreFocus: canRestoreFocus)
-            setEditingAllowed(allowsEditing)
+            textView?.isEditable = true
             if restore { focus() }
         }
-    }
-
-    func setEditingAllowed(_ allowed: Bool) {
-        allowsEditing = allowed
-        if !allowed { pendingFocus = false }
-        textView?.isEditable = allowed && !isReaderCovered
     }
 
     func cancelReaderFocusRestoration() {
@@ -101,7 +92,6 @@ struct NativeComposerInput: UIViewRepresentable {
     @Binding var text: String
     let editor: ComposerEditor
     var completionIsVisible = false
-    var isEditable = true
     var onSend: () -> Void
     var onCompletionKey: (ComposerCompletionKey) -> Bool
     var onPasteImages: ([NSItemProvider]) -> Void
@@ -113,6 +103,7 @@ struct NativeComposerInput: UIViewRepresentable {
     func makeUIView(context: Context) -> ComposerTextView {
         let view = ComposerTextView()
         view.backgroundColor = .clear
+        view.textColor = .label
         view.font = .preferredFont(forTextStyle: .body)
         view.adjustsFontForContentSizeCategory = true
         view.textContainerInset = Self.textInsets
@@ -123,7 +114,7 @@ struct NativeComposerInput: UIViewRepresentable {
         view.text = text
         configure(view, coordinator: context.coordinator)
         context.coordinator.lastModelText = text
-        view.selectedRange = clampedSelection(for: view)
+        view.selectedRange = editor.selection.clamped(to: view.text.utf16.count)
         return view
     }
 
@@ -136,7 +127,7 @@ struct NativeComposerInput: UIViewRepresentable {
             context.coordinator.parent.editor.textView = nil
             view.undoManager?.removeAllActions()
             view.text = text
-            view.selectedRange = clampedSelection(for: view)
+            view.selectedRange = editor.selection.clamped(to: view.text.utf16.count)
         }
         context.coordinator.parent = self
         configure(view, coordinator: context.coordinator)
@@ -149,7 +140,7 @@ struct NativeComposerInput: UIViewRepresentable {
             view.text = text
             view.invalidateIntrinsicContentSize()
         }
-        let selection = clampedSelection(for: view)
+        let selection = editor.selection.clamped(to: view.text.utf16.count)
         if view.selectedRange != selection { view.selectedRange = selection }
         context.coordinator.lastModelText = text
     }
@@ -172,19 +163,13 @@ struct NativeComposerInput: UIViewRepresentable {
         view.coordinator = coordinator
         editor.textView = view
         dictation?.target = coordinator
-        editor.setEditingAllowed(isEditable)
+        view.isEditable = !editor.isReaderCovered
         view.completionIsVisible = completionIsVisible
         view.onSend = onSend
         view.onCompletionKey = onCompletionKey
         view.onPasteImages = onPasteImages
         view.onEscape = onEscape
         editor.applyPendingFocus()
-    }
-
-    private func clampedSelection(for view: UITextView) -> NSRange {
-        let length = view.text.utf16.count
-        let location = min(max(editor.selection.location, 0), length)
-        return NSRange(location: location, length: min(max(editor.selection.length, 0), length - location))
     }
 
     @MainActor final class Coordinator: NSObject, UITextViewDelegate {
@@ -397,11 +382,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
             Self.logger.error("Dictation undo could not replace its validated native text range.")
             return
         }
-        let length = input.text.utf16.count
-        let location = min(max(edit.selection.location, 0), length)
-        input.selectedRange = NSRange(
-            location: location, length: min(max(edit.selection.length, 0), length - location)
-        )
+        input.selectedRange = edit.selection.clamped(to: input.text.utf16.count)
         registerDictationUndo(inverse)
         lastModelText = input.text
         parent.text = input.text
@@ -462,10 +443,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
             let selection = input.selectedRange
             input.typingAttributes = session.attributes
             input.text = recovered
-            let location = min(max(selection.location, 0), recovered.utf16.count)
-            input.selectedRange = NSRange(
-                location: location, length: min(max(selection.length, 0), recovered.utf16.count - location)
-            )
+            input.selectedRange = selection.clamped(to: recovered.utf16.count)
             parent.editor.update(from: input)
             input.invalidateIntrinsicContentSize()
         }
@@ -479,16 +457,6 @@ final class ComposerTextView: UITextView {
     var onCompletionKey: ((ComposerCompletionKey) -> Bool)?
     var onPasteImages: (([NSItemProvider]) -> Void)?
     var onEscape: (() -> Void)?
-
-    override init(frame: CGRect, textContainer: NSTextContainer?) {
-        super.init(frame: frame, textContainer: textContainer)
-        textColor = .label
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        textColor = .label
-    }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
@@ -590,5 +558,12 @@ final class ComposerTextView: UITextView {
     @objc private func acceptCompletion() { _ = onCompletionKey?(.accept) }
     @objc private func dismissCompletion() {
         if onCompletionKey?(.dismiss) != true { onEscape?() }
+    }
+}
+
+private extension NSRange {
+    func clamped(to length: Int) -> NSRange {
+        let location = min(max(self.location, 0), length)
+        return NSRange(location: location, length: min(max(self.length, 0), length - location))
     }
 }

@@ -139,9 +139,7 @@ struct NativeComposerInput: NSViewRepresentable {
 
     static func dismantleNSView(_ nsView: NSScrollView, coordinator: Coordinator) {
         coordinator.leaveDocument()
-        if let dictation = coordinator.parent.dictation {
-            if dictation.target === coordinator { dictation.target = nil }
-        }
+        if let dictation = coordinator.parent.dictation, dictation.target === coordinator { dictation.target = nil }
         (nsView.documentView as? ComposerTextView)?.delegate = nil
     }
 
@@ -728,7 +726,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        guard isEditable, coordinator?.parent.isEditable != false else { return [] }
+        guard isEditable else { return [] }
         coordinator?.parent.dragging = true
         return .copy
     }

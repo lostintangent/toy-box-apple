@@ -134,15 +134,13 @@ import Speech
 /// Plays scripted transcriber results and a steady input level.
 @MainActor package final class ScriptedDictationRecognizer: DictationRecognizing {
     private let results: [(String, Bool)]
-    private let level: Double
     /// False stalls the final pass until cancelled, like a transcriber that never answers.
     private let finishes: Bool
     private var task: Task<Void, Never>?
     private var stall: CheckedContinuation<Void, Never>?
 
-    package init(results: [(String, Bool)], level: Double, finishes: Bool = true) {
+    package init(results: [(String, Bool)], finishes: Bool) {
         self.results = results
-        self.level = level
         self.finishes = finishes
     }
 
@@ -153,11 +151,10 @@ import Speech
                onFailure: @escaping @MainActor (any Error) -> Void) async throws {
         onListening()
         let results = results
-        let level = level
         task = Task {
             var pending = results[...]
             while !Task.isCancelled {
-                onLevel(level)
+                onLevel(0.75)
                 if let (text, isFinal) = pending.popFirst() { onResult(text, isFinal) }
                 try? await Task.sleep(for: .milliseconds(90))
             }

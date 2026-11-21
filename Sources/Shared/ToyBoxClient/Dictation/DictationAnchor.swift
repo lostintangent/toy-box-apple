@@ -14,12 +14,15 @@ public struct DictationAnchor {
 
     /// The spaces that separate `words` from the characters on either side of the anchor.
     public func padding(for words: String) -> (leading: String, trailing: String) {
+        guard let first = words.first, let last = words.last else { return ("", "") }
         let text = base as NSString
         let start = replaced.location
         let end = NSMaxRange(replaced)
         let previous = start > 0 ? text.substring(with: text.rangeOfComposedCharacterSequence(at: start - 1)).first : nil
         let next = end < text.length ? text.substring(with: text.rangeOfComposedCharacterSequence(at: end)).first : nil
-        return DictationTranscript.padding(for: words, after: previous, before: next)
+        let leading = previous.map { !$0.isWhitespace && (first.isLetter || first.isNumber) } == true ? " " : ""
+        let trailing = next.map { $0.isLetter || $0.isNumber } == true && !last.isWhitespace ? " " : ""
+        return (leading, trailing)
     }
 
     /// The text that dictated words replace, which shows until words arrive.

@@ -262,7 +262,6 @@ struct ComposerTray: View {
 /// The tray's task popover. Its heading and root task status icons share one leading inset, and
 /// parent disclosures trail their titles inline, as in the inspector.
 struct ComposerTasksPopover: View {
-    static let width: CGFloat = 360
     static let inset: CGFloat = 16
 
     let tasks: [ChannelTask]
@@ -285,7 +284,7 @@ struct ComposerTasksPopover: View {
             }
         }
         .padding(.vertical, Self.inset)
-        .frame(width: Self.width)
+        .frame(width: 360)
         .frame(maxHeight: 420)
         .trayPopoverContent()
     }

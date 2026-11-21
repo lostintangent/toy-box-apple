@@ -24,7 +24,6 @@ struct ComposerSurface: View {
 
     private var draft: ComposerDraft { session.draft }
     private var store: ChannelStore { session.store }
-    private var composer: ChannelComposerSession { session.composer }
     private var dictation: Dictation { session.dictation }
     private var editor: ComposerEditor { session.editor }
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
@@ -332,10 +331,9 @@ struct ComposerMentionList: View {
 
     var body: some View {
         if !choices.isEmpty {
-            let barHeight = session.mentionBarHeight
             completion
                 .padding(.horizontal, 12)
-                .padding(.bottom, 8 + barHeight)
+                .padding(.bottom, 8 + session.mentionBarHeight)
                 .padding(.horizontal, sizeClass == .compact ? 12 : 16)
         }
     }
