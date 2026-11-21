@@ -352,10 +352,10 @@ public struct ChannelAPI: Sendable {
 
     /// Installs whatever release is newer, then answers the server's releases. The server says
     /// nothing until the install finishes, so this waits up to `updateTimeout`.
-    public func updateServer() async throws -> ServerVersion {
+    public func updateServer() async throws -> ServerRelease {
         var request = URLRequest(url: endpoint(Self.serverPath + ["update"]), timeoutInterval: Self.updateTimeout)
         request.httpMethod = "POST"
-        return try await JSONDecoder().decode(ServerVersion.self, from: data(for: request))
+        return try await JSONDecoder().decode(ServerRelease.self, from: data(for: request))
     }
 
     /// Restarts the server onto its installed release. It answers before it shuts down, and every

@@ -15,7 +15,7 @@ struct ServerSettingsView: View {
             Section("Name") { ServerNameRows(catalog, in: model.servers) }
             ServerAddressSection(catalog: catalog)
             ServerVersionSection(update: catalog.update)
-            ModelProvidersSection(catalog.providers, update: catalog.update)
+            ModelProvidersSection(catalog)
         }
         .accessibilityIdentifier("server-settings")
         .task { await catalog.providers.appear() }
@@ -30,11 +30,11 @@ private struct ServerVersionSection: View {
     let update: ServerUpdate
 
     var body: some View {
-        if let release = update.version {
+        if let release = update.release {
             Section("Version") {
                 HStack {
                     Text(release.version).textSelection(.enabled)
-                    if release.installedVersion != nil {
+                    if release.isUpdatable {
                         Spacer()
                         Button("Restart") { Task { await update.restart() } }
                             .buttonStyle(.bordered)

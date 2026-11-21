@@ -111,7 +111,7 @@ public final class ServerProviders {
     /// Check for Updates shows on a connected server that updates its providers while any provider
     /// is on and installed.
     public var offersUpdateCheck: Bool {
-        guard let catalog, catalog.phase == .connected, catalog.update.version?.updatesProviders == true
+        guard let catalog, catalog.phase == .connected, catalog.update.release?.updatesProviders == true
         else { return false }
         return list.contains(where: \.isUpdatable)
     }
@@ -141,12 +141,10 @@ public final class ServerProviders {
         if isRereading { isRereading = false }
     }
 
-    /// Once an update installs a new version, the section asks for a restart, since a provider
-    /// keeps running its old version until then. Nil while nothing changed or rows are spinning.
-    public var restartMessage: String? {
-        let changed = entries.filter { if case .updated = $0.update { true } else { false } }.count
-        guard changed > 0, let catalog else { return nil }
-        return "Restart \(catalog.name) to use the new \(changed == 1 ? "version" : "versions")."
+    /// How many new versions the last check installed, which a provider runs only once the server
+    /// restarts. Zero while rows spin.
+    public var newVersions: Int {
+        entries.count { if case .updated = $0.update { true } else { false } }
     }
 
     /// While results show, a server that's reconnecting or restarting may come back running new

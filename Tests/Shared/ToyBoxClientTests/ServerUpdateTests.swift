@@ -79,8 +79,8 @@ struct ServerUpdateTests {
     }
 
     @Test func aRestartIsPendingExactlyWhenTheInstalledReleaseDiffersFromTheOneRunning() throws {
-        let decode = { (json: String) throws -> ServerVersion in
-            try JSONDecoder().decode(ServerVersion.self, from: Data(json.utf8))
+        let decode = { (json: String) throws -> ServerRelease in
+            try JSONDecoder().decode(ServerRelease.self, from: Data(json.utf8))
         }
         #expect(try decode(#"{"version":"0.3.9","installedVersion":"0.3.10"}"#).isRestartPending)
         #expect(try !decode(#"{"version":"0.3.9","installedVersion":"0.3.9"}"#).isRestartPending)
@@ -95,11 +95,11 @@ struct ServerUpdateTests {
         await catalog.refreshServer()
         #expect(update.phase == .idle)
 
-        try server.set { $0.update = try .json(ServerVersion(version: Self.old, installedVersion: Self.old)) }
+        try server.set { $0.update = try .json(ServerRelease(version: Self.old, installedVersion: Self.old)) }
         await update.check()
         #expect(update.phase == .idle, "Nothing newer shows the version again")
 
-        let installed = try JSONEncoder().encode(ServerVersion(version: Self.old, installedVersion: Self.new))
+        let installed = try JSONEncoder().encode(ServerRelease(version: Self.old, installedVersion: Self.new))
         server.set { $0.update = MockResponse(body: installed, keepOpen: true) }
         let check = Task { await update.check() }
         try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/server/update") == 1 }
@@ -146,7 +146,7 @@ struct ServerUpdateTests {
         #expect(catalogs.offersUpdateCheck)
         #expect(![catalogs[2]].offersUpdateCheck, "Only a server with an installed release can update")
 
-        let installed = try JSONEncoder().encode(ServerVersion(version: Self.old, installedVersion: Self.new))
+        let installed = try JSONEncoder().encode(ServerRelease(version: Self.old, installedVersion: Self.new))
         for server in servers { server.set { $0.update = MockResponse(body: installed, keepOpen: true) } }
         let check = Task { await catalogs.checkForUpdates() }
         try await eventually(observing: mocks[0]) { mocks[0].pendingCount(for: "/api/v1/server/update") == 1 }
@@ -194,7 +194,7 @@ struct ServerUpdateTests {
 
         #expect(mock.finishPendingResponses(path: "/api/v1/server") == 1)
         try await eventually { phases.seen.last == .idle }
-        #expect(update.version == ServerVersion(version: Self.new, installedVersion: Self.new))
+        #expect(update.release == ServerRelease(version: Self.new, installedVersion: Self.new))
         #expect(phases.seen == [.restartPending, .reconnecting, .idle])
         #expect(reads(mock) == 2, "Each connection reads the server once")
     }

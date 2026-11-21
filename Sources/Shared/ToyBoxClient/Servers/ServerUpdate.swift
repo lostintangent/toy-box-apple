@@ -1,8 +1,8 @@
 import Foundation
 import Observation
 
-/// What a server answers about its release.
-public struct ServerVersion: Codable, Equatable, Sendable {
+/// The release a server runs, and the one it has installed.
+public struct ServerRelease: Codable, Equatable, Sendable {
     /// The release the server runs.
     public var version: String
     /// The installed release, which a restart starts. Nil when the server runs from source, so it
@@ -13,6 +13,9 @@ public struct ServerVersion: Codable, Equatable, Sendable {
         self.version = version
         self.installedVersion = installedVersion
     }
+
+    /// The server can check for a newer release and restart, because it runs an installed one.
+    public var isUpdatable: Bool { installedVersion != nil }
 
     /// A restart would start a different release. It reads the installed release, so it holds on
     /// every device, whichever one ran the update.
@@ -35,11 +38,11 @@ public struct ServerInfo: Codable, Equatable, Sendable {
     public var name: String
     /// The server's accent, `#` and six hex digits.
     public var accentColor: String
-    public var release: ServerVersion
+    public var release: ServerRelease
     /// The origins of the owner's other online Macs on their tailnet, sorted. Each may not run Toy Box.
     public var peers: [String]
 
-    public init(id: String, name: String, accentColor: String, release: ServerVersion, peers: [String]) {
+    public init(id: String, name: String, accentColor: String, release: ServerRelease, peers: [String]) {
         self.id = id
         self.name = name
         self.accentColor = accentColor
@@ -54,7 +57,7 @@ public struct ServerInfo: Codable, Equatable, Sendable {
         id = try container.decode(String.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         accentColor = try container.decode(String.self, forKey: .accentColor)
-        release = try ServerVersion(from: decoder)
+        release = try ServerRelease(from: decoder)
         peers = try container.decode([String].self, forKey: .peers)
     }
 
@@ -93,7 +96,7 @@ public final class ServerUpdate {
     }
 
     /// The server's last answer. Nil until it answers.
-    public private(set) var version: ServerVersion?
+    public private(set) var release: ServerRelease?
     private var isChecking = false
     /// The catalog's stream isn't live and hasn't failed for the grace, or it has just reconnected
     /// and the read that follows hasn't answered. Its catalog keeps it current.
@@ -117,8 +120,8 @@ public final class ServerUpdate {
     public var phase: Phase? {
         if isChecking { return .checking }
         if isAwaitingServer { return .reconnecting }
-        guard let version, version.installedVersion != nil else { return nil }
-        return version.isRestartPending ? .restartPending : .idle
+        guard let release, release.isUpdatable else { return nil }
+        return release.isRestartPending ? .restartPending : .idle
     }
 
     /// The row spins for the server, which is reconnecting or about to restart, whether or not it's
@@ -130,7 +133,7 @@ public final class ServerUpdate {
     /// installed release may have shipped. A failure changes nothing, like a check that finds
     /// nothing newer.
     public func check() async {
-        guard !isChecking, version?.installedVersion != nil else { return }
+        guard !isChecking, release?.isUpdatable == true else { return }
         isChecking = true
         defer { isChecking = false }
         if let current = try? await api.updateServer() { apply(current) }
@@ -154,7 +157,7 @@ public final class ServerUpdate {
 
     /// The list's one Restart will restart the server, so its row spins from the press.
     func queueRestart() {
-        restartingOnto = version?.installedVersion
+        restartingOnto = release?.installedVersion
     }
 
     /// Restarts the server the list's one Restart queued, and returns once the server answers
@@ -172,8 +175,8 @@ public final class ServerUpdate {
     }
 
     /// Returns once the server answers running the release, or the wait is cancelled.
-    private func running(_ release: String) async {
-        for await running in Observations({ self.version?.version }) where running == release { return }
+    private func running(_ version: String) async {
+        for await running in Observations({ self.release?.version }) where running == version { return }
     }
 
     /// Sends the restart, and returns false when the server rejects it. An answer that never arrives
@@ -212,15 +215,15 @@ public final class ServerUpdate {
     }
 
     /// The server's releases, as it answered them.
-    func apply(_ current: ServerVersion) {
-        version = current
+    func apply(_ current: ServerRelease) {
+        release = current
     }
 }
 
 extension [ChannelCatalogStore] {
     /// Settings' server list offers Check for Updates while some server has an installed release.
     @MainActor public var offersUpdateCheck: Bool {
-        contains { $0.update.version?.installedVersion != nil }
+        contains { $0.update.release?.isUpdatable == true }
     }
 
     /// Some server is checking, so Check for Updates dims until every check ends.
@@ -233,9 +236,7 @@ extension [ChannelCatalogStore] {
     /// installed release, are skipped.
     @MainActor public func checkForUpdates() async {
         guard !isCheckingForUpdates else { return }
-        let checking = filter {
-            $0.phase == .connected && !$0.update.isReconnecting && $0.update.version?.installedVersion != nil
-        }
+        let checking = filter { $0.phase == .connected && !$0.update.isReconnecting }
         await withTaskGroup(of: Void.self) { group in
             for catalog in checking { group.addTask { await catalog.update.check() } }
         }
@@ -263,5 +264,10 @@ extension [ChannelCatalogStore] {
             }
         }
         if let first, restarting.contains(where: { $0 === first }) { await first.update.restartQueued() }
+    }
+
+    /// Settings closed, so every server's providers forget what their last check installed.
+    @MainActor public func clearUpdates() {
+        for catalog in self { catalog.providers.clearUpdates() }
     }
 }

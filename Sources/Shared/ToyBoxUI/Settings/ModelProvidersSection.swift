@@ -7,14 +7,15 @@ import SwiftUI
 /// once an update installs something new. The page showing it calls `ServerProviders.appear()`, and a
 /// server that lists no providers shows no section. See Model Providers in docs/spec.md.
 public struct ModelProvidersSection: View {
-    let providers: ServerProviders
-    /// The server's release, whose Restart runs the versions an update installed.
-    let update: ServerUpdate
+    let catalog: ChannelCatalogStore
 
-    public init(_ providers: ServerProviders, update: ServerUpdate) {
-        self.providers = providers
-        self.update = update
+    public init(_ catalog: ChannelCatalogStore) {
+        self.catalog = catalog
     }
+
+    private var providers: ServerProviders { catalog.providers }
+    /// The server's release, whose Restart runs the versions an update installed.
+    private var update: ServerUpdate { catalog.update }
 
     public var body: some View {
         if !providers.entries.isEmpty {
@@ -27,21 +28,29 @@ public struct ModelProvidersSection: View {
                 Text("Model Providers")
             } footer: {
                 #if os(iOS)
-                if let message = providers.restartMessage { Text(message) }
+                if let restartMessage { Text(restartMessage) }
                 #endif
             }
         }
     }
 
+    /// Once an update installs a new version, the section asks for a restart, since a provider
+    /// keeps running its old version until then.
+    private var restartMessage: String? {
+        let count = providers.newVersions
+        guard count > 0 else { return nil }
+        return "Restart \(catalog.name) to use the new \(count == 1 ? "version" : "versions")."
+    }
+
     /// Only a server with an installed release can restart onto the versions an update installed.
     private var offersRestart: Bool {
-        providers.restartMessage != nil && update.version?.installedVersion != nil
+        restartMessage != nil && update.release?.isUpdatable == true
     }
 
     #if os(macOS)
     /// A bar under the providers, led by the restart sentence once an update installs something new.
     @ViewBuilder private var updates: some View {
-        let message = providers.restartMessage
+        let message = restartMessage
         if providers.offersUpdateCheck || message != nil {
             HStack(spacing: 8) {
                 if let message { Text(message).foregroundStyle(.secondary) }

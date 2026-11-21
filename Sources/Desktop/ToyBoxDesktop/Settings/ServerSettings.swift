@@ -124,12 +124,12 @@ private struct ServerUpdateStatus: View {
             case .reconnecting?:
                 ProgressView().controlSize(.small).accessibilityLabel("Reconnecting")
             case .restartPending?:
-                if let version = update.version, let installed = version.installedVersion {
-                    Text("\(version.version) → \(installed)").foregroundStyle(.secondary)
-                        .accessibilityLabel("\(version.version), \(installed) after restart")
+                if let release = update.release, let installed = release.installedVersion {
+                    Text("\(release.version) → \(installed)").foregroundStyle(.secondary)
+                        .accessibilityLabel("\(release.version), \(installed) after restart")
                 }
             case .idle?, nil:
-                if let version = update.version?.version { Text(version).foregroundStyle(.secondary) }
+                if let version = update.release?.version { Text(version).foregroundStyle(.secondary) }
             }
         }
         .lineLimit(1)
@@ -157,11 +157,11 @@ private struct ServerDetails: View {
                     Text(Self.status(catalog.phase)).textSelection(.enabled)
                 }
             }
-            if let release = update.version {
+            if let release = update.release {
                 LabeledContent("Version") {
                     HStack(spacing: 8) {
                         Text(release.version).foregroundStyle(.secondary).textSelection(.enabled)
-                        if release.installedVersion != nil {
+                        if release.isUpdatable {
                             Button("Restart") { Task { await update.restart() } }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
@@ -172,7 +172,7 @@ private struct ServerDetails: View {
             }
         }
         .task { await catalog.providers.appear() }
-        ModelProvidersSection(catalog.providers, update: update)
+        ModelProvidersSection(catalog)
     }
 
     static func status(_ phase: ChannelCatalogPhase) -> String {

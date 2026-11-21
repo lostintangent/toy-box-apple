@@ -209,7 +209,7 @@ struct ServerProvidersTests {
 
     @Test(arguments: [("0.4.9", false), ("0.4.10", false), ("0.4.11", true), ("0.5.0", true), ("1.0.0", true)])
     func onlyServersAfter0_4_10UpdateTheirProviders(version: String, updates: Bool) {
-        #expect(ServerVersion(version: version, installedVersion: nil).updatesProviders == updates)
+        #expect(ServerRelease(version: version, installedVersion: nil).updatesProviders == updates)
     }
 
     @Test func checkForUpdatesShowsOnAConnectedServerAfter0_4_10WhileAProviderIsOnAndInstalled() async throws {
@@ -262,7 +262,7 @@ struct ServerProvidersTests {
         #expect(providers.entries.map(\.update) == [.updated(from: "1.0.114", to: "1.0.115"), nil, nil, nil, nil],
                 "Nothing newer and a failure both show the version again")
         #expect(!providers.isCheckingForUpdates)
-        #expect(providers.restartMessage == "Restart Studio to use the new version.")
+        #expect(providers.newVersions == 1)
         #expect(updateRequests(mock).sorted() == ["codex", "copilot", "gemini"],
                 "Each is sent once, Off and Not Installed are skipped, and a press while updating sends nothing")
 
@@ -271,7 +271,7 @@ struct ServerProvidersTests {
             $0.updates["codex"] = try .json(ModelProviderUpdate(version: "0.171.0", updated: true))
         }
         await providers.checkForUpdates()
-        #expect(providers.restartMessage == "Restart Studio to use the new versions.")
+        #expect(providers.newVersions == 2)
     }
 
     @Test func closingSettingsForgetsTheResultsButAnUpdateUnderWayKeepsGoing() async throws {
@@ -316,14 +316,14 @@ struct ServerProvidersTests {
         defer { catalog.stopPolling() }
         let providers = catalog.providers
         await providers.checkForUpdates()
-        #expect(providers.restartMessage != nil)
+        #expect(providers.newVersions == 1)
         #expect(providers.entries.map(\.update) == [.updated(from: "1.0.114", to: "1.0.115"), nil, nil, nil, nil])
 
         server.set { $0.isDown = true }
         #expect(mock.finishPendingResponses(path: "/api/v1/channels") == 1)
         try await eventually { catalog.update.phase == .reconnecting }
         #expect(providers.entries.map(\.update) == [.updating, nil, nil, nil, nil])
-        #expect(providers.restartMessage == nil)
+        #expect(providers.newVersions == 0)
         #expect(providers.isCheckingForUpdates)
 
         let current = ModelProviderList(providers: Self.providers.map {
@@ -345,7 +345,7 @@ struct ServerProvidersTests {
         try await eventually { !providers.isCheckingForUpdates }
         #expect(providers.list == current.providers)
         #expect(providers.entries.allSatisfy { $0.update == nil })
-        #expect(providers.restartMessage == nil)
+        #expect(providers.newVersions == 0)
 
         let reads = listReads(mock)
         let serverReads = mock.requests.filter { $0.url?.path == "/api/v1/server" }.count
