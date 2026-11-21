@@ -2,8 +2,8 @@ import ToyBoxClient
 import SwiftUI
 import ToyBoxUI
 
-/// The Servers tab: the list, then the selected server's name, address, status and release, then
-/// Disconnect….
+/// The Servers tab: the list, then the selected server's name, address, status and release, then its
+/// model providers, then Disconnect….
 struct ServerSettings: View {
     @Environment(AppModel.self) private var model
     /// The selected server's address.
@@ -152,9 +152,9 @@ private struct ServerUpdateStatus: View {
     }
 }
 
-/// One server's name, address, status and release. Each server gets its own, so a name being typed is
-/// saved to the server it was typed for. The address is only how this Mac reaches the server, so it
-/// can be copied but not edited.
+/// One server's name, address, status and release, then its model providers. Each server gets its
+/// own, so a name being typed is saved to the server it was typed for. The address is only how this
+/// Mac reaches the server, so it can be copied but not edited.
 private struct ServerDetails: View {
     @Environment(AppModel.self) private var model
     let catalog: ChannelCatalogStore
@@ -187,6 +187,8 @@ private struct ServerDetails: View {
                 }
             }
         }
+        .task { await catalog.providers.appear() }
+        ModelProvidersSection(catalog.providers)
     }
 
     static func status(_ phase: ChannelCatalogPhase) -> String {

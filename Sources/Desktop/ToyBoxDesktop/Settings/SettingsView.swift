@@ -28,7 +28,7 @@ struct SettingsView: View {
         @Bindable var model = model
         TabView(selection: $model.settingsTab) {
             fitted(general).tabItem { Label("General", systemImage: "gearshape") }.tag(SettingsTab.general)
-            fitted(Form { ServerSettings() }.formStyle(.grouped))
+            fitted(Form { ServerSettings() }.formStyle(.grouped), upTo: Self.serversHeight)
                 .tabItem { Label("Servers", systemImage: "server.rack") }.tag(SettingsTab.servers)
             fitted(notifications).tabItem { Label("Notifications", systemImage: "bell") }
                 .tag(SettingsTab.notifications)
@@ -197,10 +197,18 @@ struct SettingsView: View {
         Text(text).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 
-    /// Each pane is as tall as its content, so the window grows to fit rather than scrolling.
-    private func fitted(_ pane: some View) -> some View {
-        pane.scrollDisabled(true).frame(width: 540).fixedSize(horizontal: false, vertical: true)
+    /// Each pane is as tall as its content, so the window grows to fit rather than scrolling. A pane
+    /// given a height stops growing there and scrolls.
+    private func fitted(_ pane: some View, upTo maxHeight: CGFloat = .infinity) -> some View {
+        pane.scrollDisabled(maxHeight == .infinity)
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(width: 540)
+            .frame(maxHeight: maxHeight)
+            .fixedSize(horizontal: false, vertical: true)
     }
+
+    /// Servers scrolls past this, since a server lists any number of model providers.
+    private static let serversHeight: CGFloat = 640
 
     private var notifications: some View {
         Form {
