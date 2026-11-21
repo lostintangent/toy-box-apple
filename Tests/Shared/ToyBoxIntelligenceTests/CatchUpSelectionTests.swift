@@ -21,7 +21,8 @@ struct CatchUpSelectionTests {
         let request = try #require(CatchUpRequest(server: T.server, state: busy, unreadAfter: 1))
         #expect(request.unreadFromOthers == 4)
         #expect(request.through == 6)
-        #expect(request.key == .init(server: "http://127.0.0.1:3210", channelId: "studio-demo", unreadAfter: 1, through: 6))
+        #expect(request.key == .init(server: "http://127.0.0.1:3210", channelId: "studio-demo", unreadAfter: 1, through: 6,
+                                     scope: .unread))
         #expect(CatchUpRequest(server: T.server, state: busy, unreadAfter: nil) == nil)
     }
 

@@ -43,11 +43,6 @@ struct Grounding: Sendable {
         let text: String
     }
 
-    func line(_ text: String, citing sequences: [Int], allowed: Set<Int>) -> CatchUp.Line? {
-        guard case .kept(let line) = verdict(text, citing: sequences, allowed: allowed) else { return nil }
-        return line
-    }
-
     func verdict(_ text: String, citing sequences: [Int], allowed: Set<Int>) -> Verdict {
         guard let text = Self.sentences(Self.cleaned(text)).first,
               text.count <= Self.maximumCharacters else { return .dropped(.ungrounded) }

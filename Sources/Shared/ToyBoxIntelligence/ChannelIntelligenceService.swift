@@ -6,15 +6,16 @@ import SwiftUI
 public protocol ChannelIntelligenceService: Sendable {
     /// Cheap and synchronous, so a surface can skip its loading state on Macs that can't run the model.
     var availability: IntelligenceAvailability { get }
-    func catchUp(_ request: CatchUpRequest) async -> CatchUpResult
-    func altText(_ request: AltTextRequest) async -> AltText?
+    /// Nil when the model is unavailable, unsure, refuses, or nothing grounded survived.
+    func catchUp(_ request: CatchUpRequest) async -> CatchUp?
+    func altText(_ request: AltTextRequest) async -> String?
 }
 
 extension ChannelIntelligenceService {
     /// The catch-up, or nil when the model is unsure, unavailable or still working after `timeout`.
     public func catchUp(_ request: CatchUpRequest, within timeout: Duration) async -> CatchUp? {
         await withTaskGroup(of: CatchUp?.self) { group in
-            group.addTask { await self.catchUp(request).catchUp }
+            group.addTask { await self.catchUp(request) }
             group.addTask {
                 try? await Task.sleep(for: timeout)
                 return nil
@@ -68,36 +69,12 @@ public struct CatchUp: Sendable, Hashable {
     }
 }
 
-public enum CatchUpResult: Sendable, Hashable {
-    case ready(CatchUp)
-    /// The model ran and nothing meaningful and grounded survived.
-    case nothingNew
-    case unavailable(IntelligenceUnavailableReason)
-    /// Guardrail refusals, context overflow, timeouts and other generation failures.
-    case declined
-
-    public var catchUp: CatchUp? {
-        if case .ready(let catchUp) = self { return catchUp }
-        return nil
-    }
-}
-
-public struct AltText: Sendable, Hashable, Codable {
-    public let text: String
-
-    public init(text: String) {
-        self.text = text
-    }
-}
-
 public struct AltTextRequest: Sendable, Hashable {
-    public enum Priority: Int, Sendable, Comparable {
+    public enum Priority: Sendable {
         /// A tile on screen.
         case visible
         /// An image the reader opened or focused with VoiceOver. Runs before visible tiles.
         case focused
-
-        public static func < (lhs: Priority, rhs: Priority) -> Bool { lhs.rawValue < rhs.rawValue }
     }
 
     public let server: String

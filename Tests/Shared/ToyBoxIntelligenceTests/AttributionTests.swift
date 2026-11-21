@@ -43,13 +43,13 @@ struct AttributionTests {
             ("Lead pushed 4c1d9e0 to main.", [3]),
             ("Moss pushed 4c1d9e0 to main with all 245 tests passing.", [3]),
         ])
-        #expect(assembly.result.catchUp?.changes.map(\.text) == ["Moss pushed 4c1d9e0 to main with all 245 tests passing."])
+        #expect(assembly.result?.changes.map(\.text) == ["Moss pushed 4c1d9e0 to main with all 245 tests passing."])
         #expect(assembly.rejected == [CatchUpRejection(text: "Lead pushed 4c1d9e0 to main.", reason: .misattributed)])
     }
 
     @Test func someoneTheSpeakerReportsOnCanAct() throws {
         let assembly = try assemble([("Iris confirmed the app builds as a universal binary.", [4])])
-        #expect(assembly.result.catchUp?.changes.map(\.text) == ["Iris confirmed the app builds as a universal binary."])
+        #expect(assembly.result?.changes.map(\.text) == ["Iris confirmed the app builds as a universal binary."])
     }
 
     @Test func theOpenerMustActWhereTheLineComesFrom() throws {
@@ -57,7 +57,7 @@ struct AttributionTests {
             ("Lead confirmed all 245 tests pass on main.", [3, 4]),
             ("Moss confirmed all 245 tests pass on main.", [4, 3]),
         ])
-        #expect(assembly.result.catchUp?.changes == [.init(text: "Moss confirmed all 245 tests pass on main.", sources: [3, 4])])
+        #expect(assembly.result?.changes == [.init(text: "Moss confirmed all 245 tests pass on main.", sources: [3, 4])])
         #expect(assembly.rejected == [CatchUpRejection(text: "Lead confirmed all 245 tests pass on main.", reason: .misattributed)])
     }
 
@@ -66,7 +66,7 @@ struct AttributionTests {
             ("Moss changed the spec's platform line.", [7]),
             ("Ada changed the spec's platform line.", [7]),
         ])
-        #expect(assembly.result.catchUp?.changes.map(\.text) == ["Ada changed the spec's platform line."])
+        #expect(assembly.result?.changes.map(\.text) == ["Ada changed the spec's platform line."])
         #expect(assembly.rejected.map(\.reason) == [.misattributed])
         let named = "Kit, Moss and Iris shipped it. Moss, please check the build."
         #expect(CatchUpEntry.withoutVocatives(named, participants: ["kit", "moss", "iris"])
@@ -93,7 +93,7 @@ struct AttributionTests {
             .init(summary: "Kit fixed the drafts flow.", sources: [3]),
         ])
         let assembly = draft.assembled(prompt: prompt, request: request)
-        #expect(Set(assembly.result.catchUp?.changes.map(\.text) ?? []) == [
+        #expect(Set(assembly.result?.changes.map(\.text) ?? []) == [
             "Ada fixed the launch race that showed a false red 'cancelled'.",
             "Kit fixed the drafts flow.",
         ])
@@ -117,12 +117,12 @@ struct AttributionTests {
 
     @Test func aVagueNeedsYouQuotesTheRequest() throws {
         let vague = try assemble(needsYou: "The Lead asked to confirm the pending decision.", [])
-        #expect(vague.result.catchUp?.needsYou?.text
+        #expect(vague.result?.needsYou?.text
                 == "Lead is waiting: \u{201C}That approval is the one thing I still need from you.\u{201D}")
         #expect(vague.rejected.map(\.reason) == [.vague])
 
         let specific = try assemble(needsYou: "Lead asked you to approve the test bundle for a real drag.", [])
-        #expect(specific.result.catchUp?.needsYou?.text == "Lead asked you to approve the test bundle for a real drag.")
+        #expect(specific.result?.needsYou?.text == "Lead asked you to approve the test bundle for a real drag.")
     }
 
     @Test func paraphrasedVerbsAreFine() {
@@ -144,7 +144,7 @@ struct AttributionTests {
             ("The user decided the app requires macOS 27.", [6]),
             ("Lead changed bun run validate to build a test copy with its own bundle ID.", [5]),
         ])
-        #expect(assembly.result.catchUp?.changes.map(\.text) == ["Lead changed bun run validate to build a test copy with its own bundle ID."])
+        #expect(assembly.result?.changes.map(\.text) == ["Lead changed bun run validate to build a test copy with its own bundle ID."])
         #expect(assembly.rejected.map(\.reason) == [.misattributed, .misattributed])
     }
 
@@ -163,7 +163,7 @@ struct AttributionTests {
             ("Moss confirmed all 245 tests pass on main.", [8]),
             ("Ada made read positions only move forward.", [2]),
         ])
-        #expect(assembly.result.catchUp?.changes.count == 2)
+        #expect(assembly.result?.changes.count == 2)
         #expect(assembly.rejected == [CatchUpRejection(text: "Moss confirmed all 245 tests pass on main.", reason: .repeats)])
         #expect(!Grounding.repeats(Grounding.gist("Pixel shared the file Spec.", participants: ["pixel"]),
                                    Grounding.gist("Kit shared the file Plan.", participants: ["kit"])))
@@ -178,22 +178,22 @@ struct AttributionTests {
 
     @Test func needsYouOpensWithTheRequester() throws {
         let kept = try assemble(needsYou: "Lead needs you to approve the test bundle.", [])
-        #expect(kept.result.catchUp?.needsYou?.text == "Lead needs you to approve the test bundle.")
+        #expect(kept.result?.needsYou?.text == "Lead needs you to approve the test bundle.")
 
         let fallback = "Lead is waiting: \u{201C}That approval is the one thing I still need from you.\u{201D}"
         let copied = try assemble(needsYou: "We checked behavior and visuals in the real window at every milestone.", [])
-        #expect(copied.result.catchUp?.needsYou == .init(text: fallback, sources: [9]))
+        #expect(copied.result?.needsYou == .init(text: fallback, sources: [9]))
         #expect(copied.rejected.map(\.reason) == [.copied])
 
         let someoneElse = try assemble(needsYou: "Iris needs you to approve the test bundle.", [])
-        #expect(someoneElse.result.catchUp?.needsYou?.text == fallback)
+        #expect(someoneElse.result?.needsYou?.text == fallback)
         #expect(someoneElse.rejected.map(\.reason) == [.misattributed])
 
         let unnamed = try assemble(needsYou: "Approve the test bundle.", [])
-        #expect(unnamed.result.catchUp?.needsYou?.text == fallback)
+        #expect(unnamed.result?.needsYou?.text == fallback)
 
         let echoed = try assemble(needsYou: "Lead to you: That approval is the one thing I still need.", [])
-        #expect(echoed.result.catchUp?.needsYou?.text == fallback)
+        #expect(echoed.result?.needsYou?.text == fallback)
         #expect(echoed.rejected.map(\.reason) == [.copied])
     }
 
@@ -244,7 +244,7 @@ struct AttributionTests {
             .init(summary: "Pixel removed the alignsToMessages shim for t75.", sources: [2, 3]),
         ])
         let assembly = draft.assembled(prompt: prompt, request: request)
-        #expect(assembly.result.catchUp?.changes == [.init(text: "Pixel removed the alignsToMessages shim for t75.", sources: [3, 2])])
+        #expect(assembly.result?.changes == [.init(text: "Pixel removed the alignsToMessages shim for t75.", sources: [3, 2])])
         #expect(assembly.rejected.map(\.reason) == [.misattributed, .misattributed])
     }
 }

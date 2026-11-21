@@ -57,15 +57,15 @@ enum TestChannel {
 /// queue, a cancelled catch-up declines at once, while alt text waits for its answer.
 actor ScriptedIntelligence: ChannelIntelligenceService {
     nonisolated let availability: IntelligenceAvailability
-    private var results: [CatchUpResult]
+    private var results: [CatchUp?]
     private let text: String?
     private let holding: Bool
-    private var catchUps: [CheckedContinuation<CatchUpResult, Never>?] = []
-    private var altTexts: [CheckedContinuation<AltText?, Never>?] = []
+    private var catchUps: [CheckedContinuation<CatchUp?, Never>?] = []
+    private var altTexts: [CheckedContinuation<String?, Never>?] = []
     private var waiters: [(calls: Int, continuation: CheckedContinuation<Void, Never>)] = []
     private(set) var count = 0
 
-    init(availability: IntelligenceAvailability = .available, results: [CatchUpResult] = [], text: String? = nil,
+    init(availability: IntelligenceAvailability = .available, results: [CatchUp?] = [], text: String? = nil,
          holding: Bool = false) {
         self.availability = availability
         self.results = results
@@ -73,9 +73,9 @@ actor ScriptedIntelligence: ChannelIntelligenceService {
         self.holding = holding
     }
 
-    func catchUp(_ request: CatchUpRequest) async -> CatchUpResult {
+    func catchUp(_ request: CatchUpRequest) async -> CatchUp? {
         count += 1
-        guard holding else { return results.count > 1 ? results.removeFirst() : results.first ?? .declined }
+        guard holding else { return results.count > 1 ? results.removeFirst() : results.first ?? nil }
         let index = catchUps.count
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
@@ -83,13 +83,13 @@ actor ScriptedIntelligence: ChannelIntelligenceService {
                 resumeWaiters()
             }
         } onCancel: {
-            Task { await self.answer(index, with: .declined) }
+            Task { await self.answer(index, with: nil) }
         }
     }
 
-    func altText(_ request: AltTextRequest) async -> AltText? {
+    func altText(_ request: AltTextRequest) async -> String? {
         count += 1
-        guard holding else { return text.map(AltText.init) }
+        guard holding else { return text }
         return await withCheckedContinuation { continuation in
             altTexts.append(continuation)
             resumeWaiters()
@@ -101,19 +101,19 @@ actor ScriptedIntelligence: ChannelIntelligenceService {
         await withCheckedContinuation { waiters.append((calls, $0)) }
     }
 
-    func answer(_ index: Int, with result: CatchUpResult) {
+    func answer(_ index: Int, with result: CatchUp?) {
         let continuation = catchUps[index]
         catchUps[index] = nil
         continuation?.resume(returning: result)
     }
 
-    func answerAll(with result: CatchUpResult) {
+    func answerAll(with result: CatchUp?) {
         for index in catchUps.indices { answer(index, with: result) }
     }
 
     func answerAltText(_ result: String?) {
         for index in altTexts.indices {
-            altTexts[index]?.resume(returning: result.map(AltText.init))
+            altTexts[index]?.resume(returning: result)
             altTexts[index] = nil
         }
     }
@@ -122,5 +122,12 @@ actor ScriptedIntelligence: ChannelIntelligenceService {
         let ready = waiters.filter { $0.calls <= count }
         waiters.removeAll { $0.calls <= count }
         for waiter in ready { waiter.continuation.resume() }
+    }
+}
+
+extension Grounding {
+    func line(_ text: String, citing sequences: [Int], allowed: Set<Int>) -> CatchUp.Line? {
+        guard case .kept(let line) = verdict(text, citing: sequences, allowed: allowed) else { return nil }
+        return line
     }
 }

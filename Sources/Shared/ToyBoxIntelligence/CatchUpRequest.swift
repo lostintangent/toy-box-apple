@@ -21,14 +21,6 @@ public struct CatchUpRequest: Sendable, Hashable {
         public let unreadAfter: Int
         public let through: Int
         public let scope: Scope
-
-        init(server: String, channelId: String, unreadAfter: Int, through: Int, scope: Scope = .unread) {
-            self.server = server
-            self.channelId = channelId
-            self.unreadAfter = unreadAfter
-            self.through = through
-            self.scope = scope
-        }
     }
 
     public static let defaultMinimumUnread = 4
@@ -59,7 +51,7 @@ public struct CatchUpRequest: Sendable, Hashable {
         guard let unreadAfter else { return nil }
         let unread = state.messages.filter { $0.sequence > unreadAfter }
         let fromAgents = unread.filter(\.isAgentMessage)
-        guard fromAgents.count >= max(1, minimumUnread),
+        guard fromAgents.count >= minimumUnread,
               fromAgents.reduce(0, { $0 + $1.text.count }) >= minimumCharacters else { return nil }
 
         let pendingSequence = state.channel.requestSequence
@@ -265,12 +257,6 @@ struct CatchUpDescriber: Sendable {
         }
         return CatchUpEntry(sequence: sequence, speaker: nil, addressees: [],
                             text: description.truncated(), priority: priority)
-    }
-}
-
-extension CatchUpDescriber {
-    init(state: ChannelState) {
-        self.init(agents: state.agents, leadId: state.lead.id)
     }
 }
 

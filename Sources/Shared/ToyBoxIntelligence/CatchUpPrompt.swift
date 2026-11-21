@@ -84,7 +84,7 @@ struct CatchUpDraft: Sendable, Hashable {
 
 /// A draft's lines, after grounding, and the lines that didn't make it.
 struct CatchUpAssembly: Sendable {
-    let result: CatchUpResult
+    let result: CatchUp?
     let rejected: [CatchUpRejection]
 }
 
@@ -173,9 +173,9 @@ extension CatchUpDraft {
             if needs == nil { needs = Self.fallbackNeedsYou(waiting) }
         }
 
-        guard needs != nil || !ordered.isEmpty else { return CatchUpAssembly(result: .nothingNew, rejected: rejected) }
+        guard needs != nil || !ordered.isEmpty else { return CatchUpAssembly(result: nil, rejected: rejected) }
         let catchUp = CatchUp(needsYou: needs, changes: Array(ordered), through: request.through)
-        return CatchUpAssembly(result: .ready(catchUp), rejected: rejected)
+        return CatchUpAssembly(result: catchUp, rejected: rejected)
     }
 
     /// The request's own words, quoted, for when the model's paraphrase can't be trusted: its last

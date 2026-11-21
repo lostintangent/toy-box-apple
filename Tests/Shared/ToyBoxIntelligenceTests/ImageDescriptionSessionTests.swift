@@ -1,4 +1,4 @@
-import ToyBoxIntelligence
+@testable import ToyBoxIntelligence
 import Foundation
 import Testing
 

@@ -113,7 +113,7 @@ struct CatchUpAssemblyTests {
             .init(summary: "Ada asked Moss to review the handoff.", sources: [12]),
         ])
         let assembly = draft.assembled(prompt: prompt, request: request)
-        let catchUp = try #require(assembly.result.catchUp)
+        let catchUp = try #require(assembly.result)
         #expect(catchUp.changes.map(\.text) == [
             "Ada moved messages and reconnects onto the same public Channel state.",
             "Lead changed the preview.",
@@ -130,8 +130,8 @@ struct CatchUpAssemblyTests {
         let request = try T.studioCatchUp()
         let prompt = CatchUpPrompt(entries: request.entries, request: nil)
         let draft = CatchUpDraft(needsYou: nil, changes: [.init(summary: "Moss shipped the release.", sources: [12])])
-        #expect(draft.assembled(prompt: prompt, request: request).result == .nothingNew)
-        #expect(CatchUpDraft(needsYou: nil, changes: []).assembled(prompt: prompt, request: request).result == .nothingNew)
+        #expect(draft.assembled(prompt: prompt, request: request).result == nil)
+        #expect(CatchUpDraft(needsYou: nil, changes: []).assembled(prompt: prompt, request: request).result == nil)
     }
 
     @Test func needsYouIsGroundedInTheRequest() throws {
@@ -139,7 +139,7 @@ struct CatchUpAssemblyTests {
         let prompt = CatchUpPrompt(entries: request.entries, request: request.request)
         let draft = CatchUpDraft(needsYou: "Lead is waiting for you to choose where the shared library should sit.",
                                  changes: [.init(summary: "Lead asked where the shared library should sit.", sources: [15])])
-        let catchUp = try #require(draft.assembled(prompt: prompt, request: request).result.catchUp)
+        let catchUp = try #require(draft.assembled(prompt: prompt, request: request).result)
         #expect(catchUp.needsYou == .init(text: "Lead is waiting for you to choose where the shared library should sit.", sources: [15]))
         #expect(catchUp.changes.isEmpty)
     }
@@ -148,7 +148,7 @@ struct CatchUpAssemblyTests {
         let request = try T.studioCatchUp(requestSequence: 15)
         let prompt = CatchUpPrompt(entries: request.entries, request: request.request)
         let draft = CatchUpDraft(needsYou: "Lead needs you to approve the 2.0 launch budget.", changes: [])
-        let catchUp = try #require(draft.assembled(prompt: prompt, request: request).result.catchUp)
+        let catchUp = try #require(draft.assembled(prompt: prompt, request: request).result)
         #expect(catchUp.needsYou == .init(
             text: "Lead asked: \u{201C}Where should the shared library sit: near the entrance or beside the team desks?\u{201D}",
             sources: [15]))

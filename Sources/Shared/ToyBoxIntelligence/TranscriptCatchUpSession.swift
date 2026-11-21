@@ -15,11 +15,6 @@ public final class TranscriptCatchUpSession {
         public let catchUp: CatchUp
         public let count: Int
 
-        public init(catchUp: CatchUp, count: Int) {
-            self.catchUp = catchUp
-            self.count = count
-        }
-
         /// The agent messages after this summary once there are enough to earn an Update, else nil.
         public func newerMessageCount(in messages: [ChannelMessage]) -> Int? {
             let count = messages.agentMessageCount(after: catchUp.through)

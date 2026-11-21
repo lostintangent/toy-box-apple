@@ -38,7 +38,7 @@ enum AltTextPrompt {
 
     /// The description as VoiceOver should read it, or nil when it's unclear, too long, or mentions
     /// text, numbers or names that text recognition didn't find.
-    static func validated(kind: String, description: String, recognizedText: String) -> AltText? {
+    static func validated(kind: String, description: String, recognizedText: String) -> String? {
         guard kind.lowercased() != "unclear" else { return nil }
         var text = description.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacing(/\s+/, with: " ")
@@ -56,7 +56,7 @@ enum AltTextPrompt {
 
         guard Grounding.literalsSupported(text, corpus: recognizedText, names: commonNames) else { return nil }
         guard !guessesActivity(text, recognizedText: recognizedText) else { return nil }
-        return AltText(text: text)
+        return text
     }
 
     static let commonNames: Set<String> = ["mac", "macos", "iphone", "ipad"]
@@ -76,7 +76,7 @@ enum AltTextPrompt {
 }
 
 struct AltTextOutcome: Sendable {
-    var text: AltText?
+    var text: String?
     var cacheable: Bool
     var kind: String?
     var rawDescription: String?

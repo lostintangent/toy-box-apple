@@ -246,8 +246,8 @@ struct MorningDigestTests {
 
     private struct NoModel: ChannelIntelligenceService {
         var availability: IntelligenceAvailability { .unavailable(.appleIntelligenceNotEnabled) }
-        func catchUp(_ request: CatchUpRequest) async -> CatchUpResult { Issue.record("Unavailable model was used"); return .declined }
-        func altText(_ request: AltTextRequest) async -> AltText? { nil }
+        func catchUp(_ request: CatchUpRequest) async -> CatchUp? { Issue.record("Unavailable model was used"); return nil }
+        func altText(_ request: AltTextRequest) async -> String? { nil }
     }
 
     private func calendar() -> Calendar {
