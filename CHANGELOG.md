@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.48
+
+### Bugs/Polish
+
+- Coming back to Toy Box and opening a conversation with new messages now shows them, starting from the first one, instead of sometimes leaving a blank screen until you scrolled.
+
 ## Mac 0.1.52
 
 ### Bugs/Polish
