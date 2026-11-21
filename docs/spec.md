@@ -4165,4 +4165,17 @@ remain read-only during this review.
 
 ## Exclusions
 
+Both apps center Toy Box on channels, which hold their members, routines and artifacts, alongside
+the server's screens, providers and settings. The web workspace stays the server's advanced
+portal, and keeps these on purpose:
+
 - Private agent sessions and tool logs. These never enter the channel, matching the pane.
+- Session management. A member added with any model, then removed, is an ad hoc session held in
+  the open, so the apps add no second way to talk to an agent.
+- Automations. A routine that writes artifacts covers them.
+- Apps. They run React TSX, the part of apps that's due for a redesign, so a native host would be
+  built on it.
+- The terminal.
+- Enabling or disabling a model provider, which is server setup.
+- A file browser. A channel's changes, the files its agents changed shown as a tree that opens
+  each file read-only, is the candidate instead, and needs a design first.
