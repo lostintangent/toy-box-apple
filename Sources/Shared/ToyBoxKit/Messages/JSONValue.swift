@@ -30,11 +30,6 @@ public enum JSONValue: Codable, Equatable, Sendable {
         }
     }
 
-    public subscript(key: String) -> JSONValue? {
-        guard case .object(let object) = self else { return nil }
-        return object[key]
-    }
-
     public var string: String? {
         guard case .string(let value) = self else { return nil }
         return value

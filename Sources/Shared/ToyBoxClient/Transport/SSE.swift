@@ -10,21 +10,21 @@ public enum SSEFrame: Equatable, Sendable {
     case keepalive
 }
 
-public struct SSEDecoder: Sendable {
+struct SSEDecoder: Sendable {
     private var line: [UInt8] = []
     private var data: [String] = []
     private var hasComment = false
     private var skipLF = false
     private var isFirstLine = true
     private var eventSize = 0
-    public let maximumEventBytes: Int
+    let maximumEventBytes: Int
 
-    public init(maximumEventBytes: Int = 32 * 1024 * 1024) {
+    init(maximumEventBytes: Int = 32 * 1024 * 1024) {
         self.maximumEventBytes = maximumEventBytes
     }
 
     /// Returns a block once its blank line arrives. A block with neither data nor a comment returns nil.
-    public mutating func consume(_ byte: UInt8) throws -> SSEFrame? {
+    mutating func consume(_ byte: UInt8) throws -> SSEFrame? {
         if skipLF {
             skipLF = false
             if byte == 10 { return nil }

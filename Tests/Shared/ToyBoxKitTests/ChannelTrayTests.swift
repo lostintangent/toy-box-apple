@@ -32,7 +32,7 @@ struct ChannelTrayTests {
                                 ChannelPreview(kind: "future")] {
                     let projection = ChannelTray(artifacts: artifacts, tasks: tasks, preview: preview)
                     #expect(projection.isVisible == (!artifacts.isEmpty || !tasks.isEmpty || preview != nil))
-                    #expect(projection.taskProgress.fraction == (tasks.isEmpty ? 0 : 1))
+                    #expect(projection.taskProgress == .init(done: tasks.count, total: tasks.count))
                 }
             }
         }

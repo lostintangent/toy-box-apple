@@ -1,10 +1,10 @@
 import Foundation
 import SwiftUI
 
-public enum SVGPathError: Error, Equatable, LocalizedError {
+enum SVGPathError: Error, Equatable, LocalizedError {
     case invalidPath(offset: Int)
 
-    public var errorDescription: String? {
+    var errorDescription: String? {
         switch self {
         case .invalidPath(let offset): "Invalid SVG path at byte \(offset)."
         }
