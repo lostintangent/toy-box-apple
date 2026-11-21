@@ -1851,13 +1851,14 @@ catch-up summary. Scrolling up loads the real unread boundary in its original pl
 When a catch-up summary is eligible, land on its card instead (see Catch-up summaries).
 Older pages load only through reader paging, Find navigation or Reveal.
 Reveal, from a bookmark, a notification, Input Needed, Find or a summary line, loads older pages
-until it has the message, then scrolls once to put the message's top 32 points below the top of the
+until it has the message, then places it once, with its top 32 points below the top of the
 visible band, or as near as the end allows, and highlights it briefly, as the web does. Both apps
 take these steps from one shared implementation. Reveal never checks where it landed or reports a
 miss, and a failed history page keeps its own notice.
 Follow incoming messages only while within
-48 points of the end. The user's own new message, sent from any surface, moves the conversation
-to the end once and follows from there, wherever they were reading. The transcript does this when
+48 points of the end. While Find is open, arrivals never move the conversation, so the result
+being read stays put, and closing Find within 48 points of the end follows again. The user's own
+new message, sent from any surface, moves the conversation to the end once and follows from there, wherever they were reading. The transcript does this when
 the message's row appears, so the composer, choices and cards don't move the conversation
 themselves, and a retry doesn't move it. A landing the end stopped
 short of its row is at the end, so a message arriving below it follows, while a catch-up card's
@@ -1875,14 +1876,19 @@ labels, the New divider and system rows, so the stack estimates and measures one
 and any message can be a landing, Reveal or reading target. The Load Older row and the empty state
 are never the reader's place. The 16-point clearance below the last row is part of the content, so
 following and Jump to Latest never add it again. Reveal's page-until-found step is shared in
-ToyBoxClient.
+ToyBoxClient. A row the lazy stack hasn't built can't be placed exactly, so landing, Reveal and a
+width change place a row once: when it isn't built, one scroll builds it, then one move puts it in
+place, and nothing corrects it afterward. Waiting for a scroll never assumes it has applied: each
+placement is decided from the next geometry the scroll view reports.
 
 `scrollPosition(id:)` alone doesn't meet those rules. Measured on the Mac with real rows and real
-trackpad events over history-demo, these are the gaps, and each gets code of its own:
+trackpad events over history-demo, these are the gaps. One placement model in ToyBoxClient covers
+each of them for both apps, fed by each app's scroll geometry and writing through each app's
+scroll view. Only the Mac's resize pin and its live-resize stand-down are the Mac's own:
 
 | Behavior | Why SwiftUI falls short |
 | --- | --- |
-| Landing scrolls once to its row | SwiftUI skips a seeded position whose row is already on the first screen, so a New divider 686 points down an 800-point window never moved |
+| Landing places its row once | SwiftUI skips a seeded position whose row is already on the first screen, so a New divider 686 points down an 800-point window never moved |
 | While reading, a row above that changes height leaves the first row starting in the viewport where it was | SwiftUI keeps the first *visible* row in place, which can start above the viewport, so a late image growing 190 points above moved the reader 70 |
 | An older page keeps the visible top message and its offset | The reader's row isn't built yet when the page arrives, so scrolling up from message 183 jumped to 81 |
 | After a width change, the reader's row returns to its place. On the Mac, the hold stands down during a live resize drag and puts the row back when the drag ends. A built row moves back natively. When the new width's estimates leave the reader past the end, a `scrollTo` only builds the row, and the hold then moves it natively at its real height, the way a reveal places its row, so SwiftUI has no target to put back over the reader's next scroll. Until the reader scrolls, the hold makes no correction of its own, and a later width change in that span puts the same row back again, so only a row above changing height can move it | A width change while reading moved the reader 118 points. One whose estimates put the reader past the end built nothing there, so the place was lost and the conversation showed its end. Dragging the window's edge lost the reader's row in 4 of 5 runs |
