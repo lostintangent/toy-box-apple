@@ -268,7 +268,7 @@ and are there again when it comes back.
   Then a row whose update installed something new reads the version it ran and the one it
   installed, like "1.0.114 → 1.0.115", in secondary ink, which VoiceOver reads as "1.0.114,
   1.0.115 after restart". Every other row shows its version again, with no Up to date and no
-  error, because a ready provider's update doesn't fail and a broken one already shows Failed. On
+  error, so a failed update reads like one that found nothing newer, the same as a server's. On
   the phone, when the name, versions and plan can't share a line, the versions drop to their own
   line under the name. A provider keeps
   running its old version until the server restarts, so once any update reports a change, the
@@ -318,12 +318,11 @@ and are there again when it comes back.
   as a row after the servers with `arrow.triangle.2.circlepath`. It's there
   whenever a server has an installed version, and it asks every connected one to install whatever
   is newer, skipping servers that are offline or have none. Each row being checked shows a
-  spinner in its version's place, and the button dims until every check ends. Then a row reads
-  Up to date when nothing was newer, or the error in words after a yellow
-  `exclamationmark.triangle.fill`, in the row on the Mac and under the name on the phone.
-  A failed install's error is the server's own output and can run to many lines, so the
-  Mac shows its first line with the rest in its help tag, and the phone shows up to three lines.
-  VoiceOver reads all of it. Results stay until the next check or until Settings closes. While a server isn't connected, its
+  spinner in its version's place, and the button dims until every check ends. Then each row reads
+  what its server answered: "0.3.9 → 0.3.10" once a restart is pending, as below, and its version
+  otherwise, with no Up to date and no error, the same as a model provider's row. A check that
+  fails reads like one that found nothing newer, and checking again is harmless, since a server
+  installs only what's newer. While a server isn't connected, its
   row shows a spinner in its version's place as the app reconnects, for any reason, until it
   connects or has failed for the catalog's grace, when the row shows its failure as it does for any
   server that can't connect. A restart is pending exactly when `installedVersion` isn't null and
@@ -352,15 +351,14 @@ and are there again when it comes back.
   apps give it no handling of their own. A server that accepts answers 202 and drops every
   connection at once, without accepting new ones, so the apps see an ordinary disconnect: the row
   spins while they reconnect with the usual backoff and grace, then reads the new server and shows
-  its version. A rejected restart shows its error the same way, with the old server still running,
-  and a server that doesn't come back reads like any other that can't connect. The apps read
+  its version. A rejected restart shows nothing of its own: the old server keeps running, so its
+  row keeps its pending release and Restart, and a server that doesn't come back reads like any
+  other that can't connect. The apps read
   `GET /api/v1/server` once each time Settings opens, each time a server
   connects, each time the app comes to the foreground and on each Refresh of the channel list,
   which is how a rename made elsewhere reaches them. A failed read changes nothing and reports
   nothing, and one that succeeds at the server the user connected through follows its peers, as
-  Peer servers describes. A check
-  shows the update's own answer, and a failed one shows its error. Checking again is harmless,
-  since a server installs only what's newer.
+  Peer servers describes.
 - **Peer servers.** Each server finds its own peers, the user's other Macs on Tailscale, and its
   channel leads can find and privately message the leads on them with every app closed. The apps
   manage nothing about it, so no row marks a peer and Settings has nothing to turn on.
