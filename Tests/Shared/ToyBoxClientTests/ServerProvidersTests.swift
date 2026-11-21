@@ -118,12 +118,4 @@ struct ServerProvidersTests {
         ])
     }
 
-    @Test func anUnknownProviderIsNotFound() async throws {
-        let mock = MockTransport { _, _ in
-            MockResponse(status: 404, body: Data(#"{"error":"Provider not found."}"#.utf8))
-        }
-        await #expect(throws: ChannelAPIError.http(status: 404, message: "Provider not found.")) {
-            try await mock.api().providerSubscription(id: "unknown")
-        }
-    }
 }

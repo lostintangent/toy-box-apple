@@ -25,6 +25,12 @@ struct ModelProviderTests {
         #expect(roundTrip == limit)
     }
 
+    @Test func aPlanNameTitleCasesUnderscores() {
+        #expect(ModelProviderSubscription(plan: "pro_plus").planName == "Pro Plus")
+        #expect(ModelProviderSubscription(plan: "enterprise").planName == "Enterprise")
+        #expect(ModelProviderSubscription(plan: "max").planName == "Max")
+    }
+
     @Test func aSubscriptionDecodesEmptyLimitsAndAnOptionalReset() throws {
         let subscription = try JSONDecoder().decode(ModelProviderSubscription.self, from: Data(#"""
             {"plan":"enterprise","limits":[{"name":"Weekly","usedPercent":0}]}

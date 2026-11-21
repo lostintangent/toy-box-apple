@@ -66,6 +66,9 @@ export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snap
                     { id: "claude", name: "Claude Agent", status: "ready", version: "2.1.328", enabled: true },
                     { id: "gemini", name: "Gemini", status: "signedOut", enabled: true },
                     { id: "cursor", name: "Cursor", status: "ready", version: "1.0.0", enabled: true },
+                    { id: "windsurf", name: "Windsurf", status: "failed", error: "CLI exited 1.", version: "1.2.0", enabled: true },
+                    { id: "ollama", name: "Ollama", status: "unavailable", enabled: false },
+                    { id: "chatgpt", name: "ChatGPT", status: "ready", version: "0.1.0", enabled: false },
                 ],
             }));
             return;

@@ -52,6 +52,13 @@ public struct ModelProviderSubscription: Codable, Equatable, Sendable {
         self.plan = plan
         self.limits = limits
     }
+
+    /// The plan in Settings' words, so `pro_plus` reads "Pro Plus".
+    public var planName: String {
+        plan.split { $0.isWhitespace || $0 == "_" || $0 == "-" }
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
 }
 
 public struct ModelProviderLimit: Codable, Equatable, Sendable {
