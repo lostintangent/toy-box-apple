@@ -20,6 +20,11 @@ public struct ServerVersion: Codable, Equatable, Sendable {
         guard let installedVersion else { return false }
         return installedVersion != version
     }
+
+    /// Whether the server updates its model providers, as every release after 0.4.10 does.
+    public var updatesProviders: Bool {
+        version.compare("0.4.10", options: .numeric) == .orderedDescending
+    }
 }
 
 /// What `GET /api/v1/server` answers: the server's identity, name, accent, releases and peers.
@@ -121,10 +126,14 @@ public final class ServerUpdate {
     /// answered or has no installed release.
     public var phase: Phase? {
         if isChecking { return .checking }
-        if isReconnecting || restartingOnto != nil { return .reconnecting }
+        if isAwaitingServer { return .reconnecting }
         guard let version, version.installedVersion != nil else { return nil }
         return version.isRestartPending ? .restartPending : .idle
     }
+
+    /// The row spins for the server, which is reconnecting or about to restart, whether or not it's
+    /// also checking. Its providers' results spin with it.
+    var isAwaitingServer: Bool { isReconnecting || restartingOnto != nil }
 
     /// Asks the server to install whatever is newer, which can take minutes, and offers Restart if
     /// it did. A server already waiting to restart checks too, since something newer than its
