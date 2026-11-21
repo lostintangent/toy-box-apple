@@ -9,10 +9,9 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
     let api: ChannelAPI
     let provider: String?
     let allowsInheritance: Bool
-    var title = "Model"
-    var memberScope: (channelId: String, agentId: String)?
-    var help: [String] = []
-    var violation: String?
+    let title: String
+    let memberScope: (channelId: String, agentId: String)?
+    let help: [String]
     let extraRows: ExtraRows
     @ViewState private var catalog: ModelCatalog?
     @ViewState private var isLoading = true
@@ -25,7 +24,7 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
     public init(model: Binding<ModelConfiguration?>, openingModel: ModelConfiguration?,
          api: ChannelAPI, provider: String?, allowsInheritance: Bool,
          title: String = "Model", memberScope: (channelId: String, agentId: String)? = nil,
-         help: [String] = [], violation: String? = nil, @ViewBuilder extraRows: () -> ExtraRows) {
+         help: [String] = [], @ViewBuilder extraRows: () -> ExtraRows) {
         _model = model
         _initialModel = ViewState(initialValue: openingModel)
         self.api = api
@@ -34,7 +33,6 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
         self.title = title
         self.memberScope = memberScope
         self.help = help
-        self.violation = violation
         self.extraRows = extraRows()
     }
 
@@ -122,8 +120,8 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
             }
             extraRows
         } footer: {
-            if violation != nil || !footerHelp.isEmpty {
-                ManagementFooter(help: footerHelp, violation: violation)
+            if !footerHelp.isEmpty {
+                ManagementFooter(help: footerHelp)
             }
         }
         .task {
@@ -218,10 +216,10 @@ extension ModelSelectionFields where ExtraRows == EmptyView {
     public init(model: Binding<ModelConfiguration?>, openingModel: ModelConfiguration?,
          api: ChannelAPI, provider: String?, allowsInheritance: Bool,
          title: String = "Model", memberScope: (channelId: String, agentId: String)? = nil,
-         help: [String] = [], violation: String? = nil) {
+         help: [String] = []) {
         self.init(model: model, openingModel: openingModel, api: api, provider: provider,
                   allowsInheritance: allowsInheritance, title: title, memberScope: memberScope,
-                  help: help, violation: violation) { EmptyView() }
+                  help: help) { EmptyView() }
     }
 }
 

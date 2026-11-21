@@ -7,9 +7,6 @@ final class ArtifactImageScrollView: UIScrollView, UIScrollViewDelegate {
     let imageView = UIImageView()
     private(set) var file: URL?
     var onError: ((String) -> Void)?
-    var onFitChanged: ((Bool) -> Void)?
-    private(set) var fitPublication: Task<Void, Never>?
-    private var publishedFit: Bool?
     private let analysisInteraction = ImageAnalysisInteraction()
     private var analysisTask: Task<Void, Never>?
     private var viewportSize = CGSize.zero
@@ -38,7 +35,7 @@ final class ArtifactImageScrollView: UIScrollView, UIScrollViewDelegate {
 
     required init?(coder: NSCoder) { nil }
 
-    deinit { analysisTask?.cancel(); fitPublication?.cancel() }
+    deinit { analysisTask?.cancel() }
 
     var isAtFitScale: Bool {
         abs(zoomScale - minimumZoomScale) <= max(minimumZoomScale * 0.001, CGFloat.ulpOfOne * 8)
@@ -79,7 +76,6 @@ final class ArtifactImageScrollView: UIScrollView, UIScrollViewDelegate {
         imageView.accessibilityLabel = title
         guard self.file != file else { return }
         stopAnalysis()
-        publishedFit = nil
         self.file = file
         logicalSize = size
         setZoomScale(1, animated: false)
@@ -91,32 +87,17 @@ final class ArtifactImageScrollView: UIScrollView, UIScrollViewDelegate {
         analyze()
     }
 
-    func fit() { setZoomScale(minimumZoomScale, animated: false); centerImage(); publishFit() }
-    func actualSize() { setZoomScale(1, animated: false); centerImage(); publishFit() }
+    func fit() { setZoomScale(minimumZoomScale, animated: false); centerImage() }
+    func actualSize() { setZoomScale(1, animated: false); centerImage() }
 
     func stop() {
         stopAnalysis()
-        fitPublication?.cancel()
-        fitPublication = nil
         file = nil
         imageView.image = nil
     }
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
-    func scrollViewDidZoom(_ scrollView: UIScrollView) { centerImage(); publishFit() }
-
-    private func publishFit() {
-        let fitted = isAtFitScale
-        guard publishedFit != fitted else { return }
-        publishedFit = fitted
-        fitPublication?.cancel()
-        let file = file
-        // Configuration can run inside a SwiftUI update, so publish outside that update.
-        fitPublication = Task { @MainActor [weak self] in
-            guard let self, !Task.isCancelled, self.file == file else { return }
-            onFitChanged?(fitted)
-        }
-    }
+    func scrollViewDidZoom(_ scrollView: UIScrollView) { centerImage() }
 
     private func updateZoomLimits() {
         minimumZoomScale = Self.fitScale(image: logicalSize, viewport: bounds.size)

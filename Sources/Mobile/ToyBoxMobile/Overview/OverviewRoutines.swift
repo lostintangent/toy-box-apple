@@ -11,7 +11,7 @@ struct OverviewRoutinesSection: View {
         OverviewSectionRows(summary: .routines(store.routines.count), section: .routines, session: session) {
             if store.routines.isEmpty {
                 Text("No routines").foregroundStyle(ChannelInk.secondary)
-                    .modifier(OverviewListRowBoundary(isLast: true))
+                    .listRowSeparator(.hidden, edges: .bottom)
             } else {
                 ForEach(store.routines) { routine in
                     OverviewRoutineRow(routine: routine, store: store, state: session.routine(routine.id),
@@ -57,14 +57,10 @@ struct OverviewRoutineRow: View {
     @Bindable var state: ChannelOverview.Routine
     let isLast: Bool
     @ScaledMetric(relativeTo: .title2) private var iconLane = 24
-    private var pending: Bool { state.pending }
-    private var requestedAt: Date? { state.requestedAt }
-
-    private var canRun: Bool { store.phase.isConnected && !pending }
-    private var canDelete: Bool { store.phase.isConnected && !pending }
+    private var canRun: Bool { store.phase.isConnected && !state.pending }
     private var schedule: String { RoutineScheduleSummary.text(for: routine.schedule) }
     private var scheduleLine: String {
-        ChannelRoutine.runLabel(schedule: schedule, pending: pending, requestedAt: requestedAt)
+        ChannelRoutine.runLabel(schedule: schedule, pending: state.pending, requestedAt: state.requestedAt)
     }
     private var contentEndsSection: Bool { isLast && state.error == nil }
 
@@ -82,7 +78,7 @@ struct OverviewRoutineRow: View {
         .accessibilityActions {
             Button(state.expanded ? "Collapse" : "Expand", action: toggle)
             Button("Run Now", action: run).disabled(!canRun)
-            Button("Delete Routine", action: delete).disabled(!canDelete)
+            Button("Delete Routine", action: delete).disabled(!canRun)
         }
         .accessibilityIdentifier("overview-routine-\(routine.id)")
         // As on Team rows, VoiceOver reaches these through the row's own actions instead.
@@ -98,16 +94,16 @@ struct OverviewRoutineRow: View {
             if !voiceOver {
                 Button("Delete", systemImage: "trash", role: .destructive, action: delete)
                     .labelStyle(.iconOnly)
-                    .disabled(!canDelete)
+                    .disabled(!canRun)
             }
         }
         .contextMenu {
             Button("Run Now", systemImage: "play", action: run).disabled(!canRun)
             Button("Delete Routine", systemImage: "trash", role: .destructive, action: delete)
-                .disabled(!canDelete)
+                .disabled(!canRun)
         }
-        .task(id: requestedAt) {
-            guard let requestedAt else { return }
+        .task(id: state.requestedAt) {
+            guard let requestedAt = state.requestedAt else { return }
             do { try await Task.sleep(for: .seconds(max(0, 4 + requestedAt.timeIntervalSinceNow))) }
             catch { return }
             state.requestedAt = nil
@@ -116,18 +112,18 @@ struct OverviewRoutineRow: View {
             Text(routine.prompt)
                 .textSelection(.enabled)
                 .padding(.leading, iconLane + 12)
-                .modifier(OverviewListRowBoundary(isLast: contentEndsSection))
+                .listRowSeparator(contentEndsSection ? .hidden : .visible, edges: .bottom)
         }
         if let error = state.error {
             ManagementError(message: error)
-                .modifier(OverviewListRowBoundary(isLast: isLast))
+                .listRowSeparator(isLast ? .hidden : .visible, edges: .bottom)
         }
     }
 
     private func toggle() { state.expanded.toggle() }
 
     private func delete() {
-        guard canDelete, let target = store.target else { return }
+        guard canRun, let target = store.target else { return }
         management.present(.deleteRoutine(target, routineId: routine.id))
     }
 

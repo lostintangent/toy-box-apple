@@ -8,7 +8,7 @@ import ToyBoxUI
 struct OverviewTeamList: View {
     @Environment(ManagementPresenter.self) private var management
     let store: ChannelStore
-    var showsOnlyWorking = false
+    let showsOnlyWorking: Bool
     @ViewState private var slots = OverviewSlots()
 
     var body: some View {
@@ -64,12 +64,11 @@ struct OverviewAgentRow: View {
     @ViewState private var wakeAnnouncement: String?
     @FocusState private var focus: Focus?
 
-    private var status: ChannelAgentPresence? { presence }
     private var wake: Date? { ChannelAgent.Countdown.wake(for: presence, isAvailable: isAvailable) }
     private var wakeCommand: String? { isAvailable ? presence?.wakeCommand : nil }
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
     private var spokenStatus: String {
-        let status = OverviewAgentStatusLine.spoken(status, isAvailable: isAvailable)
+        let status = OverviewAgentStatusLine.spoken(presence, isAvailable: isAvailable)
         if wakeCommand != nil { return "\(status), \(ChannelAgentWakeCommand.spoken)" }
         guard wake != nil, isVisible, let wakeAnnouncement else { return status }
         return "\(status), \(wakeAnnouncement)"
@@ -84,13 +83,13 @@ struct OverviewAgentRow: View {
                 HStack(spacing: 10) {
                     AgentAvatarView(agent: agent, size: 24)
                         .popover(isPresented: showingAbout, arrowEdge: .leading) {
-                            OverviewAgentAbout(agent: agent, isLead: isLead, model: model, status: status, isAvailable: isAvailable)
+                            OverviewAgentAbout(agent: agent, isLead: isLead, model: model, status: presence, isAvailable: isAvailable)
                         }
                     VStack(alignment: .leading, spacing: 1) {
                         Text(agent.name)
                             .font(.system(size: 13 * textScale))
                             .lineLimit(1)
-                        OverviewAgentStatusLine(agent: agent, status: status, isAvailable: isAvailable)
+                        OverviewAgentStatusLine(agent: agent, status: presence, isAvailable: isAvailable)
                     }
                     Spacer(minLength: 0)
                 }
@@ -155,10 +154,6 @@ struct OverviewAgentStatusLine: View {
     let agent: ChannelAgent
     let status: ChannelAgentPresence?
     let isAvailable: Bool
-
-    static func text(_ status: ChannelAgentPresence?, isAvailable: Bool) -> String {
-        ChannelAgent.StatusLine(presence: status, isAvailable: isAvailable).text
-    }
 
     static func spoken(_ status: ChannelAgentPresence?, isAvailable: Bool) -> String {
         ChannelAgent.StatusLine(presence: status, isAvailable: isAvailable).spoken

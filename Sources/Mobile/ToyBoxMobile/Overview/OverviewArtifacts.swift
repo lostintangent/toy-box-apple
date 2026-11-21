@@ -13,13 +13,13 @@ struct OverviewArtifactsSection: View {
         OverviewSectionRows(summary: .artifacts(store.artifacts.count), section: .artifacts, session: session) {
             if store.artifacts.isEmpty {
                 Text("Nothing shared yet").foregroundStyle(ChannelInk.secondary)
-                    .modifier(OverviewListRowBoundary(isLast: true))
+                    .listRowSeparator(.hidden, edges: .bottom)
             } else {
                 let artifacts = store.artifacts.newestFirst
                 ForEach(artifacts) { artifact in
                     OverviewArtifactRow(artifact: artifact, share: store.artifactShares[artifact.file.id],
                                         store: store, state: session.artifact(artifact.id))
-                        .modifier(OverviewListRowBoundary(isLast: artifact.id == artifacts.last?.id))
+                        .listRowSeparator(artifact.id == artifacts.last?.id ? .hidden : .visible, edges: .bottom)
                 }
             }
         }

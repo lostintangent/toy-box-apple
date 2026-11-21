@@ -1,4 +1,3 @@
-import os
 import SwiftUI
 import ToyBoxUI
 import UIKit
@@ -23,7 +22,6 @@ final class OverviewEllipsisView: UIView {
     private struct Metrics: Hashable { let size: CGFloat; let scale: CGFloat }
     private struct Rendering { let image: UIImage; let splits: [CGFloat] }
     private static var renderings: [Metrics: Rendering] = [:]
-    private static let log = Logger(subsystem: "dev.toybox.mobile", category: "Overview")
     private let imageView = UIImageView()
     let pulse = ChannelEllipsisPulseMask()
     private var metrics: Metrics?
@@ -81,19 +79,14 @@ final class OverviewEllipsisView: UIView {
     private static func rendering(_ metrics: Metrics) -> Rendering? {
         if let rendering = renderings[metrics] { return rendering }
         guard let symbol = UIImage(systemName: "ellipsis",
-                                   withConfiguration: UIImage.SymbolConfiguration(pointSize: metrics.size, weight: .heavy)) else {
-            log.error("The native working ellipsis symbol is unavailable.")
-            return nil
-        }
+                                   withConfiguration: UIImage.SymbolConfiguration(pointSize: metrics.size, weight: .heavy))
+        else { return nil }
         let format = UIGraphicsImageRendererFormat()
         format.scale = metrics.scale
         let image = UIGraphicsImageRenderer(size: symbol.size, format: format).image { _ in
             symbol.withTintColor(.black, renderingMode: .alwaysOriginal).draw(at: .zero)
         }
-        guard let bitmap = image.cgImage else {
-            log.error("The native working ellipsis could not be rasterized.")
-            return nil
-        }
+        guard let bitmap = image.cgImage else { return nil }
         let rendering = Rendering(image: image.withRenderingMode(.alwaysTemplate),
                                   splits: ChannelEllipsisPulseMask.splits(in: bitmap, scale: metrics.scale)
                                     .map { $0 / metrics.scale })

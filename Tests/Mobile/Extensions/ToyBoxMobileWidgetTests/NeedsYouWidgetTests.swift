@@ -24,7 +24,7 @@ struct NeedsYouWidgetTests {
 
     @Test func theTimelineBecomesStaleAtThirtyMinutesWithoutAHostRefresh() {
         let value = snapshot(count: 3)
-        let timeline = MobileNeedsYouProvider.timeline(snapshot: value, now: now)
+        let timeline = NeedsYouEntry.timeline(snapshot: value, now: now)
         #expect(timeline.entries.map(\.date) == [
             now, now.addingTimeInterval(NeedsYouSnapshot.freshnessInterval),
         ])
@@ -34,7 +34,7 @@ struct NeedsYouWidgetTests {
 
     @Test func cachedEmptyContentDoesNotClaimAllClearAfterADisconnect() {
         let value = snapshot(count: 0, offline: true)
-        let timeline = MobileNeedsYouProvider.timeline(snapshot: value, now: now)
+        let timeline = NeedsYouEntry.timeline(snapshot: value, now: now)
         #expect(timeline.entries.count == 1)
         #expect(MobileNeedsYouState(entry: timeline.entries[0]) == .stale)
     }

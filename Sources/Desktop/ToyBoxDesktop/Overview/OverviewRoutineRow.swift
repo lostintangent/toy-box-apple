@@ -111,7 +111,7 @@ struct OverviewRoutineRow: View {
         Button("Delete Routine…", role: .destructive) {
             if let target = store.target { management.present(.deleteRoutine(target, routineId: routine.id)) }
         }
-        .disabled(isRunning || !store.phase.isConnected)
+        .disabled(!canRun)
     }
 
     private func setExpanded(_ value: Bool) {

@@ -60,9 +60,7 @@ private struct OverviewInspectorContent: View {
                             }
                             .id("overview-routines")
                         }
-                        .padding(.top, Self.contentInsets.top)
-                        .padding(.horizontal, Self.contentInsets.leading)
-                        .padding(.bottom, Self.contentInsets.bottom)
+                        .padding(Self.contentInsets)
                         .font(.system(size: 13 * textScale))
                         .id(Self.topID)
                     }

@@ -32,12 +32,8 @@ struct OverviewTaskListRow: Identifiable {
         return "View \(count) \(count == 1 ? "subtask" : "subtasks")"
     }
 
-    static func filtered(_ tasks: [ChannelTask], showsOnlyInProgress: Bool) -> [ChannelTask] {
-        showsOnlyInProgress ? tasks.holdingWorkInProgress : tasks
-    }
-
     static func visibleChildren(of task: ChannelTask, showsOnlyInProgress: Bool) -> [ChannelTask] {
-        filtered(task.children ?? [], showsOnlyInProgress: showsOnlyInProgress)
+        showsOnlyInProgress ? (task.children ?? []).holdingWorkInProgress : task.children ?? []
     }
 
     static func visibleRows(
@@ -61,7 +57,7 @@ struct OverviewTaskListRow: Identifiable {
                 rows[index].guides.append(.init(depth: depth, isFirst: index == first, isLast: index == last))
             }
         }
-        for task in filtered(tasks, showsOnlyInProgress: showsOnlyInProgress) {
+        for task in showsOnlyInProgress ? tasks.holdingWorkInProgress : tasks {
             append(task, depth: 0, layout: layout(task))
             rows[rows.count - 1].endsRoot = true
         }

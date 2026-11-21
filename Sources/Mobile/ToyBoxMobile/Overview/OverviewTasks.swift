@@ -186,7 +186,8 @@ struct OverviewTaskNode: View {
                 if !layout.accessibility { ownerAvatar }
             }
             if timing != nil || diff != nil {
-                OverviewTaskMetadata(timing: timing, diff: diff)
+                ChannelOverviewTaskMetadata(timing: timing, diff: diff, stacksLeading: layout.accessibility)
+                    .font(.footnote)
                     .padding(.leading, layout.accessibility ? 0 : layout.statusWidth + layout.titleGap)
             }
         }
@@ -267,16 +268,5 @@ struct OverviewTaskArtifactLabel: View {
         .padding(.top, ChannelOverviewFactsLayout.titleGap)
         .padding(.bottom, OverviewTaskMetrics.verticalPadding(accessibility: typeSize.isAccessibilitySize))
         .contentShape(Rectangle())
-    }
-}
-
-struct OverviewTaskMetadata: View {
-    let timing: ChannelTask.Timing?
-    let diff: DiffStats?
-    @Environment(\.dynamicTypeSize) private var typeSize
-
-    var body: some View {
-        ChannelOverviewTaskMetadata(timing: timing, diff: diff, stacksLeading: typeSize.isAccessibilitySize)
-            .font(.footnote)
     }
 }

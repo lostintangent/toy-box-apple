@@ -6,15 +6,6 @@ import ToyBoxUI
 enum OverviewSectionID: String, CaseIterable {
     case team, tasks, artifacts, routines
 
-    var title: String {
-        switch self {
-        case .team: "Team Members"
-        case .tasks: "Tasks"
-        case .artifacts: "Artifacts"
-        case .routines: "Routines"
-        }
-    }
-
     static func decode(_ raw: String) -> Set<OverviewSectionID> {
         Set(raw.split(separator: ",").compactMap { OverviewSectionID(rawValue: String($0)) })
     }
@@ -80,7 +71,7 @@ struct OverviewSection<Trailing: View, Content: View>: View {
                 }
                 .buttonStyle(.plain)
                 .focused($isFocused)
-                .help(isCollapsed ? "Show \(id.title)" : "Hide \(id.title)")
+                .help(isCollapsed ? "Show \(summary.title)" : "Hide \(summary.title)")
                 .accessibilityLabel([summary.spoken, accessibilityDetail].compactMap { $0 }.joined(separator: ", "))
                 .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
                 .accessibilityAddTraits(.isHeader)

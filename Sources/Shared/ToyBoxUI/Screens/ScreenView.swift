@@ -10,7 +10,7 @@ public struct ScreenView: View {
     @Environment(\.displayScale) private var displayScale
     @ViewState private var space = CGSize.zero
 
-    public init(connection: ScreenConnection, isActive: Bool = true) {
+    public init(connection: ScreenConnection, isActive: Bool) {
         self.connection = connection
         self.isActive = isActive
     }

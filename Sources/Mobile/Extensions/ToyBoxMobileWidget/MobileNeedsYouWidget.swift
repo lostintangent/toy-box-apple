@@ -39,18 +39,8 @@ struct MobileNeedsYouProvider: TimelineProvider {
                     .error("Could not refresh the widget timeline: \(error.localizedDescription, privacy: .public)")
                 snapshot = MobileWidgetSnapshotReader.load()
             }
-            completion(Self.timeline(snapshot: snapshot, now: .now))
+            completion(NeedsYouEntry.timeline(snapshot: snapshot, now: .now))
         }
-    }
-
-    static func timeline(snapshot: NeedsYouSnapshot?, now: Date) -> Timeline<NeedsYouEntry> {
-        var entries = [NeedsYouEntry(date: now, snapshot: snapshot)]
-        if let snapshot, snapshot.isAvailable, !snapshot.isStale(at: now) {
-            entries.append(.init(
-                date: snapshot.updatedAt.addingTimeInterval(NeedsYouSnapshot.freshnessInterval),
-                snapshot: snapshot))
-        }
-        return .init(entries: entries, policy: .after(now.addingTimeInterval(15 * 60)))
     }
 }
 
