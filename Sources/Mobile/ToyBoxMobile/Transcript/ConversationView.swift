@@ -57,6 +57,8 @@ final class TranscriptScroll {
     private var scrollsPastPhase = false
     private(set) var intent: Model.Intent = .landing(.end)
     private(set) var hasLanded = false
+    /// While Find is open, arrivals never move the conversation, so the result being read stays put.
+    private(set) var isFinding = false
     private var frames: [String: CGRect] = [:]
     private var column: CGFloat?
     private var lastLayout: Model.Layout?
@@ -77,7 +79,8 @@ final class TranscriptScroll {
             scrollsPastPhase = isReaderScrolling
         }
         if let last = rows.last?.id, current.last?.id != last, current.contains(where: { $0.id == last }), hasLanded {
-            _ = update(.arrived(pinsLanding: pinsLanding))
+            // While Find is open, an arrival never moves the conversation, even below a revealed result.
+            _ = update(isFinding ? .holdCurrentPosition : .arrived(pinsLanding: pinsLanding))
         }
         rows = current
     }
@@ -132,7 +135,7 @@ final class TranscriptScroll {
             guard lastLayout?.viewport != layout.viewport else { return nil }
             return restingAtEnd(layout)
         } else if !holdsPlacementThroughInput, isReaderScrolling || readerMoved(from: lastLayout, to: layout) {
-            event = .readerScrolled(to: layout.origin)
+            event = isFinding ? .holdCurrentPosition : .readerScrolled(to: layout.origin)
         } else if let last = lastLayout {
             guard let change = Model.layoutEvent(from: last, to: layout) ?? drift(from: last, to: layout) else {
                 return nil
@@ -197,6 +200,15 @@ final class TranscriptScroll {
         }
         let placed = Model.placement(for: intent, layout: layout).origin
         return last.origin != layout.origin && placed.map { abs($0 - layout.origin) > Self.settled } != false
+    }
+
+    /// Opening Find holds the reader's place, even at the end. Closing it within the follow
+    /// threshold of the end follows again, like any reader who stops there.
+    func findChanged(isPresented: Bool) -> Model? {
+        guard isPresented != isFinding else { return nil }
+        isFinding = isPresented
+        guard hasLanded, let origin = metrics?.origin else { return nil }
+        return update(isPresented ? .holdCurrentPosition : .readerScrolled(to: origin))
     }
 
     /// Places once for the geometry the scene came back with.
@@ -527,6 +539,7 @@ struct ConversationView: View {
             if presented { find.present() }
             return
         }
+        place(scroll.findChanged(isPresented: presented))
         if !presented {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }

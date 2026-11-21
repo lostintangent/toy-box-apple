@@ -212,6 +212,43 @@ struct TranscriptTests {
         #expect(scroll.distanceToEnd == 30)
     }
 
+    @Test func arrivalsNeverMoveTheConversationWhileFindIsOpen() {
+        let scroll = measuredScroll(40, origin: 3400)
+        _ = scroll.update(.land(.end))
+        var count = 40
+        func arrive() -> CGFloat? {
+            scroll.sync((0...count).map { .init(id: "r\($0)", order: $0) })
+            scroll.measure("r\(count)", frame: CGRect(x: 0, y: CGFloat(count) * 100, width: 386, height: 100))
+            count += 1
+            scroll.metrics?.documentEnd = CGFloat(count) * 100
+            return scroll.update().flatMap(\.origin)
+        }
+        func scrollToEnd() {
+            scroll.isReaderScrolling = true
+            scroll.metrics?.origin = CGFloat(count) * 100 - 600
+            _ = scroll.update()
+            scroll.isReaderScrolling = false
+        }
+
+        // Find opens with the reader at the end.
+        #expect(scroll.findChanged(isPresented: true)?.origin == nil)
+        #expect(arrive() ?? 3400 == 3400)
+
+        // A result revealed near the end stays put, though the next arrival makes room for its 32 points.
+        #expect(scroll.update(.reveal("r38"))?.origin == 3500)
+        scroll.metrics?.origin = 3500
+        #expect(arrive() ?? 3500 == 3500)
+
+        // The reader scrolling back to the end doesn't follow either while Find is open.
+        scrollToEnd()
+        #expect(arrive() ?? 3600 == 3600)
+
+        // Closing Find within 48 points of the end follows again.
+        scrollToEnd()
+        _ = scroll.findChanged(isPresented: false)
+        #expect(arrive() == 3800)
+    }
+
     @Test func aPostureChangeKeepsOnlyTheFramesTheStackMeasuresAgain() {
         let scroll = TranscriptScroll()
         scroll.rows = (0..<10).map { .init(id: "r\($0)", order: $0) }
