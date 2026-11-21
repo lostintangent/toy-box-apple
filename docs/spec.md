@@ -273,11 +273,12 @@ and are there again when it comes back.
   line under the name. A provider keeps
   running its old version until the server restarts, so once any update reports a change, the
   section says "Restart Studio Demo to use the new version.", or "versions" when more than one
-  changed, with the server's own Restart beside it: the sentence leads the Mac's bar, with a
-  prominent Restart before Check for Updates, and on the phone it's the section's footer, under a
-  Restart row with `arrow.clockwise` after Check for Updates. That Restart is the Version row's,
-  restarting this server only, and a server without an installed release shows the sentence
-  alone. Results stay until the next check, until Settings closes, or until the server restarts,
+  changed. The server's page has one Restart on the Mac, where its window shows the Version row
+  with the providers: the sentence leads the section's bar, before Check for Updates, and the
+  Version row's Restart turns prominent while it shows. The phone's Version row is a screen above
+  Check for Updates, so the sentence is the section's footer, under a Restart row with
+  `arrow.clockwise` after Check for Updates, which does what the Version row's does, restarting
+  this server only. A server without an installed release shows the sentence alone. Results stay until the next check, until Settings closes, or until the server restarts,
   when the rows spin while it reconnects and then read its new versions.
 - **Connecting.** The user connects once, by entering the address of any one of their Toy Box
   Macs, and the app shows that server and every peer that answers (see Peer servers). Connect is
@@ -345,8 +346,9 @@ and are there again when it comes back.
   and offers no Restart. Every server that can restart also offers Restart in two quieter places,
   pending or not. Its details have a
   Version row, after Status on the Mac and after Server URL on the phone, with the release it runs
-  and a bordered Restart, which is disabled while the server checks, reconnects or isn't
-  connected, and absent without an installed release. Its row's context menu, from Control-click
+  and a bordered Restart, prominent on the Mac while Model Providers asks for a restart, which is
+  disabled while the server checks, reconnects or isn't connected, and absent without an
+  installed release. Its row's context menu, from Control-click
   on the Mac or touch and hold on the phone, has Restart with `arrow.clockwise` as its only item,
   and the row has no menu while the server can't restart. Restart has no confirmation, and the
   apps give it no handling of their own. A server that accepts answers 202 and drops every
