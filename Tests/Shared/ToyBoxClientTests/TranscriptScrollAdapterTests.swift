@@ -200,6 +200,75 @@ struct TranscriptScrollAdapterTests {
         #expect(scroll.distanceToEnd == 30)
     }
 
+    /// The Mac reports no scroll phase for keyboard and scroller moves, so it reads each change of
+    /// geometry against the one before it.
+    @Test func theMacFollowsGrowthUntilTheReaderMovesUpEvenInTheSameChange() {
+        let scroll = measuredScroll(40, origin: 3400)
+        _ = scroll.update(.land(.end))
+        func arrive(_ index: Int, height: CGFloat = 100) {
+            scroll.sync((0...index).map { .init(id: "r\($0)", order: $0) })
+            scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: height))
+        }
+
+        // An arrival grows the end, and following asks for it.
+        var old = scroll.metrics!
+        arrive(40)
+        scroll.metrics?.documentEnd = 4100
+        #expect(scroll.update(movingFrom: old)?.origin == 3500)
+
+        // The animated follow on its way there is ours, not the reader's.
+        old = scroll.metrics!
+        scroll.metrics?.origin = 3450
+        #expect(scroll.update(movingFrom: old) == nil)
+        #expect(scroll.isFollowing)
+
+        // Page Up reported with a row below measuring taller reads the reader's place.
+        old = scroll.metrics!
+        scroll.metrics?.origin = 3000
+        scroll.metrics?.documentEnd = 4121
+        _ = scroll.update(movingFrom: old)
+        #expect(!scroll.isFollowing)
+        old = scroll.metrics!
+        arrive(41)
+        scroll.metrics?.documentEnd = 4221
+        #expect(scroll.update(movingFrom: old)?.origin ?? 3000 == 3000)
+    }
+
+    /// Rows built during a scroll settle their estimates in the same changes that move it, so a
+    /// reader's scroll is read as theirs even when the end changes with it.
+    @Test func aReaderScrollingToTheEndAsRowsSettleFollowsTheNextArrival() {
+        let scroll = measuredScroll(40, origin: 3400)
+        _ = scroll.update(.land(.end))
+        var old = scroll.metrics!
+        scroll.metrics?.origin = 1000
+        _ = scroll.update(movingFrom: old)
+        #expect(!scroll.isFollowing)
+
+        scroll.isReaderScrolling = true
+        old = scroll.metrics!
+        scroll.metrics?.origin = 3420
+        scroll.metrics?.documentEnd = 4020
+        _ = scroll.update(movingFrom: old)
+        #expect(scroll.isFollowing)
+    }
+
+    @Test func anArrivalWhileFindIsOpenHoldsTheReadersPlaceOnTheMac() {
+        let scroll = measuredScroll(40, origin: 3400)
+        _ = scroll.update(.land(.end))
+        #expect(scroll.findChanged(isPresented: true)?.origin == nil)
+
+        let old = scroll.metrics!
+        scroll.sync((0...40).map { .init(id: "r\($0)", order: $0) })
+        scroll.measure("r40", frame: CGRect(x: 0, y: 4000, width: 386, height: 100))
+        scroll.metrics?.documentEnd = 4100
+        #expect(scroll.update(movingFrom: old)?.origin ?? 3400 == 3400)
+        #expect(!scroll.isFollowing)
+
+        // Closing Find puts back following, at the end that grew meanwhile.
+        #expect(scroll.findChanged(isPresented: false)?.origin == 3500)
+        #expect(scroll.isFollowing)
+    }
+
     @Test func arrivalsNeverMoveTheConversationWhileFindIsOpen() {
         let scroll = measuredScroll(40, origin: 3400)
         _ = scroll.update(.land(.end))

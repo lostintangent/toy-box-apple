@@ -134,15 +134,7 @@ struct ConversationView: View {
         // The conversation owns the generation, so a card that leaves the lazy stack never cancels it.
         .task(id: catchUp?.generation) { await catchUp?.run(using: intelligence) }
         .defaultScrollAnchor(.bottom, for: .initialOffset)
-        .onScrollGeometryChange(for: TranscriptScroll.Metrics.self) { geometry in
-            // The container size excludes the content insets, but the model's viewport spans them.
-            let top = max(0, geometry.contentInsets.top), bottom = max(0, geometry.contentInsets.bottom)
-            return TranscriptScroll.Metrics(
-                viewport: .init(width: geometry.containerSize.width,
-                                height: geometry.containerSize.height + top + bottom,
-                                topInset: top, bottomInset: bottom),
-                origin: geometry.contentOffset.y, documentEnd: geometry.contentSize.height)
-        } action: { _, metrics in
+        .onScrollGeometryChange(for: TranscriptScroll.Metrics.self) { TranscriptScroll.Metrics($0) } action: { _, metrics in
             // A page above grows the content before `onChange(items)` runs, so its rows sync first.
             let shown = store.messages.count - heldCount
             if shown != scroll.messageCount {

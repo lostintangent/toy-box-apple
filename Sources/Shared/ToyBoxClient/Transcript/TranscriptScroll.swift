@@ -59,6 +59,10 @@ public final class TranscriptScroll {
     /// until a new touch or a change of viewport, like the keyboard or a posture change.
     private var scrollsPastPhase = false
     private(set) var intent: Model.Intent = .landing(.end)
+    /// Whether the end is the place to keep, landing there or following it.
+    public var isFollowing: Bool { intent == .following || intent == .landing(.end) }
+    /// A reader's move came before any measured row was in view, so the next measurement reads it.
+    private var readsPositionOnMeasure = false
     public private(set) var hasLanded = false
     /// While Find is open, arrivals never move the conversation, so the result being read stays put.
     private(set) var isFinding = false
@@ -157,7 +161,11 @@ public final class TranscriptScroll {
         } else {
             event = .layoutChanged
         }
-        if capturesPosition(event), !hasViewportGeometry { return nil }
+        guard !capturesPosition(event) || hasViewportGeometry else {
+            readsPositionOnMeasure = true
+            return nil
+        }
+        readsPositionOnMeasure = false
         var placement = Model.reduce(intent, event, layout: layout)
         // Asking for a row the stack hasn't built from past the end can leave the scroll past the end
         // again, as the content shrinks under SwiftUI's estimate. The end is built with the rows above
@@ -174,6 +182,37 @@ public final class TranscriptScroll {
         default: break
         }
         return placement
+    }
+
+    /// Reads a geometry change for a scroll view whose keyboard, scroller and programmatic moves
+    /// report no scroll phase, like the Mac's, so it never infers drift. A layout change that leaves
+    /// the origin where it was, or moves it down, places the intent again. A move of the origin alone,
+    /// or up in the same change, is the reader's, except a follow on its way to the end.
+    public func update(movingFrom old: Metrics) -> Model? {
+        guard let new = metrics else { return nil }
+        if !isReaderScrolling {
+            if (old.viewport != new.viewport || old.documentEnd != new.documentEnd) && new.origin >= old.origin {
+                return update(.layoutChanged)
+            }
+            guard new.origin != old.origin else { return nil }
+            if isFollowing && Self.distanceToEnd(new) < Self.distanceToEnd(old) { return nil }
+        }
+        return readerMoved()
+    }
+
+    /// Reads a reader's move again once a row in view is measured, if none was when it moved.
+    public func updateAfterMeasuring() -> Model? {
+        readsPositionOnMeasure ? readerMoved() : nil
+    }
+
+    private func readerMoved() -> Model? {
+        guard let metrics else { return nil }
+        beforeFind = nil
+        return update(isFinding ? .holdCurrentPosition : .readerScrolled(to: metrics.origin))
+    }
+
+    private static func distanceToEnd(_ metrics: Metrics) -> CGFloat {
+        metrics.documentEnd - metrics.origin - metrics.viewport.height + metrics.viewport.bottomInset
     }
 
     /// Coming to rest places again only a position the reader didn't choose: a landing at the end
