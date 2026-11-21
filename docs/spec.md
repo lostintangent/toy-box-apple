@@ -1921,7 +1921,8 @@ placement is decided from the next geometry the scroll view reports.
 `scrollPosition(id:)` alone doesn't meet those rules. Measured on the Mac with real rows and real
 trackpad events over history-demo, these are the gaps. One placement model in ToyBoxClient covers
 each of them for both apps, fed by each app's scroll geometry and writing through each app's
-scroll view. Only the Mac's resize pin and its live-resize stand-down are the Mac's own:
+scroll view. Only the Mac's resize pin, its live-resize stand-down and its clip writer are the
+Mac's own:
 
 | Behavior | Why SwiftUI falls short |
 | --- | --- |
@@ -1929,6 +1930,7 @@ scroll view. Only the Mac's resize pin and its live-resize stand-down are the Ma
 | While reading, a row above that changes height leaves the first row starting in the viewport where it was | SwiftUI keeps the first *visible* row in place, which can start above the viewport, so a late image growing 190 points above moved the reader 70 |
 | An older page keeps the visible top message and its offset | The reader's row isn't built yet when the page arrives, so scrolling up from message 183 jumped to 81 |
 | After a width change, the reader's row returns to its place. On the Mac, the hold stands down during a live resize drag and puts the row back when the drag ends. A built row moves back natively. When the new width's estimates leave the reader past the end, a `scrollTo` only builds the row, and the hold then moves it natively at its real height, the way a reveal places its row, so SwiftUI has no target to put back over the reader's next scroll. Until the reader scrolls, the hold makes no correction of its own, and a later width change in that span puts the same row back again, so only a row above changing height can move it | A width change while reading moved the reader 118 points. One whose estimates put the reader past the end built nothing there, so the place was lost and the conversation showed its end. Dragging the window's edge lost the reader's row in 4 of 5 runs |
+| On the Mac, the shared model's moves go straight to the scroll view's clip, while the phone writes them through `ScrollPosition.scrollTo(y:)` | On macOS 27, SwiftUI keeps an offset written with `scrollTo(y:)` and puts it back on later layout passes until the reader scrolls. A 260-point narrowing moved the clip 72 points with no reader input, a row above growing 488 points left the clip where it was, so the reader's rows dropped 488, and a widen undid a later clip write. Without the clip writer, dragging the window's edge moved the reader's row 22.5 points |
 | While following, a window resize keeps the end at the bottom in the pass that draws the new size. On the Mac, the end is pinned whenever the container, the content or the clip's offset changes during a resize, and the pin's own scroll leaves nothing more to move | SwiftUI's follow lands a frame or more later. During a drag, SwiftUI writes its own offset to the clip after resizing the content, so when the stack's estimate shrank and grew back it drew up to 5,226 points above the end in 4 of 5 runs |
 
 Long histories must stay as fast as short ones. Build rows incrementally: derive each message's
