@@ -62,35 +62,6 @@ struct MenuBarStatus: Equatable {
     /// The servers that can't be reached, by name.
     var unreachableHost: String?
 
-    init(waiting: [Item] = [], working: [Item] = [], workingAgents: Int = 0, unreachableHost: String? = nil) {
-        self.waiting = waiting
-        self.working = working
-        self.workingAgents = workingAgents
-        self.unreachableHost = unreachableHost
-    }
-
-    /// Waiting requests in their shared order, then channels with working agents and no request,
-    /// most recently updated first.
-    init(requests: [ChannelWaitingRequest] = [], _ inputs: [Input], unreachableHost: String?) {
-        self.unreachableHost = unreachableHost
-        workingAgents = inputs.reduce(0) { $0 + $1.working.count }
-        waiting = requests.map { entry in
-            let requester = entry.requester
-            return Item(target: entry.target, name: entry.channel.name,
-                        subtitle: requester.map { ChannelNotification.Content.subtitle(requester: $0.name) } ?? ChannelNotification.Content.needsReply,
-                        agent: requester, request: entry, avatar: entry.channel.avatar)
-        }
-        let waitingTargets = Set(waiting.map(\.target))
-        working = inputs.filter { !waitingTargets.contains($0.target) && !$0.working.isEmpty }
-            .map { input in (input, (try? Date(input.channel.updatedAt, strategy: .iso8601)) ?? .distantPast) }
-            .sorted { $0.1 > $1.1 }
-            .map { input, _ in
-                Item(target: input.target, name: input.channel.name,
-                     subtitle: Self.workingSubtitle(input.working.map(\.name)), agent: input.working.first,
-                     agents: input.working, avatar: input.channel.avatar)
-            }
-    }
-
     var state: State {
         if !waiting.isEmpty { return .waiting }
         if workingAgents > 0 { return .working }
@@ -124,12 +95,6 @@ struct MenuBarStatus: Equatable {
         Section(items: Array(working.prefix(Self.workingLimit)), overflow: max(working.count - Self.workingLimit, 0))
     }
 
-    /// The one disabled line an empty menu shows.
-    var emptyText: String? {
-        guard waiting.isEmpty, working.isEmpty else { return nil }
-        return unreachableHost.map { "Can't connect to \($0)" } ?? "No agents are working"
-    }
-
     static func workingSubtitle(_ names: [String]) -> String {
         switch names.count {
         case 0: return ""
@@ -142,5 +107,29 @@ struct MenuBarStatus: Equatable {
 
     private static func count(_ value: Int, _ noun: String) -> String {
         "\(value) \(noun)\(value == 1 ? "" : "s")"
+    }
+}
+
+extension MenuBarStatus {
+    /// Waiting requests in their shared order, then channels with working agents and no request,
+    /// most recently updated first.
+    init(requests: [ChannelWaitingRequest] = [], _ inputs: [Input], unreachableHost: String?) {
+        self.unreachableHost = unreachableHost
+        workingAgents = inputs.reduce(0) { $0 + $1.working.count }
+        waiting = requests.map { entry in
+            let requester = entry.requester
+            return Item(target: entry.target, name: entry.channel.name,
+                        subtitle: requester.map { ChannelNotification.Content.subtitle(requester: $0.name) } ?? ChannelNotification.Content.needsReply,
+                        agent: requester, request: entry, avatar: entry.channel.avatar)
+        }
+        let waitingTargets = Set(waiting.map(\.target))
+        working = inputs.filter { !waitingTargets.contains($0.target) && !$0.working.isEmpty }
+            .map { input in (input, (try? Date(input.channel.updatedAt, strategy: .iso8601)) ?? .distantPast) }
+            .sorted { $0.1 > $1.1 }
+            .map { input, _ in
+                Item(target: input.target, name: input.channel.name,
+                     subtitle: Self.workingSubtitle(input.working.map(\.name)), agent: input.working.first,
+                     agents: input.working, avatar: input.channel.avatar)
+            }
     }
 }

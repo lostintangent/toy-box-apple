@@ -901,7 +901,7 @@ struct ShellTests {
     ])
     func loopbackServersAreThisMac(_ server: String, _ isLoopback: Bool) throws {
         let url = try #require(URL(string: server))
-        #expect(ChannelFolders.isLoopback(ChannelFolders.normalizedHost(url)) == isLoopback)
+        #expect(ChannelAPI.isLoopback(host: ChannelFolders.normalizedHost(url)) == isLoopback)
     }
 
     @MainActor @Test func folderAvailabilityIsCachedUntilRefresh() throws {
@@ -1078,7 +1078,7 @@ struct SidebarConnectionFooterTests {
         ("not a server", "not a server"),
     ])
     func serverShowsTheHostAndOnlyAnUnusualPort(url: String, shown: String) {
-        #expect(SidebarFooter.server(url) == shown)
+        #expect(ChannelCatalogStore.name(of: url) == shown)
     }
 
     @Test func severalServersSumUpAsTheLeastHealthy() {
@@ -1093,7 +1093,7 @@ struct SidebarConnectionFooterTests {
 
         let healthy = summary(connected, connected)
         #expect(healthy.title == "2 servers")
-        #expect(healthy.server == nil && healthy.footer == connected)
+        #expect(healthy.footer == connected)
         #expect(healthy.status == "Connected to 2 servers")
         #expect(summary(connected).title == "1 server")
         #expect(summary(connected).status == "Connected to s0", "One server is named")
@@ -1102,7 +1102,8 @@ struct SidebarConnectionFooterTests {
         #expect(summary(connected, loading).status == "Connecting to s1")
         #expect(summary(loading, reconnecting, connected).status == "Reconnecting to s1")
         #expect(summary(reconnecting, failing, loading).status == "Can't connect to s1")
-        #expect(summary(connected, reconnecting, reconnecting).server == "s1", "The first of the least healthy wins")
+        #expect(summary(connected, reconnecting, reconnecting).status == "Reconnecting to s1",
+                "The first of the least healthy wins")
     }
 
     /// A load that lands keeps the main actor busy just as the spinner's delay ends, so the delay's
@@ -1450,25 +1451,25 @@ struct NotificationTests {
         let server = try #require(URL(string: "https://other.example"))
         let info: [AnyHashable: Any] = ["channelID": "workshop", "serverURL": server.absoluteString, "kind": "request",
                                         "sequence": 12, "handle": "ada-lovelace", "replies": ["Yes", "No"]]
-        let typed = NotificationReply(action: ChannelNotifications.replyAction, text: " Ship it ", info: info)
+        let typed = NotificationReply(action: ChannelNotificationCategory.reply, text: " Ship it ", info: info)
         #expect(typed?.content == "@ada-lovelace Ship it")
         #expect(typed?.channelID == "workshop" && typed?.server == server && typed?.request == 12)
         // A choice sends its label as written, with no mention.
         #expect(NotificationReply(action: "reply-choice.1", text: nil, info: info)?.content == "No")
         #expect(NotificationReply(action: "reply-choice.1", text: nil, info: info)?.request == 12)
 
-        #expect(NotificationReply(action: ChannelNotifications.replyAction, text: " \n ", info: info) == nil)
+        #expect(NotificationReply(action: ChannelNotificationCategory.reply, text: " \n ", info: info) == nil)
         #expect(NotificationReply(action: "reply-choice.2", text: nil, info: info) == nil)
         #expect(NotificationReply(action: UNNotificationDefaultActionIdentifier, text: nil, info: info) == nil)
         var serverless = info
         serverless["serverURL"] = nil
-        #expect(NotificationReply(action: ChannelNotifications.replyAction, text: "Hi", info: serverless) == nil)
+        #expect(NotificationReply(action: ChannelNotificationCategory.reply, text: "Hi", info: serverless) == nil)
 
         // A reply to a completion answers nothing in particular.
         var completion = info
         completion["kind"] = "completion"
         completion["handle"] = nil
-        let reply = NotificationReply(action: ChannelNotifications.replyAction, text: "Thanks", info: completion)
+        let reply = NotificationReply(action: ChannelNotificationCategory.reply, text: "Thanks", info: completion)
         #expect(reply?.content == "Thanks" && reply?.request == nil)
     }
 }
@@ -1517,15 +1518,15 @@ struct MenuBarExtraTests {
     @Test func theIconFollowsTheMostUrgentState() {
         let idle = MenuBarStatus([], unreachableHost: nil)
         #expect(idle.state == .idle && idle.icon == .face && !idle.isActive)
-        #expect(idle.accessibilityValue == "No agents working" && idle.emptyText == "No agents are working")
+        #expect(idle.accessibilityValue == "No agents working")
 
         let offline = MenuBarStatus([], unreachableHost: "studio.local:3100")
         #expect(offline.state == .disconnected && offline.icon == .face && !offline.isActive)
-        #expect(offline.accessibilityValue == "Not connected" && offline.emptyText == "Can't connect to studio.local:3100")
+        #expect(offline.accessibilityValue == "Not connected")
 
         let working = MenuBarStatus([input(channel("a"), working: [ada])], unreachableHost: nil)
         #expect(working.state == .working && working.icon == .working && working.isActive)
-        #expect(working.accessibilityValue == "1 agent working" && working.emptyText == nil)
+        #expect(working.accessibilityValue == "1 agent working")
 
         let waiting = MenuBarStatus(requests: [self.waiting(channel("a", request: 12))], [
             input(channel("a", request: 12), working: [lead, ada]),

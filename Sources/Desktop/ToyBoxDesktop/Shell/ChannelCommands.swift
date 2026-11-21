@@ -20,8 +20,8 @@ struct WindowCommandActions {
     var messageView: TranscriptFilter
     /// Non-nil while the image viewer covers the conversation, which disables the commands that
     /// act on what's underneath.
-    var imageZoom: ImageZoomActions? = nil
-    var isViewerPresented = false
+    var imageZoom: ImageZoomActions?
+    var isViewerPresented: Bool
     /// The selected channel's server, where New Channel and Open Screen start.
     var server: String
     var newChannel: () -> Void
@@ -41,8 +41,8 @@ struct WindowCommandActions {
     var talkToLead: () -> Void
     var jumpToLatest: () -> Void
     var revealRequest: () -> Void
-    var findInChannel: () -> Void = {}
-    var findNext: (Int) -> Void = { _ in }
+    var findInChannel: () -> Void
+    var findNext: (Int) -> Void
 }
 
 private struct ChannelCommandsKey: FocusedValueKey {
@@ -160,7 +160,7 @@ struct ChannelCommands: Commands {
                 .keyboardShortcut("j").disabled(!hasConversation)
             Button("Jump to Input Needed") { actions?.revealRequest() }
                 .keyboardShortcut("j", modifiers: [.command, .shift])
-                .disabled(actions?.hasRequest != true || actions?.imageZoom != nil || actions?.isViewerPresented == true)
+                .disabled(actions?.hasRequest != true || !hasConversation)
         }
     }
 

@@ -9,19 +9,18 @@ struct QuickSendShortcut: Codable, Equatable, Sendable {
     let keyCode: UInt32
     let modifiers: UInt32
 
-    init(keyCode: UInt32, modifiers: UInt32) {
-        self.keyCode = keyCode
-        self.modifiers = modifiers
-    }
+    private typealias Modifier = (carbon: Int, flags: NSEvent.ModifierFlags, event: SwiftUI.EventModifiers,
+                                    label: String)
+    private static let modifierKeys: [Modifier] = [
+        (controlKey, .control, .control, "⌃"), (optionKey, .option, .option, "⌥"),
+        (shiftKey, .shift, .shift, "⇧"), (cmdKey, .command, .command, "⌘"),
+    ]
+    private static let functionKeys = [kVK_F1, kVK_F2, kVK_F3, kVK_F4, kVK_F5, kVK_F6, kVK_F7, kVK_F8,
+                                       kVK_F9, kVK_F10, kVK_F11, kVK_F12, kVK_F13, kVK_F14, kVK_F15,
+                                       kVK_F16, kVK_F17, kVK_F18, kVK_F19, kVK_F20]
 
-    init(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
-        self.keyCode = UInt32(keyCode)
-        var modifiers: UInt32 = 0
-        if flags.contains(.control) { modifiers |= UInt32(controlKey) }
-        if flags.contains(.option) { modifiers |= UInt32(optionKey) }
-        if flags.contains(.shift) { modifiers |= UInt32(shiftKey) }
-        if flags.contains(.command) { modifiers |= UInt32(cmdKey) }
-        self.modifiers = modifiers
+    private var heldModifiers: [Modifier] {
+        Self.modifierKeys.filter { modifiers & UInt32($0.carbon) != 0 }
     }
 
     var validationError: String? {
@@ -46,10 +45,7 @@ struct QuickSendShortcut: Codable, Equatable, Sendable {
         return nil
     }
 
-    var modifierLabel: String {
-        [(controlKey, "⌃"), (optionKey, "⌥"), (shiftKey, "⇧"), (cmdKey, "⌘")]
-            .filter { modifiers & UInt32($0.0) != 0 }.map(\.1).joined()
-    }
+    var modifierLabel: String { heldModifiers.map(\.label).joined() }
 
     var displayName: String { modifierLabel + keyLabel }
 
@@ -66,10 +62,7 @@ struct QuickSendShortcut: Codable, Equatable, Sendable {
         case kVK_PageUp: key = .pageUp
         case kVK_PageDown: key = .pageDown
         default:
-            let functionKeys = [kVK_F1, kVK_F2, kVK_F3, kVK_F4, kVK_F5, kVK_F6, kVK_F7, kVK_F8,
-                                kVK_F9, kVK_F10, kVK_F11, kVK_F12, kVK_F13, kVK_F14, kVK_F15,
-                                kVK_F16, kVK_F17, kVK_F18, kVK_F19, kVK_F20]
-            if let index = functionKeys.firstIndex(of: Int(keyCode)),
+            if let index = Self.functionKeys.firstIndex(of: Int(keyCode)),
                let scalar = UnicodeScalar(0xF704 + UInt32(index)) {
                 key = KeyEquivalent(Character(scalar))
             } else {
@@ -78,12 +71,7 @@ struct QuickSendShortcut: Codable, Equatable, Sendable {
             }
         }
         guard let key else { return nil }
-        var flags: SwiftUI.EventModifiers = []
-        if modifiers & UInt32(controlKey) != 0 { flags.insert(.control) }
-        if modifiers & UInt32(optionKey) != 0 { flags.insert(.option) }
-        if modifiers & UInt32(shiftKey) != 0 { flags.insert(.shift) }
-        if modifiers & UInt32(cmdKey) != 0 { flags.insert(.command) }
-        return KeyboardShortcut(key, modifiers: flags)
+        return KeyboardShortcut(key, modifiers: SwiftUI.EventModifiers(heldModifiers.map(\.event)))
     }
 
     var keyLabel: String {
@@ -91,13 +79,9 @@ struct QuickSendShortcut: Codable, Equatable, Sendable {
             kVK_Space: "Space", kVK_LeftArrow: "←", kVK_RightArrow: "→",
             kVK_UpArrow: "↑", kVK_DownArrow: "↓", kVK_Home: "Home", kVK_End: "End",
             kVK_PageUp: "Page Up", kVK_PageDown: "Page Down",
-            kVK_F1: "F1", kVK_F2: "F2", kVK_F3: "F3", kVK_F4: "F4", kVK_F5: "F5",
-            kVK_F6: "F6", kVK_F7: "F7", kVK_F8: "F8", kVK_F9: "F9", kVK_F10: "F10",
-            kVK_F11: "F11", kVK_F12: "F12", kVK_F13: "F13", kVK_F14: "F14",
-            kVK_F15: "F15", kVK_F16: "F16", kVK_F17: "F17", kVK_F18: "F18",
-            kVK_F19: "F19", kVK_F20: "F20",
         ]
         if let label = special[Int(keyCode)] { return label }
+        if let index = Self.functionKeys.firstIndex(of: Int(keyCode)) { return "F\(index + 1)" }
         guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
               let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else {
             return "Key \(keyCode)"
@@ -112,6 +96,13 @@ struct QuickSendShortcut: Codable, Equatable, Sendable {
                                     &deadKey, characters.count, &length, &characters)
         guard status == noErr, length > 0 else { return "Key \(keyCode)" }
         return String(utf16CodeUnits: characters, count: length).uppercased()
+    }
+}
+
+extension QuickSendShortcut {
+    init(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
+        self.init(keyCode: UInt32(keyCode), modifiers: Self.modifierKeys.filter { flags.contains($0.flags) }
+            .reduce(0) { $0 | UInt32($1.carbon) })
     }
 }
 

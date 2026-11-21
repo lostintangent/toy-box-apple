@@ -98,20 +98,13 @@ final class ChannelIntents {
     let summarizes: @MainActor () -> Bool
     /// Answers a send's confirmation in tests, where there's no system prompt to show.
     var confirmationOverride: (@MainActor (SendConfirmation) async throws -> Void)?
-    var connectionTimeout: Duration
-    var catchUpTimeout: Duration
+    var connectionTimeout: Duration = .seconds(10)
 
     struct SendConfirmation: Equatable, Sendable {
         let channel: String
         let message: String
         /// The agent a reply mentions.
-        let recipient: String?
-
-        init(channel: String, message: String, recipient: String? = nil) {
-            self.channel = channel
-            self.message = message
-            self.recipient = recipient
-        }
+        var recipient: String?
 
         var question: String {
             let place = recipient.map { "\($0) in \(channel)" } ?? channel
@@ -134,13 +127,10 @@ final class ChannelIntents {
 
     init(host: Host,
          intelligence: @autoclosure @escaping @MainActor () -> any ChannelIntelligenceService = LiveChannelIntelligence.shared,
-         summarizes: @escaping @MainActor () -> Bool = { true },
-         connectionTimeout: Duration = .seconds(10), catchUpTimeout: Duration = .seconds(15)) {
+         summarizes: @escaping @MainActor () -> Bool = { true }) {
         self.host = host
         makeIntelligence = intelligence
         self.summarizes = summarizes
-        self.connectionTimeout = connectionTimeout
-        self.catchUpTimeout = catchUpTimeout
     }
 
     // MARK: Channels
@@ -189,20 +179,15 @@ final class ChannelIntents {
         return identifiers.contains(entity.id) ? [entity] : []
     }
 
-    func channel(_ target: ChannelTarget) async throws -> Channel {
+    func listed(_ target: ChannelTarget) async throws -> Listed {
         guard let listed = try await channels().first(where: { $0.target == target }) else {
             throw ChannelIntentError.channelNotFound
         }
-        return listed.channel
+        return listed
     }
 
     func open(_ target: ChannelTarget) {
         host.open(target)
-    }
-
-    /// Spotlight asks again for every channel, or for the named ones.
-    func reindexSpotlight(_ ids: [String]?) async {
-        await spotlight?.reindex(ids)
     }
 
     func waitingRequests() async throws -> [WaitingRequestEntity] {
@@ -214,10 +199,6 @@ final class ChannelIntents {
     /// The requests waiting for you once the catalogs have loaded, or none if they haven't by the deadline.
     private func requests() async throws -> [WaitingRequestEntry] {
         try await Self.first(within: connectionTimeout, host.requests) ?? []
-    }
-
-    func reindexRequests(_ ids: [String]?) async {
-        await requestSpotlight?.reindex(ids)
     }
 
     func openRequest(_ request: WaitingRequestEntry) async throws {
@@ -258,14 +239,8 @@ final class ChannelIntents {
 
     /// One channel's catch-up, or a line for each channel that needs you when none is named.
     func catchUp(channel target: ChannelTarget?) async throws -> CatchUpAnswer.Answer {
-        let channels = try await channels()
-        if let target {
-            guard let listed = channels.first(where: { $0.target == target }) else {
-                throw ChannelIntentError.channelNotFound
-            }
-            return try await catchUp(listed)
-        }
-        let needing = CatchUpAnswer.needingAttention(channels)
+        if let target { return try await catchUp(listed(target)) }
+        let needing = CatchUpAnswer.needingAttention(try await channels())
         if needing.count == 1 { return try await catchUp(needing[0]) }
         var counts: [ChannelTarget: Int] = [:]
         for listed in needing.prefix(CatchUpAnswer.overviewRowLimit) where listed.channel.attention == .unread {
@@ -277,23 +252,18 @@ final class ChannelIntents {
     private func catchUp(_ listed: Listed) async throws -> CatchUpAnswer.Answer {
         let channel = listed.channel
         guard channel.attention != nil else { return .init(spoken: CatchUpAnswer.caughtUp(in: channel.name)) }
-        let state = try await connected(listed.target) { $0.state }
-        guard let state else { throw ChannelIntentError.unreachable }
+        let state = try await connectedState(listed.target)
         let unreadAfter = state.channel.unreadAfter
         let digest = CatchUpDigest(state: state, unreadAfter: unreadAfter)
         var summary: (catchUp: CatchUp, count: Int)?
+        // The model's catch-up, shared with the transcript's card through the service's cache.
         if summarizes(), intelligence.availability.isAvailable, let api = host.api(listed.target.serverURL),
            let request = CatchUpRequest(server: api.baseURL, state: state, unreadAfter: unreadAfter),
-           let catchUp = await summarize(request) {
+           let catchUp = await intelligence.catchUp(request, within: .seconds(15)) {
             summary = (catchUp, request.unreadFromOthers)
         }
         return CatchUpAnswer.channelAnswer(state, on: listed.target, unreadAfter: unreadAfter, digest: digest,
                                            summary: summary)
-    }
-
-    /// The model's catch-up, shared with the transcript's card through the service's cache.
-    private func summarize(_ request: CatchUpRequest) async -> CatchUp? {
-        await intelligence.catchUp(request, within: catchUpTimeout)
     }
 
     /// New messages from agents in a channel that isn't open, from one page of history.
@@ -316,7 +286,7 @@ final class ChannelIntents {
               confirm: @Sendable (SendConfirmation) async throws -> Void) async throws -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ChannelIntentError.emptyMessage }
-        let channel = try await channel(target)
+        let channel = try await listed(target).channel
         guard let server = host.api(target.serverURL)?.baseURL else { throw ChannelIntentError.noServer }
         let prompt = SendConfirmation(channel: channel.name, message: trimmed, recipient: recipient)
         if let confirmationOverride { try await confirmationOverride(prompt) } else { try await confirm(prompt) }
@@ -336,9 +306,9 @@ final class ChannelIntents {
 
     // MARK: Connections
 
-    /// Runs `body` while the channel's shared store is live, connecting it for the duration if no
-    /// window has it open.
-    private func connected<T>(_ target: ChannelTarget, _ body: (ChannelStore) async throws -> T) async throws -> T {
+    /// The channel's state once its shared store is live, connecting it for the wait if no window
+    /// has it open.
+    private func connectedState(_ target: ChannelTarget) async throws -> ChannelState {
         guard let store = host.store(target) else { throw ChannelIntentError.noServer }
         host.hold(store)
         defer { host.release(store) }
@@ -346,8 +316,8 @@ final class ChannelIntents {
             if store.phase == .deleted { throw ChannelIntentError.channelNotFound }
             return store.phase.isConnected ? store.state : nil
         }
-        guard state != nil else { throw ChannelIntentError.unreachable }
-        return try await body(store)
+        guard let state else { throw ChannelIntentError.unreachable }
+        return state
     }
 
     /// What `read` gives once it isn't nil, read again whenever something it reads changes, or nil at

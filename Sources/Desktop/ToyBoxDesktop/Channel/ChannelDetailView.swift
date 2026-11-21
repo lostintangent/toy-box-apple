@@ -43,10 +43,10 @@ struct ChannelDetailView: View {
             // An open artifact hides the conversation without removing it, so its scroll position,
             // draft and paging survive. It's out of sight, VoiceOver, the pointer and the key view
             // loop, and Find stays with the viewer.
-            .opacity(artifacts.isPresented ? 0 : 1)
-            .accessibilityHidden(artifacts.isPresented)
-            .allowsHitTesting(!artifacts.isPresented)
-            .disabled(artifacts.isPresented)
+            .opacity(artifacts.session.isPresented ? 0 : 1)
+            .accessibilityHidden(artifacts.session.isPresented)
+            .allowsHitTesting(!artifacts.session.isPresented)
+            .disabled(artifacts.session.isPresented)
             .onGeometryChange(for: ChannelTitleFit.Span.self) { geometry in
                 let frame = geometry.frame(in: .global)
                 return ChannelTitleFit.Span(minX: frame.minX, maxX: frame.maxX)
@@ -68,8 +68,8 @@ struct ChannelDetailView: View {
             }
             // Each viewer's title menu, or the channel's, stands in for the system title. The
             // window keeps whichever title is showing for the Window menu.
-            .navigationTitle(artifacts.artifact?.title ?? viewing?.sender ?? title)
-            .navigationSubtitle(artifacts.isPresented ? artifacts.subtitle : viewing?.subtitle ?? "")
+            .navigationTitle(artifacts.session.artifact?.title ?? viewing?.sender ?? title)
+            .navigationSubtitle(artifacts.session.isPresented ? artifacts.session.subtitle : viewing?.subtitle ?? "")
             .toolbar(removing: .title)
             .toolbar { toolbar }
             .onChange(of: title, initial: true) { titleFit.update(title: title) }
@@ -105,7 +105,7 @@ struct ChannelDetailView: View {
                     interaction.isInspectorPresented = true
                 }
             }
-            .onChange(of: artifacts.isPresented) { _, presented in
+            .onChange(of: artifacts.session.isPresented) { _, presented in
                 if presented { isOverviewSheetPresented = false }
             }
     }
@@ -219,7 +219,7 @@ struct ChannelDetailView: View {
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        if artifacts.isPresented {
+        if artifacts.session.isPresented {
             ArtifactViewerToolbar(opener: artifacts, store: store, interaction: interaction)
         } else if viewing != nil {
             viewerToolbar

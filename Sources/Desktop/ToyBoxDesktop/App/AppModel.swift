@@ -4,7 +4,6 @@ import ToyBoxIntelligence
 import ToyBoxKit
 import Foundation
 import Observation
-import SwiftUI
 import ToyBoxUI
 
 @MainActor @Observable
@@ -179,9 +178,9 @@ final class AppModel {
         return Set(openChannels.compactMap { $0.serverURL == server ? $0.channelID : nil })
     }
 
-    /// A channel on its server, or on the first server for a reference that doesn't name one.
-    func target(_ channelID: String, on server: String? = nil) -> ChannelTarget? {
-        ChannelTarget(serverURL: server ?? serverURL, channelID: channelID)
+    /// A channel on the first server, for a reference that doesn't name its server.
+    func target(_ channelID: String) -> ChannelTarget? {
+        ChannelTarget(serverURL: serverURL, channelID: channelID)
     }
 
     private static func address(of catalog: ChannelCatalogStore?) -> String? {
@@ -359,7 +358,7 @@ final class AppModel {
     /// working agents as the sidebar.
     var menuBarStatus: MenuBarStatus {
         let failing = catalogs.filter { $0.phase.message != nil }.map(\.name)
-        let unreachable = configurationError != nil ? SidebarFooter.server(serverURL)
+        let unreachable = configurationError != nil ? ChannelCatalogStore.name(of: serverURL)
             : failing.isEmpty ? nil : failing.formatted(.list(type: .and))
         let inputs = catalogs.filter(\.isLoaded).flatMap { catalog in
             let listing = listing(for: catalog)

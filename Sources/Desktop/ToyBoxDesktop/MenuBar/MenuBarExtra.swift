@@ -97,11 +97,9 @@ struct MenuBarLabel: View {
             guard let id = model.menuBar.presentationRequest else { return }
             do {
                 try await MenuBarAccessibility.presentInbox()
-            } catch is CancellationError {
-                model.menuBar.presentationFailed(id: id)
             } catch {
                 model.menuBar.presentationFailed(id: id)
-                NSApp.presentError(error)
+                if !(error is CancellationError) { NSApp.presentError(error) }
             }
         }
     }

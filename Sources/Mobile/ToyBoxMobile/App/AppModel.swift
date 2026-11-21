@@ -142,8 +142,6 @@ final class AppModel {
         }
     }
 
-    var canManageChannels: Bool { canManageChannels(on: catalog) }
-
     /// Management needs the active scene and the channel's own server connected.
     func canManageChannels(on catalog: ChannelCatalogStore?) -> Bool { isActive && catalog?.phase == .connected }
 

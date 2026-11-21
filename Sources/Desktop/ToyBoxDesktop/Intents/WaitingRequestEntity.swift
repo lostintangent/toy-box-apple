@@ -85,11 +85,11 @@ struct WaitingRequestQuery: EntityStringQuery, EnumerableEntityQuery, IndexedEnt
     func allEntities() async throws -> [WaitingRequestEntity] { try await context.waitingRequests() }
 
     func reindexAllEntities(indexDescription: CSSearchableIndexDescription) async throws {
-        await context.reindexRequests(nil)
+        await context.requestSpotlight?.reindex(nil)
     }
 
     func reindexEntities(for identifiers: [String], indexDescription: CSSearchableIndexDescription) async throws {
-        await context.reindexRequests(identifiers)
+        await context.requestSpotlight?.reindex(identifiers)
     }
 
     static func matching(_ string: String, in requests: [WaitingRequestEntity]) -> [WaitingRequestEntity] {

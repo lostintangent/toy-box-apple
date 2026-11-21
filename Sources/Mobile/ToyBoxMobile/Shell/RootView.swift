@@ -2,7 +2,6 @@ import ToyBoxClient
 import ToyBoxKit
 import SwiftUI
 import ToyBoxUI
-import UIKit
 
 struct RootView: View {
     @Environment(AppModel.self) private var model

@@ -13,15 +13,6 @@ final class RequestSpotlight {
         /// Nil until a server's catalog has loaded and every other has loaded or failed. Unresolved
         /// questions join on a later observation.
         var entries: [WaitingRequestEntry]?
-
-        init(entries: [WaitingRequestEntry]?) {
-            self.entries = entries
-        }
-
-        @MainActor init(_ model: AppModel) {
-            entries = ChannelIntents.Listed.spotlight(in: model.catalogs) == nil
-                ? nil : model.menuBarStatus.waiting.compactMap { $0.request.flatMap(WaitingRequestEntry.init) }
-        }
     }
 
     struct Index: Sendable {
@@ -77,13 +68,13 @@ final class RequestSpotlight {
             guard let self else { return }
             // Preserve the last launch's index until the first catalogs arrive, and what's indexed
             // while a server you add loads.
-            guard catalog.entries != nil else {
+            guard let all = catalog.entries else {
                 if force && identifiers == nil { indexed = nil }
                 return
             }
             let replace = indexed == nil || (force && identifiers == nil)
             var seen = Set<String>()
-            let entries = (catalog.entries ?? []).filter { seen.insert($0.id).inserted }
+            let entries = all.filter { seen.insert($0.id).inserted }
             let old = Dictionary((indexed?.entries ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let current = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let remove = (identifiers ?? Array(old.keys)).filter { current[$0] == nil }.sorted()
@@ -117,5 +108,12 @@ final class RequestSpotlight {
         renderer.scale = 2
         guard let image = renderer.cgImage else { return nil }
         return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+    }
+}
+
+extension RequestSpotlight.Catalog {
+    @MainActor init(_ model: AppModel) {
+        entries = ChannelIntents.Listed.spotlight(in: model.catalogs) == nil
+            ? nil : model.menuBarStatus.waiting.compactMap { $0.request.flatMap(WaitingRequestEntry.init) }
     }
 }

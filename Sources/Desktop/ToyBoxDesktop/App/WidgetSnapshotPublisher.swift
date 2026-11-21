@@ -36,10 +36,12 @@ final class WidgetSnapshotPublisher {
 
     func update(_ sources: [Source], now: Date = .now) {
         guard isEnabled else { return }
+        guard let directory = directory ?? FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: NeedsYouSnapshot.appGroup
+        ) else {
+            return logger.error("Could not publish the widget snapshot: Toy Box cannot access its widget's shared container.")
+        }
         do {
-            guard let directory = directory ?? FileManager.default.containerURL(
-                forSecurityApplicationGroupIdentifier: NeedsYouSnapshot.appGroup
-            ) else { throw WidgetSnapshotError.unavailableGroup }
             let file = directory.appending(path: NeedsYouSnapshot.fileName)
             if !loadedPrevious {
                 loadedPrevious = true
@@ -79,16 +81,6 @@ final class WidgetSnapshotPublisher {
             }
             return .offline(source.serverURL, in: previous, at: now)
         })
-    }
-}
-
-enum WidgetSnapshotError: LocalizedError {
-    case unavailableGroup
-
-    var errorDescription: String? {
-        switch self {
-        case .unavailableGroup: "Toy Box cannot access its widget's shared container."
-        }
     }
 }
 
