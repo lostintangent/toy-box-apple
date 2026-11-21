@@ -58,7 +58,7 @@ package final class CardChecks {
     /// Waits while a beat's motion plays, before the next beat.
     @ObservationIgnored package let pause: @MainActor (Duration) async -> Void
 
-    package init(animate: @escaping @MainActor (CardMotion, () -> Void) -> Void = { $1() },
+    package init(animate: @escaping @MainActor (CardMotion, () -> Void) -> Void,
                  pause: @escaping @MainActor (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
         self.animate = animate
         self.pause = pause

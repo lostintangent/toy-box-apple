@@ -19,9 +19,9 @@ struct NeedsYouCard: View {
     let entry: ChannelWaitingRequest
     let cards: NeedsYouCards
     let now: Date
-    var isCollapsed = false
+    let isCollapsed: Bool
     /// The copy above the dimmed list while a typed reply is open.
-    var isLifted = false
+    let isLifted: Bool
     /// The tallest the card can be and still fit in the list's visible area.
     let maxHeight: CGFloat
     @Environment(AppModel.self) private var model
@@ -155,7 +155,7 @@ struct NeedsYouReplyField: View {
                 .disabled(cards.phase != .composing)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityAction(.escape) { cards.cancel() }
-            CardControls(canCancel: cards.phase != .sending, canSend: cards.canSend && isConnected,
+            CardControls(canSend: cards.canSend && isConnected,
                          isSending: cards.phase == .sending, sendLabel: "Send Reply", cancel: cards.cancel,
                          send: { if isConnected { Task { await cards.send() } } })
                 // The circles end where the card's content does.
@@ -169,7 +169,14 @@ extension View {
     /// The row's avatar, which wears the done check once the row's reply sends from its card, then
     /// settles back to the channel's own avatar.
     func needsYouMark(_ check: CardChecks.Check?) -> some View {
-        modifier(NeedsYouMarkSlot(check: check))
+        // The check's mark settles on the channel's own avatar, so handing back to it is invisible.
+        ZStack {
+            if let check {
+                NeedsYouMark(check: check, avatar: self).transition(.identity)
+            } else {
+                self.transition(.identity)
+            }
+        }
     }
 
     /// Lifts the open card's typed reply, drawn by `lifted`, above the list from the card's row at
@@ -247,21 +254,6 @@ private struct NeedsYouList<Card: View, Row: View>: ViewModifier {
         .accessibilityAddTraits(cards.isLifted ? .isModal : [])
         .accessibilityHidden(!cards.isLifted)
         .allowsHitTesting(cards.isLifted)
-    }
-}
-
-private struct NeedsYouMarkSlot: ViewModifier {
-    let check: CardChecks.Check?
-
-    func body(content: Content) -> some View {
-        // The check's mark settles on the channel's own avatar, so handing back to it is invisible.
-        ZStack {
-            if let check {
-                NeedsYouMark(check: check, avatar: content).transition(.identity)
-            } else {
-                content.transition(.identity)
-            }
-        }
     }
 }
 

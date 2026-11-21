@@ -39,12 +39,4 @@ package struct DictationTranscript: Equatable {
         if !last.isWhitespace, first.isLetter || first.isNumber { return head + " " + tail }
         return head + tail
     }
-
-    /// The spaces that separate dictated words from the text around the caret.
-    package static func padding(for words: String, after previous: Character?, before next: Character?) -> (String, String) {
-        guard let first = words.first, let last = words.last else { return ("", "") }
-        let leading = previous.map { !$0.isWhitespace && (first.isLetter || first.isNumber) } == true ? " " : ""
-        let trailing = next.map { $0.isLetter || $0.isNumber } == true && !last.isWhitespace ? " " : ""
-        return (leading, trailing)
-    }
 }

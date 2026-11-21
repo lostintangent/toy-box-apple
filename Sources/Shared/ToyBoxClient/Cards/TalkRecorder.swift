@@ -146,9 +146,6 @@ package final class TalkRecorder: DictationTextTarget {
         return ranked.sorted { ($0.rank, $0.offset) < ($1.rank, $1.offset) }.map(\.channel)
     }
 
-    /// Checks the language only, so Talk can show without touching the microphone.
-    package func activate() { dictation.activate() }
-
     package func deactivate() {
         leave()
         dictation.deactivate()
@@ -190,12 +187,8 @@ package final class TalkRecorder: DictationTextTarget {
         phase = .sending
         let finalized = await dictation.stop(.send)
         guard phase == .sending, self.store === store else { return }
-        guard finalized else {
-            phase = .recording
-            return
-        }
         let words = finalizedWords.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !words.isEmpty else {
+        guard finalized, !words.isEmpty else {
             phase = .recording
             return
         }

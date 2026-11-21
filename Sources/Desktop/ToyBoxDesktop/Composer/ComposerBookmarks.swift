@@ -8,7 +8,6 @@ import ToyBoxUI
 /// removes its bookmark. Opening it pages history back through the oldest bookmark, so every row
 /// can preview its message.
 struct ComposerBookmarksPopover: View {
-    static let width: CGFloat = 360
     static let inset: CGFloat = 16
     /// Keeps the popover within 420 points, with room for the title and insets.
     static let maxListHeight: CGFloat = 360
@@ -67,7 +66,7 @@ struct ComposerBookmarksPopover: View {
             }
         }
         .padding(.vertical, Self.inset)
-        .frame(width: Self.width)
+        .frame(width: 360)
         .animation(reduceMotion ? nil : .default, value: entries.map(\.sequence))
         .focusable()
         .focusEffectDisabled()

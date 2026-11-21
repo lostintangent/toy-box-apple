@@ -1,6 +1,5 @@
 import AppKit
 import ToyBoxClient
-import ToyBoxUI
 
 extension Dictation {
     convenience init() { self.init(system: .live) }
@@ -11,11 +10,6 @@ extension DictationAccess {
         self == .microphone
             ? "Allow Toy Box to use the microphone in Privacy & Security settings. The Dictation key still works."
             : "Allow Toy Box to use speech recognition in Privacy & Security settings. The Dictation key still works."
-    }
-
-    var settingsURL: URL? {
-        URL(string: "x-apple.systempreferences:com.apple.preference.security?"
-            + (self == .microphone ? "Privacy_Microphone" : "Privacy_SpeechRecognition"))
     }
 }
 
@@ -31,7 +25,10 @@ extension DictationSystem {
                                                 .priority: NSAccessibilityPriorityLevel.high.rawValue])
             },
             openSettings: { access in
-                if let url = access.settingsURL { NSWorkspace.shared.open(url) }
+                let pane = access == .microphone ? "Privacy_Microphone" : "Privacy_SpeechRecognition"
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?" + pane) {
+                    NSWorkspace.shared.open(url)
+                }
             }
         )
         system.refreshNotifications.append(NSApplication.didBecomeActiveNotification)

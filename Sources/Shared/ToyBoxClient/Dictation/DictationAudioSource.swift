@@ -142,14 +142,12 @@ package final class MicrophoneDictationSource: DictationAudioSource, @unchecked 
 /// Plays a recording into a session in real time, then stays open like a quiet microphone.
 package final class FileDictationSource: DictationAudioSource, @unchecked Sendable {
     private let url: URL
-    private let pace: Double
     private let stopsAfter: TimeInterval?
     private var task: Task<Void, Never>?
 
-    /// `pace` 1 is real time and 0 is as fast as possible. `stopsAfter` ends playback early, mid-phrase.
-    package init(url: URL, pace: Double = 1, stopsAfter: TimeInterval? = nil) {
+    /// `stopsAfter` ends playback early, mid-phrase.
+    package init(url: URL, stopsAfter: TimeInterval? = nil) {
         self.url = url
-        self.pace = pace
         self.stopsAfter = stopsAfter
     }
 
@@ -158,12 +156,11 @@ package final class FileDictationSource: DictationAudioSource, @unchecked Sendab
         let converter = try DictationAudioConverter(from: file.processingFormat, to: format)
         let chunk = AVAudioFrameCount(file.processingFormat.sampleRate / 10)
         let limit = stopsAfter.map { AVAudioFramePosition($0 * file.processingFormat.sampleRate) } ?? file.length
-        let pace = pace
         let reader = FileReader(file: file)
         task = Task.detached {
             while !Task.isCancelled, let buffer = reader.next(chunk, limit: limit) {
                 if let event = converter.convert(buffer) { handler(event) }
-                if pace > 0 { try? await Task.sleep(for: .milliseconds(Int(100 / pace))) }
+                try? await Task.sleep(for: .milliseconds(100))
             }
         }
     }

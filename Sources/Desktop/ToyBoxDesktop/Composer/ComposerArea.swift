@@ -30,11 +30,9 @@ extension ChannelConnectionPhase {
 
 /// Stands in for Send, in its frame, while the channel connects quietly.
 struct ComposerConnectingIndicator: View {
-    var size: CGFloat = 28
-
     var body: some View {
         ProgressView().controlSize(.small)
-            .frame(width: size, height: size)
+            .frame(width: 28, height: 28)
             .accessibilityElement()
             .accessibilityLabel("Connecting")
     }
@@ -211,7 +209,7 @@ private struct ChannelComposer: View {
         .snapshotPose(pose)
         // A viewer or player covers the conversation, so the request preview closes rather than
         // float over it, like when a file link or an attachment in the preview opens.
-        .onChange(of: artifacts.isPresented || viewer?.session != nil || interaction.presentedAttachment != nil) { _, presented in
+        .onChange(of: artifacts.session.isPresented || viewer?.session != nil || interaction.presentedAttachment != nil) { _, presented in
             guard presented else { return }
             requestHoverTask?.cancel()
             requestPreview = false
@@ -476,10 +474,7 @@ private struct ChannelComposer: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             if draft.hasContent {
-                Button("Copy Draft") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(draft.text, forType: .string)
-                }.buttonStyle(.link)
+                Button("Copy Draft", action: copyDraft).buttonStyle(.link)
             }
         }
         .font(.caption)
@@ -521,9 +516,11 @@ private struct ChannelComposer: View {
 
     private func registerDraft() {
         interaction.hasDraft = draft.hasContent
-        interaction.copyDraft = {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(draft.text, forType: .string)
-        }
+        interaction.copyDraft = copyDraft
+    }
+
+    private func copyDraft() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(draft.text, forType: .string)
     }
 }

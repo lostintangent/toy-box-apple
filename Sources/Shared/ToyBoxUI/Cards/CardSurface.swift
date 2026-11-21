@@ -30,8 +30,6 @@ package enum CardMetrics {
 /// surface's fills, with a thin edge and, while lifted, a shadow. Each layer fades in its own
 /// animation, so the surface's size always moves with its card's own transaction.
 package struct CardSurface: View {
-    package nonisolated static var cornerRadius: CGFloat { CardMetrics.cornerRadius }
-
     package struct Animations {
         var base: Animation?
         var wash: Animation?
@@ -70,7 +68,7 @@ package struct CardSurface: View {
     @Environment(\.colorSchemeContrast) private var contrast
 
     package var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: CardMetrics.cornerRadius, style: .continuous)
         let isDark = colorScheme == .dark
         ZStack {
             shape.fill(Self.canvas)
@@ -124,8 +122,7 @@ extension View {
 /// the done check once a card's message sends. They share the avatar's rounded square, so the mark
 /// keeps one shape as the avatar fades and the symbol grows in from half its size, and the way back
 /// runs in reverse. Between the mic and the check, the symbol swaps through `.replace` as the
-/// tile's tint turns green, and the check arrives with the success tap. The check's solid square
-/// is 2 points smaller, since a bright square reads larger than the avatar beside it.
+/// tile's tint turns green, and the check arrives with the success tap.
 package struct CardMark: ViewModifier {
     package enum Glyph { case channel, mic, check }
 
@@ -152,10 +149,10 @@ package struct CardMark: ViewModifier {
         let side = shown == .check ? CardMetrics.check : CardMetrics.mark
         ZStack {
             content
-                .clipShape(CardMarkShape())
+                .clipShape(ChannelMark.shape(size: CardMetrics.mark))
                 .opacity(glyph == .channel ? 1 : 0)
             ZStack {
-                CardMarkShape()
+                ChannelMark.shape(size: side)
                     .fill(shown == .check ? ChannelTaskColors.changes(in: colorScheme).added : .accentColor.opacity(0.15))
                 symbol(shown)
                     .contentTransition(fromAvatar ? .identity : .symbolEffect(.replace))
@@ -191,15 +188,6 @@ package struct CardMark: ViewModifier {
     }
 }
 
-/// The avatar's continuous rounded square at any side, so a mark's corners scale with it.
-package struct CardMarkShape: Shape {
-    package init() {}
-
-    package func path(in rect: CGRect) -> Path {
-        RoundedRectangle(cornerRadius: rect.width * CardMark.corners, style: .continuous).path(in: rect)
-    }
-}
-
 private struct CardMarkTapsKey: EnvironmentKey {
     static let defaultValue = true
 }
@@ -232,7 +220,7 @@ package struct CardShape: Shape {
     package func path(in rect: CGRect) -> Path {
         var rect = rect
         rect.size.width += overflow
-        return RoundedRectangle(cornerRadius: CardSurface.cornerRadius, style: .continuous).path(in: rect)
+        return RoundedRectangle(cornerRadius: CardMetrics.cornerRadius, style: .continuous).path(in: rect)
     }
 }
 
@@ -322,7 +310,6 @@ private struct CardList<Card: View>: ViewModifier {
 
 /// A lifted card's Cancel and Send, which the Mac sends with Return.
 package struct CardControls: View {
-    let canCancel: Bool
     let canSend: Bool
     /// Keeps Send lit for the moment its message is saved, so the circle never flickers gray.
     let isSending: Bool
@@ -330,9 +317,8 @@ package struct CardControls: View {
     let cancel: () -> Void
     let send: () -> Void
 
-    package init(canCancel: Bool, canSend: Bool, isSending: Bool, sendLabel: String,
+    package init(canSend: Bool, isSending: Bool, sendLabel: String,
                  cancel: @escaping () -> Void, send: @escaping () -> Void) {
-        self.canCancel = canCancel
         self.canSend = canSend
         self.isSending = isSending
         self.sendLabel = sendLabel
@@ -353,7 +339,7 @@ package struct CardControls: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(!canCancel)
+            .disabled(isSending)
             .keyboardShortcut(.cancelAction)
             .accessibilityLabel("Cancel")
             Button(action: send) { sendFace }
@@ -400,7 +386,6 @@ extension CardChecks {
 }
 
 extension CardMotion {
-    /// The beat's spring from the spec, or a short ease without bounce under Reduce Motion.
     @MainActor package var animation: Animation {
         #if os(macOS)
         animation(reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)

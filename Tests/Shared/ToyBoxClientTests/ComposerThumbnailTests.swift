@@ -108,13 +108,16 @@ struct ComposerThumbnailTests {
         // Preparation waits for the test, so the thumbnail loads while it's still under way.
         let release = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
         defer { release.continuation.finish() }
-        let draft = ComposerDraft(imageIsReadable: { _ in true }, rasterizeImage: { _, _ in
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-thumbnails-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let draftURL = try ComposerDraft.writeSaved("Keep this caption", images: [image],
+                                                    to: folder.appendingPathComponent("draft.json"))
+        let draft = ComposerDraft(fileURL: draftURL, imageIsReadable: { _ in true }, rasterizeImage: { _, _ in
             var releases = release.stream.makeAsyncIterator()
             _ = await releases.next()
             return nil
         })
         draft.thumbnailDecoder = { _, _ in bitmap }
-        draft.restore(content: "Keep this caption", attachments: [image.attachment])
         let restored = try #require(draft.images.first)
         #expect(draft.isLoadingImages)
         let retained = try #require(await draft.loadThumbnail(for: restored))
