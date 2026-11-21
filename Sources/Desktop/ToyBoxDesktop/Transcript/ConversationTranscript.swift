@@ -683,6 +683,8 @@ struct ConversationTranscript: View {
             pagingAnchor = .init(id: top.id, bottom: top.frame.rect.maxY,
                                  oldestSequence: store.state?.messages.first?.sequence ?? 0)
         }
+        // A filtered view keeps paging through pages it shows nothing from, since nothing moves to page again.
+        let firstRow = rows.first?.id
         repeat {
             let before = store.state?.messages.first?.sequence
             await store.loadOlder()
@@ -690,7 +692,7 @@ struct ConversationTranscript: View {
                 pagingAnchor = nil
                 break
             }
-        } while rows.isEmpty && store.hasOlderMessages && !Task.isCancelled
+        } while rows.first?.id == firstRow && store.hasOlderMessages && !Task.isCancelled
     }
 
     /// Until the older page lands, the place to keep is wherever the reader is now. Scrolling during the

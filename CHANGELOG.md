@@ -21,6 +21,7 @@
 ### Bugs/Polish
 
 - Switching to a channel with a few new messages that don't fit on screen now opens on the first of them instead of skipping to the end, so you never miss what arrived while you were away.
+- With Your Messages on, scrolling to the top now keeps loading older history even past a stretch with none of your messages, so you can always reach the beginning of a conversation.
 
 ## iPhone 0.1.47
 

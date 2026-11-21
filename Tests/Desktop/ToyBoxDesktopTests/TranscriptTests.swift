@@ -405,6 +405,54 @@ struct TranscriptTests {
         #expect(abs(beginning - (loading - 32)) < 1, "The beginning sits at \(beginning), not \(loading - 32)")
     }
 
+    /// The loading row is the button's height, so the rows below don't move when a page starts loading.
+    @MainActor
+    @Test func theRowsBelowLoadOlderHoldStillAsItsPageStartsLoading() async throws {
+        let harness = try await TranscriptHarness(messages: (31...60).map(transcriptTestMessage),
+                                                  history: (1...30).map(transcriptTestMessage), holdsHistory: true)
+        defer { await harness.close() }
+        func top(_ id: String) throws -> CGFloat { try #require(harness.capture.frames[id]).contentTop }
+        let clip = harness.scrollView.contentView
+        // With the button's top edge on screen, so the stack builds it rather than estimating it.
+        try await harness.scrollUp(byWheel: false) { clip.bounds.minY + harness.scrollView.contentInsets.top < 80 }
+        clip.scroll(to: NSPoint(x: 0, y: 60 - harness.scrollView.contentInsets.top))
+        harness.scrollView.reflectScrolledClipView(clip)
+        try await harness.settled()
+        try #require(!harness.store.isLoadingOlder)
+        let button = try top("m31")
+
+        try await harness.scrollUp(byWheel: false) { harness.store.isLoadingOlder }
+        let loading = try top("m31")
+        #expect(abs(loading - button) < 0.5, "Loading moved the rows below from \(button) to \(loading)")
+    }
+
+    /// Your Messages keeps paging through a page it shows nothing from, so reaching the top still
+    /// reaches older history, and the page that shows something keeps the reader's row in place.
+    @MainActor
+    @Test func yourMessagesPagesPastAPageItShowsNothingFrom() async throws {
+        func message(_ sequence: Int) -> ChannelMessage {
+            var message = transcriptTestMessage(sequence)
+            if sequence == 1 || sequence > 60 {
+                message.sender = .user
+            } else {
+                message.content = .text("@moss Update \(sequence) is between agents.")
+            }
+            return message
+        }
+        let harness = try await TranscriptHarness(messages: (61...90).map(message), history: (1...60).map(message),
+                                                  members: [ChannelAgent(id: "moss", name: "Moss")])
+        defer { await harness.close() }
+        harness.interaction.messageView = .yours
+        try await harness.settled()
+        try await harness.scrollUp(byWheel: false) { harness.historyRequests > 0 }
+        let reading = try #require(harness.frames["m61"]).rect
+        try await harness.waitUntil { harness.store.messages.first?.sequence == 1 && harness.frames["m1"] != nil }
+        try await harness.settled()
+        #expect(harness.historyRequests == 2)
+        let after = try #require(harness.frames["m61"]).rect
+        #expect(abs(after.maxY - reading.maxY) < 1, "m61 moved from \(reading) to \(after)")
+    }
+
     /// Rule 4. A message on its way is drawn exactly as it will be once sent, with the same bubble and
     /// gap, and the day divider when it's the first message today, so confirming it changes nothing on
     /// screen. The send is held at the server until the pending message has settled, then its event
@@ -2679,7 +2727,8 @@ private final class TranscriptHarness {
     /// A `resizable` transcript fills the window, so `resize(height:)` reaches it the way a live resize does.
     /// A `warm` store is live before the transcript appears, as when switching back to a channel.
     /// `onTurn` runs after every layout and display pass from the first one on.
-    init(messages: [ChannelMessage], history: [ChannelMessage] = [], holdsHistory: Bool = false,
+    init(messages: [ChannelMessage], history: [ChannelMessage] = [], members: [ChannelAgent] = [],
+         holdsHistory: Bool = false,
          seenThrough: Int? = nil, height: CGFloat = 480, resizable: Bool = false, warm: Bool = false,
          legacyScrollers: Bool = false,
          intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared,
@@ -2693,7 +2742,7 @@ private final class TranscriptHarness {
                               latestSequence: latest, seenThrough: seenThrough ?? latest,
                               updatedAt: "2026-10-22T12:00:00Z")
         let snapshot = try TranscriptServerProtocol.event(.init(type: "snapshot", state: ChannelState(
-            revision: 1, channel: channel, lead: .lead(id: "lead"), messages: messages)))
+            revision: 1, channel: channel, lead: .lead(id: "lead"), members: members, messages: messages)))
         TranscriptServerProtocol.fixtures.withLock {
             $0[host] = .init(snapshot: snapshot, history: history, holdsHistory: holdsHistory)
         }
