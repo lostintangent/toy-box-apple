@@ -17,14 +17,13 @@ struct SettingsView: View {
     var body: some View {
         Form {
             servers
-            disconnect
+            NotificationSettingsSection(notifications: model.notifications)
+            intelligenceSection
             Section("Appearance") {
                 Picker("Appearance", selection: $appearance) {
                     ForEach(AppAppearance.allCases) { value in Text(value.title).tag(value) }
                 }
             }
-            NotificationSettingsSection(notifications: model.notifications)
-            intelligenceSection
             Section("About") {
                 LabeledContent("App", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
                                ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Unavailable")
@@ -32,8 +31,6 @@ struct SettingsView: View {
                                as? String ?? "Unavailable")
                 LabeledContent("Build", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion")
                                as? String ?? "Unavailable")
-                Text("Toy Box connects to your server while open. Notifications and followed-channel updates can arrive while it is closed. Keep the computer running your Toy Box server awake.")
-                    .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .accessibilityIdentifier("settings-form")
@@ -44,6 +41,12 @@ struct SettingsView: View {
                 Button(role: .close) { model.cover = nil }
                     .accessibilityLabel("Close Settings")
             }
+        }
+        .alert("Disconnect from your servers?", isPresented: $confirmsDisconnect) {
+            Button("Disconnect", role: .destructive) { model.servers.disconnect() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Toy Box forgets every server on this iPhone. Connect to any one of your Macs to see them all again.")
         }
         .onAppear { availability = intelligence.availability }
         .onChange(of: scenePhase) { _, phase in
@@ -56,8 +59,8 @@ struct SettingsView: View {
         }
     }
 
-    /// Each server with its dot and name, in the order the list shows them, then Check for Updates
-    /// and, while a restart is pending, Restart.
+    /// Each server with its dot and name, in the order the list shows them, then Check for Updates,
+    /// Restart while a restart is pending, and Disconnect.
     private var servers: some View {
         Section {
             ForEach(model.servers.shown, id: \.api.baseURL) { catalog in
@@ -85,22 +88,13 @@ struct SettingsView: View {
                     Task { await model.servers.shown.restartPending() }
                 }
             }
+            Button("Disconnect", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                confirmsDisconnect = true
+            }
+            .foregroundStyle(.red)
+            .accessibilityIdentifier("settings-disconnect")
         } header: {
             Text("Servers")
-        }
-    }
-
-    /// Forgets every server once the user confirms, and Welcome takes over from Settings.
-    private var disconnect: some View {
-        Section {
-            Button("Disconnect", role: .destructive) { confirmsDisconnect = true }
-                .accessibilityIdentifier("settings-disconnect")
-        }
-        .alert("Disconnect from your servers?", isPresented: $confirmsDisconnect) {
-            Button("Disconnect", role: .destructive) { model.servers.disconnect() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Toy Box forgets every server on this iPhone. Connect to any one of your Macs to see them all again.")
         }
     }
 
