@@ -128,7 +128,8 @@ public final class ManagementPresenter {
     }
 
     /// Sends the flow's one write to `catalog`, then closes the flow unless another has replaced it.
-    /// A failure keeps the entries, says why and returns focus to the field that had it.
+    /// The live catalog and channel show what it changed. A failure keeps the entries, says why and
+    /// returns focus to the field that had it.
     public func save(on catalog: ChannelCatalogStore) async {
         guard let flow, !flow.isDeletion, pendingSince == nil else { return }
         let visit = visit, focused = focus, channelForm = channelForm, memberForm = memberForm
@@ -148,7 +149,6 @@ public final class ManagementPresenter {
             if self.visit == visit {
                 if let created { didCreate(created, on: catalog.api.baseURL.absoluteString) } else { self.flow = nil }
             }
-            await catalog.refresh()
         } catch {
             guard self.visit == visit else { return }
             pendingSince = nil
@@ -176,7 +176,6 @@ public final class ManagementPresenter {
             }
             if self.deletion?.flow == deletion { self.deletion = nil }
             if flow == origin { flow = nil }
-            await catalog.refresh()
         } catch {
             if self.deletion?.flow == deletion { self.deletion = (deletion, true) }
         }
