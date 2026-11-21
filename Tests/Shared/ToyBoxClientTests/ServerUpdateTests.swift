@@ -78,10 +78,6 @@ struct ServerUpdateTests {
         mock.requests.filter { $0.url?.path == "/api/v1/server" }.count
     }
 
-    private func failure(_ status: Int, _ message: String? = nil) -> String {
-        ChannelAPIError.http(status: status, message: message).localizedDescription
-    }
-
     @Test func aRestartIsPendingExactlyWhenTheInstalledReleaseDiffersFromTheOneRunning() throws {
         let decode = { (json: String) throws -> ServerVersion in
             try JSONDecoder().decode(ServerVersion.self, from: Data(json.utf8))
@@ -91,7 +87,7 @@ struct ServerUpdateTests {
         #expect(try !decode(#"{"version":"0.3.9","installedVersion":null}"#).isRestartPending)
     }
 
-    @Test func aCheckSaysUpToDateOrOffersRestartOnceItInstallsANewerRelease() async throws {
+    @Test func aCheckOffersRestartOnlyOnceItInstallsANewerRelease() async throws {
         let server = Server()
         let mock = server.transport()
         let catalog = ChannelCatalogStore(api: try mock.api())
@@ -101,28 +97,26 @@ struct ServerUpdateTests {
 
         try server.set { $0.update = try .json(ServerVersion(version: Self.old, installedVersion: Self.old)) }
         await update.check()
-        #expect(update.phase == .idle)
-        #expect(update.outcome == .upToDate)
+        #expect(update.phase == .idle, "Nothing newer shows the version again")
 
         let installed = try JSONEncoder().encode(ServerVersion(version: Self.old, installedVersion: Self.new))
         server.set { $0.update = MockResponse(body: installed, keepOpen: true) }
         let check = Task { await update.check() }
         try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/server/update") == 1 }
         #expect(update.phase == .checking)
-        #expect(update.outcome == nil)
         #expect(mock.requests.last?.timeoutInterval == ChannelAPI.updateTimeout,
                 "The server says nothing until the install finishes")
 
         mock.finishPendingResponses(path: "/api/v1/server/update")
         await check.value
         #expect(update.phase == .restartPending)
-        #expect(update.outcome == nil)
         #expect(reads(mock) == 1, "The check's answer is the read")
     }
 
-    /// A server waiting to restart still checks, and either row keeps its phase and says why it failed.
+    /// A server waiting to restart still checks, and either row keeps its phase, like a check that
+    /// found nothing newer.
     @Test(arguments: [false, true])
-    func aFailedCheckKeepsTheRowsPhaseAndSaysWhy(waitingToRestart: Bool) async throws {
+    func aFailedCheckKeepsTheRowsPhase(waitingToRestart: Bool) async throws {
         let server = Server()
         if waitingToRestart { server.set { $0.installed = Self.new } }
         let mock = server.transport()
@@ -135,7 +129,6 @@ struct ServerUpdateTests {
         try server.set { $0.update = try .json(["error": "npm couldn't reach the registry."], status: 422) }
         await update.check()
         #expect(update.phase == phase)
-        #expect(update.outcome == .failed(failure(422, "npm couldn't reach the registry.")))
         #expect(reads(mock) == 1, "A failure is sent once, and the live catalog shows if it installed anyway")
     }
 
@@ -153,17 +146,12 @@ struct ServerUpdateTests {
         #expect(catalogs.offersUpdateCheck)
         #expect(![catalogs[2]].offersUpdateCheck, "Only a server with an installed release can update")
 
-        try servers[0].set { $0.update = try .json(["error": "npm couldn't reach the registry."], status: 422) }
-        await catalogs[0].update.check()
-        #expect(catalogs[0].update.outcome != nil)
-
         let installed = try JSONEncoder().encode(ServerVersion(version: Self.old, installedVersion: Self.new))
         for server in servers { server.set { $0.update = MockResponse(body: installed, keepOpen: true) } }
         let check = Task { await catalogs.checkForUpdates() }
         try await eventually(observing: mocks[0]) { mocks[0].pendingCount(for: "/api/v1/server/update") == 1 }
         try await eventually(observing: mocks[1]) { mocks[1].pendingCount(for: "/api/v1/server/update") == 1 }
         #expect(catalogs.map(\.update.phase) == [.checking, .checking, nil, .idle])
-        #expect(catalogs[0].update.outcome == nil, "A new check clears the last one's result")
         #expect(catalogs.isCheckingForUpdates)
 
         mocks[0].finishPendingResponses(path: "/api/v1/server/update")
@@ -192,7 +180,6 @@ struct ServerUpdateTests {
 
         await update.restart()
         #expect(update.phase == .restartPending, "The server answers before it drops its connections")
-        #expect(update.outcome == nil)
 
         let back = try JSONEncoder().encode(Self.info(Self.new, Self.new))
         server.set {
@@ -225,7 +212,6 @@ struct ServerUpdateTests {
         for catalog in catalogs { await catalog.update.restart() }
         let restarts = mocks.map { $0.requests.filter { $0.url?.path == "/api/v1/server/restart" }.count }
         #expect(restarts == [1, 0])
-        #expect(catalogs[0].update.outcome == nil)
     }
 
     @Test func restartPendingRestartsPendingPeersTogetherThenTheFirstServerOnceTheyreBack() async throws {
@@ -245,8 +231,7 @@ struct ServerUpdateTests {
         #expect(!Array(catalogs.suffix(2)).isRestartPending, "Nothing new is installed on either")
         let restarts = { mocks.map { $0.requests.filter { $0.url?.path == "/api/v1/server/restart" }.count } }
 
-        let words = "The installed release doesn't run."
-        var rejected = try MockResponse.json(["error": words], status: 422)
+        var rejected = try MockResponse.json(["error": "The installed release doesn't run."], status: 422)
         rejected.keepOpen = true
         servers[1].set { $0.restart = MockResponse(status: 202, keepOpen: true) }
         servers[2].set { [rejected] in $0.restart = rejected }
@@ -259,8 +244,8 @@ struct ServerUpdateTests {
         #expect(restarts() == [0, 1, 1, 0, 0], "The peers restart first, together")
 
         #expect(mocks[2].finishPendingResponses(path: "/api/v1/server/restart") == 1)
+        // A rejection stops its row's spin at once, with Restart and nothing else.
         try await eventually { catalogs[2].update.phase == .restartPending }
-        #expect(catalogs[2].update.outcome == .failed(failure(422, words)))
 
         let back = try JSONEncoder().encode(Self.info(Self.new, Self.new))
         servers[1].set {
@@ -280,32 +265,6 @@ struct ServerUpdateTests {
         await restart.value
         #expect(catalogs.map(\.update.phase) == [.idle, .idle, .restartPending, .idle, nil])
         #expect(restarts() == [1, 1, 1, 0, 0], "A server with nothing new to run keeps its turns going")
-    }
-
-    @Test func aRejectedRestartKeepsRestartWithTheServersWordsAndALostAnswerShowsNothing() async throws {
-        let server = Server(installed: Self.new)
-        let mock = server.transport()
-        let catalog = ChannelCatalogStore(api: try mock.api())
-        catalog.startPolling()
-        defer { catalog.stopPolling() }
-        let update = catalog.update
-        try await eventually { catalog.phase == .connected && update.phase == .restartPending }
-
-        try server.set { $0.restart = try .json(["error": "The installed release doesn't run."], status: 422) }
-        await update.restart()
-        #expect(update.phase == .restartPending)
-        #expect(update.outcome == .failed(failure(422, "The installed release doesn't run.")))
-
-        server.set { $0.restart = MockResponse(status: 502) }
-        await update.restart()
-        #expect(update.phase == .restartPending)
-        #expect(update.outcome == .failed(failure(502)))
-
-        server.set { $0.restart = nil }
-        await update.restart()
-        #expect(update.phase == .restartPending)
-        #expect(update.outcome == nil, "The catalog's connection reports a server that doesn't come back")
-        #expect(reads(mock) == 1, "A restart reads nothing of its own")
     }
 
     @Test func aRowSpinsWhileItsServerReconnectsForAnyReasonUntilItFailsForTheGrace() async throws {
