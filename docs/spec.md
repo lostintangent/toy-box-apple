@@ -313,7 +313,8 @@ and are there again when it comes back.
   `accentColor`, the server's accent as `#` and six hex digits, `#facc15` until someone changes
   it from the web, an agent or a `PATCH`. The apps keep it on each server, but nothing shows it
   or changes it yet, so both apps keep the system accent.
-  Each row shows its server's version in secondary ink after the name. One Check for Updates
+  Each row shows its server's version in secondary ink after the name, and no version while its
+  server can't connect, since the last one it read may be stale. One Check for Updates
   serves the whole list: on the Mac at the trailing end of a bar under the list, and on the phone
   as a row after the servers with `arrow.triangle.2.circlepath`. It's there
   whenever a server has an installed version, and it asks every connected one to install whatever
