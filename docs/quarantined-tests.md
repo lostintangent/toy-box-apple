@@ -43,6 +43,22 @@ git history keeps closed incidents.
   with `TranscriptScrollTests.aReaderWhoMovesUpStopsFollowingEvenWhenRowsResizeInTheSameUpdate`.
   Restoration needs CI to show this was the cause, or the cause found, with deterministic coverage.
 
+## Load Older failure row
+
+- `TranscriptTests.theLoadOlderRowGrowsForAFailureRetriesAtTheTopAndLeavesNothingAtTheBeginning` is
+  quarantined from t1292, behind `TOY_BOX_TEST_TRANSCRIPT_LOAD_OLDER_FAILURE=1`. Owner: Transcript. Its
+  assertions are unchanged, and the default run skips it with its reason.
+- First seen in CI on #186's Mac `test` job,
+  [run 44954848528](https://github.com/lostintangent/toy-box-apple/actions/runs/44954848528), which
+  changes only the intelligence stub. `harness.capture.frames["m31"]` was nil at
+  `TranscriptTests.swift:390` after 38.4 seconds. It passes locally in 3 to 8 seconds, on main and on
+  #186's branch, and it's the test's first failure in the last 15 failed runs. It opens with nothing
+  unread, so it never asks the intelligence stub #186 changes.
+- The cause is not established. The log doesn't say which of the test's two reads of m31 failed. It
+  failed 0.13 seconds after `HTMLUnderlapsTheBarsAndRestoresItsReadingPosition` opened its third
+  window, so the candidate is that another test's window took the transcript's window off screen while
+  its rows were built. Restoration needs the cause found, with deterministic coverage.
+
 ## Artifact HTML origin probe
 
 - `ArtifactViewerTests.HTMLKeepsAnOpaqueOriginAndCanLoadOnlyTheServersFileResources` is quarantined

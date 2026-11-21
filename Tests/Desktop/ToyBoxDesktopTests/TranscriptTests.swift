@@ -382,8 +382,11 @@ struct TranscriptTests {
 
     /// While its page loads, the Load Older row is one line. A failure grows it to fit Retry, reaching
     /// the top again retries, and once history ends the row is gone, with no Beginning label or space left.
+    // Quarantined after m31's frame went missing in CI 44954848528 (t1292). Owner: Transcript.
     @MainActor
-    @Test func theLoadOlderRowGrowsForAFailureRetriesAtTheTopAndLeavesNothingAtTheBeginning() async throws {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_TRANSCRIPT_LOAD_OLDER_FAILURE"] == "1",
+                   "Quarantined pending cause identification (t1292). Opt in with TOY_BOX_TEST_TRANSCRIPT_LOAD_OLDER_FAILURE=1."))
+    func theLoadOlderRowGrowsForAFailureRetriesAtTheTopAndLeavesNothingAtTheBeginning() async throws {
         let harness = try await TranscriptHarness(messages: (31...60).map(transcriptTestMessage),
                                                   history: (1...30).map(transcriptTestMessage), holdsHistory: true)
         defer { await harness.close() }
