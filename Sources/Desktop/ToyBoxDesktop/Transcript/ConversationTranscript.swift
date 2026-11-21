@@ -228,6 +228,12 @@ struct ConversationTranscript: View {
                 if rows.isEmpty && store.hasOlderMessages { Task { await loadOlder() } }
             }
             .onChange(of: TranscriptItem.items(rows).map(\.id)) { syncRows() }
+            // An arrival asks for the end in the same update, before its row's estimate lands.
+            .onChange(of: store.messages.last?.id) {
+                guard scroll.isFollowing, hasLanded, pagingAnchor == nil, !isRevealing, !find.isPresented,
+                      catchUp?.holdsLanding != true else { return }
+                scrollToLatest(using: proxy)
+            }
             .onChange(of: store.sending.map(\.id)) { old, _ in
                 if ChannelOutbox.Message.startsPost(in: store.sending, after: old) { jumpToLatest(using: proxy) }
             }
@@ -344,7 +350,10 @@ struct ConversationTranscript: View {
             holdReadingPlace(in: new, using: proxy)
             geometry.frames = new
             measure(new)
-            if hasLanded { follow(scroll.updateAfterMeasuring(), using: proxy) }
+            if hasLanded {
+                _ = scroll.updateAfterMeasuring()
+                follow(nil, using: proxy)
+            }
             showPlacedOpening()
             followReaderWhilePaging()
             restorePagingAnchor(using: new)

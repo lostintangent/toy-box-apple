@@ -40,7 +40,7 @@ git history keeps closed incidents.
 - The cause is not established, and it never reproduced locally, alone or in the full suite. The
   candidate is that CI's Page Down reached the end, and SwiftUI then reported Page Up together with
   a row measuring taller, which followed the latest message back to the end. t1259 fixed that rule,
-  with `TranscriptScrollTests.aReaderWhoMovesUpStopsFollowingEvenWhenRowsResizeInTheSameUpdate`.
+  now covered by `TranscriptScrollAdapterTests.theMacFollowsGrowthUntilTheReaderMovesUpEvenInTheSameChange`.
   Restoration needs CI to show this was the cause, or the cause found, with deterministic coverage.
 
 ## Load Older failure row

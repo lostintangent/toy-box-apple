@@ -187,14 +187,17 @@ public final class TranscriptScroll {
     /// Reads a geometry change for a scroll view whose keyboard, scroller and programmatic moves
     /// report no scroll phase, like the Mac's, so it never infers drift. A layout change that leaves
     /// the origin where it was, or moves it down, places the intent again. A move of the origin alone,
-    /// or up in the same change, is the reader's, except a follow on its way to the end.
+    /// or up in the same change, is the reader's, except a follow on its way to the end. SwiftUI
+    /// rounds a programmatic scroll's fractional origin to a pixel, less than half a point, where the
+    /// reader's moves are whole pixels, so the rounding leaves the origin where it was.
     public func update(movingFrom old: Metrics) -> Model? {
         guard let new = metrics else { return nil }
         if !isReaderScrolling {
-            if (old.viewport != new.viewport || old.documentEnd != new.documentEnd) && new.origin >= old.origin {
+            let rounds = abs(new.origin - old.origin) < 0.5
+            if (old.viewport != new.viewport || old.documentEnd != new.documentEnd) && (rounds || new.origin >= old.origin) {
                 return update(.layoutChanged)
             }
-            guard new.origin != old.origin else { return nil }
+            guard !rounds else { return nil }
             if isFollowing && Self.distanceToEnd(new) < Self.distanceToEnd(old) { return nil }
         }
         return readerMoved()

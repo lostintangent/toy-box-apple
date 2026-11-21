@@ -234,6 +234,32 @@ struct TranscriptScrollAdapterTests {
         #expect(scroll.update(movingFrom: old)?.origin ?? 3000 == 3000)
     }
 
+    /// A follow during a burst can land at the measured end while the content size still holds the
+    /// arrival's larger estimate, on a fractional origin SwiftUI then rounds to a pixel. The rounding
+    /// isn't the reader moving up, so following keeps the end when the size shrinks to the rows.
+    @Test func roundingAFollowToAPixelBeforeTheEndShrinksKeepsFollowing() {
+        let scroll = measuredScroll(40, origin: 3400)
+        _ = scroll.update(.land(.end))
+        var old = scroll.metrics!
+        scroll.sync((0...40).map { .init(id: "r\($0)", order: $0) })
+        scroll.measure("r40", frame: CGRect(x: 0, y: 4000, width: 386, height: 100))
+        scroll.metrics?.documentEnd = 4200
+        #expect(scroll.update(movingFrom: old)?.origin == 3600)
+
+        old = scroll.metrics!
+        scroll.metrics?.origin = 3500.16
+        #expect(scroll.update(movingFrom: old) == nil)
+        old = scroll.metrics!
+        scroll.metrics?.origin = 3500
+        #expect(scroll.update(movingFrom: old) == nil)
+        #expect(scroll.isFollowing)
+
+        old = scroll.metrics!
+        scroll.metrics?.documentEnd = 4100
+        _ = scroll.update(movingFrom: old)
+        #expect(scroll.isFollowing)
+    }
+
     /// Rows built during a scroll settle their estimates in the same changes that move it, so a
     /// reader's scroll is read as theirs even when the end changes with it.
     @Test func aReaderScrollingToTheEndAsRowsSettleFollowsTheNextArrival() {
