@@ -37,7 +37,7 @@ function reply(response: ServerResponse, status: number, body?: unknown) {
  *  and returns to when a rename clears it, and `peers` the origins it answers as its peers. */
 export function createDemoServerRoutes(server: Server, { id, computer, mode = demoServerMode(), peers = demoPeers() }:
     { id: string, computer: string, mode?: Mode, peers?: string[] }) {
-    const running = "0.4.11", newer = "0.4.12";
+    const running = "0.4.10", newer = "0.4.11";
     let version = running;
     let installedVersion: string | null =
         mode === "unmanaged" ? null : mode === "pending" || mode === "gone" ? newer : running;

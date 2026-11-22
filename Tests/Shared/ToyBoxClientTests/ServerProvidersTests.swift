@@ -131,10 +131,9 @@ struct ServerProvidersTests {
     ]
     nonisolated private static let copilotUpdate = "/api/v1/providers/copilot/update"
 
-    /// What a server after 0.4.10 answers on each route. Tests change it as the server would.
+    /// What a server running 0.4.10 answers on each route. Tests change it as the server would.
     private final class Server: Sendable {
         struct Answers {
-            var version = "0.4.11"
             var providers = ServerProvidersTests.providers
             /// Answers a list read instead of `providers`, as a slow server would.
             var list: MockResponse?
@@ -158,8 +157,7 @@ struct ServerProvidersTests {
                     case ("GET", "/api/v1/channels"): return try .catalogStream(ChannelCatalog(lead: testLeadProfile))
                     case ("GET", "/api/v1/server"):
                         return try .json(ServerInfo(id: "studio-id", name: "Studio", accentColor: "#facc15",
-                                                    release: .init(version: answers.version,
-                                                                   installedVersion: answers.version),
+                                                    release: .init(version: "0.4.10", installedVersion: "0.4.10"),
                                                     peers: []))
                     case ("GET", "/api/v1/providers"):
                         return try answers.list ?? .json(ModelProviderList(providers: answers.providers))
@@ -207,16 +205,10 @@ struct ServerProvidersTests {
         mock.requests.filter { $0.url?.path == "/api/v1/providers" }.count
     }
 
-    @Test(arguments: [("0.4.9", false), ("0.4.10", false), ("0.4.11", true), ("0.5.0", true), ("1.0.0", true)])
-    func onlyServersAfter0_4_10UpdateTheirProviders(version: String, updates: Bool) {
-        #expect(ServerRelease(version: version, installedVersion: nil).updatesProviders == updates)
-    }
-
-    @Test func checkForUpdatesShowsOnAConnectedServerAfter0_4_10WhileAProviderIsOnAndInstalled() async throws {
+    @Test func checkForUpdatesShowsOnAConnectedServerWhileAProviderIsOnAndInstalled() async throws {
         let server = Server()
         let mock = server.transport()
         let waiting = ChannelCatalogStore(api: try mock.api())
-        await waiting.refreshServer()
         await waiting.providers.appear()
         #expect(!waiting.providers.offersUpdateCheck, "The catalog hasn't connected")
 
@@ -224,15 +216,7 @@ struct ServerProvidersTests {
         defer { catalog.stopPolling() }
         #expect(catalog.providers.offersUpdateCheck)
 
-        server.set { $0.version = "0.4.10" }
-        await catalog.refreshServer()
-        #expect(!catalog.providers.offersUpdateCheck)
-
-        server.set {
-            $0.version = "0.4.11"
-            $0.providers = $0.providers.filter { $0.id == "ollama" || $0.id == "chatgpt" }
-        }
-        await catalog.refreshServer()
+        server.set { $0.providers = $0.providers.filter { $0.id == "ollama" || $0.id == "chatgpt" } }
         await catalog.providers.appear()
         #expect(!catalog.providers.offersUpdateCheck, "Off and Not Installed providers don't update")
     }

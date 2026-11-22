@@ -23,11 +23,6 @@ public struct ServerRelease: Codable, Equatable, Sendable {
         guard let installedVersion else { return false }
         return installedVersion != version
     }
-
-    /// Whether the server updates its model providers, as every release after 0.4.10 does.
-    public var updatesProviders: Bool {
-        version.compare("0.4.10", options: .numeric) == .orderedDescending
-    }
 }
 
 /// What `GET /api/v1/server` answers: the server's identity, name, accent, releases and peers.

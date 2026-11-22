@@ -108,12 +108,9 @@ public final class ServerProviders {
         }
     }
 
-    /// Check for Updates shows on a connected server that updates its providers while any provider
-    /// is on and installed.
+    /// Check for Updates shows on every connected server while any provider is on and installed.
     public var offersUpdateCheck: Bool {
-        guard let catalog, catalog.phase == .connected, catalog.update.release?.updatesProviders == true
-        else { return false }
-        return list.contains(where: \.isUpdatable)
+        catalog?.phase == .connected && list.contains(where: \.isUpdatable)
     }
 
     /// Some update is under way, or rows are spinning while the server comes back from one, so
