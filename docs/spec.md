@@ -273,15 +273,15 @@ and are there again when it comes back.
   error, so a failed update reads like one that found nothing newer, the same as a server's. On
   the phone, when the name, versions and plan can't share a line, the versions drop to their own
   line under the name. A provider keeps
-  running its old version until the server restarts, so once any update reports a change, the
-  section says "Restart Studio Demo to use the new version.", or "versions" when more than one
-  changed. The server's page has one Restart on the Mac, where its window shows the Version row
-  with the providers: the sentence leads the section's bar, before Check for Updates, and the
-  Version row's Restart turns prominent while it shows. The phone's Version row is a screen above
-  Check for Updates, so the sentence is the section's footer, under a Restart row with
-  `arrow.clockwise` after Check for Updates, which does what the Version row's does, restarting
-  this server only. A server without an installed release shows the sentence alone. Results stay until the next check, until Settings closes, or until the server restarts,
-  when the rows spin while it reconnects and then read its new versions.
+  running its old version until the server restarts, which the arrow already says, so the section
+  adds no sentence about it. Once any update reports a change, the server's page offers its one
+  Restart: on the Mac, where its window shows the Version row with the providers, the Version
+  row's Restart turns prominent. The phone's Version row is a screen above Check for Updates, so a
+  Restart row with `arrow.clockwise` follows Check for Updates, doing what the Version row's does
+  and restarting this server only. Results stay until the next check, until Settings closes, or
+  until the server restarts, when the rows spin while it reconnects and then read its new
+  versions. The server reports only the version each provider has installed, never the one it's
+  running, so a reopened Settings reads the new version alone.
 - **Connecting.** The user connects once, by entering the address of any one of their Toy Box
   Macs, and the app shows that server and every peer that answers (see Peer servers). Connect is
   only there while the app has no server: the phone's Welcome, and on the Mac the sidebar's
@@ -3175,8 +3175,10 @@ Welcome is the Server URL card, and on the Mac the sidebar's welcome holds the f
 no separate test or confirmation. Return or Connect
 tries the address once: while it runs, the field is disabled and the button reads Connecting…,
 then a server that answers is saved and shown, and a failure shows its error in the card and
-saves nothing. A server's Status row shows its dot with Connected, Connecting…
-or Can't connect, and on the phone why it can't and what to check under it. Notifications explains requests
+saves nothing. A server's Status row shows its dot and the word for it, the same on both apps:
+Connecting… before the server first answers, Connected, Reconnecting… while a server it reached
+comes back, and Can't connect. It never says why, which only the Connect card and the main
+window's empty state show. Notifications explains requests
 and completions before asking system permission in response to an explicit enable action.
 Permission denial shows Open System Settings, never repeated permission prompts. General also
 holds Open at Login, Show in menu bar, the Quick Send shortcut recorder, and the two on-device
