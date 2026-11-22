@@ -257,8 +257,8 @@ and are there again when it comes back.
   slow, so it has no failure of its own: an account on an API key shows no plan and no bars, and
   so does a read that fails, with no error and no Retry, and reopening Settings reads it again. A server that doesn't list its providers shows no
   section, and the section has no enable toggles, which stay in the web.
-  On a connected server newer than 0.4.10, whose `POST /api/v1/providers/:providerId/update`
-  installs whatever is newer for one provider, the section ends with one Check for Updates, like
+  On every connected server, whose `POST /api/v1/providers/:providerId/update` installs whatever
+  is newer for one provider, the section ends with one Check for Updates, like
   the server list's: on the Mac at the trailing end of a bar under the providers, and on the phone
   as a row after them with `arrow.triangle.2.circlepath`, which VoiceOver reads as "Check for model
   provider updates". It's there while any provider is on and installed, and it updates all of
