@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.50
+
+### Bugs/Polish
+
+- Opening a channel with new messages takes you straight to them again, without bouncing or briefly showing the top of the conversation first.
+
 ## Mac 0.1.53
 
 ### Bugs/Polish

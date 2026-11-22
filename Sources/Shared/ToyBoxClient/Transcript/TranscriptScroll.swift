@@ -141,11 +141,8 @@ public final class TranscriptScroll {
             case .layoutChanged, .holdCurrentPosition, .arrived: break
             default: beforeFind = nil
             }
-        } else if !isSceneActive {
+        } else if !isSceneActive || !hasLanded {
             return nil
-        } else if !hasLanded {
-            guard lastLayout?.viewport != layout.viewport else { return nil }
-            return restingAtEnd(layout)
         } else if !holdsPlacementThroughInput, isReaderScrolling || readerMoved(from: lastLayout, to: layout) {
             beforeFind = nil
             event = isFinding ? .holdCurrentPosition : .readerScrolled(to: layout.origin)
@@ -236,19 +233,8 @@ public final class TranscriptScroll {
 
     /// Places once for the geometry the scene came back with.
     public func sceneBecameActive() -> Model? {
-        let returning = !isSceneActive
         isSceneActive = true
-        if !hasLanded { return returning ? layout.flatMap(restingAtEnd) : nil }
-        return update(.layoutChanged)
-    }
-
-    /// Until it lands, the cached conversation rests at its end. The initial anchor puts it there
-    /// once, but a new viewport, as when the push settles or the scene comes back, re-estimates the
-    /// content and moves only the offset, which can leave no row built. So each new viewport asks
-    /// for the end again, unless the reader is scrolling.
-    private func restingAtEnd(_ layout: Model.Layout) -> Model? {
-        guard intent == .landing(.end), !isReaderScrolling else { return nil }
-        return Model(intent: intent, origin: endOrigin(layout))
+        return hasLanded ? update(.layoutChanged) : nil
     }
 
     /// Lands once connected, like the Mac. A reopened store's cached messages predate its new
@@ -301,8 +287,6 @@ public final class TranscriptScroll {
     /// Whether a placement asks the scroll view to move, so the current geometry is about to be replaced.
     public func moves(_ placement: Model?) -> Bool {
         guard let placement else { return false }
-        // Before landing, the end is only SwiftUI's estimate, so asking for it always moves.
-        if !hasLanded, placement.origin != nil { return true }
         if let origin = placement.origin { return metrics.map { abs(origin - $0.origin) > Self.settled } ?? false }
         return placement.needsMeasurement != nil
     }

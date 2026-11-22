@@ -1885,7 +1885,9 @@ This boundary is not an extra synthetic message. Reference renders of day labels
 Opening uses only the latest 100 messages supplied by the snapshot and never fetches older pages.
 Land on the row the New divider sits above, otherwise the end. Both apps
 land only once the store is connected, so a reopened channel lands on that boundary rather than on
-its cached end. Until then the cached conversation rests at its end, unread. Landing may hide the
+its cached end. Until then the cached conversation rests at its end, unread, where the scroll
+view's initial anchor put it, and nothing else places it, so an opening moves at most once, when it
+lands. Landing may hide the
 rows only until the first layout pass puts its target in place, never until layout goes quiet,
 so streaming or a busy app can't leave an opened channel blank. Landing ends there, with no
 correction afterward: from then on the end is followed, or the reader's place held, like any other
