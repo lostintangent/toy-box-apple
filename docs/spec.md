@@ -1977,8 +1977,8 @@ trackpad events over history-demo, these are the gaps. On the phone, one placeme
 ToyBoxClient covers each of them, fed by the scroll geometry and writing through `ScrollPosition`.
 The Mac covers them with its own follow, hold and resize code, sharing only the landing's target,
 Reveal's paging and the viewport's reading rules. Moving the Mac onto the phone's model opened
-gaps its own code doesn't have, like a Home key move snapping back to the end and a Jump to Latest
-dropped while a Reveal paged, so each app keeps the code that measures right on it:
+gaps its own code doesn't have, like a Home key move snapping back to the end, and a resize drift
+nobody could explain, so each app keeps the code that measures right on it:
 
 | Behavior | Why SwiftUI falls short |
 | --- | --- |
