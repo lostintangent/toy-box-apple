@@ -3,8 +3,8 @@ import ToyBoxKit
 import SwiftUI
 
 /// A server's model providers in the server's order: each one's version, then its plan and how much
-/// of each limit it has used, or why it isn't ready, then Check for Updates and, once an update
-/// installs something new, a sentence asking for a restart. The page showing it calls
+/// of each limit it has used, or why it isn't ready, then Check for Updates. A row's arrow says
+/// its new version waits for a restart, so the section adds no sentence. The page showing it calls
 /// `ServerProviders.appear()`, and a server that lists no providers shows no section. See Model
 /// Providers in docs/spec.md.
 public struct ModelProvidersSection: View {
@@ -18,52 +18,34 @@ public struct ModelProvidersSection: View {
 
     public var body: some View {
         if !providers.entries.isEmpty {
-            Section {
+            Section("Model Providers") {
                 ForEach(providers.entries) { entry in
                     ModelProviderRow(entry: entry)
                 }
                 updates
-            } header: {
-                Text("Model Providers")
-            } footer: {
-                #if os(iOS)
-                if let restartMessage { Text(restartMessage) }
-                #endif
             }
         }
     }
 
-    /// Once an update installs a new version, the section asks for a restart, since a provider
-    /// keeps running its old version until then.
-    private var restartMessage: String? {
-        let count = providers.newVersions
-        guard count > 0 else { return nil }
-        return "Restart \(catalog.name) to use the new \(count == 1 ? "version" : "versions")."
-    }
-
     #if os(macOS)
-    /// A bar under the providers, led by the restart sentence once an update installs something new.
-    /// The window shows the Version row above it, whose Restart turns prominent instead.
+    /// A bar under the providers with Check for Updates. The window shows the Version row above it,
+    /// whose Restart turns prominent once an update installs something new.
     @ViewBuilder private var updates: some View {
-        let message = restartMessage
-        if providers.offersUpdateCheck || message != nil {
+        if providers.offersUpdateCheck {
             HStack(spacing: 8) {
-                if let message { Text(message).foregroundStyle(.secondary) }
                 Spacer(minLength: 8)
-                if providers.offersUpdateCheck {
-                    Button("Check for Updates") { Task { await providers.checkForUpdates() } }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(providers.isCheckingForUpdates)
-                        // The server list's Check for Updates shares the tab.
-                        .accessibilityLabel("Check for model provider updates")
-                }
+                Button("Check for Updates") { Task { await providers.checkForUpdates() } }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(providers.isCheckingForUpdates)
+                    // The server list's Check for Updates shares the tab.
+                    .accessibilityLabel("Check for model provider updates")
             }
         }
     }
     #else
-    /// Rows after the providers, with the restart sentence as the section's footer. The Version row
-    /// is a screen above, so the section has its own Restart, which does the same.
+    /// Rows after the providers. The Version row is a screen above, so once an update installs
+    /// something new the section has its own Restart, which does the same.
     @ViewBuilder private var updates: some View {
         let update = catalog.update
         if providers.offersUpdateCheck {

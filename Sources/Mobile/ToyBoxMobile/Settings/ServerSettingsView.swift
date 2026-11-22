@@ -19,10 +19,6 @@ struct ServerSettingsView: View {
                     Text(catalog.api.baseURL.absoluteString).foregroundStyle(.secondary).textSelection(.enabled)
                 }
                 ServerStatusRow(catalog)
-                if let error = catalog.phase.failure {
-                    ServerErrorLabel(message: ServerConnectionSection.failureMessage(error),
-                                     help: ServerConnectionSection.failureHelp)
-                }
                 ServerVersionRow(update: catalog.update)
             }
             ModelProvidersSection(catalog)

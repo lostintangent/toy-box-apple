@@ -38,7 +38,7 @@ struct ServerConnectionSection: View {
         }
     }
 
-    static let failureHelp = "Check the address, and that your Toy Box server is running and reachable from this iPhone."
+    private static let failureHelp = "Check the address, and that your Toy Box server is running and reachable from this iPhone."
 
     private var loopbackHost: String? {
         guard let url = try? ChannelAPI(serverURL: address).baseURL, let host = url.host,
@@ -77,9 +77,8 @@ struct ServerConnectionSection: View {
     }
 }
 
-/// An error in a Server URL card or under a saved server's Status, after a red circle on its first
-/// line, with what to check under it.
-struct ServerErrorLabel: View {
+/// An error in the Server URL card, after a red circle on its first line, with what to check under it.
+private struct ServerErrorLabel: View {
     let message: String
     var help: String?
 

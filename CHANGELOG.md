@@ -1,10 +1,17 @@
 # Changelog
 
+## Mac 0.1.54
+
+### Bugs/Polish
+
+- A server's status in Settings now reads in one word, like Connected or Reconnecting…, without error text that flashes when a connection briefly drops, and checking for updates shows each new version without an extra note telling you to restart.
+
 ## iPhone 0.1.50
 
 ### Bugs/Polish
 
 - Opening a channel with new messages takes you straight to them again, without bouncing or briefly showing the top of the conversation first.
+- Each server's status in Settings now reads in one word, like Connected or Reconnecting…, without error text that flashes when a connection briefly drops, and checking for updates shows each new version without an extra note telling you to restart.
 
 ## Mac 0.1.53
 
