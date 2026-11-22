@@ -511,8 +511,8 @@ struct ComposerTests {
     }
 
     /// Find replaces the composer while the keyboard stays up, and the keyboard can then go down
-    /// while Find is open. Both bars and the screen read one source, so neither change is missed.
-    @Test func composerFindAndTheChannelScreenShareOneKeyboardSourceAcrossTheFindSwap() async throws {
+    /// while Find is open. Both bars read the screen's one value, so neither change is missed.
+    @Test func composerAndFindReadTheScreensOneKeyboardValueAcrossTheFindSwap() async throws {
         let suite = "composer-keyboard-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -523,7 +523,7 @@ struct ComposerTests {
         let find = TranscriptFind()
         find.present()
         let screen = KeyboardScreen()
-        let host = UIHostingController(rootView: KeyboardScreenHarness(
+        let host = UIHostingController(rootView: KeyboardValueHarness(
             screen: screen, composer: ComposerSurface(session: session),
             find: TranscriptFindAccessory(find: find, channelName: "Test", focusRequest: UUID(),
                                           navigate: { _ in }, close: {}))
@@ -538,12 +538,6 @@ struct ComposerTests {
         window.isHidden = false
         defer { window.isHidden = true }
 
-        func keyboard(top: CGFloat) {
-            let frame = CGRect(x: 0, y: top, width: 466, height: 336)
-            NotificationCenter.default.post(
-                name: UIResponder.keyboardWillChangeFrameNotification, object: window.screen,
-                userInfo: [UIResponder.keyboardFrameEndUserInfoKey: NSValue(cgRect: frame)])
-        }
         func composerBottom() -> CGFloat? {
             guard let input = session.editor.textView, input.window === window else { return nil }
             return input.convert(input.bounds, to: window).maxY
@@ -553,30 +547,26 @@ struct ComposerTests {
         }
 
         try await waitUntil("the composer mounts", in: host.view) { composerBottom() != nil }
-        #expect(!screen.keyboardIsVisible)
         let composerResting = try #require(composerBottom())
 
-        keyboard(top: 564)
+        screen.keyboardIsVisible = true
         try await waitUntil("the composer rises above the keyboard", in: host.view) {
-            screen.keyboardIsVisible && composerBottom() == composerResting - 8
+            composerBottom() == composerResting - 8
         }
 
-        // Find arrives over a keyboard that doesn't move, so no notification tells it.
+        // Find arrives over a keyboard that doesn't move.
         screen.showsFind = true
         try await waitUntil("Find replaces the composer", in: host.view) { findBottom() != nil }
         let findAboveKeyboard = try #require(findBottom())
-        #expect(screen.keyboardIsVisible)
 
         // The keyboard goes down while the composer is gone.
-        keyboard(top: 900)
+        screen.keyboardIsVisible = false
         try await waitUntil("Find follows the keyboard down", in: host.view) {
-            !screen.keyboardIsVisible && findBottom() == findAboveKeyboard + 8
+            findBottom() == findAboveKeyboard + 8
         }
 
         screen.showsFind = false
-        try await waitUntil("the composer returns to rest", in: host.view) {
-            !screen.keyboardIsVisible && composerBottom() == composerResting
-        }
+        try await waitUntil("the composer returns to rest", in: host.view) { composerBottom() == composerResting }
         withExtendedLifetime(target) {}
     }
 
@@ -1147,22 +1137,18 @@ struct ComposerTests {
     var keyboardIsVisible = false
 }
 
-/// The channel screen's shape: one probe at the root, and Find taking the composer's place.
-private struct KeyboardScreenHarness<Composer: View, Find: View>: View {
+/// The channel screen's shape: one keyboard value at the root, and Find taking the composer's place.
+private struct KeyboardValueHarness<Composer: View, Find: View>: View {
     let screen: KeyboardScreen
     let composer: Composer
     let find: Find
-    @ViewState private var keyboardIsVisible = false
 
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
             if screen.showsFind { find } else { composer }
         }
-        // The test posts keyboard frames without a keyboard, so SwiftUI's own avoidance stays out.
-        .ignoresSafeArea(.keyboard)
-        .softwareKeyboardVisibility($keyboardIsVisible)
-        .onChange(of: keyboardIsVisible, initial: true) { _, visible in screen.keyboardIsVisible = visible }
+        .environment(\.softwareKeyboardIsVisible, screen.keyboardIsVisible)
     }
 }
 
