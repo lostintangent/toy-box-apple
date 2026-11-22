@@ -5,12 +5,14 @@
 ### Bugs/Polish
 
 - The Servers tab in Settings now offers Check for Updates for every server's model providers, where some servers were missing it, so you can keep your agents on the latest from any of them.
+- The Servers tab in Settings is easier to read at a glance, with each server's name, address, status and version together under Server Details, and Disconnect Servers… always beside the server list.
 
 ## iPhone 0.1.49
 
 ### Bugs/Polish
 
 - Each server's page in Settings now offers Check for Updates for its model providers, where some servers were missing it, so you can keep your agents on the latest from any of them.
+- Each server's page in Settings is easier to read at a glance, with its name, address, status and version together in one card, and Settings' General section now holds Appearance and the app's version.
 
 ## iPhone 0.1.48
 

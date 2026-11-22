@@ -2,8 +2,8 @@ import ToyBoxClient
 import SwiftUI
 import ToyBoxUI
 
-/// The Servers tab: the list, then the selected server's name, address, status and release, then its
-/// model providers, then Disconnect….
+/// The Servers tab: the list, with Disconnect Servers… across from Check for Updates in its bar,
+/// then the selected server's Server Details, then its model providers.
 struct ServerSettings: View {
     @Environment(AppModel.self) private var model
     /// The selected server's address.
@@ -19,22 +19,33 @@ struct ServerSettings: View {
             VStack(spacing: 0) {
                 // Spans the card, so its rows' own inset lines the dots up with the labels below.
                 list.padding(.horizontal, -Self.formInset)
-                if model.servers.shown.offersUpdateCheck {
+                if !model.servers.shown.isEmpty {
                     Divider()
                     HStack {
+                        Button("Disconnect Servers…") { confirmsDisconnect = true }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         Spacer()
                         if model.servers.shown.isRestartPending {
                             Button("Restart") { Task { await model.servers.shown.restartPending() } }
                                 .buttonStyle(.borderedProminent)
                                 .controlSize(.small)
                         }
-                        Button("Check for Updates") { Task { await model.servers.shown.checkForUpdates() } }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(model.servers.shown.isCheckingForUpdates)
+                        if model.servers.shown.offersUpdateCheck {
+                            Button("Check for Updates") { Task { await model.servers.shown.checkForUpdates() } }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .disabled(model.servers.shown.isCheckingForUpdates)
+                        }
                     }
                     .padding(.horizontal, 4)
                     .frame(height: Self.rowHeight)
+                    .alert("Disconnect from your servers?", isPresented: $confirmsDisconnect) {
+                        Button("Disconnect", role: .destructive) { model.servers.disconnect() }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Toy Box forgets every server on this Mac. Connect to any one of your Macs to see them all again.")
+                    }
                 }
             }
         }
@@ -48,17 +59,6 @@ struct ServerSettings: View {
         if let selected {
             ServerDetails(catalog: selected)
                 .id(Self.address(selected))
-        }
-        if !model.servers.shown.isEmpty {
-            Section {} footer: {
-                Button("Disconnect…") { confirmsDisconnect = true }
-            }
-            .alert("Disconnect from your servers?", isPresented: $confirmsDisconnect) {
-                Button("Disconnect", role: .destructive) { model.servers.disconnect() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Toy Box forgets every server on this Mac. Connect to any one of your Macs to see them all again.")
-            }
         }
     }
 
@@ -110,27 +110,21 @@ struct ServerSettings: View {
     static func address(_ catalog: ChannelCatalogStore) -> String { catalog.api.baseURL.absoluteString }
 }
 
-/// One server's name, address, status and release, then its model providers. Each server gets its
-/// own, so a name being typed is saved to the server it was typed for. The address is only how this
-/// Mac reaches the server, so it can be copied but not edited.
+/// One server's Server Details, with its name, URL, status and release, then its model providers.
+/// Each server gets its own, so a name being typed is saved to the server it was typed for. The URL
+/// is only how this Mac reaches the server, so it can be copied but not edited.
 private struct ServerDetails: View {
     @Environment(AppModel.self) private var model
     let catalog: ChannelCatalogStore
 
     var body: some View {
-        let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
         let update = catalog.update
-        Section {
+        Section("Server Details") {
             ServerNameRows(catalog, in: model.servers)
-            LabeledContent("Server URL") {
+            LabeledContent("URL") {
                 Text(ServerSettings.address(catalog)).foregroundStyle(.secondary).textSelection(.enabled)
             }
-            LabeledContent("Status") {
-                HStack(spacing: 6) {
-                    Circle().fill(footer.dot).frame(width: 7, height: 7)
-                    Text(Self.status(catalog.phase)).textSelection(.enabled)
-                }
-            }
+            ServerStatusRow(catalog)
             if let release = update.release {
                 LabeledContent("Version") {
                     HStack(spacing: 8) {
@@ -153,13 +147,5 @@ private struct ServerDetails: View {
         }
         .task { await catalog.providers.appear() }
         ModelProvidersSection(catalog)
-    }
-
-    static func status(_ phase: ChannelCatalogPhase) -> String {
-        switch phase {
-        case .connecting: "Connecting…"
-        case .connected: "Connected"
-        case .failed(let error): "Can't connect. \(error.localizedDescription)"
-        }
     }
 }

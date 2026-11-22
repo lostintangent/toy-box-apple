@@ -77,33 +77,9 @@ struct ServerConnectionSection: View {
     }
 }
 
-/// A saved server's address, which can be copied but not edited, with a checkmark while it's
-/// connected or why it can't connect under it.
-struct ServerAddressSection: View {
-    let catalog: ChannelCatalogStore
-
-    var body: some View {
-        Section("Server URL") {
-            HStack {
-                // Secondary, so a value that can't change reads apart from a filled field.
-                Text(catalog.api.baseURL.absoluteString).foregroundStyle(.secondary).textSelection(.enabled)
-                if catalog.phase == .connected {
-                    Spacer()
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).accessibilityHidden(true)
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityValue(catalog.phase == .connected ? "Connected" : "")
-            if let error = catalog.phase.failure {
-                ServerErrorLabel(message: ServerConnectionSection.failureMessage(error),
-                                 help: ServerConnectionSection.failureHelp)
-            }
-        }
-    }
-}
-
-/// An error in a Server URL card, after a red circle on its first line, with what to check under it.
-private struct ServerErrorLabel: View {
+/// An error in a Server URL card or under a saved server's Status, after a red circle on its first
+/// line, with what to check under it.
+struct ServerErrorLabel: View {
     let message: String
     var help: String?
 
