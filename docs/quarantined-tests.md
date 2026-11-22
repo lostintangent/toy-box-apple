@@ -43,6 +43,27 @@ git history keeps closed incidents.
   with `TranscriptScrollTests.aReaderWhoMovesUpStopsFollowingEvenWhenRowsResizeInTheSameUpdate`.
   Restoration needs CI to show this was the cause, or the cause found, with deterministic coverage.
 
+## Width drag while reading
+
+- `TranscriptTests.draggingTheWidthWhileReadingKeepsTheReadersRow` is quarantined in t1371, behind
+  `TOY_BOX_TEST_TRANSCRIPT_WIDTH_DRAG=1`. Owner: Transcript, with t1373 as the follow-up. Its
+  assertions are unchanged, and the default run skips it with its reason.
+- First seen on main's Mac `test` job at the #200 merge,
+  [run 44977328314](https://github.com/lostintangent/toy-box-apple/actions/runs/44977328314), on
+  `f2972ce6f`, whose only source change is the phone's `TranscriptScroll`, which the Mac doesn't
+  use. The drag through 480, 440 and 400 held m28 within 1 pt, then widening to 520 left it unbuilt:
+  "m28 moved from (68.0, 7.0, 366.0, 57.0) to (inf, inf, 0.0, 0.0)" (`TranscriptTests.swift:764`),
+  after 15.5 seconds.
+- The cause is not established, and it never reproduced locally: alone, in 48 concurrent rounds, in
+  the full suite, by wheel and by scroller, widening before the drag's rebuild lands, or with single
+  width changes from 360 to 900. Locally every round rebuilds m28 after the drag, hands off, then
+  places it natively at 520, with the bottom gap near 800.
+- The first candidate is a non-live width pass whose estimates bring the bottom within 48 pt. That
+  sets `isAtBottom`, because the guard in `ConversationTranscript` covers only a building rebuild
+  and live resize, so the hold stands down and follows the latest. The second is
+  `holdReadingPlace` replacing the anchor when the new frames lack it. Restoration needs the cause
+  found, with deterministic coverage.
+
 ## Load Older failure row
 
 - `TranscriptTests.theLoadOlderRowGrowsForAFailureRetriesAtTheTopAndLeavesNothingAtTheBeginning` is

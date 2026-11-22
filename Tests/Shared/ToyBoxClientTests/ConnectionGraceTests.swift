@@ -63,7 +63,10 @@ struct ConnectionGraceTests {
         store.connect()
         defer { store.disconnect() }
         #expect(store.phase == .connecting)
-        try await eventually { store.phase.message == ChannelStore.unansweredConnect }
+        // The grace counts from connect, so it can end before URLSession hands the request to the mock.
+        try await eventually(observing: mock) {
+            mock.pendingResponseCount == 1 && store.phase.message == ChannelStore.unansweredConnect
+        }
         #expect(mock.requests.count == 1, "Nothing failed, so nothing retried")
 
         store.reconnect()
