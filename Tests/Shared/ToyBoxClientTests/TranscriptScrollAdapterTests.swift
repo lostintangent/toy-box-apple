@@ -163,6 +163,24 @@ struct TranscriptScrollAdapterTests {
         #expect(landed?.origin == 4000 && !scroll.moves(landed))
     }
 
+    /// The phone writes a landing the end clamps by the end's ID, which SwiftUI follows as the row
+    /// grows, so the adapter still places the row's top at the readable top.
+    @Test func aRowLandingClampedAtTheEndKeepsItsTopInViewAsTheRowGrows() {
+        let scroll = TranscriptScroll()
+        scroll.sync((0..<20).map { .init(id: "m\($0)", order: $0) })
+        for index in 0..<20 { scroll.measure("m\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 600, height: 100)) }
+        scroll.metrics = .init(viewport: .init(width: 600, height: 600, topInset: 50, bottomInset: 150),
+                               origin: 0, documentEnd: 2016)
+        #expect(scroll.update(.land(.row("m18", order: 18)))?.origin == 1566)
+        scroll.metrics?.origin = 1566
+        _ = scroll.update()
+
+        scroll.measure("m18", frame: CGRect(x: 0, y: 1800, width: 600, height: 400))
+        scroll.measure("m19", frame: CGRect(x: 0, y: 2200, width: 600, height: 100))
+        scroll.metrics?.documentEnd = 2316
+        #expect(scroll.update()?.origin == 1750)
+    }
+
     @Test func nothingButTheInitialAnchorPlacesBeforeTheLanding() {
         let scroll = measuredScroll(40, origin: 3400)
         #expect(scroll.update() == nil)
