@@ -518,10 +518,13 @@ public final class ChannelStore {
     }
 
     /// Which change failed, so an alert can say whether it was adding or removing the bookmark.
-    public struct BookmarkFailure: Equatable, Identifiable, Sendable {
+    public struct BookmarkFailure: Equatable, Identifiable, Sendable, LocalizedError {
         public let id = UUID()
         public let sequence: Int
         public let isRemoval: Bool
         public let error: String
+
+        /// The alert's title, which SwiftUI keeps while the alert animates away.
+        public var errorDescription: String? { isRemoval ? "Couldn't Remove Bookmark" : "Couldn't Bookmark Message" }
     }
 }

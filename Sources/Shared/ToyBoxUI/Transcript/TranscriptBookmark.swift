@@ -66,8 +66,3 @@ private struct TranscriptBookmarkAlert: View {
             .accessibilityHidden(true)
     }
 }
-
-/// The alert's title, which SwiftUI keeps while the alert animates away.
-extension ChannelStore.BookmarkFailure: LocalizedError {
-    public var errorDescription: String? { isRemoval ? "Couldn't Remove Bookmark" : "Couldn't Bookmark Message" }
-}
