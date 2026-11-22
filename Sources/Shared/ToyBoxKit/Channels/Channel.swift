@@ -100,6 +100,15 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
 extension Channel {
     public enum Attention: String, Sendable {
         case waiting, finished, unread
+
+        /// What the sidebar row's help and VoiceOver say for it.
+        public var accessibilityLabel: String {
+            switch self {
+            case .waiting: "Waiting for your response"
+            case .finished: "All tasks completed"
+            case .unread: "Unread messages"
+            }
+        }
     }
 
     public var attention: Attention? {

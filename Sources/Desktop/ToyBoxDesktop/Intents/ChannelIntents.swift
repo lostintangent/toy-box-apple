@@ -381,7 +381,7 @@ extension ChannelIntents {
         AppDependencyManager.shared.add(dependency: context)
         guard !model.launchOptions.isSnapshot else { return }
         ShortcutParameters.observe(model)
-        guard ChannelSpotlight.indexes(model.launchOptions) else { return }
+        guard model.launchOptions.isProduction() else { return }
         let spotlight = ChannelSpotlight()
         context.spotlight = spotlight
         spotlight.observe(model)

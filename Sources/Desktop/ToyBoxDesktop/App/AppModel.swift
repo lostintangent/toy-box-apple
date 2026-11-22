@@ -72,12 +72,11 @@ final class AppModel {
         outbox = ChannelOutbox(folder: launchOptions.isSnapshot
             ? .temporaryDirectory.appending(path: "ToyBoxSnapshot-\(UUID().uuidString)", directoryHint: .isDirectory)
             : ChannelOutbox.defaultFolder)
-        openAtLogin = OpenAtLogin(isAvailable: OpenAtLogin.isAllowed(
-            launchOptions, bundleID: Bundle.main.bundleIdentifier))
+        openAtLogin = OpenAtLogin(isAvailable: launchOptions.isProduction())
         quickSend = QuickSendController(options: launchOptions)
         widgetSnapshots = WidgetSnapshotPublisher(enabled: launchOptions.allowsUserIntegrations())
         dockAttention = DockAttention(
-            allowed: DockAttention.isAllowed(launchOptions, bundleID: Bundle.main.bundleIdentifier),
+            allowed: launchOptions.isProduction(),
             enabled: { UserDefaults.standard.bool(forKey: DockAttention.enabledKey) },
             active: { NSApplication.shared.isActive },
             request: { _ = NSApplication.shared.requestUserAttention($0) }
@@ -160,7 +159,7 @@ final class AppModel {
                 guard let notifications = self?.notifications else { throw ChannelAPIError.disconnected }
                 try await notifications.deliverMorningDigest(content, identifier: identifier)
             }
-        ), allowed: MorningDigest.isAllowed(launchOptions, bundleID: Bundle.main.bundleIdentifier),
+        ), allowed: launchOptions.isProduction(),
            testAllowed: catalogs.contains { MorningDigest.canTest(bundleID: Bundle.main.bundleIdentifier,
                                                                   options: launchOptions,
                                                                   server: $0.api.baseURL.absoluteString) })

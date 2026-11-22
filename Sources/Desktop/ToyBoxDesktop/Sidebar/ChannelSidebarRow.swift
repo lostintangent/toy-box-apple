@@ -274,12 +274,7 @@ private struct ChannelSidebarRowContent: View {
         } else if let purpose = channel.purposePreview {
             parts.append(purpose)
         }
-        switch attention {
-        case .waiting: parts.append("Waiting for your response")
-        case .finished: parts.append("All tasks completed")
-        case .unread: parts.append("Unread messages")
-        case nil: break
-        }
+        if let attention { parts.append(attention.accessibilityLabel) }
         if !working.isEmpty {
             parts.append(working.map(\.name).formatted(.list(type: .and)) + " working")
         }

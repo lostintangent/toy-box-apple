@@ -39,7 +39,7 @@ final class ChannelIntents {
         let catalogs = catalogs()
         return identifiers.compactMap { identifier in
             guard let target = ChannelTarget(identifier: identifier) else { return nil }
-            let name = catalogs.first(at: target.serverURL)?.channels.first { $0.id == target.channelID }?.name
+            let name = catalogs.listed(target)?.name
             if let shown, shown.target == target {
                 let name = shown.details?.name ?? name ?? ""
                 return ChannelEntity(target, name: name, content: shown.readableText(name: name))

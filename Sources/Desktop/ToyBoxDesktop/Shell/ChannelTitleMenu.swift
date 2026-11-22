@@ -19,7 +19,7 @@ struct ChannelTitleMenu<Content: View>: View {
     /// The avatar comes from the catalog, as the sidebar row's does. Reading it here keeps the
     /// catalog's changes from redrawing the whole detail view.
     private var avatar: ChannelAvatar? {
-        model.catalogs.first(at: store.api.baseURL.absoluteString)?.channels.first { $0.id == store.id }?.avatar
+        store.target.flatMap { model.catalogs.listed($0) }?.avatar
     }
 
     var body: some View {

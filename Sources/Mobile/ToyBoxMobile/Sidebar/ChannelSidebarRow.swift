@@ -161,18 +161,9 @@ struct ChannelSidebarRow: View {
         }
     }
 
-    private var attentionText: String {
-        switch attention {
-        case .waiting: "Waiting for your response"
-        case .finished: "All tasks completed"
-        case .unread: "Unread messages"
-        case nil: ""
-        }
-    }
-
     private var accessibilityDetails: String {
         var parts = [question ?? channel.directory ?? channel.purpose ?? ""]
-        if !attentionText.isEmpty { parts.append(attentionText) }
+        if let attention { parts.append(attention.accessibilityLabel) }
         if !working.isEmpty { parts.append(working.map(\.name).formatted(.list(type: .and)) + " working") }
         parts.append("Team: " + agents.map(\.name).formatted(.list(type: .and)))
         if let date = try? Date(channel.updatedAt, strategy: .iso8601) {

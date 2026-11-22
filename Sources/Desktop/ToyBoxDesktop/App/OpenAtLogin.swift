@@ -30,11 +30,6 @@ final class OpenAtLogin {
         refresh()
     }
 
-    static func isAllowed(_ options: LaunchOptions, bundleID: String?,
-                          environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
-        bundleID == "dev.toybox.desktop" && options.allowsUserIntegrations(environment: environment)
-    }
-
     var isEnabled: Bool { status == .enabled }
     var requiresApproval: Bool { status == .requiresApproval }
 
