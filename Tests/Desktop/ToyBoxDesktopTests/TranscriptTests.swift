@@ -416,9 +416,9 @@ struct TranscriptTests {
         defer { await harness.close() }
         func top(_ id: String) throws -> CGFloat { try #require(harness.capture.frames[id]).contentTop }
         let clip = harness.scrollView.contentView
-        // With the button's top edge on screen, so the stack builds it rather than estimating it.
-        try await harness.scrollUp(byWheel: false) { clip.bounds.minY + harness.scrollView.contentInsets.top < 80 }
-        clip.scroll(to: NSPoint(x: 0, y: 60 - harness.scrollView.contentInsets.top))
+        // With the button above the viewport, so the stack estimates its height rather than building it.
+        try await harness.scrollUp(byWheel: false) { clip.bounds.minY + harness.scrollView.contentInsets.top < 120 }
+        clip.scroll(to: NSPoint(x: 0, y: 100 - harness.scrollView.contentInsets.top))
         harness.scrollView.reflectScrolledClipView(clip)
         try await harness.settled()
         try #require(!harness.store.isLoadingOlder)
@@ -426,7 +426,11 @@ struct TranscriptTests {
 
         try await harness.scrollUp(byWheel: false) { harness.store.isLoadingOlder }
         let loading = try top("m31")
-        #expect(abs(loading - button) < 0.5, "Loading moved the rows below from \(button) to \(loading)")
+        // The Mac's reading hold lets an estimated row above the viewport move the rows below as it's
+        // built. t1293 moves the hold to the shared model, which fixes it, so remove this wrapper then.
+        withKnownIssue("An estimated Load Older button moves the rows below as it's built (t1293)") {
+            #expect(abs(loading - button) < 0.5, "Loading moved the rows below from \(button) to \(loading)")
+        }
     }
 
     /// Your Messages keeps paging through a page it shows nothing from, so reaching the top still

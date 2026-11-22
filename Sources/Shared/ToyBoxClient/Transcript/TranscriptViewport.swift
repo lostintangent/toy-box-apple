@@ -43,34 +43,6 @@ public struct TranscriptViewport: Equatable, Sendable {
         self.contentHeight = contentHeight
     }
 
-    public struct Update: Equatable, Sendable {
-        public var isAtBottom: Bool
-        public var follows: Bool
-
-        public init(isAtBottom: Bool, follows: Bool) {
-            self.isAtBottom = isAtBottom
-            self.follows = follows
-        }
-    }
-
-    /// Resolves one geometry change. A resize at the bottom follows the latest message, unless the
-    /// reader moved up in the same change, such as a Page Up reported with a row measuring taller.
-    public func update(after old: TranscriptViewport, wasAtBottom: Bool, canFollow: Bool) -> Update {
-        let resized = contentHeight != old.contentHeight || height != old.height
-        let follows = canFollow && wasAtBottom && resized && top >= old.top
-        return Update(isAtBottom: isAtBottom(after: old, wasAtBottom: wasAtBottom, following: follows),
-                      follows: follows)
-    }
-
-    /// Whether the transcript is still at, or following, its bottom after moving here from `old`.
-    /// Growth below a followed bottom, such as a sent image loading, and a follow still in flight
-    /// keep following. Moving away from the bottom, or resizing while not following, stops it.
-    public func isAtBottom(after old: TranscriptViewport, wasAtBottom: Bool, following: Bool) -> Bool {
-        if bottomGap <= TranscriptPlacement.followingThreshold || following { return true }
-        let resized = contentHeight != old.contentHeight || height != old.height
-        return resized || bottomGap > old.bottomGap ? false : wasAtBottom
-    }
-
     /// The first frame starting in the viewport or, when one row fills it, the frame spanning its top.
     /// Rows above it change height out of the reader's sight. `shift` is a scroll made since `frames`.
     public func readingAnchor(in frames: [String: TranscriptMessageFrame], scrolledBy shift: CGFloat = 0)

@@ -60,6 +60,8 @@ public final class TranscriptScroll {
     private var scrollsPastPhase = false
     private(set) var intent: Model.Intent = .landing(.end)
     public private(set) var hasLanded = false
+    /// Whether the transcript keeps its end in view, having landed there or followed it since.
+    public var followsEnd: Bool { hasLanded && (intent == .following || intent == .landing(.end)) }
     /// While Find is open, arrivals never move the conversation, so the result being read stays put.
     private(set) var isFinding = false
     /// What the reader was doing when Find opened, which closing puts back unless they scrolled or

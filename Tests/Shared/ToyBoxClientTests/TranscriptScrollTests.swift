@@ -36,37 +36,6 @@ struct TranscriptScrollTests {
         #expect(TranscriptViewport().readingAnchor(in: frames) == nil)
     }
 
-    @Test func followingTheBottomSurvivesGrowthUntilTheReaderMovesAway() {
-        func viewport(gap: CGFloat, content: CGFloat = 2000) -> TranscriptViewport {
-            TranscriptViewport(top: content - 400 - gap, bottomGap: gap, width: 600, height: 400,
-                               contentHeight: content)
-        }
-        let atBottom = viewport(gap: 0)
-        // A sent image grows the last bubble while following, then the follow scroll is in flight.
-        let grown = viewport(gap: 260, content: 2260)
-        #expect(grown.isAtBottom(after: atBottom, wasAtBottom: true, following: true))
-        #expect(viewport(gap: 120, content: 2260).isAtBottom(after: grown, wasAtBottom: true, following: false))
-        // Jump to Latest that lands short still follows the correction that comes next.
-        #expect(viewport(gap: 90).isAtBottom(after: viewport(gap: 900), wasAtBottom: true, following: false))
-        // Scrolling, paging or revealing away from the bottom stops following.
-        #expect(!viewport(gap: 60).isAtBottom(after: viewport(gap: 30), wasAtBottom: true, following: false))
-        #expect(!grown.isAtBottom(after: atBottom, wasAtBottom: true, following: false))
-        // Moving toward the bottom resumes following only once it is reached.
-        #expect(!viewport(gap: 200).isAtBottom(after: viewport(gap: 600), wasAtBottom: false, following: false))
-        #expect(viewport(gap: 40).isAtBottom(after: viewport(gap: 200), wasAtBottom: false, following: false))
-    }
-
-    @Test func aReaderWhoMovesUpStopsFollowingEvenWhenRowsResizeInTheSameUpdate() {
-        let atBottom = TranscriptViewport(top: 2626, width: 600, height: 380, contentHeight: 3006)
-        let grown = TranscriptViewport(top: 2626, bottomGap: 21, width: 600, height: 380, contentHeight: 3027)
-        #expect(grown.update(after: atBottom, wasAtBottom: true, canFollow: true)
-            == .init(isAtBottom: true, follows: true))
-        // Page Up from the end, reported with a row below measuring taller.
-        let paged = TranscriptViewport(top: 2256, bottomGap: 391, width: 600, height: 380, contentHeight: 3027)
-        #expect(paged.update(after: atBottom, wasAtBottom: true, canFollow: true)
-            == .init(isAtBottom: false, follows: false))
-    }
-
     private func frame(sequence: Int, y: CGFloat, height: CGFloat) -> TranscriptMessageFrame {
         .init(sequence: sequence, rect: CGRect(x: 24, y: y, width: 300, height: height), historyStart: 1)
     }
