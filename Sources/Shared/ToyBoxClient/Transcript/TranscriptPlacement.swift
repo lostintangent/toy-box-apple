@@ -144,7 +144,7 @@ public struct TranscriptPlacement: Equatable, Sendable {
         /// Captures reading without moving. With no anchorable rows, preserves the existing intent.
         case holdCurrentPosition
         /// Rows arrived below the last one, reduced against the geometry from before they did. A
-        /// landing the end stopped short follows them, like any arrival at the end. Growth of the
+        /// landing or reveal the end stopped short follows them, like any arrival at the end. Growth of the
         /// landed row isn't an arrival, and a catch-up card pins its landing's top, so it keeps landing.
         case arrived(pinsLanding: Bool)
         case land(Target)
@@ -168,8 +168,10 @@ public struct TranscriptPlacement: Equatable, Sendable {
             }
             return TranscriptPlacement(intent: intentForPosition(layout, allowsFollowing: false) ?? intent, origin: nil)
         case .arrived(let pinsLanding):
-            return TranscriptPlacement(intent: !pinsLanding && endHolds(intent, layout: layout) ? .following : intent,
-                                       origin: nil)
+            // A catch-up card pins only its landing. A reveal is a target the reader chose since.
+            var follows = endHolds(intent, layout: layout)
+            if pinsLanding, case .landing = intent { follows = false }
+            return TranscriptPlacement(intent: follows ? .following : intent, origin: nil)
         case .land(let target):
             if case .row(let id, _) = target, anchorableIdentity(id, layout: layout) == nil {
                 return TranscriptPlacement(intent: intent, origin: nil, unavailableTarget: id)
@@ -288,16 +290,21 @@ public struct TranscriptPlacement: Equatable, Sendable {
         return TranscriptPlacement(intent: intent, origin: min(maximum, max(minimum, proposed)))
     }
 
-    /// Whether the end stopped a landing short of its row: the row's top sits below the top inset
+    /// Whether the end stopped a landing or a reveal short of its row: the row sits below its place
     /// and the last row ends in view. Both are read against the scroll position, because the
     /// content's end may already include the arrival's estimate.
     private static func endHolds(_ intent: Intent, layout: Layout) -> Bool {
-        guard case .landing(.row(let id, let order)) = intent,
-              let identity = survivor(id: id, order: order, layout: layout),
+        let target: (id: RowID, order: Int, margin: CGFloat)
+        switch intent {
+        case .landing(.row(let id, let order)): target = (id, order, 0)
+        case .revealing(let id, let order): target = (id, order, TranscriptReveal.margin)
+        default: return false
+        }
+        guard let identity = survivor(id: target.id, order: target.order, layout: layout),
               let row = layout.measurements[identity.id],
               let last = layout.rows.last.flatMap({ layout.measurements[$0.id] }) else { return false }
         let bottom = layout.origin + layout.viewport.height - layout.viewport.bottomInset
-        return row.top - layout.viewport.topInset - layout.origin > 0.5 && last.bottom <= bottom + 0.5
+        return row.top - layout.viewport.topInset - target.margin - layout.origin > 0.5 && last.bottom <= bottom + 0.5
     }
 
     private static func survivor(id: RowID, order: Int, layout: Layout) -> RowIdentity? {

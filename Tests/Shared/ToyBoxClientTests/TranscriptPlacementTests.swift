@@ -213,6 +213,20 @@ struct TranscriptPlacementTests {
                              origin: 1_566).intent == target)
     }
 
+    @Test func aRevealTheEndHoldsFollowsWhatArrivesBelowIt() {
+        let revealed = Model.reduce(.following, .reveal("m18"), rows: frames(), viewport: viewport, origin: 0)
+        #expect(revealed == .init(intent: .revealing("m18", order: 18), origin: 1_566))
+        for pinsLanding in [false, true] {
+            // A catch-up card left above pins only its landing, not a reveal chosen since.
+            #expect(Model.reduce(revealed.intent, .arrived(pinsLanding: pinsLanding),
+                                 layout: layout(frames(), origin: 1_566, documentEnd: 2_116)).intent == .following)
+        }
+        // A reveal that holds its row at the top leaves the arrival below.
+        let held = Model.Intent.revealing("m14", order: 14)
+        #expect(Model.reduce(held, .arrived(pinsLanding: false), rows: frames(), viewport: viewport,
+                             origin: 1_318).intent == held)
+    }
+
     @Test func aLandedRowThatOutgrowsTheEndKeepsItsTopInView() {
         let landed = Model.reduce(.following, .land(.row("m18", order: 18)), rows: frames(), viewport: viewport, origin: 0)
         #expect(landed.origin == 1_566)
