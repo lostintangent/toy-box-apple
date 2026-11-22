@@ -3,8 +3,6 @@ import AVKit
 import ToyBoxClient
 import ToyBoxIntelligence
 import ToyBoxKit
-import CryptoKit
-import ImageIO
 import QuickLook
 import SwiftUI
 import ToyBoxUI
@@ -343,10 +341,6 @@ private struct TranscriptPlayer: NSViewRepresentable {
     }
 }
 
-/// Decoded previews by attachment. A row that is created again, after switching channels, in a
-/// second window or when paging, lays out at its final height on its first pass instead of
-/// starting as a file chip and growing when its decode lands.
-///
 /// The shared thumbnails, with the SVG rasterizer ImageIO lacks.
 @MainActor
 enum TranscriptThumbnails {

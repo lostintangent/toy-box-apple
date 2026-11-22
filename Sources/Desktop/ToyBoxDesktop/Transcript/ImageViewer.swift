@@ -349,9 +349,7 @@ final class ImageViewer {
     }
 
     func pan(by delta: CGSize) {
-        guard let layout, let zoom else { return }
-        pan = clampedPan(CGSize(width: pan.width + delta.width, height: pan.height + delta.height),
-                         scale: zoom, in: layout)
+        setPan(CGSize(width: pan.width + delta.width, height: pan.height + delta.height))
     }
 
     func setPan(_ value: CGSize) {
