@@ -7,7 +7,7 @@ import UIKit
 import WebKit
 
 struct ArtifactViewer: View {
-    let session: ChannelArtifactSession
+    @Bindable var session: ChannelArtifactSession
     @Environment(AppModel.self) private var app
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -56,13 +56,9 @@ struct ArtifactViewer: View {
         .sheet(item: $reader.sharing) { share in
             ArtifactShareSheet(file: share.file) { session.actionError = $0 }
         }
-        .alert("Couldn't Complete Action", isPresented: Binding(
-            get: { session.actionError != nil },
-            set: { if !$0 { session.actionError = nil } }
-        )) {
-            Button("OK") { session.actionError = nil }
+        .alert("Couldn't Complete Action", item: $session.actionError) { _ in
         } message: {
-            Text(session.actionError ?? "").foregroundStyle(Color(uiColor: .label))
+            Text($0).foregroundStyle(Color(uiColor: .label))
         }
         .task(id: session.artifact?.id) { titleFocused = true }
         .onChange(of: session.artifact?.id) { _, _ in reader.cancelOriginal() }
