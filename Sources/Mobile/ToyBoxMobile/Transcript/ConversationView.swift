@@ -160,7 +160,7 @@ struct ConversationView: View {
             scroll.isReaderScrolling = touching || phase == .decelerating
             scroll.isScrollIdle = phase == .idle
             if touching { scroll.readerTouched() }
-            // Coming to rest is when a landing, or a scroll past the end, checks where it is.
+            // Coming to rest releases Jump to Latest's hold and acts on rows measured without a scroll.
             if phase == .idle, let placement = scroll.update() { place(placement) }
         }
         // A bar rather than an overlay, so the end of the conversation settles clear of them, a
