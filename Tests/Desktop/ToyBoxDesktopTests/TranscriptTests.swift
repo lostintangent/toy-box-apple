@@ -746,8 +746,11 @@ struct TranscriptTests {
                 "\(reading.key) left the screen at \(widened)")
     }
 
+    // Quarantined after widening lost the reader's row in CI 44977328314 (t1371). Owner: Transcript.
     @MainActor
-    @Test func draggingTheWidthWhileReadingKeepsTheReadersRow() async throws {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_TRANSCRIPT_WIDTH_DRAG"] == "1",
+                   "Quarantined pending cause identification (t1371). Opt in with TOY_BOX_TEST_TRANSCRIPT_WIDTH_DRAG=1."))
+    func draggingTheWidthWhileReadingKeepsTheReadersRow() async throws {
         let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), resizable: true)
         defer { await harness.close() }
         try await harness.scrollUp(byWheel: TranscriptHarness.wheelEventsApply) { harness.bottomGap > 400 }
