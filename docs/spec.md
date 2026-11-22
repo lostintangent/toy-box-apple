@@ -451,7 +451,8 @@ don't go through it.
 
 Responses carry no version envelope, and a write that returns one resource returns it bare. A
 change to these shapes ships with both apps' builds alongside the Toy Box release that makes it.
-The apps decode only the current shapes, with no fallback for an older server.
+The apps decode only the current shapes, with no fallback for an older server, and never read a
+server's version to decide what it supports. Every server is assumed to serve every route here.
 
 | Request | Use |
 | --- | --- |
