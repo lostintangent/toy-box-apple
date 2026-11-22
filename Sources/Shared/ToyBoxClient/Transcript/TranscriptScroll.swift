@@ -1,7 +1,6 @@
 import Foundation
-import ToyBoxKit
 
-/// Places the transcript with ToyBoxKit's scroll model. Geometry reports feed it and its placements
+/// Places the transcript with `TranscriptPlacement`. Geometry reports feed it and its placements
 /// go to the native scroll position. It never re-renders the transcript, so frame reports stay cheap.
 @MainActor
 public final class TranscriptScroll {
