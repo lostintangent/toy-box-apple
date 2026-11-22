@@ -141,14 +141,7 @@ struct RootView: View {
             ManagementSheet(flow: flow, presenter: management, host: nil)
                 .environment(overview)
         }
-        .alert("Channel unavailable", isPresented: Binding(
-            get: { model.navigationNotice != nil },
-            set: { if !$0 { model.navigationNotice = nil } }
-        )) {
-            Button("OK") { model.navigationNotice = nil }
-        } message: {
-            Text(model.navigationNotice ?? "")
-        }
+        .alert("Channel unavailable", item: $model.navigationNotice) { _ in } message: { Text($0) }
         .alert("Couldn't Enable Notifications", isPresented: Binding(
             get: { model.notifications.error != nil && !model.isCovered },
             set: { if !$0 { model.notifications.clearError() } }
