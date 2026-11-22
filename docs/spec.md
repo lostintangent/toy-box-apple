@@ -286,9 +286,9 @@ and are there again when it comes back.
   welcome, which holds the address field and Connect itself. There's no Add Server, and
   no way to remove one server. The app saves only the address the user entered and reaches the
   rest as its peers, so there's no list for the user to curate.
-- **Disconnecting** forgets every server at once. On the Mac it's Disconnect… at the leading end
-  of the bar under the server list, across from Check for Updates and Restart, so the bar shows
-  whenever the list does. On the phone it's a destructive Disconnect row
+- **Disconnecting** forgets every server at once. On the Mac it's Disconnect Servers… at the
+  leading end of the bar under the server list, across from Check for Updates and Restart, so the
+  bar shows whenever the list does. On the phone it's a destructive Disconnect Servers row
   (`rectangle.portrait.and.arrow.right`) that ends the Servers section, after Check for Updates
   and Restart.
   It asks first, "Disconnect from your servers?" with "Toy Box forgets every server on this Mac.
@@ -3181,8 +3181,8 @@ Notifications has an "Allow notifications" toggle over "Requests for your respon
 "Completed tasks". Both apps default to requests on and completions off, without changing saved choices. On iPhone,
 the request and completion switches are hidden while Allow notifications is off. On Mac they stay
 visible and disabled. Turning notifications off preserves both choices. The phone's Settings runs Servers, Notifications,
-On-device Intelligence, Appearance, then About, which lists App, Version and Build with no note
-under them.
+On-device Intelligence, then General, whose one card holds the Appearance picker and then the
+app's Version, with no note under them.
 Release builds also show Updates, with "Automatically check for updates" and "Automatically
 download and install updates" bound to Sparkle's own settings. Automatic installation is disabled
 while automatic checks are off or the updater disallows it. These controls are hidden without a
