@@ -59,24 +59,24 @@ struct ArtifactViewerTests {
         opener.open(original)
         defer { opener.close(animated: false) }
         #expect(interaction.isArtifactViewerPresented)
-        try await waitUntil("the original loaded") { !opener.isLoading }
-        #expect(opener.content?.artifact.id == original.id)
-        let loaded = opener.content?.file
+        try await waitUntil("the original loaded") { !opener.session.isLoading }
+        #expect(opener.session.content?.artifact.id == original.id)
+        let loaded = opener.session.content?.file
         opener.update([original, neighbor, newer])
-        #expect(opener.artifact?.id == original.id)
-        #expect(opener.content?.file == loaded)
-        #expect(opener.subtitle == "Markdown · 2 of 3")
+        #expect(opener.session.artifact?.id == original.id)
+        #expect(opener.session.content?.file == loaded)
+        #expect(opener.session.subtitle == "Markdown · 2 of 3")
         opener.update([neighbor, newer])
-        #expect(opener.artifact?.id == original.id)
-        #expect(opener.isUnavailable)
-        #expect(opener.content == nil)
+        #expect(opener.session.artifact?.id == original.id)
+        #expect(opener.session.isUnavailable)
+        #expect(opener.session.content == nil)
         opener.select(neighbor.id)
-        try await waitUntil("the neighbor loaded") { !opener.isLoading }
-        #expect(opener.content?.artifact.id == neighbor.id)
-        #expect(!opener.isUnavailable)
+        try await waitUntil("the neighbor loaded") { !opener.session.isLoading }
+        #expect(opener.session.content?.artifact.id == neighbor.id)
+        #expect(!opener.session.isUnavailable)
         opener.close(animated: false)
         #expect(!interaction.isArtifactViewerPresented)
-        #expect(!opener.isPresented)
+        #expect(!opener.session.isPresented)
     }
 
     @Test func reloadFailureKeepsThePreviouslyLoadedDocumentAndReportsTheActionError() async throws {
@@ -92,15 +92,15 @@ struct ArtifactViewerTests {
                          interaction: interaction, imageViewer: ImageViewer())
         opener.open(document)
         defer { opener.close(animated: false) }
-        try await waitUntil("the plan loaded") { !opener.isLoading }
-        let loaded = try #require(opener.content?.file)
+        try await waitUntil("the plan loaded") { !opener.session.isLoading }
+        let loaded = try #require(opener.session.content?.file)
         _ = fixture.failures.withLock { $0.insert("/api/serve/test/plan.md") }
         opener.reload()
-        try await waitUntil("the reload finished") { !opener.isLoading }
-        #expect(opener.content?.file == loaded)
-        #expect(opener.loadError == nil)
-        #expect(opener.actionError?.contains("500") == true)
-        #expect(opener.artifact?.id == document.id)
+        try await waitUntil("the reload finished") { !opener.session.isLoading }
+        #expect(opener.session.content?.file == loaded)
+        #expect(opener.session.loadError == nil)
+        #expect(opener.session.actionError?.contains("500") == true)
+        #expect(opener.session.artifact?.id == document.id)
     }
 
     @Test func anObsoleteResponseCannotReplaceTheNewlySelectedArtifact() async throws {
@@ -120,12 +120,12 @@ struct ArtifactViewerTests {
         defer { opener.close(animated: false) }
         try await waitUntil("the slow request reached the fixture") { fixture.requests.withLock { $0.contains { $0.path == slowPath } } }
         opener.select(next.id)
-        try await waitUntil("the next artifact loaded") { !opener.isLoading }
+        try await waitUntil("the next artifact loaded") { !opener.session.isLoading }
         fixture.release(slowPath)
-        #expect(opener.artifact?.id == next.id)
-        #expect(opener.content?.artifact.id == next.id)
-        #expect(opener.loadError == nil)
-        #expect(opener.actionError == nil)
+        #expect(opener.session.artifact?.id == next.id)
+        #expect(opener.session.content?.artifact.id == next.id)
+        #expect(opener.session.loadError == nil)
+        #expect(opener.session.actionError == nil)
     }
 
     // Quarantined after the probe missed the settle deadline under CPU saturation (t605). Owner: Overview.
@@ -320,10 +320,10 @@ struct ArtifactViewerTests {
                          interaction: ChannelInteraction(), imageViewer: ImageViewer())
         defer { opener.close(animated: false) }
         opener.open(plan)
-        try await waitUntil("the plan and the drawing's thumbnail loaded") { !opener.isLoading && opener.thumbnail(for: drawing) != nil }
-        #expect(opener.artifact?.id == plan.id)
+        try await waitUntil("the plan and the drawing's thumbnail loaded") { !opener.session.isLoading && opener.thumbnail(for: drawing) != nil }
+        #expect(opener.session.artifact?.id == plan.id)
         opener.select(drawing.id)
-        try await waitUntil("the drawing loaded") { !opener.isLoading }
+        try await waitUntil("the drawing loaded") { !opener.session.isLoading }
         #expect(opener.image?.size == CGSize(width: 120, height: 80))
         #expect(fixture.requests.withLock { $0.filter { $0.path.hasSuffix("drawing.svg") }.count } == 1)
     }
@@ -384,32 +384,32 @@ struct ArtifactViewerTests {
         defer { opener.close(animated: false); host.window.close() }
         #expect(host.window.makeFirstResponder(composer))
         opener.open(leavingHTML ? html : plan)
-        try await waitUntil("the first artifact loaded") { !opener.isLoading }
+        try await waitUntil("the first artifact loaded") { !opener.session.isLoading }
         if leavingHTML {
             try await waitUntil("the web view appeared") { opener.webView != nil }
             let web = try #require(opener.webView)
             #expect(host.window.makeFirstResponder(web))
             #expect(!opener.canPageUsingKeys)
             try host.press(.rightArrow, modifiers: flags)
-            #expect(opener.artifact?.id == html.id)
+            #expect(opener.session.artifact?.id == html.id)
             // A disappearing native web responder can leave the window itself holding focus.
             #expect(host.window.makeFirstResponder(nil))
             opener.select(plan.id)
         }
         try await waitUntil("the plan can page using keys") {
-            opener.artifact?.id == plan.id && opener.canPageUsingKeys
+            opener.session.artifact?.id == plan.id && opener.canPageUsingKeys
                 && host.window.firstResponder != nil && host.window.firstResponder !== host.window
         }
         for modifier: NSEvent.ModifierFlags in [.shift, .control, .option, .command] {
             for key: KeyEquivalent in [.leftArrow, .rightArrow] {
                 try host.press(key, modifiers: flags.union(modifier))
-                #expect(opener.artifact?.id == plan.id)
+                #expect(opener.session.artifact?.id == plan.id)
             }
         }
         try host.press(.rightArrow, modifiers: flags)
-        try await waitUntil("the right arrow paged to the prototype") { opener.artifact?.id == html.id }
+        try await waitUntil("the right arrow paged to the prototype") { opener.session.artifact?.id == html.id }
         try host.press(.leftArrow, modifiers: flags)
-        try await waitUntil("the left arrow paged back to the plan") { opener.artifact?.id == plan.id }
+        try await waitUntil("the left arrow paged back to the plan") { opener.session.artifact?.id == plan.id }
         #expect(composer.string == "Keep this unsent draft.")
     }
 
@@ -432,7 +432,7 @@ struct ArtifactViewerTests {
         let host = ArtifactKeyboardWindow(opener: opener, composer: NSTextView(), hasToolbar: true, size: size)
         defer { opener.close(animated: false); host.window.close() }
         opener.open(plan)
-        try await waitUntil("the plan's scroll view appeared") { !opener.isLoading && host.documentScrollView != nil }
+        try await waitUntil("the plan's scroll view appeared") { !opener.session.isLoading && host.documentScrollView != nil }
         let scroll = try #require(host.documentScrollView)
         let content = try #require(host.window.contentView)
         let canvas = content.convert(content.bounds, to: nil)
@@ -455,11 +455,11 @@ struct ArtifactViewerTests {
         }
         let restored = try #require(host.documentScrollView)
         let topInset = restored.contentInsets.top
-        opener.actionError = "The document remains visible while this action error is shown."
+        opener.session.actionError = "The document remains visible while this action error is shown."
         try await waitUntil("the error raised the top inset") { restored.contentInsets.top > topInset }
         #expect(restored.convert(restored.bounds, to: nil) == frame)
         #expect(restored.contentInsets.bottom == 80)
-        opener.actionError = nil
+        opener.session.actionError = nil
         try await waitUntil("the top inset returned") { abs(restored.contentInsets.top - topInset) < 1 }
         let document = try #require(restored.documentView)
         let end = document.frame.height - restored.contentView.bounds.height + restored.contentInsets.bottom
@@ -483,7 +483,7 @@ struct ArtifactViewerTests {
         let host = ArtifactKeyboardWindow(opener: opener, composer: NSTextView(), hasToolbar: true)
         defer { opener.close(animated: false); host.window.close() }
         opener.open(drawing)
-        try await waitUntil("the image view appeared") { !opener.isLoading && opener.nativeImageView?.window != nil }
+        try await waitUntil("the image view appeared") { !opener.session.isLoading && opener.nativeImageView?.window != nil }
         let image = try #require(opener.nativeImageView)
         let frame = image.convert(image.bounds, to: nil)
         #expect(abs(frame.maxY - (host.window.contentLayoutRect.maxY - 16)) < 1)
@@ -627,7 +627,7 @@ struct ArtifactViewerTests {
         let bottom: CGFloat = hasPager ? 80 : 24
         #expect(frame == canvas)
         for showsError in [false, true, false] {
-            opener.actionError = showsError ? "The document remains visible while this action error is shown." : nil
+            opener.session.actionError = showsError ? "The document remains visible while this action error is shown." : nil
             try await waitUntil("the top inset followed the error") {
                 showsError ? web.obscuredContentInsets.top > top + 1 : abs(web.obscuredContentInsets.top - top) < 1
             }
@@ -701,7 +701,7 @@ struct ArtifactViewerTests {
         var body: some View {
             ZStack {
                 ArtifactComposerControl(view: composer)
-                if let artifact = opener.artifact {
+                if let artifact = opener.session.artifact {
                     ArtifactViewerStage(opener: opener, artifact: artifact)
                 }
             }

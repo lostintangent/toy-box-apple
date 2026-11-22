@@ -15,14 +15,14 @@ struct ArtifactViewerCanvas: View {
 
     var body: some View {
         ZStack {
-            if let artifact = opener.artifact {
+            if let artifact = opener.session.artifact {
                 ArtifactViewerStage(opener: opener, artifact: artifact)
                     .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .allowsHitTesting(opener.isPresented)
-        .animation(opener.animates ? .easeInOut(duration: 0.2) : nil, value: opener.isPresented)
+        .allowsHitTesting(opener.session.isPresented)
+        .animation(opener.animates ? .easeInOut(duration: 0.2) : nil, value: opener.session.isPresented)
         .onChange(of: ObjectIdentifier(store), initial: true) {
             opener.configure(api: store.api, channelID: store.id, artifacts: store.artifacts,
                              interaction: interaction, imageViewer: images)
@@ -34,7 +34,7 @@ struct ArtifactViewerCanvas: View {
         .onChange(of: images.session?.id) { _, id in
             if id != nil { opener.close(animated: false) }
         }
-        .onChange(of: opener.isPresented) { _, presented in
+        .onChange(of: opener.session.isPresented) { _, presented in
             interaction.isArtifactViewerPresented = presented
         }
         // The canvas covers the detail column, without Overview.
@@ -42,7 +42,7 @@ struct ArtifactViewerCanvas: View {
             let frame = geometry.frame(in: .global)
             return ChannelTitleFit.Span(minX: frame.minX, maxX: frame.maxX)
         } action: { opener.titleFit.update(detail: $0) }
-        .onChange(of: [opener.artifact?.title ?? "", opener.subtitle], initial: true) { _, title in
+        .onChange(of: [opener.session.artifact?.title ?? "", opener.session.subtitle], initial: true) { _, title in
             opener.titleFit.update(title: title[0], subtitle: title[1])
         }
     }
@@ -54,9 +54,9 @@ struct ArtifactViewerStage: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focused: Bool
 
-    private var hasStrip: Bool { (opener.pages?.artifacts.count ?? 0) > 1 }
+    private var hasStrip: Bool { (opener.session.pages?.artifacts.count ?? 0) > 1 }
     private var background: Color {
-        Color(nsColor: opener.kind == .markdown ? .textBackgroundColor : .underPageBackgroundColor)
+        Color(nsColor: opener.session.kind == .markdown ? .textBackgroundColor : .underPageBackgroundColor)
     }
 
     var body: some View {
@@ -67,12 +67,12 @@ struct ArtifactViewerStage: View {
                 .transition(pageTransition)
         }
         .safeAreaBar(edge: .top, spacing: 0) {
-            if let error = opener.actionError {
+            if let error = opener.session.actionError {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
                     Text(error).textSelection(.enabled)
                     Spacer(minLength: 8)
-                    Button("Dismiss", systemImage: "xmark") { opener.actionError = nil }
+                    Button("Dismiss", systemImage: "xmark") { opener.session.actionError = nil }
                         .labelStyle(.iconOnly)
                 }
                 .font(.callout)
@@ -105,22 +105,22 @@ struct ArtifactViewerStage: View {
         .quickLookPreview($opener.previewFile)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
-        .accessibilityLabel("\(artifact.title), \(opener.subtitle)")
+        .accessibilityLabel("\(artifact.title), \(opener.session.subtitle)")
         .accessibilityAction(.escape) { opener.close() }
     }
 
     private var pageTransition: AnyTransition {
         guard !reduceMotion else { return .opacity }
-        let offset = CGFloat(opener.direction) * 40
+        let offset = CGFloat(opener.session.direction) * 40
         return .asymmetric(insertion: .opacity.combined(with: .offset(x: offset)),
                            removal: .opacity.combined(with: .offset(x: -offset)))
     }
 
     @ViewBuilder private var page: some View {
-        if opener.isUnavailable {
+        if opener.session.isUnavailable {
             ContentUnavailableView("Artifact Unavailable", systemImage: "doc.badge.ellipsis",
                                    description: Text("This artifact is no longer available."))
-        } else if let error = opener.loadError {
+        } else if let error = opener.session.loadError {
             ContentUnavailableView {
                 Label("Couldn't Load Artifact", systemImage: "doc.badge.ellipsis")
             } description: {
@@ -128,7 +128,7 @@ struct ArtifactViewerStage: View {
             } actions: {
                 Button("Retry") { opener.reload() }
             }
-        } else if let content = opener.content {
+        } else if let content = opener.session.content {
             switch content.kind {
             case .markdown:
                 ArtifactMarkdownPage(content: content, opener: opener, bottomInset: hasStrip ? 0 : 24)
@@ -146,7 +146,7 @@ struct ArtifactViewerStage: View {
             }
         } else {
             Group {
-                if opener.isLoading { DelayedProgressView("Loading artifact…").controlSize(.small) }
+                if opener.session.isLoading { DelayedProgressView("Loading artifact…").controlSize(.small) }
                 else { Color.clear }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -161,7 +161,7 @@ struct ArtifactViewerStage: View {
             Text("Preview this file, or open it in its default application.")
                 .foregroundStyle(.secondary)
             HStack {
-                Button("Quick Look", systemImage: "eye") { opener.previewFile = opener.content?.file }
+                Button("Quick Look", systemImage: "eye") { opener.previewFile = opener.session.content?.file }
                 Button("Open in Default Application", systemImage: "arrow.up.forward.app") { opener.openFile() }
             }
         }
@@ -305,7 +305,7 @@ private struct ArtifactNativeImage: NSViewRepresentable {
 
     private func configure(_ view: ArtifactImageScrollView) {
         view.onZoomChange = { [weak opener] in opener?.imageZoomRevision += 1 }
-        view.onError = { [weak opener] in opener?.actionError = $0 }
+        view.onError = { [weak opener] in opener?.session.actionError = $0 }
         view.configure(image: image, file: content.file, isSVG: content.kind == .svg)
         opener.nativeImageView = view
     }
@@ -417,7 +417,7 @@ private struct ArtifactNavigationCapsule: View {
     let opener: ArtifactOpener
 
     var body: some View {
-        if let pages = opener.pages {
+        if let pages = opener.session.pages {
             let count = pages.artifacts.count
             let stripWidth = CGFloat(min(count, 9)) * 32 + CGFloat(max(0, min(count, 9) - 1)) * 6
             HStack(spacing: 12) {
@@ -459,7 +459,7 @@ private struct ArtifactNavigationCapsule: View {
     }
 
     private func cell(_ artifact: ChannelArtifact, index: Int, count: Int) -> some View {
-        let selected = artifact.id == opener.artifact?.id
+        let selected = artifact.id == opener.session.artifact?.id
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         return Button { opener.select(artifact.id) } label: {
             Image(nsImage: opener.thumbnail(for: artifact) ?? NSWorkspace.shared.icon(for: artifact.fileType))
@@ -488,8 +488,8 @@ struct ArtifactViewerToolbar: ToolbarContent {
     let interaction: ChannelInteraction
 
     var body: some ToolbarContent {
-        ViewerLeadingToolbar(title: opener.artifact?.title ?? "", subtitle: opener.subtitle,
-                             help: opener.artifact.map { "\($0.title)\n\($0.file.path)" } ?? "",
+        ViewerLeadingToolbar(title: opener.session.artifact?.title ?? "", subtitle: opener.session.subtitle,
+                             help: opener.session.artifact.map { "\($0.title)\n\($0.file.path)" } ?? "",
                              fit: opener.titleFit, back: { opener.close() }) {
             titleMenu
         }
@@ -497,8 +497,8 @@ struct ArtifactViewerToolbar: ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             Button("Reload", systemImage: "arrow.clockwise") { opener.reload() }
                 .help("Reload")
-                .disabled(opener.isUnavailable)
-            if let resource = opener.resource {
+                .disabled(opener.session.isUnavailable)
+            if let resource = opener.session.resource {
                 ShareLink(item: resource) { Label("Share", systemImage: "square.and.arrow.up") }
                     .help("Share")
             } else {
@@ -512,14 +512,14 @@ struct ArtifactViewerToolbar: ToolbarContent {
         Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { opener.openInToyBox() }
             .disabled(opener.session.toyBoxURL == nil)
         Button("Reload", systemImage: "arrow.clockwise") { opener.reload() }
-            .disabled(opener.isUnavailable)
-        Button("Copy Link", systemImage: "link") { opener.copyLink() }.disabled(opener.resource == nil)
+            .disabled(opener.session.isUnavailable)
+        Button("Copy Link", systemImage: "link") { opener.copyLink() }.disabled(opener.session.resource == nil)
         Divider()
-        Button("Quick Look", systemImage: "eye") { opener.previewFile = opener.content?.file }
-            .disabled(opener.content == nil)
+        Button("Quick Look", systemImage: "eye") { opener.previewFile = opener.session.content?.file }
+            .disabled(opener.session.content == nil)
         Button("Open in Default Application", systemImage: "arrow.up.forward.app") { opener.openFile() }
-            .disabled(opener.content == nil)
-        if let artifact = opener.artifact, let share = store.artifactShares[artifact.file.id] {
+            .disabled(opener.session.content == nil)
+        if let artifact = opener.session.artifact, let share = store.artifactShares[artifact.file.id] {
             Divider()
             Button("Show in Transcript", systemImage: "bubble.left") {
                 opener.close()

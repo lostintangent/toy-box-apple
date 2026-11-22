@@ -28,23 +28,8 @@ final class ArtifactOpener {
     @ObservationIgnored var webReadingStates: [String: ArtifactWebRenderer.Reading] = [:]
     @ObservationIgnored var scrollOffsets: [String: CGFloat] = [:]
 
-    var artifact: ChannelArtifact? { session.artifact }
-    var pages: ArtifactPageList? { session.pages }
-    var content: ArtifactContent? { session.content }
-    var isLoading: Bool { session.isLoading }
-    var loadError: String? { session.loadError }
-    var actionError: String? {
-        get { session.actionError }
-        set { session.actionError = newValue }
-    }
-    var direction: Int { session.direction }
-    var isPresented: Bool { session.isPresented }
-    var isUnavailable: Bool { session.isUnavailable }
-    var resource: URL? { session.resource }
-    var kind: ArtifactContentKind { session.kind }
-    var subtitle: String { session.subtitle }
     var image: NSImage? {
-        guard let content, let bitmap = content.bitmap else { return nil }
+        guard let content = session.content, let bitmap = content.bitmap else { return nil }
         if let renderedImage, renderedImage.bitmap === bitmap { return renderedImage.image }
         let image = NSImage(cgImage: bitmap, size: content.imageSize ?? .zero)
         renderedImage = (bitmap, image)
@@ -90,13 +75,14 @@ final class ArtifactOpener {
     }
 
     func select(_ id: String) {
-        guard id != artifact?.id else { return }
+        guard id != session.artifact?.id else { return }
         rememberWebReadingState()
         if session.select(id) { stopWebRenderer() }
     }
 
     func move(by offset: Int) {
-        guard let index = pages?.index, let pages, pages.artifacts.indices.contains(index + offset) else { return }
+        guard let pages = session.pages, let index = pages.index,
+              pages.artifacts.indices.contains(index + offset) else { return }
         select(pages.artifacts[index + offset].id)
     }
 
@@ -123,8 +109,8 @@ final class ArtifactOpener {
             Task { @MainActor [weak self, weak window, weak responder] in
                 do { try await Task.sleep(for: .milliseconds(220)) }
                 catch is CancellationError { return }
-                catch { self?.actionError = error.localizedDescription; return }
-                guard self?.artifact == nil, self?.token == restoreToken, let window, let responder else { return }
+                catch { self?.session.actionError = error.localizedDescription; return }
+                guard self?.session.artifact == nil, self?.token == restoreToken, let window, let responder else { return }
                 if let view = responder as? NSView, view.window !== window { return }
                 window.makeFirstResponder(responder)
             }
@@ -132,7 +118,7 @@ final class ArtifactOpener {
     }
 
     func reload() {
-        if let artifact {
+        if let artifact = session.artifact {
             webReadingStates[artifact.id]?.position.cancel()
             webReadingStates[artifact.id] = nil
         }
@@ -149,7 +135,7 @@ final class ArtifactOpener {
 
     var zoomActions: ImageZoomActions? {
         _ = imageZoomRevision
-        guard let view = nativeImageView, content?.file == view.file else { return nil }
+        guard let view = nativeImageView, session.content?.file == view.file else { return nil }
         return ImageZoomActions(canZoomIn: view.magnification < view.maxMagnification,
                                 canZoomOut: view.magnification > view.minMagnification,
                                 isActualSize: abs(view.magnification * view.fitScale - 1) < 0.01,
@@ -158,16 +144,24 @@ final class ArtifactOpener {
     }
 
     func copyLink() {
-        guard let resource else { actionError = "The artifact's link is unavailable."; return }
+        guard let resource = session.resource else {
+            session.actionError = "The artifact's link is unavailable."
+            return
+        }
         NSPasteboard.general.clearContents()
         if !NSPasteboard.general.setString(resource.absoluteString, forType: .string) {
-            actionError = "The artifact's link could not be copied."
+            session.actionError = "The artifact's link could not be copied."
         }
     }
 
     func openFile() {
-        guard let file = content?.file else { actionError = "Load the artifact before opening its file."; return }
-        if !NSWorkspace.shared.open(file) { actionError = "The file could not be opened by its default application." }
+        guard let file = session.content?.file else {
+            session.actionError = "Load the artifact before opening its file."
+            return
+        }
+        if !NSWorkspace.shared.open(file) {
+            session.actionError = "The file could not be opened by its default application."
+        }
     }
 
     func openInToyBox() {
@@ -189,7 +183,7 @@ final class ArtifactOpener {
     }
 
     private func rememberWebReadingState() {
-        guard let artifact, let state = webRenderer?.readingState else { return }
+        guard let artifact = session.artifact, let state = webRenderer?.readingState else { return }
         webReadingStates[artifact.id]?.position.cancel()
         webReadingStates[artifact.id] = state
     }
