@@ -57,7 +57,8 @@ extension IntelligenceAvailability {
 }
 
 struct CatchUpGeneration: Sendable {
-    static let safetyMargin = 96
+    static let options = GenerationOptions(samplingMode: .greedy,
+                                           maximumResponseTokens: CatchUpPrompt.maximumResponseTokens)
 
     let model: SystemLanguageModel
 
@@ -68,21 +69,19 @@ struct CatchUpGeneration: Sendable {
         return outcome
     }
 
-    /// Tokens left for the prompt once instructions, schema and the answer are accounted for.
-    func budget(needsYou: Bool) async -> Int {
-        let instructions = (try? await model.tokenCount(for: Instructions(CatchUpPrompt.instructions)))
-            ?? CatchUpPrompt.estimatedTokens(CatchUpPrompt.instructions)
-        let schema = (try? await model.tokenCount(for: CatchUpSchema.schema(needsYou: needsYou))) ?? 300
-        return model.contextSize - instructions - schema - CatchUpPrompt.maximumResponseTokens - Self.safetyMargin
-    }
-
     private func generate(_ request: CatchUpRequest) async -> CatchUpOutcome {
         var trace = CatchUpTrace()
         trace.candidateLines = request.entries.count
         let needsYou = request.request != nil
-        trace.budget = await budget(needsYou: needsYou)
+        trace.budget = model.contextSize - CatchUpPrompt.maximumResponseTokens
         let fitted = await CatchUpPrompt.fitted(request, budget: trace.budget) { text in
-            (try? await model.tokenCount(for: Prompt(text))) ?? CatchUpPrompt.estimatedTokens(text)
+            // Counted as the session sends it, the count is exactly what the model reads.
+            let count = try? await model.tokenCount(for: [
+                .instructions(.init(segments: [.text(.init(content: CatchUpPrompt.instructions))], toolDefinitions: [])),
+                .prompt(.init(segments: [.text(.init(content: text))], options: Self.options,
+                              responseFormat: .init(schema: CatchUpSchema.schema(needsYou: needsYou)))),
+            ] as [Transcript.Entry])
+            return count ?? CatchUpPrompt.estimatedTokens(CatchUpPrompt.instructions + text)
         }
         guard var prompt = fitted else {
             trace.error = "Prompt doesn't fit"
@@ -93,13 +92,11 @@ struct CatchUpGeneration: Sendable {
             if Task.isCancelled { return CatchUpOutcome(result: nil, cacheable: false, trace: trace) }
             trace.attempts += 1
             trace.shownLines = prompt.entries.count
-            trace.promptTokens = try? await model.tokenCount(for: Prompt(prompt.text))
             do {
                 let session = LanguageModelSession(model: model, instructions: Instructions(CatchUpPrompt.instructions))
                 let response = try await session.respond(
-                    to: Prompt(prompt.text), schema: CatchUpSchema.schema(needsYou: needsYou),
-                    options: GenerationOptions(samplingMode: .greedy,
-                                               maximumResponseTokens: CatchUpPrompt.maximumResponseTokens))
+                    to: Prompt(prompt.text), schema: CatchUpSchema.schema(needsYou: needsYou), options: Self.options)
+                trace.promptTokens = response.usage.input.totalTokenCount
                 let draft = try CatchUpSchema.draft(response.content)
                 let assembly = draft.assembled(prompt: prompt, request: request)
                 trace.draft = draft

@@ -29,16 +29,10 @@ struct LiveModelEvalTests {
 
     @Test func modelFacts() async throws {
         let model = SystemLanguageModel.default
-        let generation = CatchUpGeneration(model: model)
-        let instructions = try await model.tokenCount(for: Instructions(CatchUpPrompt.instructions))
-        let plain = try await model.tokenCount(for: CatchUpSchema.schema(needsYou: false))
-        let withRequest = try await model.tokenCount(for: CatchUpSchema.schema(needsYou: true))
         report("""
             ## Model
             - Availability: \(IntelligenceAvailability(model.availability, supportsLocale: model.supportsLocale()))
             - Variant: \(model.variant.displayName), context \(model.contextSize) tokens, vision \(model.capabilities.contains(.vision))
-            - Instructions \(instructions) tokens, schema \(plain) tokens (\(withRequest) with needs-you)
-            - Prompt budget \(await generation.budget(needsYou: false)) tokens (\(await generation.budget(needsYou: true)) with needs-you)
 
             """)
     }
