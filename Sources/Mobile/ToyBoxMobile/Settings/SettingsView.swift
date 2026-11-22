@@ -19,17 +19,11 @@ struct SettingsView: View {
             servers
             NotificationSettingsSection(notifications: model.notifications)
             intelligenceSection
-            Section("Appearance") {
+            Section("General") {
                 Picker("Appearance", selection: $appearance) {
                     ForEach(AppAppearance.allCases) { value in Text(value.title).tag(value) }
                 }
-            }
-            Section("About") {
-                LabeledContent("App", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-                               ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Unavailable")
                 LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
-                               as? String ?? "Unavailable")
-                LabeledContent("Build", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion")
                                as? String ?? "Unavailable")
             }
         }
@@ -60,7 +54,7 @@ struct SettingsView: View {
     }
 
     /// Each server with its dot and name, in the order the list shows them, then Check for Updates,
-    /// Restart while a restart is pending, and Disconnect.
+    /// Restart while a restart is pending, and Disconnect Servers.
     private var servers: some View {
         Section {
             ForEach(model.servers.shown, id: \.api.baseURL) { catalog in
@@ -88,7 +82,7 @@ struct SettingsView: View {
                     Task { await model.servers.shown.restartPending() }
                 }
             }
-            Button("Disconnect", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+            Button("Disconnect Servers", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
                 confirmsDisconnect = true
             }
             .foregroundStyle(.red)

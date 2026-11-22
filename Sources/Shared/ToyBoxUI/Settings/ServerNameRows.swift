@@ -15,10 +15,11 @@ public struct ServerNameRows: View {
 
     public var body: some View {
         @Bindable var field = field
-        TextField("Name", text: $field.text)
+        let name = TextField("Name", text: $field.text)
             .accessibilityIdentifier("server-name")
             #if os(iOS)
             .textInputAutocapitalization(.words)
+            .multilineTextAlignment(.trailing)
             #endif
             .submitLabel(.done)
             .focused($isFocused)
@@ -26,6 +27,12 @@ public struct ServerNameRows: View {
             .onSubmit(commit)
             .onChange(of: isFocused) { _, focused in if !focused { commit() } }
             .onDisappear(perform: commit)
+        #if os(iOS)
+        // The phone's Form leaves a field unlabeled, so Name leads it as the Mac's grouped Form does.
+        LabeledContent("Name") { name }
+        #else
+        name
+        #endif
         if let failure = field.failure {
             FailureLabel(words: failure.words, reason: failure.reason)
         }
