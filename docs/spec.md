@@ -1882,50 +1882,92 @@ the conversation is scrolled, and drops the catch-up summary, which covered the 
 This boundary is not an extra synthetic message. Reference renders of day labels, the New divider, system rows and both request states:
 `docs/transcript-events.png`.
 
-Opening uses only the latest 100 messages supplied by the snapshot and never fetches older pages.
-Land on the row the New divider sits above, otherwise the end. Both apps
-land only once the store is connected, so a reopened channel lands on that boundary rather than on
-its cached end. Until then the cached conversation rests at its end, unread, where the scroll
-view's initial anchor put it, and nothing else places it, so an opening moves at most once, when it
-lands. Landing may hide the
-rows only until the first layout pass puts its target in place, never until layout goes quiet,
-so streaming or a busy app can't leave an opened channel blank. Landing ends there, with no
-correction afterward: from then on the end is followed, or the reader's place held, like any other
-time. If the
-first unread predates the snapshot and older history exists, show no synthetic New divider or
-catch-up summary. Scrolling up loads the real unread boundary in its original place.
-When a catch-up summary is eligible, land on its card instead (see Catch-up summaries).
-Older pages load only through reader paging, Find navigation or Reveal.
-Reveal, from a bookmark, a notification, Input Needed, Find or a summary line, loads older pages
-until it has the message, then places it once, with its top 32 points below the top of the
-visible band, or as near as the end allows, and highlights it briefly, as the web does. Both apps
-take these steps from one shared implementation. Reveal never checks where it landed or reports a
-miss, and a failed history page keeps its own notice.
-Follow incoming messages only while within
-48 points of the end. While Find is open, arrivals never move the conversation, so the result
-being read stays put, and closing Find within 48 points of the end follows again. The user's own
-new message, sent from any surface, moves the conversation to the end once and follows from there, wherever they were reading. The transcript does this when
-the message's row appears, so the composer, choices and cards don't move the conversation
-themselves, and a retry doesn't move it. A landing the end stopped
-short of its row is at the end, so a message arriving below it follows, while a catch-up card's
-landing keeps its top pinned (see Catch-up summaries). If scrolled away, a
-small glass Jump to Latest capsule appears in the floating activity row above the composer.
-It shares that row with the working summary when present. On the phone, those pills and the transient notices use plain regular glass with no tint, like the toolbar. They and the composer float over the transcript like Messages: the conversation keeps the system's default bottom scroll edge, so rows pass behind the glass right to the screen edge with no band or hairline. Never add `.hard`, a band or a fill behind them. In Dark over a bright image, the placeholder and Find's result count read faintly. That is the deliberate cost of floating plain glass. Preserve the visible top message and its offset while prepending history. While reading above the end, rows only move when the reader scrolls: when a row above the viewport changes height, or the lazy stack corrects its estimate for rows it hasn't built yet, the first row starting in the viewport keeps its place, and a row starting in the viewport grows downward. One mechanism holds the reader's place while reading, never two correcting the same change. Following the end, landing, jumps, reveals and paging own the position instead. A window change keeps the reading position, or the end while following. During a live resize drag, the reader's row only has to stay on screen, and its exact place returns when the drag ends. Older history starts loading before the reader reaches the top, so scrolling up flows into it without stopping at the edge, and a page lands in one move that keeps the reader's row where it was, without pulling a drag back. On the phone, a page that arrives while a finger is down waits until it lifts, then lands the same way, because UIScrollView's pan sets the offset from where the drag began on its next touch, which undid a landing under the finger and showed the page's top. At the top,
+**Scrolling.** Every move the reader didn't make serves one of the rules below. Each intent,
+whether opening, a send, Jump to Latest, a page, a Reveal or a width change, writes the scroll
+once, counting a write that only builds a row, and zero is best when SwiftUI already keeps the
+right message in place. Only a place an ID write can't carry, Reveal's 32 points or a width
+change's exact place, may take one more move once the row is built. A retry, an acknowledgment or
+a new measurement never moves the reader again, and nothing corrects a placement: no asking again
+until geometry agrees, no retries, no timers and no waiting for layout to go quiet. The reader's
+own touch wins. A scroll or a chosen target takes control at once, and nothing automatic, like a
+late landing or a delayed momentum report, pulls them back.
+
+**Opening** uses only the latest 100 messages supplied by the snapshot and never fetches older
+pages. Cached messages show at once and can be read, and a cold open shows a loading state. Once
+the store is connected, the conversation lands once: on the row the New divider sits above, on
+the catch-up card when a summary is eligible (see Catch-up summaries), or otherwise at the end. A
+reopened channel therefore lands on the fresh unread boundary rather than its cached end, because the
+reader may have read elsewhere since. A request link opens at the request. Until it lands, the
+cached conversation rests at its end, unread, where the scroll view's initial anchor put it, and
+nothing else places it. If the reader scrolls or chooses a target while waiting, that wins and
+the landing doesn't happen. Landing may hide the rows only until the first layout pass puts its
+target in place, never until layout goes quiet, and once connected the content appears without a
+tap, resize or screenshot. From then on the end is followed, or the reader's place held, like any
+other time. A landing the end stopped short of its row is at the end, so a message arriving below
+it follows, while a catch-up card's landing keeps its top pinned. If the first unread predates the
+snapshot and older history exists, show no synthetic New divider or catch-up summary. Scrolling up
+loads the real unread boundary in its original place. Older pages load only through reader paging,
+Find navigation or Reveal.
+
+**Following.** Within 48 points of the end when a message arrives, the conversation keeps the end
+in view, including while the last row grows. The user's own new message, sent from any surface
+and with Find open too, moves the conversation to the end once and follows from there, wherever
+they were reading. The transcript does this when the message's row appears, so the composer,
+choices and cards don't move the conversation themselves. Send Again and the server's
+confirmation leave the reader where they are. If scrolled away, a small glass Jump to Latest
+capsule appears in the floating activity row above the composer. It shares that row with the
+working summary when present. One tap reaches the end in one move, even mid-flick, and with Find
+open, which it closes in the same move. On the phone, those pills and the transient notices use plain regular glass with no tint, like the toolbar. They and the composer float over the transcript like Messages: the conversation keeps the system's default bottom scroll edge, so rows pass behind the glass right to the screen edge with no band or hairline. Never add `.hard`, a band or a fill behind them. In Dark over a bright image, the placeholder and Find's result count read faintly. That is the deliberate cost of floating plain glass.
+
+**Reading.** Above the end at the same width, rows move only when the reader scrolls. When a row
+above the viewport changes height, or the lazy stack corrects its estimate for rows it hasn't
+built yet, the first row starting in the viewport keeps its place, and a row starting in the
+viewport grows downward. One mechanism holds the reader's place, never two correcting the same
+change. Following the end, landing, jumps, reveals and paging own the position instead.
+
+**Find.** While Find is open, arrivals never move the conversation, so the result being read stays
+put. Closing it catches up to the end once if Find opened at the end and the reader hasn't
+scrolled or chosen a result since. Typing, match counts, arrivals and the keyboard don't count.
+Otherwise closing leaves the reader where they are, so a chosen result stays in view. Jump or a
+send that closes Find makes one move in total.
+
+**Reveal**, from a bookmark, a notification, Input Needed, Find or a summary line, loads older
+pages until it has the message, then places it once, with its top 32 points below the top of the
+visible band, where the sender's name sits clear of the toolbar's fade, or as near as the end
+allows. It highlights the message briefly, as the web does. Both apps take these steps from one
+shared implementation. Reveal never checks where it landed or reports a miss, and a failed
+history page keeps its own notice.
+
+**Paging.** Older history starts loading before the reader reaches the top, so scrolling up flows
+into it without stopping at the edge. A page lands in one move that keeps the reader's row and its
+offset where they were, even when a new message arrives below with it, and without pulling a drag
+back. On the phone, a page that arrives while a finger is down waits until it lifts, then lands
+the same way, and scrolling carries on through the flick, because UIScrollView's pan sets the
+offset from where the drag began on its next touch, which undid a landing under the finger and
+showed the page's top. At the top,
 show Load Older Messages when more history is available, a small loading row while fetching, or
 "Couldn't load older messages" with Retry on failure. Once all history is loaded, show no
 "Beginning of conversation" label and reserve no empty header space. A filtered view must
 continue paging even when a page contains no visible rows.
 
+**Width changes.** While following, the end stays in view, through a Mac live resize drag too.
+While reading, the reader's row returns to its exact place on screen. During a live resize drag it
+only has to stay on screen, and its exact place returns when the drag ends.
+
+**Message View switches.** At the end, the conversation stays at the end. While reading, a message
+the reader can see that the new view still shows stays in view. If none does, the new view opens
+at its end. A switch is never taken for an older page arriving.
+
 Both apps scroll the conversation with SwiftUI's own tools wherever those meet the rules above,
-and add code only where they don't. Each message is its own row in a `LazyVStack`, as are day
-labels, the New divider and system rows, so the stack estimates and measures one message at a time
-and any message can be a landing, Reveal or reading target. The Load Older row and the empty state
-are never the reader's place. The 16-point clearance below the last row is part of the content, so
-following and Jump to Latest never add it again. Reveal's page-until-found step is shared in
-ToyBoxClient. A row the lazy stack hasn't built can't be placed exactly, so landing, Reveal and a
-width change place a row once: when it isn't built, one scroll builds it, then one move puts it in
-place, and nothing corrects it afterward. Waiting for a scroll never assumes it has applied: each
-placement is decided from the next geometry the scroll view reports.
+and add code only where they don't, each addition naming the gap it measured. Each message is its
+own row in a `LazyVStack`, as are day labels, the New divider and system rows, so the stack
+estimates and measures one message at a time and any message can be a landing, Reveal or reading
+target. The Load Older row and the empty state are never the reader's place. The 16-point
+clearance below the last row is part of the content, so following and Jump to Latest never add it
+again. Reveal's page-until-found step is shared in ToyBoxClient. A row the lazy stack hasn't built
+is placed by its ID, which builds it in the same write. Waiting for a scroll never assumes it has
+applied: each placement is decided from the next geometry the scroll view reports. Tests count
+writes at each app's scroll writer, and anything a person sees move is also checked in a capture.
 
 `scrollPosition(id:)` alone doesn't meet those rules. Measured on the Mac with real rows and real
 trackpad events over history-demo, these are the gaps. One placement model in ToyBoxClient covers
