@@ -147,7 +147,7 @@ public final class TranscriptScroll {
             beforeFind = nil
             event = isFinding ? .holdCurrentPosition : .readerScrolled(to: layout.origin)
         } else if let last = lastLayout {
-            guard let change = Model.layoutEvent(from: last, to: layout) ?? drift(from: last, to: layout) else {
+            guard let change = Model.layoutEvent(from: last, to: layout) else {
                 return nil
             }
             event = change
@@ -171,22 +171,6 @@ public final class TranscriptScroll {
         default: break
         }
         return placement
-    }
-
-    /// Coming to rest places again only a position the reader didn't choose: a landing at the end
-    /// that rests anywhere else, or any scroll resting past the end, as when the content shrinks
-    /// mid-scroll, even while its target row is still unbuilt. A lazy stack that's still
-    /// re-estimating rows, as after a posture change, can also drop a placement at the end and move
-    /// the scroll without the reader. Following the reader set short of the end stays where they
-    /// stopped, and so does a reader's anchor.
-    private func drift(from last: Model.Layout, to layout: Model.Layout) -> Model.Event? {
-        guard isScrollIdle else { return nil }
-        guard let origin = Model.placement(for: intent, layout: layout).origin else {
-            return restsPastEnd(layout) ? .layoutChanged : nil
-        }
-        guard abs(origin - layout.origin) > Self.settled else { return nil }
-        let unchosen = intent == .landing(.end) || intent == .following && layout.origin != last.origin
-        return restsPastEnd(layout) || unchosen ? .layoutChanged : nil
     }
 
     private func endOrigin(_ layout: Model.Layout) -> CGFloat {
