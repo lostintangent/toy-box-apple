@@ -145,17 +145,8 @@ struct RootView: View {
         .alert("Couldn't Enable Notifications", isPresented: Binding(
             get: { model.notifications.error != nil && !model.isCovered },
             set: { if !$0 { model.notifications.clearError() } }
-        )) {
-            Button("OK") { model.notifications.clearError() }
-        } message: {
-            Text(model.notifications.error ?? "")
-        }
-        .alert("Couldn't follow this channel", isPresented: Binding(
-            get: { model.following.startFailed },
-            set: { model.following.startFailed = $0 }
-        )) {
-            Button("OK") { model.following.startFailed = false }
-        } message: {
+        )) {} message: { Text(model.notifications.error ?? "") }
+        .alert("Couldn't follow this channel", isPresented: Bindable(model.following).startFailed) {} message: {
             Text("Try again.")
         }
         .environment(model.following)
