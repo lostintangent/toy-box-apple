@@ -68,8 +68,8 @@ struct RootView: View {
     /// the conversation in view.
     private var screenEntity: ScreenEntity? {
         guard let selection, handoff.phase == .idle, imageViewer.session == nil, selectedCatalog != nil else { return nil }
-        guard artifactOpener.isPresented else { return .channel(selection) }
-        guard !artifactOpener.isUnavailable, let artifact = artifactOpener.artifact else { return nil }
+        guard artifactOpener.session.isPresented else { return .channel(selection) }
+        guard !artifactOpener.session.isUnavailable, let artifact = artifactOpener.session.artifact else { return nil }
         return .artifact(selection, artifactID: artifact.id)
     }
     private var isColumnPresented: Bool { !isNarrow && interaction.isInspectorPresented && selectedStore != nil }
@@ -78,7 +78,7 @@ struct RootView: View {
         let placement = placement
         let interaction = interaction
         column.isPresented = isColumnPresented
-        column.revision = placement.revision
+        _ = placement.revision
         return Binding(get: { column.isPresented },
                        set: { value in
                            if let choice = placement.columnChanged(to: value, presented: column.isPresented) {
@@ -388,12 +388,12 @@ struct RootView: View {
             sidebarVisible: columnVisibility != .detailOnly, inspectorVisible: isOverviewVisible,
             messageView: interaction.messageView,
             imageZoom: imageZoom,
-            isViewerPresented: artifactOpener.isPresented,
+            isViewerPresented: artifactOpener.session.isPresented,
             server: selectedServer,
             newChannel: { handoff.cancel(); management.present(.newChannel(server: selectedServer)) },
             openNewWindow: { if let selection { openWindow(value: ChannelWindowValue(selection)) } },
             openInToyBox: {
-                if artifactOpener.isPresented { artifactOpener.openInToyBox() }
+                if artifactOpener.session.isPresented { artifactOpener.openInToyBox() }
                 else if let selection { model.openInToyBox(selection) }
             },
             openFolder: openableFolder(store: store).map { path in { model.folders.open(path) } },
@@ -416,7 +416,7 @@ struct RootView: View {
     }
 
     private var imageZoom: ImageZoomActions? {
-        if artifactOpener.isPresented { return artifactOpener.zoomActions }
+        if artifactOpener.session.isPresented { return artifactOpener.zoomActions }
         let viewer = imageViewer
         guard viewer.presentation != nil else { return nil }
         return ImageZoomActions(canZoomIn: viewer.canZoomIn, canZoomOut: viewer.canZoomOut,
@@ -468,5 +468,4 @@ struct RootView: View {
 
 private final class ColumnPresentation {
     var isPresented = false
-    var revision = 0
 }

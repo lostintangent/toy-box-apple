@@ -53,18 +53,6 @@ struct CatchUpCard: Codable, Equatable, Sendable {
         (try? JSONEncoder().encode(self)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
     }
 
-    init(channel: ChannelTarget?, title: String, subtitle: String? = nil, isSummary: Bool = false,
-         lines: [Line] = [], rows: [Row] = [], footnote: String? = nil, reply: Reply? = nil) {
-        self.channel = channel
-        self.title = title
-        self.subtitle = subtitle
-        self.isSummary = isSummary
-        self.lines = lines
-        self.rows = rows
-        self.footnote = footnote
-        self.reply = reply
-    }
-
     /// The header's second line. A request's state leads it, so it follows your reply.
     var caption: String? {
         guard reply != nil, !isSummary else { return subtitle }
@@ -72,7 +60,9 @@ struct CatchUpCard: Codable, Equatable, Sendable {
         guard let subtitle else { return state }
         return "\(state) \u{00B7} \(subtitle.prefix(1).lowercased())\(subtitle.dropFirst())"
     }
+}
 
+extension CatchUpCard {
     init?(encoded: String) {
         guard let card = try? JSONDecoder().decode(CatchUpCard.self, from: Data(encoded.utf8)) else { return nil }
         self = card

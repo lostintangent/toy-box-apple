@@ -19,7 +19,7 @@ final class QuickSendController: NSObject, NSWindowDelegate {
     @ObservationIgnored private let hotKey: any QuickSendHotKeyRegistering
     @ObservationIgnored private var panel: QuickSendPanel?
     @ObservationIgnored private var hosting: NSHostingView<AnyView>?
-    @ObservationIgnored private var content = AnyView(QuickSendPlaceholder())
+    @ObservationIgnored private var content = AnyView(EmptyView())
 
     init(options: LaunchOptions = .init(), defaults: UserDefaults = .standard,
          hotKey: any QuickSendHotKeyRegistering = CarbonQuickSendHotKey()) {
@@ -77,18 +77,17 @@ final class QuickSendController: NSObject, NSWindowDelegate {
             }
         } else {
             isRecording = false
-            registerShortcut(clearingError: false)
+            registerShortcut()
         }
     }
 
     func reportInvalidShortcut(_ message: String) { error = message }
 
-    private func registerShortcut(clearingError: Bool = true) {
+    private func registerShortcut() {
         guard isEnabled, !isRegistered, let shortcut else { return }
         do {
             try hotKey.replace(with: shortcut) { [weak self] in self?.toggle() }
             isRegistered = true
-            if clearingError { error = nil }
         } catch {
             self.error = error.localizedDescription
         }
@@ -154,11 +153,7 @@ final class QuickSendController: NSObject, NSWindowDelegate {
     }
 
     func present(prefill: QuickSendPrefill) {
-        if let pending = pendingPrefill {
-            pendingPrefill = pending.appending(prefill)
-        } else {
-            pendingPrefill = prefill
-        }
+        pendingPrefill = pendingPrefill?.appending(prefill) ?? prefill
         present()
     }
 
@@ -247,18 +242,5 @@ private struct QuickSendAppearance: View {
         content
             .environment(\.channelTextScale, textScale)
             .preferredColorScheme(appearance.colorScheme)
-    }
-}
-
-private struct QuickSendPlaceholder: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Quick Send").font(.headline)
-            Text("Send a message to your team from anywhere.")
-                .foregroundStyle(.secondary)
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 24))
     }
 }

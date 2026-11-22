@@ -9,7 +9,6 @@ struct QuickSendView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.openSettings) private var openSettings
-    @AppStorage("textScale") private var textScale = 1.0
     @ViewState private var history: QuickSendTargetHistory?
     @ViewState private var incoming: QuickSendPrefillInbox?
     @ViewState private var sessions: [ChannelTarget: AuxiliaryComposerSession] = [:]
@@ -85,7 +84,6 @@ struct QuickSendView: View {
             guard let session, session.confirmation == nil else { return false }
             return providers.map { session.draft.attachProvider($0) }.contains(true)
         }
-        .environment(\.channelTextScale, textScale)
         .onChange(of: model.quickSend.isPresented, initial: true) { _, presented in
             if presented { beginPresentation() }
             else { endPresentation() }

@@ -19,11 +19,10 @@ struct ChannelSidebar: View {
     @ViewState private var collapsed: Set<URL> = []
 
     /// A server's channels that match the search, held in place while a note records.
-    private func channels(in catalog: ChannelCatalogStore?) -> [Listed] {
-        guard let catalog else { return [] }
+    private func channels(in catalog: ChannelCatalogStore) -> [Listed] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return talk.ordered(catalog.channels, on: catalog.api.baseURL).compactMap { channel in
-            guard query.isEmpty || channel.matches(query), let target = catalog.target(channel.id) else { return nil }
+            guard channel.matches(query), let target = catalog.target(channel.id) else { return nil }
             return Listed(channel: channel, target: target, catalog: catalog)
         }
     }
@@ -49,7 +48,8 @@ struct ChannelSidebar: View {
     /// The footer's servers. A launch server the app can't use counts as one that can't connect.
     private var summary: SidebarFooter.Summary {
         guard let error = model.configurationError else { return .init(catalogs: model.servers.shown) }
-        return .init(servers: [(SidebarFooter.server(model.serverURL), SidebarFooter(phase: nil, isLoaded: false), error)])
+        let footer = SidebarFooter(phase: nil, isLoaded: false)
+        return .init(servers: [(ChannelCatalogStore.name(of: model.serverURL), footer, error)])
     }
 
     /// The list's own selection, which follows `selection` except during a Command-click.
@@ -111,8 +111,7 @@ struct ChannelSidebar: View {
         .safeAreaPadding(.top, 4)
         .talkList(talk, targets: listed.map(\.target), onGlass: true, endsWhenChanging: [selection, query]) { target in
             if let listed = listed.first(where: { $0.target == target }) {
-                row(listed, listing: model.listing(for: listed.catalog), catalog: listed.catalog,
-                    request: nil)
+                row(listed, listing: model.listing(for: listed.catalog), request: nil)
             }
         }
         .overlay {
@@ -171,8 +170,7 @@ struct ChannelSidebar: View {
         let listing = model.listing(for: catalog)
         let requests = requests(catalog)
         return ForEach(channels(in: catalog)) { listed in
-            row(listed, listing: listing, catalog: catalog,
-                request: listed.target == listSelection ? nil : requests[listed.target])
+            row(listed, listing: listing, request: listed.target == listSelection ? nil : requests[listed.target])
                 .listRowInsets(EdgeInsets())
                 .tag(listed.target)
                 .contextMenu { contextMenu(listed, api: catalog.api) }
@@ -199,8 +197,8 @@ struct ChannelSidebar: View {
         }
     }
 
-    private func row(_ listed: Listed, listing: ChannelListing, catalog: ChannelCatalogStore,
-                     request: ChannelWaitingRequest?) -> some View {
+    private func row(_ listed: Listed, listing: ChannelListing, request: ChannelWaitingRequest?) -> some View {
+        let catalog = listed.catalog
         let channel = listed.channel
         let current = listing.channel(channel)
         let agents = listing.agents(channel)
@@ -343,7 +341,7 @@ private struct SidebarServerHeader: View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
         let failure = catalog.phase.message
         let address = catalog.api.baseURL.absoluteString
-        let host = SidebarFooter.server(address)
+        let host = ChannelCatalogStore.name(of: address)
         let value = catalog.name == host ? footer.accessibilityValue : "\(host), \(footer.accessibilityValue)"
         HStack(spacing: 6) {
             // A healthy server's name starts at the header's edge.

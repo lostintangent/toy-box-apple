@@ -95,7 +95,7 @@ final class ChannelFolders {
     }
 
     private func resolve(_ key: Key) -> ChannelFolderAvailability {
-        if !Self.isLoopback(key.host) {
+        if !ChannelAPI.isLoopback(host: key.host) {
             guard let localNames else {
                 resolveLocalNames()
                 return .remote(host: key.host)
@@ -120,10 +120,6 @@ final class ChannelFolders {
             localNames = Set(names.compactMap(Self.trimmedHost))
             recheck([])
         }
-    }
-
-    nonisolated static func isLoopback(_ host: String) -> Bool {
-        ChannelAPI.isLoopback(host: host)
     }
 
     nonisolated static func normalizedHost(_ server: URL) -> String {

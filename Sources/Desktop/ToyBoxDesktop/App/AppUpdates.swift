@@ -24,8 +24,7 @@ final class AppUpdates {
     }
 
     init(isSnapshot: Bool, bundle: Bundle = .main) {
-        guard Self.shouldStart(hasFeedURL: bundle.object(forInfoDictionaryKey: "SUFeedURL") != nil,
-                               isSnapshot: isSnapshot) else {
+        guard bundle.object(forInfoDictionaryKey: "SUFeedURL") != nil, !isSnapshot else {
             controller = nil
             return
         }
@@ -42,10 +41,6 @@ final class AppUpdates {
                 MainActor.assumeIsolated { self?.refresh() }
             }
         }
-    }
-
-    static func shouldStart(hasFeedURL: Bool, isSnapshot: Bool) -> Bool {
-        hasFeedURL && !isSnapshot
     }
 
     func checkForUpdates() {

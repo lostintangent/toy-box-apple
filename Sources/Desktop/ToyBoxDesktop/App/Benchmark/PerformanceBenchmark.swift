@@ -302,8 +302,9 @@ final class PerformanceBenchmark {
             try? await Task.sleep(for: .milliseconds(500))
             _ = await settled(quiet: 0.3)
             guard let scroll = transcriptScrollView() else { fail("there's no transcript scroll view") }
-            // Lay out the oldest rows first, so the page's time leaves out the jump there.
-            await scrollNearTop(scroll)
+            // Lay out the oldest rows first, just short of where the transcript asks for an older
+            // page, so the page's time leaves out the jump there.
+            await scrollSteadily(scroll, toTopOffset: 120)
             let first = store.messages.first?.sequence ?? 0
             let loaded = store.messages.count
             let source = BenchmarkScrollGeometry.source(in: scroll)
@@ -536,10 +537,6 @@ final class PerformanceBenchmark {
     }
 
     // MARK: Place
-
-    private func placeSnapshot() -> BenchmarkPlace? {
-        transcriptScrollView().flatMap { BenchmarkScrollGeometry.source(in: $0)?.benchmarkPlaceSnapshot() }
-    }
 
     /// How far `id` settled from where it should be.
     private func describeHold(of id: String?, expectedTop: CGFloat?, in place: BenchmarkPlace?) -> String {
@@ -937,19 +934,6 @@ final class PerformanceBenchmark {
         let clip = scroll.contentView.bounds
         return document.isFlipped ? clip.minY + scroll.contentInsets.top
             : document.frame.height - clip.maxY
-    }
-
-    /// Settles the visible top just short of where the transcript asks for an older page, until
-    /// lazy row layout stops moving it.
-    private func scrollNearTop(_ scroll: NSScrollView) async {
-        let offset = 120.0
-        var steady = 0
-        for _ in 0..<40 where steady < 2 {
-            move(scroll, toTopOffset: offset)
-            _ = await settled(quiet: 0.3)
-            steady = abs(offsetFromTop(scroll) - offset) < 2 ? steady + 1 : 0
-        }
-        guard steady == 2 else { fail("the transcript didn't stay near its top") }
     }
 
     /// How far the transcript's visible bottom sits above the end of its content.
@@ -1615,11 +1599,9 @@ private final class MainRunLoopMeter {
         longestGap = 0
     }
 
-    func afterPass(_ callback: @escaping (CFTimeInterval) -> Void) { callbacks.append(callback) }
-
     /// When the current pass ends.
     func passEnd() async -> CFTimeInterval {
-        await withCheckedContinuation { continuation in afterPass { continuation.resume(returning: $0) } }
+        await withCheckedContinuation { continuation in callbacks.append { continuation.resume(returning: $0) } }
     }
 
     private func gapEnded(startingAnother: Bool) {

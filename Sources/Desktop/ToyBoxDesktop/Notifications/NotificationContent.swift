@@ -1,4 +1,3 @@
-import ToyBoxClient
 import ToyBoxKit
 import Foundation
 import UserNotifications
@@ -17,7 +16,7 @@ struct NotificationReply: Equatable {
         guard let channelID = info["channelID"] as? String,
               let server = (info["serverURL"] as? String).flatMap(URL.init(string:)) else { return nil }
         let reply: ChannelNotification.Reply?
-        if action == ChannelNotifications.replyAction {
+        if action == ChannelNotificationCategory.reply {
             reply = ChannelNotification.Reply(text ?? "", to: info["handle"] as? String)
         } else if let choice = SuggestedReplies(info["replies"] as? [String]).label(forAction: action) {
             reply = ChannelNotification.Reply(choice, to: nil)
@@ -39,6 +38,6 @@ enum NotificationPresentation {
     static func options(kind: String?, isActiveChannel: Bool) -> UNNotificationPresentationOptions {
         if kind == MorningDigest.category { return [.banner, .list] }
         if isActiveChannel { return [] }
-        return kind == ChannelNotifications.Event.Kind.completion.rawValue ? [.list] : [.banner, .list, .sound]
+        return kind == ChannelPushPayload.Kind.completion.rawValue ? [.list] : [.banner, .list, .sound]
     }
 }

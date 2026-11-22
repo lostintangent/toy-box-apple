@@ -52,7 +52,6 @@ final class QuickSendPrefillInbox {
         draft.attachFiles(prefill.fileURLs, allowingLocalPaths: allowsLocalPaths)
     }
 
-    @discardableResult
     func apply(to session: AuxiliaryComposerSession) -> Bool {
         guard draft.revision != lastAppliedRevision, hasPendingContent, !draft.isLoadingImages,
               !session.isSubmitting, session.confirmation == nil, session.store.phase != .deleted else { return false }

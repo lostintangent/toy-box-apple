@@ -141,10 +141,10 @@ struct ChannelQuery: EntityStringQuery, EnumerableEntityQuery {
 /// Spotlight, so a session-only launch ignores it.
 extension ChannelQuery: IndexedEntityQuery {
     func reindexAllEntities(indexDescription: CSSearchableIndexDescription) async throws {
-        await context.reindexSpotlight(nil)
+        await context.spotlight?.reindex(nil)
     }
 
     func reindexEntities(for identifiers: [String], indexDescription: CSSearchableIndexDescription) async throws {
-        await context.reindexSpotlight(identifiers)
+        await context.spotlight?.reindex(identifiers)
     }
 }

@@ -91,8 +91,6 @@ struct ChannelSidebar: View {
         min(max(listBounds.width - (cardRow?.maxX ?? listBounds.width), 0), NeedsYouCard.margin)
     }
 
-    private var canCreate: Bool { model.canCreateChannel }
-
     /// Waiting requests in the expanded sections, newest first, except the one the unfolded detail
     /// column already shows.
     private var waiting: [ChannelWaitingRequest] {
@@ -259,7 +257,7 @@ struct ChannelSidebar: View {
                 .opacity(cards.isLifted && liftedCard != nil ? 0 : 1)
                 .padding(.leading, -NeedsYouCard.margin)
                 .padding(.trailing, -reach)
-                .onResize(in: .global) { cardFrame = $0 }
+                .onResize { cardFrame = $0 }
         case .question(let entry):
             // A plain button answers only on what it draws, so the whole row takes the tap.
             Button { cards.open(entry.id) } label: {
@@ -317,7 +315,7 @@ struct ChannelSidebar: View {
             ToolbarItem(placement: .topBarLeading) { EditButton() }
             ToolbarItem(placement: .primaryAction) {
                 Button("New Channel", systemImage: "plus") { management.present(.newChannel(server: model.selectedServer)) }
-                    .disabled(!canCreate)
+                    .disabled(!model.canCreateChannel)
             }
             // The unfolded sidebar keeps these two in one group, which UIKit folds into ••• when narrow.
             if isCollapsed {
@@ -387,7 +385,7 @@ struct ChannelSidebar: View {
                 } actions: {
                     Button("New Channel") { management.present(.newChannel(server: model.selectedServer)) }
                         .frame(minHeight: 44)
-                        .disabled(!canCreate)
+                        .disabled(!model.canCreateChannel)
                 }
             } else {
                 ContentUnavailableView {
@@ -498,8 +496,8 @@ private struct ChannelSidebarServerHeader: View {
 
     var body: some View {
         let footer = SidebarFooter(phase: catalog.phase, isLoaded: catalog.isLoaded)
-        let failure = footer.isFailing ? catalog.phase.message : nil
-        let host = SidebarFooter.server(catalog.api.baseURL.absoluteString)
+        let failure = catalog.phase.message
+        let host = ChannelCatalogStore.name(of: catalog.api.baseURL.absoluteString)
         let channels = catalog.state?.channels.count
         let value = [channels.map { "\($0) \($0 == 1 ? "channel" : "channels")" },
                      catalog.name == host ? nil : host,
@@ -511,10 +509,7 @@ private struct ChannelSidebarServerHeader: View {
             HStack(spacing: 8) {
                 // A healthy server's name starts at the header's edge.
                 if footer.isFailing {
-                    Circle()
-                        .fill(footer.dot)
-                        .frame(width: SidebarFailureDot.size, height: SidebarFailureDot.size)
-                        .opacity(failure == nil ? 1 : 0)
+                    Color.clear.frame(width: SidebarFailureDot.size, height: SidebarFailureDot.size)
                 }
                 Text(catalog.name).lineLimit(1).truncationMode(.middle)
                 if let channels {

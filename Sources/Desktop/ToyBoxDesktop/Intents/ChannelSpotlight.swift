@@ -120,12 +120,12 @@ final class ChannelSpotlight {
     }
 
     static func plan(from indexed: Indexed?, to catalog: Catalog) -> (plan: Plan, indexed: Indexed?) {
-        var seen: Set<String> = []
-        let channels = (catalog.channels ?? []).filter { seen.insert($0.id).inserted }
-        let entries = Dictionary(uniqueKeysWithValues: channels.map { ($0.id, $0) })
         // An earlier launch's channels stay until the catalogs arrive, and what's indexed stays
         // while a server you add loads.
-        guard catalog.channels != nil else { return (Plan(), indexed) }
+        guard let all = catalog.channels else { return (Plan(), indexed) }
+        var seen: Set<String> = []
+        let channels = all.filter { seen.insert($0.id).inserted }
+        let entries = Dictionary(uniqueKeysWithValues: channels.map { ($0.id, $0) })
         guard let indexed else {
             return (Plan(removesAll: true, indexes: channels), Indexed(entries: entries))
         }

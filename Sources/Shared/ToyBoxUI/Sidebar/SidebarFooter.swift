@@ -1,5 +1,4 @@
 import ToyBoxClient
-import Foundation
 import SwiftUI
 
 /// How the sidebar footer shows the catalog's phase on both apps. See Connections in docs/spec.md.
@@ -11,8 +10,6 @@ public struct SidebarFooter: Equatable {
     public let verb: String
     public let accessibilityValue: String
 
-    /// The rows stay while the catalog reconnects on its own.
-    public var isReconnecting: Bool { dot == .orange }
     /// An orange or red dot.
     public var isFailing: Bool { dot == .orange || dot == .red }
 
@@ -37,9 +34,6 @@ public struct SidebarFooter: Equatable {
         return status == 401 || status == 403
     }
 
-    /// The server as the footer and menu bar name it: its host, and a port that isn't the default.
-    public static func server(_ url: String) -> String { ChannelCatalogStore.name(of: url) }
-
     /// Red, then orange, then the first load's gray, then green.
     fileprivate var severity: Int {
         switch dot {
@@ -58,8 +52,6 @@ extension SidebarFooter {
         public let count: Int
         /// The least healthy server's status, which never spins, since each header shows its own load.
         public let footer: SidebarFooter
-        /// The least healthy server's name, or nil when every server is connected.
-        public let server: String?
         /// The least healthy server's readable failure, while it has one.
         public let failure: String?
         /// The help's first line, which VoiceOver reads too: the least healthy server, or with every
@@ -71,7 +63,8 @@ extension SidebarFooter {
             let worst = servers.max { $0.footer.severity < $1.footer.severity }
             count = servers.count
             footer = worst?.footer ?? SidebarFooter(phase: .connecting, isLoaded: false)
-            server = worst?.footer.severity == 0 ? nil : worst?.name
+            // Every server connected names none.
+            let server = worst?.footer.severity == 0 ? nil : worst?.name
             failure = server == nil ? nil : worst?.failure
             if let server {
                 status = "\(footer.verb) \(server)"

@@ -6,8 +6,6 @@ import UserNotifications
 
 @MainActor @Observable
 final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
-    nonisolated static let replyAction = ChannelNotificationCategory.reply
-
     struct Activation: Equatable {
         var channel: ChannelNotification.Activation
         var serverURL: String
@@ -118,8 +116,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    static func content(for event: Event, serverURL: String,
-                        request: ChannelRequestMessage? = nil) -> UNNotificationContent {
+    static func content(for event: Event, serverURL: String, request: ChannelRequestMessage?) -> UNNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = event.channel.name
         content.sound = .default
@@ -238,10 +235,9 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     struct Event: Equatable {
-        typealias Kind = ChannelPushPayload.Kind
         let channel: Channel
         let sequence: Int
-        let kind: Kind
+        let kind: ChannelPushPayload.Kind
     }
 
     struct Policy {

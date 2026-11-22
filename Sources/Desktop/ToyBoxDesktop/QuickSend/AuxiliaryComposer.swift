@@ -10,9 +10,9 @@ struct AuxiliaryComposer: View {
     enum Style { case quickSend, reply }
 
     @Bindable var session: AuxiliaryComposerSession
-    var style: Style = .reply
-    var isPresented = true
-    var presentationID = UUID()
+    var style: Style
+    var isPresented: Bool
+    var presentationID: UUID
     var onConfirmed: (AuxiliaryComposerSession.Confirmation) -> Void
     var onOpenChannel: () -> Void
     var onDismiss: () -> Void

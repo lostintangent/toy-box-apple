@@ -354,7 +354,7 @@ struct ShellTests {
             ForEach(0..<30, id: \.self) { index in
                 if index == 8 {
                     Text("Card").frame(maxWidth: .infinity).frame(height: card.height)
-                        .onResize(in: .global) { card.frames.append($0) }
+                        .onResize { card.frames.append($0) }
                 } else {
                     Text("Row \(index)").frame(height: 61 + CGFloat(index % 3) / 3)
                 }
@@ -1554,7 +1554,7 @@ struct ShellTests {
             let store = try #require(model.selectedStore)
             model.setScenePhase(.active)
             #expect(store.isTrying)
-            #expect(model.canManageChannels)
+            #expect(model.canManageChannels(on: model.catalog))
 
             let interrupted = ChangeFlag()
             withObservationTracking {
@@ -1563,7 +1563,7 @@ struct ShellTests {
             } onChange: { interrupted.set() }
             model.setScenePhase(.inactive)
             #expect(!model.isActive)
-            #expect(!model.canManageChannels)
+            #expect(!model.canManageChannels(on: model.catalog))
             model.setScenePhase(.active)
             #expect(model.isActive)
             #expect(!interrupted.isSet)
@@ -1616,20 +1616,20 @@ struct ShellTests {
             defer { model.setScenePhase(.background) }
             #expect(model.catalog?.phase == .connecting)
             #expect(!model.canCreateChannel)
-            #expect(!model.canManageChannels)
+            #expect(!model.canManageChannels(on: model.catalog))
             await model.refreshCatalog()
             #expect(model.catalog?.phase == .connected)
             #expect(!model.canCreateChannel)
-            #expect(!model.canManageChannels)
+            #expect(!model.canManageChannels(on: model.catalog))
             model.setScenePhase(.active)
             #expect(model.canCreateChannel)
             #expect(model.selectedChannelID == nil)
-            #expect(model.canManageChannels)
+            #expect(model.canManageChannels(on: model.catalog))
             model.selectedChannelID = "second"
-            #expect(model.canManageChannels)
+            #expect(model.canManageChannels(on: model.catalog))
             model.setScenePhase(.inactive)
             #expect(!model.canCreateChannel)
-            #expect(!model.canManageChannels)
+            #expect(!model.canManageChannels(on: model.catalog))
         }
     }
 
