@@ -155,24 +155,21 @@ private struct OverviewFolderRow: View {
 private struct OverviewPurpose: View {
     let purpose: String
     @Binding var expanded: Bool
-    @ViewState private var fullHeight: CGFloat = 0
-    @ViewState private var shownHeight: CGFloat = 0
+    @ViewState private var overflows = false
+
+    private static let lineLimit = 4
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(purpose)
-                .lineLimit(expanded ? nil : 4)
+                .lineLimit(expanded ? nil : Self.lineLimit)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
-                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { shownHeight = $0 }
-                .background(alignment: .topLeading) {
-                    Text(purpose)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .hidden()
-                        .accessibilityHidden(true)
-                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { fullHeight = $0 }
+                // Collapsed text truncates past the limit. Expanded text never does, so its line count shows it.
+                .onPreferenceChange(Text.LayoutKey.self) { layouts in
+                    overflows = layouts.contains { $0.layout.isTruncated || $0.layout.count > Self.lineLimit }
                 }
-            if expanded || fullHeight > shownHeight + 0.5 {
+            if overflows {
                 Button(expanded ? "Show Less" : "Show More") { expanded.toggle() }
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
