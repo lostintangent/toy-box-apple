@@ -316,8 +316,9 @@ final class ChannelIntents {
             if store.phase == .deleted { throw ChannelIntentError.channelNotFound }
             return store.phase.isConnected ? store.state : nil
         }
-        guard let state else { throw ChannelIntentError.unreachable }
-        return state
+        // Read again, since events can apply while the wait hands back what it saw.
+        guard state != nil, let current = store.state else { throw ChannelIntentError.unreachable }
+        return current
     }
 
     /// What `read` gives once it isn't nil, read again whenever something it reads changes, or nil at
