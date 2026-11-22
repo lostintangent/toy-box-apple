@@ -1936,7 +1936,8 @@ send that closes Find makes one move in total.
 **Reveal**, from a bookmark, a notification, Input Needed, Find or a summary line, loads older
 pages until it has the message, then places it once, with its top 32 points below the top of the
 visible band, where the sender's name sits clear of the toolbar's fade, or as near as the end
-allows. It highlights the message briefly, as the web does. Both apps take these steps from one
+allows. A reveal the end stopped short is at the end, so a message arriving below it follows,
+like a landing. It highlights the message briefly, as the web does. Both apps take these steps from one
 shared implementation. Reveal never checks where it landed or reports a miss, and a failed
 history page keeps its own notice.
 
