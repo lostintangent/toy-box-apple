@@ -1,9 +1,9 @@
 import SwiftUI
 import UIKit
 
-/// UIKit has no keyboard-visibility property, only frame-change notifications and the window's
-/// keyboard layout guide. The channel screen owns the one observer, so the composer, Find and the
-/// notification tip agree even while Find has replaced the composer.
+/// UIKit has no keyboard-visibility property, only a view's keyboard layout guide. The channel screen
+/// owns the one probe, so the composer, Find and the notification tip agree even while Find has
+/// replaced the composer.
 enum SoftwareKeyboard {
     /// The home indicator's safe area isn't a keyboard, and neither is a frame off the window.
     static func isVisible(frame: CGRect, in bounds: CGRect, safeAreaBottom: CGFloat) -> Bool {
@@ -26,7 +26,8 @@ extension EnvironmentValues {
 extension View {
     /// Tracks the keyboard from this view's window and publishes it to the subtree.
     func softwareKeyboardVisibility(_ isVisible: Binding<Bool>) -> some View {
-        background { SoftwareKeyboardProbe { isVisible.wrappedValue = $0 } }
+        // The view stays above the keyboard, so the probe reaches under it.
+        background { SoftwareKeyboardProbe { isVisible.wrappedValue = $0 }.ignoresSafeArea() }
             .environment(\.softwareKeyboardIsVisible, isVisible.wrappedValue)
     }
 }
@@ -38,46 +39,36 @@ struct SoftwareKeyboardProbe: UIViewRepresentable {
 
     func updateUIView(_ view: ProbeView, context: Context) { view.changed = changed }
 
+    /// Reads the keyboard's layout guide on every layout, so a keyboard that was already up when the
+    /// screen arrived counts from its first one.
     final class ProbeView: UIView {
         var changed: (Bool) -> Void
         private var reported: Bool?
-        private var seed: Task<Void, Never>?
+        /// Spans the keyboard's part of the view, so the keyboard moving lays this view out.
+        private let keyboard = UIView()
 
         init(changed: @escaping (Bool) -> Void) {
             self.changed = changed
             super.init(frame: .zero)
             isUserInteractionEnabled = false
-            NotificationCenter.default.addObserver(
-                self, selector: #selector(keyboardWillChangeFrame(_:)),
-                name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+            keyboard.isHidden = true
+            keyboard.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(keyboard)
+            NSLayoutConstraint.activate([
+                keyboard.leadingAnchor.constraint(equalTo: leadingAnchor),
+                keyboard.trailingAnchor.constraint(equalTo: trailingAnchor),
+                keyboard.topAnchor.constraint(equalTo: keyboardLayoutGuide.topAnchor),
+                keyboard.bottomAnchor.constraint(equalTo: bottomAnchor),
+            ])
         }
 
         @available(*, unavailable)
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-        // A keyboard already up when the screen arrives sent its notification earlier, so the
-        // window's layout guide seeds the state. It reads after this update, so the state changes
-        // outside it, and a notification that lands first wins.
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            seed?.cancel()
+        override func layoutSubviews() {
+            super.layoutSubviews()
             guard let window else { return }
-            _ = window.keyboardLayoutGuide
-            seed = Task { @MainActor [weak self] in
-                guard !Task.isCancelled, let self, let window = self.window else { return }
-                self.report(window.keyboardLayoutGuide.layoutFrame, in: window)
-            }
-        }
-
-        @objc private func keyboardWillChangeFrame(_ notification: Notification) {
-            guard let window,
-                  let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
-            else { return }
-            seed?.cancel()
-            report(window.convert(frame, from: window.screen.coordinateSpace), in: window)
-        }
-
-        private func report(_ frame: CGRect, in window: UIWindow) {
+            let frame = convert(keyboardLayoutGuide.layoutFrame, to: window)
             let visible = SoftwareKeyboard.isVisible(frame: frame, in: window.bounds,
                                                      safeAreaBottom: window.safeAreaInsets.bottom)
             guard visible != reported else { return }
