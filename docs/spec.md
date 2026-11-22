@@ -1884,11 +1884,13 @@ This boundary is not an extra synthetic message. Reference renders of day labels
 
 **Scrolling.** Every move the reader didn't make serves one of the rules below. Each intent,
 whether opening, a send, Jump to Latest, a page, a Reveal or a width change, writes the scroll
-once, counting a write that only builds a row, and zero is best when SwiftUI already keeps the
-right message in place. Only a place an ID write can't carry, Reveal's 32 points or a width
-change's exact place, may take one more move once the row is built. A retry, an acknowledgment or
-a new measurement never moves the reader again, and nothing corrects a placement: no asking again
-until geometry agrees, no retries, no timers and no waiting for layout to go quiet. The reader's
+at most once, counting a write that only builds a row, and zero is best when SwiftUI already keeps
+the right message in place. Only a place an ID write can't carry, Reveal's 32 points or a width
+change's exact place, may take one more move, decided from the row's first real measurement, and
+then the intent is finished. A Mac live resize drag is one gesture, and every clip write the app
+makes during it counts. A retry, an acknowledgment or a new measurement never moves the reader
+again, and nothing corrects a placement: no asking again until geometry agrees, no retries, no
+timers and no waiting for layout to go quiet. A write never assumes it applied. The reader's
 own touch wins. A scroll or a chosen target takes control at once, and nothing automatic, like a
 late landing or a delayed momentum report, pulls them back.
 
@@ -1897,10 +1899,10 @@ pages. Cached messages show at once and can be read, and a cold open shows a loa
 the store is connected, the conversation lands once: on the row the New divider sits above, on
 the catch-up card when a summary is eligible (see Catch-up summaries), or otherwise at the end. A
 reopened channel therefore lands on the fresh unread boundary rather than its cached end, because the
-reader may have read elsewhere since. A request link opens at the request. Until it lands, the
-cached conversation rests at its end, unread, where the scroll view's initial anchor put it, and
-nothing else places it. If the reader scrolls or chooses a target while waiting, that wins and
-the landing doesn't happen. Landing may hide the rows only until the first layout pass puts its
+reader may have read elsewhere since. A request link opens at the request. While it waits for the
+connection, the app makes no scroll write at all: the cached messages stay readable wherever the
+scroll view's initial anchor put them, and nothing puts them back there. If the reader scrolls or
+chooses a target while waiting, that wins and the landing doesn't happen. Landing may hide the rows only until the first layout pass puts its
 target in place, never until layout goes quiet, and once connected the content appears without a
 tap, resize or screenshot. From then on the end is followed, or the reader's place held, like any
 other time. A landing the end stopped short of its row is at the end, so a message arriving below
@@ -1916,8 +1918,8 @@ they were reading. The transcript does this when the message's row appears, so t
 choices and cards don't move the conversation themselves. Send Again and the server's
 confirmation leave the reader where they are. If scrolled away, a small glass Jump to Latest
 capsule appears in the floating activity row above the composer. It shares that row with the
-working summary when present. One tap reaches the end in one move, even mid-flick, and with Find
-open, which it closes in the same move. On the phone, those pills and the transient notices use plain regular glass with no tint, like the toolbar. They and the composer float over the transcript like Messages: the conversation keeps the system's default bottom scroll edge, so rows pass behind the glass right to the screen edge with no band or hairline. Never add `.hard`, a band or a fill behind them. In Dark over a bright image, the placeholder and Find's result count read faintly. That is the deliberate cost of floating plain glass.
+working summary when present. One tap reaches the end in one move, even mid-flick. Jumping to
+the latest while Find is open, where the app offers it, closes Find in the same move. On the phone, those pills and the transient notices use plain regular glass with no tint, like the toolbar. They and the composer float over the transcript like Messages: the conversation keeps the system's default bottom scroll edge, so rows pass behind the glass right to the screen edge with no band or hairline. Never add `.hard`, a band or a fill behind them. In Dark over a bright image, the placeholder and Find's result count read faintly. That is the deliberate cost of floating plain glass.
 
 **Reading.** Above the end at the same width, rows move only when the reader scrolls. When a row
 above the viewport changes height, or the lazy stack corrects its estimate for rows it hasn't
@@ -1942,17 +1944,16 @@ history page keeps its own notice.
 into it without stopping at the edge. A page lands in one move that keeps the reader's row and its
 offset where they were, even when a new message arrives below with it, and without pulling a drag
 back. On the phone, a page that arrives while a finger is down waits until it lifts, then lands
-the same way, and scrolling carries on through the flick, because UIScrollView's pan sets the
-offset from where the drag began on its next touch, which undid a landing under the finger and
-showed the page's top. At the top,
+the same way, and scrolling carries on through the flick. At the top,
 show Load Older Messages when more history is available, a small loading row while fetching, or
 "Couldn't load older messages" with Retry on failure. Once all history is loaded, show no
 "Beginning of conversation" label and reserve no empty header space. A filtered view must
 continue paging even when a page contains no visible rows.
 
 **Width changes.** While following, the end stays in view, through a Mac live resize drag too.
-While reading, the reader's row returns to its exact place on screen. During a live resize drag it
-only has to stay on screen, and its exact place returns when the drag ends.
+While reading, the passage being read stays in view, even inside a message taller than the
+screen, and the reader's row returns to its exact place on screen. During a live resize drag the
+passage only has to stay on screen, and the exact place returns when the drag ends.
 
 **Message View switches.** At the end, the conversation stays at the end. While reading, a message
 the reader can see that the new view still shows stays in view. If none does, the new view opens
@@ -1965,9 +1966,10 @@ estimates and measures one message at a time and any message can be a landing, R
 target. The Load Older row and the empty state are never the reader's place. The 16-point
 clearance below the last row is part of the content, so following and Jump to Latest never add it
 again. Reveal's page-until-found step is shared in ToyBoxClient. A row the lazy stack hasn't built
-is placed by its ID, which builds it in the same write. Waiting for a scroll never assumes it has
-applied: each placement is decided from the next geometry the scroll view reports. Tests count
-writes at each app's scroll writer, and anything a person sees move is also checked in a capture.
+is placed by its ID, which builds it in the same write. Each rule is proven three ways: a shared
+test of its decision that fails without it, a count of writes at each app's scroll writer through
+the live push, flick, drag or reconnect it covers, and, for any claim about how it moves, frames
+or a recording, since a settled capture shows where it ended but not a bounce on the way.
 
 `scrollPosition(id:)` alone doesn't meet those rules. Measured on the Mac with real rows and real
 trackpad events over history-demo, these are the gaps. One placement model in ToyBoxClient covers
@@ -1980,9 +1982,10 @@ Mac's own:
 | Landing places its row once | SwiftUI skips a seeded position whose row is already on the first screen, so a New divider 686 points down an 800-point window never moved |
 | While reading, a row above that changes height leaves the first row starting in the viewport where it was | SwiftUI keeps the first *visible* row in place, which can start above the viewport, so a late image growing 190 points above moved the reader 70 |
 | An older page keeps the visible top message and its offset | The reader's row isn't built yet when the page arrives, so scrolling up from message 183 jumped to 81 |
+| On the phone, a page that arrives under a resting finger waits for it to lift | UIScrollView's pan sets the offset from where the drag began on its next touch, which undid a landing under the finger and showed the page's top |
 | After a width change, the reader's row returns to its place. On the Mac, the hold stands down during a live resize drag and puts the row back when the drag ends. A built row moves back natively. When the new width's estimates leave the reader past the end, a `scrollTo` only builds the row, and the hold then moves it natively at its real height, the way a reveal places its row, so SwiftUI has no target to put back over the reader's next scroll. Until the reader scrolls, the hold makes no correction of its own, and a later width change in that span puts the same row back again, so only a row above changing height can move it | A width change while reading moved the reader 118 points. One whose estimates put the reader past the end built nothing there, so the place was lost and the conversation showed its end. Dragging the window's edge lost the reader's row in 4 of 5 runs |
 | On the Mac, the shared model's moves go straight to the scroll view's clip, while the phone writes them through `ScrollPosition.scrollTo(y:)` | On macOS 27, SwiftUI keeps an offset written with `scrollTo(y:)` and puts it back on later layout passes until the reader scrolls. A 260-point narrowing moved the clip 72 points with no reader input, a row above growing 488 points left the clip where it was, so the reader's rows dropped 488, and a widen undid a later clip write. Without the clip writer, dragging the window's edge moved the reader's row 22.5 points |
-| While following, a window resize keeps the end at the bottom in the pass that draws the new size. On the Mac, the end is pinned whenever the container, the content or the clip's offset changes during a resize, and the pin's own scroll leaves nothing more to move | SwiftUI's follow lands a frame or more later. During a drag, SwiftUI writes its own offset to the clip after resizing the content, so when the stack's estimate shrank and grew back it drew up to 5,226 points above the end in 4 of 5 runs |
+| While following, a window resize keeps the end at the bottom in the pass that draws the new size. On the Mac, the end is pinned whenever the container, the content or the clip's offset changes during a resize, and the pin's own scroll leaves nothing more to move. This pin writes on every change of the drag, so it is over the one-write budget until SwiftUI's own end anchor is shown to hold through a drag | SwiftUI's follow lands a frame or more later. During a drag, SwiftUI writes its own offset to the clip after resizing the content, so when the stack's estimate shrank and grew back it drew up to 5,226 points above the end in 4 of 5 runs |
 
 Long histories must stay as fast as short ones. Build rows incrementally: derive each message's
 audience, display text and reactions once, and when messages only append, rebuild from the last
@@ -2186,8 +2189,9 @@ The Mac retains its native search field, 28-point controls and bar material, not
 Find Next (`Cmd-G` or Return in the search field) and Find Previous (`Shift-Cmd-G` or
 Shift-Return) move chronologically through matching messages and wrap at the ends. Each matching
 message is one result, even if its text contains the query more than once. Escape, the Mac's Done or the
-phone's Close closes the bar without moving the conversation or changing its draft. Opening and closing both preserve
-the visible message anchor at the same pixel-aligned screen position after layout, with no bounce.
+phone's Close closes the bar without changing its draft, and moves the conversation only as
+Scrolling's Find rule says. Opening, and a close that doesn't catch up, keep the visible message
+at the same pixel-aligned screen position after layout, with no bounce.
 Changes to progress or error status preserve that anchor too. Closing retains the query.
 Reopening Find selects the current query for replacement. Switching channels cancels that
 channel's in-flight search and closes the bar, so an old response cannot navigate the newly
