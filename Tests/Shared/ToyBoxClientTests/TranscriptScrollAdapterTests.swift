@@ -105,6 +105,26 @@ struct TranscriptScrollAdapterTests {
         #expect(scroll.showsJumpToLatest(after: nil) == false)
     }
 
+    @Test func changingTheMessageViewKeepsFollowingTheEnd() {
+        let scroll = measuredScroll(40, origin: 3400)
+        _ = scroll.update(.land(.end))
+
+        // Your Messages keeps every fourth row, and SwiftUI moves the origin with the row it keeps
+        // in view before the content size catches up. That move isn't the reader's.
+        var old = scroll.metrics!
+        scroll.sync(stride(from: 3, to: 40, by: 4).map { .init(id: "r\($0)", order: $0) })
+        scroll.metrics?.origin = 900
+        #expect(scroll.update(movingFrom: old) != nil)
+        #expect(scroll.isFollowing)
+
+        // All Messages returns the rows between them, which isn't older history arriving above.
+        old = scroll.metrics!
+        scroll.sync((0..<40).map { .init(id: "r\($0)", order: $0) })
+        scroll.metrics?.origin = 3000
+        #expect(scroll.update(movingFrom: old) != nil)
+        #expect(scroll.isFollowing)
+    }
+
     @Test func aPostureChangeSettlesAtTheEndAfterTheStackDropsItsPlacement() {
         let viewport = TranscriptPlacement.Viewport(width: 466, height: 669, topInset: 82, bottomInset: 186)
         let scroll = TranscriptScroll()
@@ -571,6 +591,20 @@ struct TranscriptScrollAdapterTests {
         // The page's last row lays out, and the reader isn't pulled back to where the page left them.
         scroll.measure("p4", frame: CGRect(x: 0, y: 400, width: 386, height: 100))
         #expect(scroll.update()?.origin == 460)
+    }
+
+    @Test func aPageThatLandsWithANewMessageStillKeepsTheReadersRow() {
+        let scroll = measuredScroll(20, origin: 1400)
+        _ = scroll.update(.land(.end))
+        scroll.isReaderScrolling = true
+        scroll.metrics?.origin = 30
+        _ = scroll.update()
+
+        // The page renumbers every row below it, and a message arrives at the end in the same update.
+        scroll.sync((0..<5).map { .init(id: "p\($0)", order: $0) }
+            + (0..<21).map { .init(id: "r\($0)", order: $0 + 5) })
+        scroll.metrics?.documentEnd = 2500
+        #expect(scroll.update()?.origin == 530)
     }
 
     @Test func aKeyboardAfterAPageMidDragKeepsTheReadersRow() {

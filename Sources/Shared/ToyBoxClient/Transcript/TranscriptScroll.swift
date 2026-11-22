@@ -80,9 +80,11 @@ public final class TranscriptScroll {
     /// after a page lands but before SwiftUI reports the change.
     public func sync(_ current: [Model.RowIdentity], pinsLanding: Bool = false) {
         guard current != rows else { return }
-        if let anchor = rows.first?.id, current.first?.id != anchor, current.contains(where: { $0.id == anchor }),
-           hasLanded, let metrics {
-            // Older history arrived above: keep the reader's row where it was.
+        if let anchor = rows.first?.id, current.first?.id != anchor,
+           let start = current.firstIndex(where: { $0.id == anchor }),
+           current[start...].map(\.id).starts(with: rows.dropLast().map(\.id)), hasLanded, let metrics {
+            // Older history arrived above, leaving the rows below it as they were, unlike a filter
+            // change: keep the reader's row where it was.
             _ = update(.holdCurrentPosition)
             holdsPlacementThroughInput = true
             pageMoveStart = metrics.origin
@@ -186,7 +188,9 @@ public final class TranscriptScroll {
 
     /// Reads a geometry change for a scroll view whose keyboard, scroller and programmatic moves
     /// report no scroll phase, like the Mac's, so it never infers drift. A layout change that leaves
-    /// the origin where it was, or moves it down, places the intent again. A move of the origin alone,
+    /// the origin where it was, or moves it down, places the intent again, and so does any move that
+    /// comes with rows a page or an arrival didn't bring, like a filter's, since SwiftUI moves the
+    /// origin with the row it keeps in view before the content size catches up. A move of the origin alone,
     /// or up in the same change, is the reader's, except a follow on its way to the end. SwiftUI
     /// rounds a programmatic scroll's fractional origin to a pixel, less than half a point, where the
     /// reader's moves are whole pixels, so the rounding leaves the origin where it was.
@@ -194,7 +198,8 @@ public final class TranscriptScroll {
         guard let new = metrics else { return nil }
         if !isReaderScrolling {
             let rounds = abs(new.origin - old.origin) < 0.5
-            if (old.viewport != new.viewport || old.documentEnd != new.documentEnd) && (rounds || new.origin >= old.origin) {
+            if lastLayout.map({ $0.rows != rows }) == true
+                || (old.viewport != new.viewport || old.documentEnd != new.documentEnd) && (rounds || new.origin >= old.origin) {
                 return update(.layoutChanged)
             }
             guard !rounds else { return nil }
