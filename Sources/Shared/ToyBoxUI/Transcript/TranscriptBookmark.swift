@@ -56,23 +56,18 @@ extension View {
 
 private struct TranscriptBookmarkAlert: View {
     let store: ChannelStore
-    /// The last failure, kept while the alert animates away so its title doesn't change under it.
-    @ViewState private var shown: ChannelStore.BookmarkFailure?
 
     var body: some View {
         Color.clear
-            .alert(shown?.isRemoval == true ? "Couldn't Remove Bookmark" : "Couldn't Bookmark Message",
-                   isPresented: Binding(
-                get: { store.bookmarkFailure != nil },
-                set: { if !$0 { store.dismissBookmarkFailure() } }
-            )) {
+            .alert(error: Binding(get: { store.bookmarkFailure },
+                                  set: { if $0 == nil { store.dismissBookmarkFailure() } })) { _ in
                 Button("OK", role: .cancel) {}
-            } message: {
-                Text(shown?.error ?? "")
-            }
-            .onChange(of: store.bookmarkFailure, initial: true) { _, failure in
-                if let failure { shown = failure }
-            }
+            } message: { Text($0.error) }
             .accessibilityHidden(true)
     }
+}
+
+/// The alert's title, which SwiftUI keeps while the alert animates away.
+extension ChannelStore.BookmarkFailure: LocalizedError {
+    public var errorDescription: String? { isRemoval ? "Couldn't Remove Bookmark" : "Couldn't Bookmark Message" }
 }

@@ -1,6 +1,5 @@
 import ToyBoxClient
 import ToyBoxKit
-import Foundation
 import SwiftUI
 
 /// The suggested replies a transcript offers inside its pending request. Both apps decide with this,
@@ -175,26 +174,14 @@ public struct ChoiceFlowLayout: Layout {
         }
     }
 
+    /// Lines break as reactions' do, once each button has its width.
     private func arrange(_ subviews: Subviews, width: CGFloat) -> [CGRect] {
-        var frames: [CGRect] = []
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var lineHeight: CGFloat = 0
-        for subview in subviews {
-            var size = subview.sizeThatFits(.unspecified)
-            if size.width > width {
-                size = subview.sizeThatFits(.init(width: width, height: nil))
-                size.width = min(size.width, width)
-            }
-            if x > 0, x + size.width > width {
-                x = 0
-                y += lineHeight + spacing
-                lineHeight = 0
-            }
-            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
-            x += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
+        let sizes = subviews.map { subview in
+            let size = subview.sizeThatFits(.unspecified)
+            guard size.width > width else { return size }
+            let wrapped = subview.sizeThatFits(.init(width: width, height: nil))
+            return CGSize(width: min(wrapped.width, width), height: wrapped.height)
         }
-        return frames
+        return TranscriptReactionFlow(spacing: spacing, lineSpacing: spacing).frames(for: sizes, width: width)
     }
 }

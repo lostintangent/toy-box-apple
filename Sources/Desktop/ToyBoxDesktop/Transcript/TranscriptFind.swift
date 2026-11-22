@@ -1,8 +1,6 @@
 import ToyBoxClient
 import ToyBoxKit
 import AppKit
-import Foundation
-import Observation
 import SwiftUI
 import ToyBoxUI
 

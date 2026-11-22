@@ -75,19 +75,13 @@ extension View {
     }
 }
 
-public struct TranscriptAttachmentEdge<S: InsettableShape>: ViewModifier {
+private struct TranscriptAttachmentEdge<S: InsettableShape>: ViewModifier {
     let shape: S
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
 
-    /// The primary color's opacity for the edge.
-    public static func opacity(isDark: Bool, increasedContrast: Bool) -> Double {
-        increasedContrast ? 0.4 : isDark ? 0.14 : 0.1
-    }
-
-    public func body(content: Content) -> some View {
+    func body(content: Content) -> some View {
         content.overlay(shape.strokeBorder(
-            Color.primary.opacity(Self.opacity(isDark: colorScheme == .dark, increasedContrast: contrast == .increased)),
-            lineWidth: 1))
+            Color.primary.opacity(contrast == .increased ? 0.4 : colorScheme == .dark ? 0.14 : 0.1), lineWidth: 1))
     }
 }

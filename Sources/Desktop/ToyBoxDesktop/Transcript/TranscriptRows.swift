@@ -242,25 +242,8 @@ struct TranscriptUserMessage: View {
                 TranscriptReactions(message: message, agents: agents, statusReactions: statusReactions)
             }
         }
-        .onContinuousHover { phase in
-            switch phase {
-            case .active:
-                guard !isHovered else { break }
-                if pointer?.hasMovedSinceContentMoved ?? true {
-                    isHovered = true
-                    if !selectsText { selectsText = true }
-                } else if !selectsText {
-                    let selects = $selectsText
-                    pointer?.rest(on: message.id) { selects.wrappedValue = true }
-                }
-            case .ended:
-                pointer?.leave(message.id)
-                if isHovered { isHovered = false }
-            }
-        }
-        .focusable()
-        .focused($isFocused)
-        .focusEffectDisabled()
+        .transcriptMessageHover(message.id, pointer: pointer, isHovered: $isHovered, selectsText: $selectsText,
+                                isFocused: $isFocused)
         .contextMenu {
             Button("Copy Message", systemImage: "doc.on.doc") { TranscriptClipboard.copy(message.text) }
             TranscriptBookmarkMenuItem(bookmark: bookmark)
@@ -370,25 +353,8 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
             }
             TranscriptReactions(message: entry.message, agents: agents, statusReactions: statusReactions)
         }
-        .onContinuousHover { phase in
-            switch phase {
-            case .active:
-                guard !isHovered else { break }
-                if pointer?.hasMovedSinceContentMoved ?? true {
-                    isHovered = true
-                    if !selectsText { selectsText = true }
-                } else if !selectsText {
-                    let selects = $selectsText
-                    pointer?.rest(on: entry.message.id) { selects.wrappedValue = true }
-                }
-            case .ended:
-                pointer?.leave(entry.message.id)
-                if isHovered { isHovered = false }
-            }
-        }
-        .focusable()
-        .focused($isFocused)
-        .focusEffectDisabled()
+        .transcriptMessageHover(entry.message.id, pointer: pointer, isHovered: $isHovered, selectsText: $selectsText,
+                                isFocused: $isFocused)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(entry.message.accessibilityLabel(
             author: agent.name, addressee: entry.addressee, request: entry.request))
@@ -458,6 +424,33 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
 
     private var isPending: Bool { entry.request == .pending }
     private var surface: TranscriptSurface { isPending ? .pendingAgent : .agent }
+}
+
+extension View {
+    /// Shows a message's actions while the pointer is over it, and makes its text selectable once the
+    /// pointer reaches it. A row the content carried under a still pointer waits, as `TranscriptPointer` says.
+    fileprivate func transcriptMessageHover(_ id: String, pointer: TranscriptPointer?, isHovered: Binding<Bool>,
+                                            selectsText: Binding<Bool>,
+                                            isFocused: FocusState<Bool>.Binding) -> some View {
+        onContinuousHover { phase in
+            switch phase {
+            case .active:
+                guard !isHovered.wrappedValue else { break }
+                if pointer?.hasMovedSinceContentMoved ?? true {
+                    isHovered.wrappedValue = true
+                    if !selectsText.wrappedValue { selectsText.wrappedValue = true }
+                } else if !selectsText.wrappedValue {
+                    pointer?.rest(on: id) { selectsText.wrappedValue = true }
+                }
+            case .ended:
+                pointer?.leave(id)
+                if isHovered.wrappedValue { isHovered.wrappedValue = false }
+            }
+        }
+        .focusable()
+        .focused(isFocused)
+        .focusEffectDisabled()
+    }
 }
 
 /// A message's actions while it's hovered or focused, in a toolbar over its bubble's top corner on

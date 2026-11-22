@@ -1,6 +1,5 @@
 import ToyBoxClient
 import ToyBoxKit
-import Foundation
 import SwiftUI
 
 public struct TranscriptMarkdown: View {
