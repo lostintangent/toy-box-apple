@@ -41,8 +41,7 @@ struct ServerConnectionSection: View {
     private static let failureHelp = "Check the address, and that your Toy Box server is running and reachable from this iPhone."
 
     private var loopbackHost: String? {
-        guard let url = try? ChannelAPI(serverURL: address).baseURL, let host = url.host,
-              ChannelAPI.isLoopback(host: host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]."))) else {
+        guard let host = try? ChannelAPI(serverURL: address).baseURL.host, ChannelAPI.isLoopback(host: host) else {
             return nil
         }
         return host

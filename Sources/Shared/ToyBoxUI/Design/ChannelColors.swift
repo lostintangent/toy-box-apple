@@ -56,6 +56,15 @@ extension Channel.Attention {
         case .unread: .blue
         }
     }
+
+    /// What the sidebar row's help and VoiceOver say for it.
+    public var accessibilityLabel: String {
+        switch self {
+        case .waiting: "Waiting for your response"
+        case .finished: "All tasks completed"
+        case .unread: "Unread messages"
+        }
+    }
 }
 
 /// Bubble fills and mention ink share the same composite over the conversation canvas.

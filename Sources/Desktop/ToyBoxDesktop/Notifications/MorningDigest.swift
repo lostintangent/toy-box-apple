@@ -82,11 +82,6 @@ final class MorningDigest {
         }
     }
 
-    static func isAllowed(_ options: LaunchOptions, bundleID: String?,
-                          environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
-        bundleID == "dev.toybox.desktop" && options.allowsUserIntegrations(environment: environment)
-    }
-
     /// Delivers one digest across every server once it's due. A server that fails is left out and
     /// covered from where it left off the next morning, and only when every one fails does it try
     /// again.

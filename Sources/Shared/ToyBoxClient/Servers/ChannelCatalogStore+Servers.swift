@@ -62,6 +62,11 @@ extension [ChannelCatalogStore] {
         return first { ChannelTarget.normalizedServer($0.api.baseURL) == server }
     }
 
+    /// A channel as its server's catalog lists it.
+    @MainActor public func listed(_ target: ChannelTarget) -> Channel? {
+        first(at: target.serverURL)?.channels.first { $0.id == target.channelID }
+    }
+
     /// The first catalog in Settings order that lists a channel, for a reference that doesn't name its
     /// server. An earlier server that hasn't answered yet refreshes first, so a later one never wins
     /// over it, and when none lists the channel, every one refreshes, in case it's new. Nil only once

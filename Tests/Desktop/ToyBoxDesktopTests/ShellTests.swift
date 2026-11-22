@@ -729,21 +729,14 @@ struct ShellTests {
         let options = try LaunchOptions.parse(arguments)
         let allowed = arguments.isEmpty && environment.isEmpty
         #expect(options.allowsUserIntegrations(environment: environment) == allowed)
-        #expect(OpenAtLogin.isAllowed(options, bundleID: "dev.toybox.desktop", environment: environment) == allowed)
-        #expect(DockAttention.isAllowed(options, bundleID: "dev.toybox.desktop", environment: environment) == allowed)
-        #expect(MorningDigest.isAllowed(options, bundleID: "dev.toybox.desktop", environment: environment) == allowed)
-        #expect(ChannelSpotlight.indexes(options, bundleID: "dev.toybox.desktop", environment: environment) == allowed)
+        #expect(options.isProduction(bundleID: "dev.toybox.desktop", environment: environment) == allowed)
     }
 
     /// Toy Box Test, the benchmark and any other bundle never touch the user's login items, Dock, digest or Spotlight.
     @MainActor @Test(arguments: [nil, "", "dev.toybox.desktop.test", "dev.toybox.desktop.benchmark",
                                  "dev.toybox.channels.mac", "dev.toybox.desktop.other"])
     func userIntegrationsBelongOnlyToTheProductionBundle(_ bundleID: String?) {
-        let options = LaunchOptions()
-        #expect(!OpenAtLogin.isAllowed(options, bundleID: bundleID, environment: [:]))
-        #expect(!DockAttention.isAllowed(options, bundleID: bundleID, environment: [:]))
-        #expect(!MorningDigest.isAllowed(options, bundleID: bundleID, environment: [:]))
-        #expect(!ChannelSpotlight.indexes(options, bundleID: bundleID, environment: [:]))
+        #expect(!LaunchOptions().isProduction(bundleID: bundleID, environment: [:]))
     }
 
     @MainActor @Test(arguments: [false, true])

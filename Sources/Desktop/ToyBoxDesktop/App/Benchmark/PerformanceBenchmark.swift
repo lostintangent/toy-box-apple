@@ -5,10 +5,10 @@ import Darwin
 import Observation
 import QuartzCore
 
-/// `--benchmark switch|messages|paging|scroll|place|key` measures one scenario in the first window,
-/// prints each result beside its budget and exits. `bun run benchmark` builds a release bundle and
-/// runs the scenarios against `bun run demo:perf`, whose `/perf/messages` route streams the agent
-/// messages that `messages` measures.
+/// `--benchmark switch|messages|paging|scroll|place|resize|key` measures one scenario in the first
+/// window, prints each result beside its budget and exits. `bun run benchmark` builds a release
+/// bundle and runs the scenarios against `bun run demo:perf`, whose `/perf/messages` route streams
+/// the agent messages that `messages` measures.
 ///
 /// Busy time adds up the main run loop's passes, each from waking until it's about to sleep again,
 /// so it covers events, SwiftUI updates, layout and display, but not waiting on the network. The
@@ -49,6 +49,10 @@ import QuartzCore
 /// where a mid-transcript reader's row sits after the same resize, without a budget.
 /// - `place`: reveals a message a page and a half older than the first page, through the request a
 ///   bookmark makes, checks that its top settles 32 points below the visible top, and reports its time.
+/// - `resize`: loads every older page, then drags the window's right edge in and back out through
+///   AppKit's live resize, one step a display frame, once following the latest message and once
+///   mid-transcript. It reports dropped frames, busy time a drag step and where the rows end, without
+///   budgets.
 /// - `key`: makes the window key, which a person's window is, and measures the whole process's CPU
 ///   while it sits there, first with the channel's own working agents and then with 20 working.
 ///   Animations that run only in the key window, like the working ellipsis, show up here.

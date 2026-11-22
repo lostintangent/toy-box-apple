@@ -84,7 +84,7 @@ final class QuickSendTargetHistory {
     /// with one server is `choices(matching:recentIDs:)`.
     func choices(in catalogs: [ChannelCatalogStore], query: String) -> (recent: [Choice], others: [[Choice]]) {
         let recent = saved.recents.prefix(3).compactMap { target -> Choice? in
-            let channel = catalogs.first(at: target.serverURL)?.channels.first { $0.id == target.channelID }
+            let channel = catalogs.listed(target)
             return channel.flatMap { $0.matches(query) ? Choice(target: target, channel: $0) : nil }
         }
         return (recent, catalogs.map { catalog in

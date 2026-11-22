@@ -77,11 +77,6 @@ final class DockAttention {
         self.request = request
     }
 
-    static func isAllowed(_ options: LaunchOptions, bundleID: String?,
-                          environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
-        bundleID == "dev.toybox.desktop" && options.allowsUserIntegrations(environment: environment)
-    }
-
     /// Bounces once for requests that are new since the last update. Only servers in `usable`, the
     /// normalized addresses of those loaded and reachable, count.
     func update(status: MenuBarStatus, usable: Set<String>) {

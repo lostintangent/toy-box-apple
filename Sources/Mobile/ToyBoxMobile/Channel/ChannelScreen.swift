@@ -131,8 +131,7 @@ struct ChannelScreen: View {
     }
 
     private var title: String {
-        store.details?.name
-            ?? model.catalogs.first(at: store.api.baseURL.absoluteString)?.channels.first { $0.id == store.id }?.name ?? ""
+        store.details?.name ?? store.target.flatMap { model.catalogs.listed($0) }?.name ?? ""
     }
 
     @ViewBuilder
@@ -269,7 +268,7 @@ private struct ChannelTitleMenu<Content: View>: View {
     /// The avatar comes from the catalog, as the list row's does. Reading it here keeps the
     /// catalog's changes from redrawing the whole screen.
     private var avatar: ChannelAvatar? {
-        model.catalogs.first(at: store.api.baseURL.absoluteString)?.channels.first { $0.id == store.id }?.avatar
+        store.target.flatMap { model.catalogs.listed($0) }?.avatar
     }
 
     var body: some View {

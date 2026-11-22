@@ -44,6 +44,14 @@ struct LaunchOptions: Equatable, Sendable {
         !isAutomated && server == nil && environment["TOY_BOX_SERVER_URL"] == nil
     }
 
+    /// The user's own app, launched as they launch it. Only it touches their login items, Dock,
+    /// morning digest and Spotlight, so Toy Box Test, the benchmark and a test against a demo never
+    /// replace them.
+    func isProduction(bundleID: String? = Bundle.main.bundleIdentifier,
+                      environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        bundleID == "dev.toybox.desktop" && allowsUserIntegrations(environment: environment)
+    }
+
     static func parse(_ arguments: [String]) throws -> LaunchOptions {
         var options = LaunchOptions()
         var seen: Set<String> = []
@@ -99,7 +107,8 @@ struct LaunchOptions: Equatable, Sendable {
             #if TOY_BOX_BENCHMARK
             case "--benchmark":
                 guard let scenario = PerformanceBenchmark.Scenario(rawValue: value) else {
-                    throw LaunchArgumentError("--benchmark must be switch, messages, paging, scroll or key")
+                    throw LaunchArgumentError(
+                        "--benchmark must be switch, messages, paging, scroll, place, resize or key")
                 }
                 options.benchmark = scenario
             #else

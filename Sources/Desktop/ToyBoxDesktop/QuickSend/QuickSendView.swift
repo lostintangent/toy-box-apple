@@ -35,14 +35,11 @@ struct QuickSendView: View {
     private var showsHeader: Bool { session != nil || hasChannels }
     private var channelName: String {
         guard let selected else { return "Choose Channel" }
-        return channel(selected)?.name ?? session?.store.details?.name
+        return catalogs.listed(selected)?.name ?? session?.store.details?.name
             ?? history?.name(for: selected) ?? "Saved Channel"
     }
 
     private func catalog(_ target: ChannelTarget) -> ChannelCatalogStore? { catalogs.first(at: target.serverURL) }
-    private func channel(_ target: ChannelTarget) -> Channel? {
-        catalog(target)?.channels.first { $0.id == target.channelID }
-    }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -192,7 +189,7 @@ struct QuickSendView: View {
             Button { showsChooser.toggle() } label: {
                 HStack(spacing: 8) {
                     if let selected {
-                        ChannelMark(channel(selected)?.avatar, api: catalog(selected)?.api, size: 24)
+                        ChannelMark(catalogs.listed(selected)?.avatar, api: catalog(selected)?.api, size: 24)
                     }
                     HStack(spacing: 6) {
                         Text(channelName).fontWeight(.medium).lineLimit(1)
@@ -255,7 +252,7 @@ struct QuickSendView: View {
 
     private func applyIncoming() {
         guard model.quickSend.replyTarget == nil, let session, let target = session.store.target,
-              let catalog = catalog(target), !catalog.isLoaded || channel(target) != nil,
+              let catalog = catalog(target), !catalog.isLoaded || catalogs.listed(target) != nil,
               incoming?.apply(to: session) == true else { return }
         trackDraft()
         focusID = UUID()

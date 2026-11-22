@@ -136,9 +136,17 @@ public struct ChannelAPI: Sendable {
         try self.init(baseURL: url, session: session)
     }
 
-    /// Whether a lowercased host without brackets or a trailing dot names this Mac or phone itself.
+    /// A host as this device's own names compare it: lowercased, without brackets or a trailing dot.
+    /// Nil when nothing's left.
+    public static func trimmedHost(_ host: String) -> String? {
+        let trimmed = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]."))
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Whether a host names this Mac or phone itself.
     public static func isLoopback(host: String) -> Bool {
-        host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host.hasPrefix("127.")
+        let host = trimmedHost(host) ?? ""
+        return host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host.hasPrefix("127.")
     }
 
     private static let unreserved = CharacterSet(

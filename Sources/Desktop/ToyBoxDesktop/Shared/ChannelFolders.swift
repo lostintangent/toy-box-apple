@@ -117,18 +117,13 @@ final class ChannelFolders {
                 let host = Host.current()
                 return Set((host.names + host.addresses).map { $0.lowercased() })
             }.value
-            localNames = Set(names.compactMap(Self.trimmedHost))
+            localNames = Set(names.compactMap(ChannelAPI.trimmedHost))
             recheck([])
         }
     }
 
     nonisolated static func normalizedHost(_ server: URL) -> String {
-        trimmedHost(server.host ?? "") ?? ""
-    }
-
-    nonisolated private static func trimmedHost(_ host: String) -> String? {
-        let trimmed = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]."))
-        return trimmed.isEmpty ? nil : trimmed
+        ChannelAPI.trimmedHost(server.host ?? "") ?? ""
     }
 
     nonisolated static func localPath(_ path: String) -> String {

@@ -163,7 +163,9 @@ struct ChannelDetailView: View {
         .onExitCommand { isOverviewSheetPresented = false }
     }
 
-    private var title: String { store.details?.name ?? catalogChannel?.name ?? "Channel" }
+    private var title: String {
+        store.details?.name ?? store.target.flatMap { model.catalogs.listed($0) }?.name ?? "Channel"
+    }
 
     /// The title menu keeps every channel one click away with the sidebar collapsed, in sidebar
     /// order and with the sidebar's attention as system menu-item badges. Several servers each get
@@ -288,7 +290,6 @@ struct ChannelDetailView: View {
 
     /// The catalog of this channel's server.
     private var catalog: ChannelCatalogStore? { model.catalogs.first(at: store.api.baseURL.absoluteString) }
-    private var catalogChannel: Channel? { catalog?.channels.first { $0.id == store.id } }
 }
 
 /// Floats over a cached transcript whose stream dropped, like the phone's, so the rows, their

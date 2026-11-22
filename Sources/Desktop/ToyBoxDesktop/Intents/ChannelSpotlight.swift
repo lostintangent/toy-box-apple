@@ -77,14 +77,6 @@ final class ChannelSpotlight {
         self.icon = icon
     }
 
-    /// Only the server saved in Settings fills Spotlight. A `--server` or `TOY_BOX_SERVER_URL`
-    /// launch is session-only, so a test against a demo never replaces your channels.
-    static func indexes(_ options: LaunchOptions,
-                        bundleID: String? = Bundle.main.bundleIdentifier,
-                        environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
-        bundleID == "dev.toybox.desktop" && options.allowsUserIntegrations(environment: environment)
-    }
-
     /// Follows the app's servers and catalogs for as long as the app runs.
     func observe(_ model: AppModel) {
         let catalog = withObservationTracking {
