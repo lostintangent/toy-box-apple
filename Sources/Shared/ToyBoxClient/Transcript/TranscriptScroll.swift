@@ -351,10 +351,11 @@ public final class TranscriptScroll {
 
     /// Whether Jump to Latest shows, read only from settled geometry, or nil to leave it as it is.
     /// While a placement moves the scroll, the distance is about to change, and toggling the button
-    /// would resize the bar under the scroll and send the placement again.
+    /// would resize the bar under the scroll and send the placement again. Following is never away,
+    /// though an arrival grows the end before the follow reaches it.
     public func showsJumpToLatest(after placement: Model?) -> Bool? {
         guard !moves(placement) else { return nil }
-        return hasLanded && distanceToEnd > Model.followingThreshold
+        return hasLanded && !isFollowing && distanceToEnd > Model.followingThreshold
     }
 
     public var distanceToEnd: CGFloat { layout.map(Model.distanceToEnd(in:)) ?? 0 }

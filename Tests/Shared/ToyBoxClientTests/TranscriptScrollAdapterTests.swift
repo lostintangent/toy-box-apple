@@ -92,6 +92,19 @@ struct TranscriptScrollAdapterTests {
         #expect(scroll.showsJumpToLatest(after: scroll.update()) == true)
     }
 
+    @Test func jumpToLatestStaysHiddenWhileAnArrivalGrowsTheEndBelowAFollow() {
+        let scroll = measuredScroll(40, origin: 3400)
+        _ = scroll.update(.land(.end))
+        #expect(scroll.showsJumpToLatest(after: scroll.update()) == false)
+
+        // A row arrives, and the content grows before the follow reaches the new end.
+        scroll.sync((0..<41).map { .init(id: "r\($0)", order: $0) })
+        scroll.measure("r40", frame: CGRect(x: 0, y: 4000, width: 386, height: 300))
+        scroll.metrics?.documentEnd = 4300
+        #expect(scroll.isFollowing)
+        #expect(scroll.showsJumpToLatest(after: nil) == false)
+    }
+
     @Test func aPostureChangeSettlesAtTheEndAfterTheStackDropsItsPlacement() {
         let viewport = TranscriptPlacement.Viewport(width: 466, height: 669, topInset: 82, bottomInset: 186)
         let scroll = TranscriptScroll()
