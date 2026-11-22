@@ -239,7 +239,9 @@ and are there again when it comes back.
   and the selected server's Name, Server URL and status sit below the list. The list adds no inset of its own: its dots line up with
   the labels below, and it's as tall as its rows. Its card keeps the grouped Form's own padding
   around a list, a little roomier than the details card below it. On the phone, each row opens
-  its server's page, with Name and then Server URL and its status. Neither list has a caption
+  its server's page, which starts with one Server Details card: Name, URL with its status, then
+  Version, each with its label leading and its value trailing, like the Mac's details. Only Name
+  can be edited. Neither list has a caption
   under it, an Edit mode or a way to reorder, so the servers stay in the list's order, the one
   the user connected through first. A server's address can't be edited, because a server is
   its `id` and its name, and the address is only how this device reaches it. Server URL shows it
@@ -346,7 +348,7 @@ and are there again when it comes back.
   app reconnects and reads the server again. A server without an installed release can't restart
   and offers no Restart. Every server that can restart also offers Restart in two quieter places,
   pending or not. Its details have a
-  Version row, after Status on the Mac and after Server URL on the phone, with the release it runs
+  Version row, after Status on the Mac and after URL on the phone, with the release it runs
   and a bordered Restart, prominent on the Mac while Model Providers asks for a restart, which is
   disabled while the server checks, reconnects or isn't connected, and absent without an
   installed release. Its row's context menu, from Control-click
