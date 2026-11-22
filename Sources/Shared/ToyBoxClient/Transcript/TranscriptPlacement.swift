@@ -168,8 +168,10 @@ public struct TranscriptPlacement: Equatable, Sendable {
             }
             return TranscriptPlacement(intent: intentForPosition(layout, allowsFollowing: false) ?? intent, origin: nil)
         case .arrived(let pinsLanding):
-            return TranscriptPlacement(intent: !pinsLanding && endHolds(intent, layout: layout) ? .following : intent,
-                                       origin: nil)
+            // A catch-up card pins only its landing. A reveal is a target the reader chose since.
+            var follows = endHolds(intent, layout: layout)
+            if pinsLanding, case .landing = intent { follows = false }
+            return TranscriptPlacement(intent: follows ? .following : intent, origin: nil)
         case .land(let target):
             if case .row(let id, _) = target, anchorableIdentity(id, layout: layout) == nil {
                 return TranscriptPlacement(intent: intent, origin: nil, unavailableTarget: id)
