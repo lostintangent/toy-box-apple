@@ -133,8 +133,8 @@ private struct ServerDetails: View {
                             let restart = Button("Restart") { Task { await update.restart() } }
                                 .controlSize(.small)
                                 .disabled(!update.canRestart)
-                            // The page's one Restart, which Model Providers asks for once an update
-                            // installs a new version.
+                            // The page's one Restart, prominent once an update installs a new
+                            // version, which a provider runs only after the server restarts.
                             if catalog.providers.newVersions > 0 {
                                 restart.buttonStyle(.borderedProminent)
                             } else {

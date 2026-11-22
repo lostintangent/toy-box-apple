@@ -9,6 +9,8 @@ public struct SidebarFooter: Equatable {
     /// Precedes the server in the footer's help.
     public let verb: String
     public let accessibilityValue: String
+    /// The word a server's Status row in Settings shows after the dot.
+    public let word: String
 
     /// An orange or red dot.
     public var isFailing: Bool { dot == .orange || dot == .red }
@@ -16,17 +18,19 @@ public struct SidebarFooter: Equatable {
     /// A nil phase is a server address the app can't use, so there is no catalog to ask.
     public init(phase: ChannelCatalogPhase?, isLoaded: Bool) {
         switch phase {
-        case .connecting?: self.init(.secondary, "Connecting to", "connecting")
-        case .connected?: self.init(.green, "Connected to", "connected")
-        case .failed(let error)? where isLoaded && !Self.isRefusal(error): self.init(.orange, "Reconnecting to", "reconnecting")
-        case .failed?, nil: self.init(.red, "Can't connect to", "can't connect")
+        case .connecting?: self.init(.secondary, "Connecting to", "connecting", "Connecting…")
+        case .connected?: self.init(.green, "Connected to", "connected", "Connected")
+        case .failed(let error)? where isLoaded && !Self.isRefusal(error):
+            self.init(.orange, "Reconnecting to", "reconnecting", "Reconnecting…")
+        case .failed?, nil: self.init(.red, "Can't connect to", "can't connect", "Can't connect")
         }
     }
 
-    private init(_ dot: Color, _ verb: String, _ accessibilityValue: String) {
+    private init(_ dot: Color, _ verb: String, _ accessibilityValue: String, _ word: String) {
         self.dot = dot
         self.verb = verb
         self.accessibilityValue = accessibilityValue
+        self.word = word
     }
 
     private static func isRefusal(_ error: any Error) -> Bool {
