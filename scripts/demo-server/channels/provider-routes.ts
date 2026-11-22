@@ -27,7 +27,7 @@ function reply(response: ServerResponse, status: number, body: unknown) {
     response.end(JSON.stringify(body));
 }
 
-/** `/api/v1/providers`, each provider's subscription, and its update, as a server after 0.4.10.
+/** `/api/v1/providers`, each provider's subscription, and its update, as the server serves them.
  *  An update changes the versions the list reports for as long as the process runs, so they
  *  survive the demo server's restart, as a real CLI's install does. */
 export function createDemoProviderRoutes() {

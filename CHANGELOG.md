@@ -1,5 +1,17 @@
 # Changelog
 
+## Mac 0.1.53
+
+### Bugs/Polish
+
+- The Servers tab in Settings now offers Check for Updates for every server's model providers, where some servers were missing it, so you can keep your agents on the latest from any of them.
+
+## iPhone 0.1.49
+
+### Bugs/Polish
+
+- Each server's page in Settings now offers Check for Updates for its model providers, where some servers were missing it, so you can keep your agents on the latest from any of them.
+
 ## iPhone 0.1.48
 
 ### Features
