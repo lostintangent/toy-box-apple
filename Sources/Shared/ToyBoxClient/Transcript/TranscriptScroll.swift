@@ -147,6 +147,12 @@ public final class TranscriptScroll {
             beforeFind = nil
             event = isFinding ? .holdCurrentPosition : .readerScrolled(to: layout.origin)
         } else if let last = lastLayout {
+            // A row landing writes once its row is built, and SwiftUI holds that row as the stack
+            // measures around it. Only an arrival, a new width or resting past the end places it again.
+            if case .landing(.row) = intent, last.rows == layout.rows, last.viewport.width == layout.viewport.width,
+               Model.placement(for: intent, layout: layout).needsMeasurement == nil, !restsPastEnd(layout) {
+                return nil
+            }
             guard let change = Model.layoutEvent(from: last, to: layout) ?? drift(from: last, to: layout) else {
                 return nil
             }

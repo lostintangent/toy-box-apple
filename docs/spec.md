@@ -1979,7 +1979,7 @@ Mac's own:
 
 | Behavior | Why SwiftUI falls short |
 | --- | --- |
-| Landing places its row once | SwiftUI skips a seeded position whose row is already on the first screen, so a New divider 686 points down an 800-point window never moved |
+| Landing places its row once, then leaves it where SwiftUI holds it until an arrival, a width change or a scroll resting past the end. SwiftUI holds a row it scrolled to by ID with the spacing above it at the top, and placing the message itself there instead fought that hold 4 to 9 times per landing | SwiftUI skips a seeded position whose row is already on the first screen, so a New divider 686 points down an 800-point window never moved |
 | While reading, a row above that changes height leaves the first row starting in the viewport where it was | SwiftUI keeps the first *visible* row in place, which can start above the viewport, so a late image growing 190 points above moved the reader 70 |
 | An older page keeps the visible top message and its offset | The reader's row isn't built yet when the page arrives, so scrolling up from message 183 jumped to 81 |
 | On the phone, a page that arrives under a resting finger waits for it to lift | UIScrollView's pan sets the offset from where the drag began on its next touch, which undid a landing under the finger and showed the page's top |

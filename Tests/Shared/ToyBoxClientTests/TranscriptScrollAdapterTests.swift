@@ -159,8 +159,12 @@ struct TranscriptScrollAdapterTests {
 
         scroll.measure("n0", frame: CGRect(x: 0, y: 4000, width: 386, height: 300))
         scroll.metrics?.origin = 4000
-        let landed = scroll.update()
-        #expect(landed?.origin == 4000 && !scroll.moves(landed))
+        #expect(scroll.update() == nil)
+
+        // SwiftUI holds the row by ID with its spacing at the top, and the composer settling leaves it there.
+        scroll.metrics?.origin = 3984
+        scroll.metrics?.viewport = .init(width: 386, height: 644, topInset: 0, bottomInset: 44)
+        #expect(scroll.update() == nil)
     }
 
     @Test func nothingButTheInitialAnchorPlacesBeforeTheLanding() {
