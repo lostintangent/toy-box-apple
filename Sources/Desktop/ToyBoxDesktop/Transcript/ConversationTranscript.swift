@@ -185,7 +185,7 @@ struct ConversationTranscript: View {
                 .task(id: interaction.isArtifactViewerPresented ? nil : interaction.revealRequestToken) {
                     guard !interaction.isArtifactViewerPresented, let request = interaction.revealRequest else { return }
                     interaction.consumeRevealRequest(request.token)
-                    await reveal(sequence: request.sequence, using: proxy)
+                    await reveal(sequence: request.sequence)
                 }
                 .onChange(of: store.messages.first?.sequence) { _, start in geometry.historyStart = start }
                 .onChange(of: read.isLooking) { _, looking in visit.look(looking, hasLanded: hasLanded) }
@@ -259,7 +259,7 @@ struct ConversationTranscript: View {
 
     private func scrollViewport(proxy: ScrollViewProxy) -> some View {
         ScrollView {
-            conversationRows(proxy: proxy)
+            conversationRows()
                 .environment(\.transcriptPointer, pointer)
                 .background(windowProbe.frame(width: 0, height: 0), alignment: .topLeading)
                 .padding(.top, TranscriptCoordinates.contentTopPadding)
@@ -334,7 +334,7 @@ struct ConversationTranscript: View {
         }
     }
 
-    private func conversationRows(proxy: ScrollViewProxy) -> some View {
+    private func conversationRows() -> some View {
         let rows = rows
         let items = TranscriptItem.items(rows)
         let channel = TranscriptRowChannel(agents: store.roster, id: store.id,
@@ -619,7 +619,7 @@ struct ConversationTranscript: View {
             isOn: IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages))
     }
 
-    func reveal(sequence: Int, using proxy: ScrollViewProxy) async {
+    func reveal(sequence: Int) async {
         let token = interaction.revealRequestToken
         let findToken = find.isPresented && find.revealRequest?.sequence == sequence ? find.revealRequest?.token : nil
         catchUp?.isPinned = false
@@ -629,7 +629,7 @@ struct ConversationTranscript: View {
         await revealer.run(sequence, token: token, store: store, interaction: interaction,
                            isCurrent: { revealIsCurrent(token, findToken: findToken) },
                            shows: { message in rows.contains { $0.messages.contains { $0.id == message.id } } },
-                           place: { await placeReveal($0, using: proxy) })
+                           place: { await placeReveal($0) })
     }
 
     private func revealIsCurrent(_ token: UUID, findToken: UUID?) -> Bool {
@@ -641,7 +641,7 @@ struct ConversationTranscript: View {
     /// One scroll puts the message's top `TranscriptReveal.margin` below the visible top, or below Find's
     /// bar while it's open, or as near as the end allows. A row the lazy stack hasn't built is brought in
     /// by identity first, and placed from its first frame. From then on, reading holds it like any other place.
-    private func placeReveal(_ message: ChannelMessage, using proxy: ScrollViewProxy) async {
+    private func placeReveal(_ message: ChannelMessage) async {
         if find.isPresented { expandedMessageIds.insert(message.id) }
         guard let row = rows.first(where: { $0.messages.contains { $0.id == message.id } }) else { return }
         let membership = message.system?.type == "member_joined" || message.system?.type == "member_left"
