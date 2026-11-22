@@ -236,15 +236,15 @@ and are there again when it comes back.
   server's last update, and Retry refreshes every server. The morning digest stays one
   notification, and each line opens on its own server.
 - **Settings** lists the servers with their dots and names, even when there's one. A row never shows its address, which only the server's details show. On the Mac, they have their own Servers tab between General and Notifications,
-  and the selected server's Name, Server URL and status sit below the list. The list adds no inset of its own: its dots line up with
+  and below the list a Server Details card shows the selected server's Name, URL, Status and
+  Version, under that heading, so no label repeats Server. The list adds no inset of its own: its dots line up with
   the labels below, and it's as tall as its rows. Its card keeps the grouped Form's own padding
   around a list, a little roomier than the details card below it. On the phone, each row opens
-  its server's page, which starts with one Server Details card: Name, URL with its status, then
-  Version, each with its label leading and its value trailing, like the Mac's details. Only Name
-  can be edited. Neither list has a caption
+  its server's page, which starts with the same Server Details card. Each row has its label
+  leading and its value trailing, and only Name can be edited. Neither list has a caption
   under it, an Edit mode or a way to reorder, so the servers stay in the list's order, the one
   the user connected through first. A server's address can't be edited, because a server is
-  its `id` and its name, and the address is only how this device reaches it. Server URL shows it
+  its `id` and its name, and the address is only how this device reaches it. URL shows it
   as a plain value in secondary ink that can be selected and copied.
 - **Model Providers** ends each server's page on the phone, and the selected server's details on
   the Mac's Servers tab, which scrolls when it outgrows the window. It's a read-only section
@@ -348,7 +348,7 @@ and are there again when it comes back.
   app reconnects and reads the server again. A server without an installed release can't restart
   and offers no Restart. Every server that can restart also offers Restart in two quieter places,
   pending or not. Its details have a
-  Version row, after Status on the Mac and after URL on the phone, with the release it runs
+  Version row, after Status, with the release it runs
   and a bordered Restart, prominent on the Mac while Model Providers asks for a restart, which is
   disabled while the server checks, reconnects or isn't connected, and absent without an
   installed release. Its row's context menu, from Control-click
@@ -3160,8 +3160,8 @@ optimistically and adds no pending UI. A failure, which in practice means the ap
 follows with one generic alert, such as "Couldn't Delete Channel", with no detail and OK.
 
 Settings uses a native scene with General and Notifications sections. The Mac adds a Servers tab
-between them for the servers (see [Several servers](#several-servers)), each with its Name,
-Server URL and status. General includes the selected appearance (System by default). Connecting
+between them for the servers (see [Several servers](#several-servers)), each with its Server
+Details. General includes the selected appearance (System by default). Connecting
 validates HTTP(S), preserves path prefixes and displays actionable failures. An address
 without a scheme, like `machine.tail1234.ts.net`, gets `https://`, so a server needs `http://`
 typed to use HTTP. Both apps' Server URL placeholder is `machine.tail1234.ts.net`, and its
@@ -3173,8 +3173,8 @@ Welcome is the Server URL card, and on the Mac the sidebar's welcome holds the f
 no separate test or confirmation. Return or Connect
 tries the address once: while it runs, the field is disabled and the button reads Connecting…,
 then a server that answers is saved and shown, and a failure shows its error in the card and
-saves nothing. A server's page shows its address as a plain value, with the
-same checkmark while it's connected, or its failure. Notifications explains requests
+saves nothing. A server's Status row shows its dot with Connected, Connecting…
+or Can't connect, and on the phone why it can't and what to check under it. Notifications explains requests
 and completions before asking system permission in response to an explicit enable action.
 Permission denial shows Open System Settings, never repeated permission prompts. General also
 holds Open at Login, Show in menu bar, the Quick Send shortcut recorder, and the two on-device
