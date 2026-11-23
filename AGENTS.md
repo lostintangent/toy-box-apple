@@ -30,8 +30,9 @@ of truth for parity, protocol and design. Everything else loads when you need it
 - **Owners** each own one part of both apps: Core the shared foundation, and Shell, Transcript,
   Composer, Overview and Intelligence a surface each.
 
-Messages lead with the outcome, in plain words. A decision shows each option's cost, what it's
-causing now, what dropping it saves and what the user loses. Post before slow work.
+Messages lead with the outcome, in plain words, explaining any term the user didn't introduce. A
+decision shows each option's cost, what it's causing now, what dropping it saves and what the user
+loses. Post before slow work.
 
 ### Ownership
 
@@ -83,10 +84,9 @@ Surfaces meet at these seams:
 - **Start from an outcome the user will feel.** Lead writes the decision into the spec before
   anyone builds it, and what a platform does only once measured, then opens one task with one
   owner. The spec holds current rules, never history.
-- **Choose the simplest design that meets it,** because it's easiest to understand, diagnose
-  and change. Use what Apple's platforms ship, in its idiomatic form, and build your own only for
-  behavior Toy Box needs and the platform lacks. Add no cache, retry, abstraction or option until a
-  measurement or a second case asks for one.
+- **Choose the simplest design that meets it.** Use what Apple's platforms ship, in its idiomatic
+  form, and build your own only for behavior Toy Box needs and the platform lacks. Add no cache,
+  retry, abstraction or option until a measurement or a second case asks for one.
 - **Keep to what was asked.** Post anything else you notice as a follow-up instead of doing it.
 
 ## 2. Show it first
@@ -183,7 +183,7 @@ The validate skill says how to drive either app, within these limits:
 
 - **Mac:** launch and drive only Toy Box Test (`dev.toybox.desktop.test`) showing `studio-demo`,
   never the user's `dev.toybox.desktop`, which bare `bun run build` opens, or a window listing
-  live channels, and `kill <pid>` your instance when you finish.
+  live channels.
 - **iPhone:** use the shared simulator under its lease, and a real phone only through TestFlight,
   so development never replaces the user's app or its data.
 
@@ -203,9 +203,9 @@ The validate skill says how to drive either app, within these limits:
 
 ## 5. Hand off
 
-- **Hand off with your proof.** Say what you verified, what you didn't, and what still needs a
-  real device, server or signing key. Attach channel images from your session `files/` folder,
-  never `/tmp`, because posts keep their original paths.
+- **Hand off with your proof.** Say what you verified, with the numbers and scope you measured,
+  what you didn't, and what still needs a real device, server or signing key. Attach channel
+  images from your session `files/` folder, never `/tmp`, because posts keep their original paths.
 - **Lead reviews, merges and ships** every change with the release skill. Owners never merge to
   `main` or push tags.
 
