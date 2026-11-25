@@ -20,6 +20,8 @@ final class AppModel {
     /// Every message the user sends until its server confirms it, in the shared container so the
     /// share extension's sends join it. Each server's catalog delivers its own.
     let outbox: ChannelOutbox
+    /// This device's shell on each server, which outlives the terminal.
+    let terminals: TerminalShells
     private(set) var configurationError: String?
     private(set) var isActive = false
     private(set) var selectedStore: ChannelStore?
@@ -84,6 +86,7 @@ final class AppModel {
         self.notifications = notifications ?? ChannelNotifications(defaults: defaults)
         self.following = following ?? ChannelFollowController()
         self.defaults = defaults
+        terminals = TerminalShells(defaults: defaults)
         let flag = arguments.firstIndex(of: "--server")
         let launchServer = flag.map { arguments.dropFirst($0 + 1).first ?? "" } ?? environment["TOY_BOX_SERVER_URL"]
         outbox = .mobile()
