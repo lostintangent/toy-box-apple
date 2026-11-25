@@ -7,16 +7,16 @@ import ToyBoxKit
 /// another server only leaves a shell, and its server keeps it for 30 seconds, so coming back
 /// resumes it.
 @MainActor
-final class TerminalShells {
+public final class TerminalShells {
     private let defaults: UserDefaults
     private var shells: [String: TerminalSession] = [:]
 
-    init(defaults: UserDefaults) {
+    public init(defaults: UserDefaults) {
         self.defaults = defaults
     }
 
     /// The shell on this server, under the client ID this device saved for it.
-    func shell(on api: ChannelAPI) -> TerminalSession {
+    public func shell(on api: ChannelAPI) -> TerminalSession {
         let server = ChannelTarget.normalizedServer(api.baseURL)
         if let shell = shells[server] { return shell }
         // Every socket asks for the same client ID, which is what lets a reconnect resume the shell.
@@ -30,7 +30,7 @@ final class TerminalShells {
 
     /// Lets go of a server's shell as the server leaves the list, so the server ends it once its
     /// 30 seconds pass.
-    func forget(_ server: String) {
+    public func forget(_ server: String) {
         shells[ChannelTarget.normalizedServer(server) ?? server] = nil
     }
 }

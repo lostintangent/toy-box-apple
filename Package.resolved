@@ -1,5 +1,5 @@
 {
-  "originHash" : "e2a9d4c0c504adc47750d339e97eb1be58339017124c4451dff1a73488295591",
+  "originHash" : "0238d5541ef54a1c8662278c4016f214490100c474a4593595aa627ba60f2773",
   "pins" : [
     {
       "identity" : "sparkle",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "eef1a539a373c1f1a320624b1130fc5de7b2e100",
         "version" : "2.10.0"
+      }
+    },
+    {
+      "identity" : "thrush",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/lostintangent/thrush",
+      "state" : {
+        "revision" : "5bfe76cf2b4549cdb8a9266041a083d3df80183e",
+        "version" : "0.2.0"
       }
     }
   ],

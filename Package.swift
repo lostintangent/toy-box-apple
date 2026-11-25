@@ -33,11 +33,11 @@ let package = Package(
         .executable(name: "ToyBoxDesktopShare", targets: ["ToyBoxDesktopShare"]),
         .executable(name: "ToyBoxDesktopWidget", targets: ["ToyBoxDesktopWidget"]),
     ]),
-    dependencies: mobile ? [
+    dependencies: [
         .package(url: "https://github.com/lostintangent/thrush", from: "0.2.0"),
-    ] : [
+    ] + (mobile ? [] : [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
-    ],
+    ]),
     targets: [
         .target(name: "ToyBoxKit", path: "Sources/Shared/ToyBoxKit"),
         .target(name: "ToyBoxClient", dependencies: ["ToyBoxKit"], path: "Sources/Shared/ToyBoxClient"),
@@ -46,12 +46,15 @@ let package = Package(
         .target(name: "ToyBoxUI", dependencies: ["ToyBoxKit", "ToyBoxClient"], path: "Sources/Shared/ToyBoxUI"),
         .target(name: "ToyBoxWidgetViews", dependencies: ["ToyBoxKit"], path: "Sources/Shared/ToyBoxWidgetViews",
                 swiftSettings: [.unsafeFlags(["-application-extension"])]),
+        // Only the apps link the terminal, keeping Thrush out of every extension.
+        .target(name: "ToyBoxTerminal", dependencies: ["ToyBoxKit", "ToyBoxClient", .product(name: "Thrush", package: "thrush")],
+                path: "Sources/Shared/ToyBoxTerminal"),
     ] + (mobile ? [
         .target(name: "ToyBoxMobileIntegrations", dependencies: ["ToyBoxKit", "ToyBoxClient", "ToyBoxUI"],
                 path: "Sources/Mobile/ToyBoxMobileIntegrations",
                 swiftSettings: [.unsafeFlags(["-application-extension"])]),
         .executableTarget(name: "ToyBoxMobile", dependencies: [
-            "ToyBoxClient", "ToyBoxIntelligence", "ToyBoxUI", "ToyBoxMobileIntegrations",
+            "ToyBoxClient", "ToyBoxIntelligence", "ToyBoxUI", "ToyBoxMobileIntegrations", "ToyBoxTerminal",
             .product(name: "Thrush", package: "thrush"),
         ], path: "Sources/Mobile/ToyBoxMobile", linkerSettings: simulatedEntitlements("dev.toybox.mobile")),
         .executableTarget(
@@ -100,8 +103,9 @@ let package = Package(
             name: "ToyBoxDesktop",
             dependencies: [
                 "ToyBoxKit", "ToyBoxClient", "ToyBoxIntelligence", "ToyBoxUI",
-                "ToyBoxControlIntents",
+                "ToyBoxControlIntents", "ToyBoxTerminal",
                 .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "Thrush", package: "thrush"),
             ],
             path: "Sources/Desktop/ToyBoxDesktop",
             // `bun run benchmark` also passes it to its release build. The shipped app never has it.
