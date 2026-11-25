@@ -1,7 +1,6 @@
-// The demo's terminal, forwarded byte for byte to `bun run terminal-server`, so a pane opened on
-// studio-demo attaches to a real shell while the app never connects to that server, which lists
-// this Mac's live peers. When it isn't running the socket is refused, and the pane reconnects on
-// its own.
+// The demo's terminal, forwarded to `bun run terminal-server`, which serves only the terminal socket,
+// so a pane opened on studio-demo attaches to a real shell. When it isn't running the socket is
+// refused, and the pane reconnects on its own.
 import type { IncomingMessage } from "node:http";
 import { connect } from "node:net";
 import type { Duplex } from "node:stream";
@@ -20,7 +19,11 @@ export function createDemoTerminal() {
             open.add(socket).add(shell);
             shell.once("connect", () => {
                 connected = true;
-                const headers = request.rawHeaders.map((value, index) => index % 2 ? `${value}\r\n` : `${value}: `);
+                // The server accepts only requests addressed to itself, so the upgrade is readdressed to it.
+                const headers = request.rawHeaders.flatMap((name, index, all) => {
+                    if (index % 2 || name.toLowerCase() === "origin") return [];
+                    return [`${name}: ${name.toLowerCase() === "host" ? `127.0.0.1:${port}` : all[index + 1]}\r\n`];
+                });
                 shell.write(`${request.method} ${request.url} HTTP/${request.httpVersion}\r\n${headers.join("")}\r\n`);
                 shell.write(head);
                 socket.pipe(shell).pipe(socket);

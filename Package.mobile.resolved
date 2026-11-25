@@ -1,12 +1,13 @@
 {
-  "originHash" : "7110b6ffe64655af8d98232e5975207495f49e87693a80c2b2c5c5a8add1dd43",
+  "originHash" : "36039015736d80cfd858fd84c16b302b9dff009bded4bec5ecf76fe1188bf123",
   "pins" : [
     {
       "identity" : "thrush",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/lostintangent/thrush",
       "state" : {
-        "revision" : "c88029a870279a6fdf71c4595627b311dace3bf9"
+        "revision" : "5bfe76cf2b4549cdb8a9266041a083d3df80183e",
+        "version" : "0.2.0"
       }
     }
   ],
