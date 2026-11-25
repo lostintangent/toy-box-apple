@@ -34,7 +34,7 @@ let package = Package(
         .executable(name: "ToyBoxDesktopWidget", targets: ["ToyBoxDesktopWidget"]),
     ]),
     dependencies: mobile ? [
-        .package(url: "https://github.com/lostintangent/thrush", revision: "ddba78cd580198a3b997450a4094183a39b7980d"),
+        .package(url: "https://github.com/lostintangent/thrush", revision: "c88029a870279a6fdf71c4595627b311dace3bf9"),
     ] : [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
     ],
