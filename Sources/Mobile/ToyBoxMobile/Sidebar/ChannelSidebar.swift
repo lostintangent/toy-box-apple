@@ -317,7 +317,8 @@ struct ChannelSidebar: View {
                 Button("New Channel", systemImage: "plus") { management.present(.newChannel(server: model.selectedServer)) }
                     .disabled(!model.canCreateChannel)
             }
-            // The unfolded sidebar keeps these two in one group, which UIKit folds into ••• when narrow.
+            // Screens and Terminal look into the server's Mac, so they share a group apart from New
+            // Channel. The unfolded sidebar keeps all three in one, which UIKit folds into ••• when narrow.
             if isCollapsed {
                 ToolbarSpacer(.fixed, placement: .primaryAction)
             }
@@ -329,6 +330,10 @@ struct ChannelSidebar: View {
                     Label { Text("Screens") } icon: { Image(uiImage: outline ?? UIImage()) }
                 }
                 .disabled(model.api == nil)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Terminal", systemImage: "apple.terminal") { model.cover = .terminal }
+                    .disabled(model.api == nil)
             }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             ToolbarSpacer(.flexible, placement: .bottomBar)

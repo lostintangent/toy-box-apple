@@ -201,6 +201,7 @@ final class AppModel {
             galleries[id] = nil
         }
         composerSessions = composerSessions.filter { !belongs($0.value.store) }
+        terminals.forget(catalog.api.baseURL.absoluteString)
     }
 
     /// Push and Share reach every server. The first server stands in for a launch address the app
@@ -520,7 +521,7 @@ extension AppModel {
     /// What the app presents over every channel. Only one at a time, and opening a channel from a
     /// notification, the widget or Handoff closes it.
     enum Cover: Hashable, Identifiable {
-        case settings, screens
+        case settings, screens, terminal
         /// One screen on a server, watched full screen, like a channel's screen preview.
         case screen(String, serverURL: String)
 
