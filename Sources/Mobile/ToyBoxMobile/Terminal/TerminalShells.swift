@@ -9,18 +9,20 @@ import ToyBoxKit
 @MainActor
 final class TerminalShells {
     private let defaults: UserDefaults
-    private var shells: [String: TerminalShell] = [:]
+    private var shells: [String: TerminalSession] = [:]
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
     }
 
     /// The shell on this server, under the client ID this device saved for it.
-    func shell(on api: ChannelAPI) -> TerminalShell {
+    func shell(on api: ChannelAPI) -> TerminalSession {
         let server = ChannelTarget.normalizedServer(api.baseURL)
         if let shell = shells[server] { return shell }
-        let shell = TerminalShell(clientID: api.terminalClientID(in: defaults)) { id, size in
-            api.terminalSocket(clientID: id, columns: size.columns, rows: size.rows)
+        // Every socket asks for the same client ID, which is what lets a reconnect resume the shell.
+        let clientID = api.terminalClientID(in: defaults)
+        let shell = TerminalSession { size in
+            api.terminalSocket(clientID: clientID, columns: size.columns, rows: size.rows)
         }
         shells[server] = shell
         return shell
