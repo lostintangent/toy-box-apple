@@ -109,6 +109,12 @@ if (import.meta.main) await main(async () => {
             { env: mobileEnvironment });
         const drive = values.drive ? await prepareMobileDrive(values.drive, data,
             join(scratchPath(), "mobile-drive", crypto.randomUUID())) : undefined;
+        // The app's driver reads its accessibility tree, which SwiftUI builds only while the device has app
+        // accessibility on, as XCUITest turns it on. A device that's never run a UI test has it off.
+        if (drive) {
+            await command(["xcrun", "simctl", "spawn", simulator.udid, "defaults", "write", "com.apple.Accessibility",
+                "ApplicationAccessibilityEnabled", "-bool", "true"], { env: mobileEnvironment });
+        }
         interruption.signal.throwIfAborted();
         // A drive starts at the channel list. An empty remembered channel in the volatile argument domain
         // skips launch restoring the last one, so no step races its push or has to undo it.
