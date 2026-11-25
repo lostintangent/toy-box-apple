@@ -22,7 +22,7 @@ struct WindowCommandActions {
     /// act on what's underneath.
     var imageZoom: ImageZoomActions?
     var isViewerPresented: Bool
-    /// The selected channel's server, where New Channel and Open Screen start.
+    /// The selected channel's server, where New Channel, Open Screen and Open Terminal start.
     var server: String
     var newChannel: () -> Void
     var openNewWindow: () -> Void
@@ -87,6 +87,9 @@ struct ChannelCommands: Commands {
                 openWindow(id: "screens", value: ScreenWindowValue(serverURL: actions?.server ?? model.serverURL))
             }
                 .keyboardShortcut("o")
+                .disabled(model.api == nil)
+            Button("Open Terminal") { openWindow(terminalOn: actions?.server ?? model.serverURL) }
+                .keyboardShortcut("t")
                 .disabled(model.api == nil)
             Button("Open in Toy Box") { actions?.openInToyBox() }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
