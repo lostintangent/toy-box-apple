@@ -24,10 +24,11 @@ through Apple's `xctest` host. ToyBoxKit and mocked Intelligence run on the Mac 
 in the iOS build.
 
 - It rejects interrupted, failed and empty Swift Testing runs.
-- A suite silent for three minutes is sampled, stopped and fails, naming the tests that never
-  finished. A suite's launch waits on the simulator rather than the tests, so the three minutes
-  start at its first output, and one that prints nothing for ten minutes after it launches is
-  stopped the same way. A sample that fails is noted, and the stall stays the error.
+- A suite silent for three minutes is stopped and fails, naming the tests that never finished. Only
+  CI samples it first, for the reason under the iPhone reference's **Never attach a debugger**. A
+  suite's launch waits on the simulator rather than the tests, so the three minutes start at its
+  first output, and one that prints nothing for ten minutes after it launches is stopped the same
+  way. A sample that fails is noted, and the stall stays the error.
 - A suite that fails or stalls on a simulator that's no longer booted, or whose runtime is gone, is
   reported as the simulator going down, not as the tests failing. It prints the device's state, its
   runtime's images and whether they're still mounted, crash reports, and what CoreSimulator logged

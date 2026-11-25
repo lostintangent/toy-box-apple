@@ -34,13 +34,15 @@ function testProcessTree(source: string, parentPID: number) {
     return rows.filter(row => pids.has(row.pid));
 }
 
-async function sampleAndStopTests(pid: number) {
+/** Ends the hung test processes, printing each one's stacks first in CI only. On a Mac with Developer Mode off,
+ * `sample` waits on a hidden password prompt, and every simulator app launch on that Mac hangs while it waits. */
+async function stopTests(pid: number) {
     const directory = join(scratchPath(), "mac-test-watchdog");
     await mkdir(directory, { recursive: true });
     const descendants = testProcessTree(await text(["ps", "-axo", "pid=,ppid=,comm="]), pid);
     await Bun.write(join(directory, "processes.txt"), JSON.stringify(descendants, null, 2));
     try {
-        for (const row of descendants) {
+        if (process.env.CI) for (const row of descendants) {
             if (row.command.includes("swiftpm-testing") || row.command.includes("xctest")) {
                 const path = join(directory, `${row.pid}.sample.txt`);
                 await command(["sample", String(row.pid), "3", "-file", path]);
@@ -76,8 +78,9 @@ if (import.meta.main) await main(async () => {
     const timer = setTimeout(() => deadline.resolve(undefined), 12 * 60 * 1_000);
     const code = await Promise.race([child.exited, deadline.promise]).finally(() => clearTimeout(timer));
     if (code === undefined) {
-        await sampleAndStopTests(child.pid);
-        throw new Error("Mac tests exceeded the twelve-minute watchdog. See the process samples.");
+        await stopTests(child.pid);
+        throw new Error("Mac tests exceeded the twelve-minute watchdog."
+            + (process.env.CI ? " See the process samples." : ""));
     }
     if (code) throw new CommandFailure(code, `Swift tests failed (exit ${code}).`);
     const file = Bun.file(events);
