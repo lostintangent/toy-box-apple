@@ -5,6 +5,7 @@ import Observation
 import OSLog
 import SwiftUI
 import ToyBoxMobileIntegrations
+import ToyBoxTerminal
 import ToyBoxUI
 import UIKit
 

@@ -2,6 +2,10 @@
 
 ## Mac 0.1.54
 
+### Features
+
+- You can now open a terminal on any of your servers right from Toy Box, and it keeps running while you work in other windows, so you can start a long command and check back on it without leaving the app.
+
 ### Bugs/Polish
 
 - A server's status in Settings now reads in one word, like Connected or Reconnecting…, without error text that flashes when a connection briefly drops, and checking for updates shows each new version without an extra note telling you to restart.

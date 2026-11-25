@@ -69,6 +69,16 @@ struct ToyBoxDesktopApp: App {
         .defaultSize(width: 960, height: 600)
         .restorationBehavior(restorationBehavior)
 
+        Window("Terminal", id: TerminalWindow.id) {
+            TerminalWindow()
+                .environment(model)
+                .preferredColorScheme(colorScheme)
+        }
+        .defaultSize(width: 720, height: 480)
+        .restorationBehavior(restorationBehavior)
+        // File > Open Terminal opens it on the selected channel's server.
+        .commandsRemoved()
+
         Settings {
             SettingsView()
                 .environment(model)

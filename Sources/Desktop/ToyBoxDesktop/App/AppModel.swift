@@ -4,6 +4,7 @@ import ToyBoxIntelligence
 import ToyBoxKit
 import Foundation
 import Observation
+import ToyBoxTerminal
 import ToyBoxUI
 
 @MainActor @Observable
@@ -37,6 +38,8 @@ final class AppModel {
     /// The key window's channel.
     private(set) var activeChannel: ChannelTarget?
     let notifications = ChannelNotifications()
+    /// This Mac's shell on each server, which outlives the Terminal window.
+    let terminals = TerminalShells(defaults: .standard)
     private(set) var morningDigest: MorningDigest?
     let folders = ChannelFolders()
     /// The catalogs a Retry or View > Refresh is refreshing, which spins their status dots. Polls never do.
@@ -109,6 +112,7 @@ final class AppModel {
             guard let self else { return }
             composerSessions = composerSessions.filter { $0.value.store.api.baseURL != catalog.api.baseURL }
             notifications.forget(catalog.api.baseURL.absoluteString)
+            terminals.forget(catalog.api.baseURL.absoluteString)
         }
         serversDidChange()
         if !launchOptions.isSnapshot, launchOptions.channelID == nil {

@@ -42,15 +42,15 @@ Edit only what you own, and ask the owner in the channel for anything else. App 
 | Owner | Owns |
 | --- | --- |
 | Core | `Sources/Shared/ToyBoxKit/` and `ToyBoxClient/`, `Tests/` except the files below, `scripts/`, `Package.swift` and `package.json`. On the Mac, `Sources/Desktop/ToyBoxControlIntents/` and `Sources/Desktop/Extensions/ToyBoxDesktopShare/`. On the phone, `Sources/Mobile/ToyBoxMobileIntegrations/`, the app's `Automation`, `Sources/Mobile/Extensions/ToyBoxMobileNotification/` and `ToyBoxMobileShare/`, and `Resources/Mobile/` |
-| Core, with the surface's owner | `Sources/Shared/ToyBoxUI/`, and each surface's folder in `ToyBoxClient/` |
+| Core, with the surface's owner | `Sources/Shared/ToyBoxUI/` and `ToyBoxTerminal/`, and each surface's folder in `ToyBoxClient/` |
 | Shell | `App`, `Shell`, `Sidebar`, `Channel`, `Notifications`, `Intents`, `Settings` and `Shared` in both apps, and the Mac's `MenuBar` and `QuickSend` |
-| Transcript | `Transcript` in both apps, and `Tests/Desktop/ToyBoxDesktopTests/TranscriptTests.swift` |
-| Composer | `Composer`, the composer and its tray, in both apps, the phone's `Cards` (the list's talk and Needs You cards), and `Tests/Desktop/ToyBoxDesktopTests/ComposerTests.swift` |
+| Transcript | `Transcript` in both apps |
+| Composer | `Composer`, the composer and its tray, in both apps, and the phone's `Cards` (the list's talk and Needs You cards) |
 | Overview | `Overview`, `Artifacts`, `Management`, `Screens` and `Terminal` in both apps, the phone's `LiveActivities`, and the widgets: `Sources/Shared/ToyBoxWidgetViews/`, `Sources/Desktop/Extensions/ToyBoxDesktopWidget/`, `Sources/Mobile/Extensions/ToyBoxMobileWidget/` and `Tests/Mobile/Extensions/ToyBoxMobileWidgetTests/` |
 | Intelligence | `Sources/Shared/ToyBoxIntelligence/` and `Tests/Shared/ToyBoxIntelligenceTests/` |
 | Designer | `Resources/Shared/AppIcon.icon` |
 
-A UI owner may add one `Tests/Desktop/ToyBoxDesktopTests/<Surface>Tests.swift` for their surface.
+UI owners own `Tests/Desktop/ToyBoxDesktopTests/<Surface>Tests.swift` for their surfaces.
 
 ## How the code fits together
 
@@ -62,7 +62,8 @@ their module names, and Swift imports by module.
 | `ToyBoxKit` | The domain: Toy Box's nouns as values, with their rules as members, like channels, messages, requests, tasks and routines. Pure and synchronous, with no I/O |
 | `ToyBoxClient` | The live subsystems both apps run, like each server's connection and catalog, a channel's store, the outbox, the composer and cards. Each holds state over time and draws nothing |
 | `ToyBoxIntelligence` | On-device Foundation Models |
-| `ToyBoxUI` | Shared SwiftUI, without AppKit or UIKit, in two tiers: `Design`, the identity and primitives both apps keep, like the avatars, `ChannelMark` and `ChannelColors`, and a folder per surface that composes them. Typography, navigation and layout stay native to each platform. Code that needs no SwiftUI belongs in ToyBoxClient or ToyBoxKit |
+| `ToyBoxTerminal` | The terminal on Thrush, which only the apps link |
+| `ToyBoxUI` | Shared SwiftUI, without AppKit or UIKit, in two tiers: `Design`, the identity and primitives both apps keep, like `ChannelMark`, and a folder per surface that composes them. Typography, navigation and layout stay native to each platform. Code that needs no SwiftUI belongs in ToyBoxClient or ToyBoxKit |
 | `ToyBoxDesktop`, `ToyBoxMobile` | Each app and its native platform integration, with AppKit or UIKit where SwiftUI falls short |
 | `ToyBoxControlIntents`, `ToyBoxMobileIntegrations` | What each app shares with its extensions, which live under `Extensions` |
 

@@ -31,15 +31,7 @@ public struct ScreenTitleMenu: View {
             .disabled(refresh?.isLoading ?? true)
         if servers.shown.count > 1 {
             Divider()
-            Picker("Server", selection: $server) {
-                ForEach(servers.shown, id: \.api.baseURL) { catalog in
-                    Text(catalog.name).tag(catalog.api.baseURL.absoluteString)
-                }
-            }
-            .pickerStyle(.inline)
-            #if os(macOS)
-            .labelsHidden()
-            #endif
+            ServerPicker(servers, selection: $server)
         }
     }
 }

@@ -125,6 +125,9 @@ struct ChannelSidebar: View {
                     openSettings: { model.settingsTab = .servers; openSettings() },
                     openScreen: model.api == nil ? nil : {
                         openWindow(id: "screens", value: ScreenWindowValue(serverURL: selection?.serverURL ?? model.serverURL))
+                    },
+                    openTerminal: model.api == nil ? nil : {
+                        openWindow(terminalOn: selection?.serverURL ?? model.serverURL)
                     }
                 )
             }
