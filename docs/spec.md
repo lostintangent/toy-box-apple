@@ -1130,6 +1130,7 @@ disabled whenever the updater's `canCheckForUpdates` is false, including in bund
 | File | New Channel | `Cmd-N` |
 | File | Open Channel in New Window | `Cmd-Shift-N` |
 | File | Open Screen… | `Cmd-O` |
+| File | Open Terminal | `Cmd-T` |
 | File | Open in Toy Box | `Cmd-Shift-O` |
 | File | Open Folder in Finder (selected channel, only when its folder is openable) | `Cmd-Option-R` |
 | Edit > Find | Find… / Find Next / Find Previous (open channel) | `Cmd-F` / `Cmd-G` / `Shift-Cmd-G` |
@@ -1392,7 +1393,7 @@ the sidebar list so rows scroll beneath it under the system scroll edge effect. 
 background, divider or material of its own. The status line is a 7-point dot (the unread dot's
 size), 6 points, then the count, like "1 server", in 11 regular secondary on one line. The line
 is 22 high, and its row is as
-tall as the large glass Open Screen button at its end, with 10 points above and below so the row
+tall as the large glass buttons at its end, with 10 points above and below so the row
 centers in the bar. The dot's leading edge sits 20 points from the sidebar's leading edge, 4
 before the channel icons, and its center sits 24 points above the sidebar's bottom edge.
 
@@ -1435,10 +1436,12 @@ connect). Dot colors crossfade over 0.2 seconds, instantly with
 Reduce Motion. Never pulse the dot. The footer reflects the catalog connection only. An open
 channel's own stream keeps its floating "Reconnecting to server" pill over the transcript.
 
-The status line's row ends in Open Screen, a large glass circle with the outline `display`
-symbol, as far from the trailing edge as the capsule is from the leading one. It
-runs File > Open Screen… (see Screens), with the help "Open Screen (Command-O)", and is disabled
-without a server. It leaves with the sidebar when the sidebar is hidden, and the command stays.
+The status line's row ends in Open Screen and Terminal, large glass circles in one glass group
+with the outline `display` and `apple.terminal` symbols, the group as far from the trailing edge
+as the capsule is from the leading one. They run File > Open Screen… (see Screens) and File >
+Open Terminal (see Terminal), with the help "Open Screen (Command-O)" and "Open Terminal
+(Command-T)", and are disabled without a server. They leave with the sidebar when the sidebar is
+hidden, and the commands stay.
 
 #### Talk to the Lead
 
@@ -3116,15 +3119,14 @@ the same picture a browser pane shows, and can take control of it like the brows
 ### Terminal
 
 A server's shell, the same one its web terminal offers, in the Thrush package's `TerminalPane`.
-The iPhone gets it first, then the Mac. The apps add the socket, a saved client ID, the entry and
-the viewer around the pane.
+The apps add the socket, a saved client ID, the entry and the viewer around the pane.
 
 | Part | Specification |
 | --- | --- |
-| Opening | iPhone: Terminal (`apple.terminal`) after Screens in the sidebar's top bar opens the selected server's shell in a full-screen cover. Screens and Terminal share one glass group, set apart from New Channel by a fixed space, since both look into the server's Mac while New Channel creates. On an unfolded Duo all three share one group. Opening a channel from a notification, the widget or Handoff closes it, like Screens |
-| Viewer | The pane runs edge to edge under a real toolbar, so its first line starts below the bar. The title is always a glass menu like Screens', reading "Terminal" over the server's name. It lists the servers in the channel list's order with the current one checked, even when there's only one, so the terminal's own actions can join it later. Close (`xmark`) leads the trailing rail. There's no End Shell: Close and switching servers only leave, and the server keeps that shell for 30 seconds, so coming back resumes it. Typing `exit` ends it, and the viewer stays open on the pane's Ended until the user starts a new shell or closes |
+| Opening | Mac: File > Open Terminal (`Cmd-T`), or Terminal after Open Screen at the end of the sidebar's connection footer, opens the app's one Terminal window, disabled without a server. It opens on the selected channel's server, and opening it again only brings it forward, so it never leaves a shell on its own. iPhone: Terminal (`apple.terminal`) after Screens in the sidebar's top bar opens the selected server's shell in a full-screen cover. Screens and Terminal share one glass group, set apart from New Channel by a fixed space, since both look into the server's Mac while New Channel creates. On an unfolded Duo all three share one group. Opening a channel from a notification, the widget or Handoff closes it, like Screens |
+| Viewer | The pane runs edge to edge under a real toolbar, so its first line starts below the bar. The title is always a glass menu like Screens', reading "Terminal" over the server's name. It lists the servers in the channel list's order with the current one checked, even when there's only one, so the terminal's own actions can join it later. Mac: the title is the artifact viewer's title capsule, leading in the toolbar, and the window shows no system title, like Screens. The window keeps its server across relaunch, and a restored window waits for its server to open, like a channel window. Disconnecting its server closes it. iPhone: Close (`xmark`) leads the trailing rail. On both, there's no End Shell: closing and switching servers only leave, and the server keeps that shell for 30 seconds, so coming back resumes it. Typing `exit` ends it, and the viewer stays open on the pane's Ended until the user starts a new shell or closes |
 | Shell | Each device keeps one shell per server, under a client ID it saves for that server, so the phone, the Mac and a browser tab never take a shell from each other. Opening the terminal again returns to that shell while the server still has it |
-| Pane | Thrush's plan specifies the pane, and its Designer owns how it looks, so the apps draw none of it. It sizes the grid, follows the system appearance, and owns input, the iPhone key row, selection and history. It keeps one socket while it's visible and the app is active, like Screens, reconnecting after 250 ms and doubling to 4 s. It shows connecting, a fresh shell that replaced an ended one, exit, and another window taking the shell, which reconnects only when the user acts. Our Designer reviews those states against this spec and asks for changes through Lead |
+| Pane | Thrush's plan specifies the pane, and its Designer owns how it looks, so the apps draw none of it. It sizes the grid, follows the system appearance, and owns input, the iPhone key row, selection and history. On iPhone, it keeps one socket while it's visible and the app is active, like Screens. The Mac keeps it while the window is open, even minimized, covered or behind another app, so a long command keeps its shell past 30 seconds. Both reconnect after 250 ms, doubling to 4 s. It shows connecting, a fresh shell that replaced an ended one, exit, and another window taking the shell, which reconnects only when the user acts. Our Designer reviews those states against this spec and asks for changes through Lead |
 
 ### Management and Settings
 
