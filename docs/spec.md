@@ -3117,10 +3117,12 @@ the same picture a browser pane shows, and can take control of it like the brows
 
 A server's shell, the same one its web terminal offers, in the Thrush package's `TerminalPane`.
 The iPhone gets it first, then the Mac. The apps add the socket, a saved client ID, the entry and
-the viewer around the pane, and where it opens follows Designer's mockup once the user picks it.
+the viewer around the pane.
 
 | Part | Specification |
 | --- | --- |
+| Opening | iPhone: Terminal (`apple.terminal`) after Screens in the sidebar's top bar opens the selected server's shell in a full-screen cover, joining New Channel and Screens in one group on an unfolded Duo. Opening a channel from a notification, the widget or Handoff closes it, like Screens |
+| Viewer | The pane runs edge to edge under a real toolbar, so its first line starts below the bar. The title is one glass button like Screens', reading "Terminal" over the server's name, and with several servers it opens a menu listing them in the channel list's order with the current one checked. With one server it reads just "Terminal" and isn't a button. Close (`xmark`) leads the trailing rail. There's no End Shell: Close and switching servers only leave, and the server keeps that shell for 30 seconds, so coming back resumes it. Typing `exit` ends it, and the viewer stays open on the pane's Ended until the user starts a new shell or closes |
 | Shell | Each device keeps one shell per server, under a client ID it saves for that server, so the phone, the Mac and a browser tab never take a shell from each other. Opening the terminal again returns to that shell while the server still has it |
 | Pane | Thrush's plan specifies the pane, and its Designer owns how it looks, so the apps draw none of it. It sizes the grid, follows the system appearance, and owns input, the iPhone key row, selection and history. It keeps one socket while it's visible and the app is active, like Screens, reconnecting after 250 ms and doubling to 4 s. It shows connecting, a fresh shell that replaced an ended one, exit, and another window taking the shell, which reconnects only when the user acts. Our Designer reviews those states against this spec and asks for changes through Lead |
 
