@@ -314,22 +314,29 @@ struct RootView: View {
     }
 }
 
-/// Presents Settings and Screens as sheets from the root, so a scene change keeps them.
+/// Presents Settings and Screens as sheets, and the terminal full screen, from the root, so a scene
+/// change keeps them.
 private struct AppCoverPresentation: ViewModifier {
     let model: AppModel
 
+    private var sheet: AppModel.Cover? { model.cover == .settings || model.cover == .screens ? model.cover : nil }
+
     func body(content: Content) -> some View {
-        content.sheet(item: Binding(
-            get: { model.cover?.screenID == nil ? model.cover : nil },
-            set: { if $0 == nil, model.cover?.screenID == nil { model.cover = nil } }
-        )) { cover in
-            if cover == .settings {
-                NavigationStack { SettingsView() }
-                    .onDisappear { model.catalogs.clearUpdates() }
-            } else {
-                ScreenSheet(server: model.selectedServer)
+        content
+            .sheet(item: Binding(get: { sheet }, set: { if $0 == nil, sheet != nil { model.cover = nil } })) { cover in
+                if cover == .settings {
+                    NavigationStack { SettingsView() }
+                        .onDisappear { model.catalogs.clearUpdates() }
+                } else {
+                    ScreenSheet(server: model.selectedServer)
+                }
             }
-        }
+            .fullScreenCover(isPresented: Binding(
+                get: { model.cover == .terminal },
+                set: { if !$0, model.cover == .terminal { model.cover = nil } }
+            )) {
+                TerminalViewer(server: model.selectedServer)
+            }
     }
 }
 
