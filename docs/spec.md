@@ -3115,14 +3115,14 @@ the same picture a browser pane shows, and can take control of it like the brows
 
 ### Terminal
 
-A server's shell, the same one its web terminal offers, drawn by the Thrush package's emulator and
-Metal view. The iPhone gets it first, then the Mac. Where it opens and how it looks follow
-Designer's mockup once the user picks it.
+A server's shell, the same one its web terminal offers, in the Thrush package's `TerminalPane`.
+The iPhone gets it first, then the Mac. The apps add the socket, a saved client ID, the entry and
+the viewer around the pane, and where it opens follows Designer's mockup once the user picks it.
 
 | Part | Specification |
 | --- | --- |
 | Shell | Each device keeps one shell per server, under a client ID it saves for that server, so the phone, the Mac and a browser tab never take a shell from each other. Opening the terminal again returns to that shell while the server still has it |
-| Lifecycle | One socket while the terminal is visible and the app is active, and none otherwise, like Screens. A lost socket reconnects after 250 ms, doubling to 4 s. Coming back within the server's 30 seconds resumes the shell with its screen and scrollback. A `ready` that didn't resume, after the device had a shell, says the old shell ended, so a fresh shell never passes for it. `exit` shows the shell ended. Close code 4000 shows that another window took the shell, and reconnects only when the user acts |
+| Pane | Thrush's plan specifies the pane, and its Designer owns how it looks, so the apps draw none of it. It sizes the grid, follows the system appearance, and owns input, the iPhone key row, selection and history. It keeps one socket while it's visible and the app is active, like Screens, reconnecting after 250 ms and doubling to 4 s. It shows connecting, a fresh shell that replaced an ended one, exit, and another window taking the shell, which reconnects only when the user acts. Our Designer reviews those states against this spec and asks for changes through Lead |
 
 ### Management and Settings
 
