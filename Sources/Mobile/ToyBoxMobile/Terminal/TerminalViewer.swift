@@ -38,7 +38,16 @@ struct TerminalViewer: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(removing: .title)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { title }
+                if let serverName {
+                    ToolbarItem(placement: .topBarLeading) { serverMenu(serverName) }
+                } else {
+                    ToolbarItem(placement: .topBarLeading) {
+                        // Sized to the word, since the bar draws bare text in an icon-sized capsule.
+                        Text("Terminal").font(.headline)
+                            .fixedSize()
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .close) { dismiss() }
                         .accessibilityLabel("Close Terminal")
@@ -47,30 +56,24 @@ struct TerminalViewer: View {
         }
     }
 
-    @ViewBuilder private var title: some View {
-        if let serverName {
-            Menu {
-                Picker("Server", selection: serverSelection) {
-                    ForEach(model.servers.shown, id: \.api.baseURL) { catalog in
-                        Text(catalog.name).tag(catalog.api.baseURL.absoluteString)
-                    }
+    private func serverMenu(_ serverName: String) -> some View {
+        Menu {
+            Picker("Server", selection: serverSelection) {
+                ForEach(model.servers.shown, id: \.api.baseURL) { catalog in
+                    Text(catalog.name).tag(catalog.api.baseURL.absoluteString)
                 }
-                .pickerStyle(.inline)
-            } label: {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Terminal").font(.headline).foregroundStyle(.primary)
-                    Text(serverName).font(.caption).foregroundStyle(.secondary)
-                }
-                .lineLimit(1)
             }
-            .menuIndicator(.hidden)
-            .accessibilityLabel("Terminal")
-            .accessibilityValue(serverName)
-            .accessibilityIdentifier("terminal-server-menu")
-        } else {
-            Text("Terminal").font(.headline)
-                .lineLimit(1)
-                .accessibilityAddTraits(.isHeader)
+            .pickerStyle(.inline)
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Terminal").font(.headline).foregroundStyle(.primary)
+                Text(serverName).font(.caption).foregroundStyle(.secondary)
+            }
+            .lineLimit(1)
         }
+        .menuIndicator(.hidden)
+        .accessibilityLabel("Terminal")
+        .accessibilityValue(serverName)
+        .accessibilityIdentifier("terminal-server-menu")
     }
 }
