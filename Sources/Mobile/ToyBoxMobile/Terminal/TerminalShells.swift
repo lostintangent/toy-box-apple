@@ -1,5 +1,5 @@
 import Foundation
-import ThrushConnection
+import Thrush
 import ToyBoxClient
 import ToyBoxKit
 
@@ -9,17 +9,17 @@ import ToyBoxKit
 @MainActor
 final class TerminalShells {
     private let defaults: UserDefaults
-    private var shells: [String: TerminalConnection] = [:]
+    private var shells: [String: TerminalShell] = [:]
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
     }
 
     /// The shell on this server, under the client ID this device saved for it.
-    func shell(on api: ChannelAPI) -> TerminalConnection {
+    func shell(on api: ChannelAPI) -> TerminalShell {
         let server = ChannelTarget.normalizedServer(api.baseURL)
         if let shell = shells[server] { return shell }
-        let shell = TerminalConnection(clientID: api.terminalClientID(in: defaults)) { id, size in
+        let shell = TerminalShell(clientID: api.terminalClientID(in: defaults)) { id, size in
             api.terminalSocket(clientID: id, columns: size.columns, rows: size.rows)
         }
         shells[server] = shell

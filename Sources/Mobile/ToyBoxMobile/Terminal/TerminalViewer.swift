@@ -1,5 +1,5 @@
 import SwiftUI
-import ThrushUI
+import Thrush
 import ToyBoxClient
 import ToyBoxUI
 
