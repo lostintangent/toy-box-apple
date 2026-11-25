@@ -77,21 +77,22 @@ async function sampleStalledSuite(pid: number, name: string) {
     console.error((await file.text()).split("\nBinary Images:")[0]);
 }
 
-/** Samples the stalled xctest process for the log, then ends it and its `simctl spawn`, so the simulator is left
- * to shut down or run the next suite. */
+/** Ends the stalled xctest process and its `simctl spawn`, so the simulator is left to shut down or run the next
+ * suite. Only CI samples it first. On a Mac with Developer Mode off, `sample` waits on a hidden password prompt,
+ * and every simulator app launch on that Mac hangs while it waits. */
 async function stopStalledSuite(child: Subprocess, agent: string, bundle: string, name: string) {
     const tests = (await text(["ps", "-axww", "-o", "pid=,command="])).split("\n")
         .map(line => line.trim().match(/^(\d+) (.*)$/))
         .find(match => match?.[2]?.startsWith(agent) && match[2].includes(bundle));
     if (tests) {
         const pid = Number(tests[1]);
-        await sampleStalledSuite(pid, name)
+        if (process.env.CI) await sampleStalledSuite(pid, name)
             .catch(error => console.error(`sample couldn't record ${name}. ${error instanceof Error ? error.message : error}`));
         try { process.kill(pid, "SIGKILL"); }
         catch (error) {
             if (!(error instanceof Error) || !("code" in error) || error.code !== "ESRCH") throw error;
         }
-    } else console.error(`${name}'s xctest had already exited, so there was nothing to sample.`);
+    } else console.error(`${name}'s xctest had already exited, so there was nothing to stop.`);
     child.kill("SIGKILL");
     await child.exited;
 }
