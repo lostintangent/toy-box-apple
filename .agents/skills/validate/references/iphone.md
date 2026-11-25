@@ -22,6 +22,9 @@ Hub (`com.apple.dt.Devices`). Select that device there to use its native hinge-p
 - **One agent at a time.** Every simulator command takes a machine-wide `flock`, waits, and prints
   the holder's PID, command and worktree. Never boot another simulator or run `simctl` by hand.
   `MOBILE_SIMULATOR=<UDID>` selects an agreed shared device, not one per agent.
+- **Never attach a debugger.** Developer Mode is off on the shared Mac, so `lldb`, `sample` or
+  `--wait-for-debugger` waits on a hidden password prompt, and every simulator app launch on the
+  Mac hangs until the debugger and its prompt are stopped.
 - Build-only, capture-only, display-list-only and shutdown-only commands reject launch options.
 - Wait for visible drawing before ending the lease, not merely a launch PID.
 - Simulator tests always build debug, and Simulator apps default to debug. Use
