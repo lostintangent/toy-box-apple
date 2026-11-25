@@ -630,6 +630,11 @@ struct QuickSendComposerTests {
         panel.sendEvent(try key("\r", code: 36, in: panel))
         #expect(chosen == ["alpha"])
 
+        // While the screen is locked the window server makes no window key, and AppKit spends a click
+        // on a window that isn't key making it key, so the rows never see one.
+        if (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool == true {
+            try Test.cancel("Row clicks need an unlocked screen, where the panel can become key")
+        }
         func click(row: Int, at y: (NSRect) -> CGFloat = { $0.midY }) throws {
             let rect = list.rect(ofRow: row)
             let point = list.convert(NSPoint(x: rect.midX, y: y(rect)), to: nil)
