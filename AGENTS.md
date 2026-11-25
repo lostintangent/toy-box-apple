@@ -46,7 +46,7 @@ Edit only what you own, and ask the owner in the channel for anything else. App 
 | Shell | `App`, `Shell`, `Sidebar`, `Channel`, `Notifications`, `Intents`, `Settings` and `Shared` in both apps, and the Mac's `MenuBar` and `QuickSend` |
 | Transcript | `Transcript` in both apps, and `Tests/Desktop/ToyBoxDesktopTests/TranscriptTests.swift` |
 | Composer | `Composer`, the composer and its tray, in both apps, the phone's `Cards` (the list's talk and Needs You cards), and `Tests/Desktop/ToyBoxDesktopTests/ComposerTests.swift` |
-| Overview | `Overview`, `Artifacts`, `Management` and `Screens` in both apps, the phone's `LiveActivities`, and the widgets: `Sources/Shared/ToyBoxWidgetViews/`, `Sources/Desktop/Extensions/ToyBoxDesktopWidget/`, `Sources/Mobile/Extensions/ToyBoxMobileWidget/` and `Tests/Mobile/Extensions/ToyBoxMobileWidgetTests/` |
+| Overview | `Overview`, `Artifacts`, `Management`, `Screens` and `Terminal` in both apps, the phone's `LiveActivities`, and the widgets: `Sources/Shared/ToyBoxWidgetViews/`, `Sources/Desktop/Extensions/ToyBoxDesktopWidget/`, `Sources/Mobile/Extensions/ToyBoxMobileWidget/` and `Tests/Mobile/Extensions/ToyBoxMobileWidgetTests/` |
 | Intelligence | `Sources/Shared/ToyBoxIntelligence/` and `Tests/Shared/ToyBoxIntelligenceTests/` |
 | Designer | `Resources/Shared/AppIcon.icon` |
 

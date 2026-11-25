@@ -496,6 +496,7 @@ Screens are owned by Toy Box's Screens feature (`src/features/screens/AGENTS.md`
 | `GET /api/v1/screens` | `{displays, windows}`, each `{id, title, application?}`. The host's live state, fetched only when the list opens |
 | `GET /api/v1/screens/:id/thumbnail` | One JPEG thumbnail, never cached |
 | `/socket?service=screens&screen=:id&width=:px&height=:px` (WebSocket) | One live screen, sized to the viewer's pixels. Text `state` messages carry `{title?, status: live/paused/ended, reason?, hasControl}`, and `{type: "error", message}` reports a refused command. Any other type is ignored. Binary packets are two big-endian `UInt32` lengths, the frame `{sequence, width, height, radius?, region?}` as JSON, then its JPEG. A region draws over the latest full frame, never over another region, and its empty JPEG restores the full frame. The viewer sends `{type: "ack", sequence}` once a frame is drawn and `{type: "resize", size: {width, height}}` once a new size settles. In control, it sends `{type: "take-control"}`, `{type: "release-control"}` and `{type: "input", actions}` with 1 to 64 actions: `pointer {x, y, phase: move/down/up, button?: 0/1/2}`, `scroll {x, y, dx, dy}` in pixels, `key {code, down}` by DOM `KeyboardEvent.code`, and `text {text}`. Positions are fractions of the frame. One viewer controls at a time, so taking control takes it from anyone else, and a disconnect releases it and any held input. Messages may reach 16 MiB. The socket keeps the server URL's host, port and path prefix, over `wss` for `https` and `ws` for `http` |
+| `/socket?service=terminal&clientId=:id&cols=:n&rows=:n` (WebSocket) | One shell on the server, owned by its client ID and started in the owner's chosen shell. Binary messages carry raw input and output both ways. Text messages are JSON: the server sends `{type: "ready", resumed}` before any replay and `{type: "exit"}` after the shell's last output, and the client sends `{type: "resize", cols, rows}` and `{type: "close"}`, which ends the shell. A resuming socket gets the screen and scrollback after `ready`, then live output. A disconnect keeps the shell for 30 seconds. Close code 4000 means another socket took the shell. The socket keeps the server URL's host, port and path prefix, like Screens' |
 
 The model catalog is owned by Toy Box's Providers feature (`src/features/providers/AGENTS.md`),
 not Channels:
@@ -3112,6 +3113,17 @@ the same picture a browser pane shows, and can take control of it like the brows
 | Picture | Fitted to the viewer with the window's rounded corners. Frames are sized to the viewer's pixels, sent once a live resize or pinch settles. Connecting shows until the first frame is drawn. Paused and Ended show the server's reason, and Ended offers Try Again |
 | Lifecycle | One socket per visible viewer and none otherwise. A Mac window closes its socket on Back and while occluded or minimized, and the iPhone viewer while the app is inactive. A lost socket clears the picture and reconnects after 250 ms, doubling to 4 s until the server answers. An ended screen stays closed until Try Again |
 
+### Terminal
+
+A server's shell, the same one its web terminal offers, drawn by the Thrush package's emulator and
+Metal view. The iPhone gets it first, then the Mac. Where it opens and how it looks follow
+Designer's mockup once the user picks it.
+
+| Part | Specification |
+| --- | --- |
+| Shell | Each device keeps one shell per server, under a client ID it saves for that server, so the phone, the Mac and a browser tab never take a shell from each other. Opening the terminal again returns to that shell while the server still has it |
+| Lifecycle | One socket while the terminal is visible and the app is active, and none otherwise, like Screens. A lost socket reconnects after 250 ms, doubling to 4 s. Coming back within the server's 30 seconds resumes the shell with its screen and scrollback. A `ready` that didn't resume, after the device had a shell, says the old shell ended, so a fresh shell never passes for it. `exit` shows the shell ended. Close code 4000 shows that another window took the shell, and reconnects only when the user acts |
+
 ### Management and Settings
 
 All management uses the approved v1 endpoints, not browser RPC or filesystem writes. Fields:
@@ -4249,8 +4261,8 @@ remain read-only during this review.
 ## Exclusions
 
 Both apps center Toy Box on channels, which hold their members, routines and artifacts, alongside
-the server's screens, providers and settings. The web workspace stays the server's advanced
-portal, and keeps these on purpose:
+the server's screens, terminal, providers and settings. The web workspace stays the server's
+advanced portal, and keeps these on purpose:
 
 - Private agent sessions and tool logs. These never enter the channel, matching the pane.
 - Session management. A member added with any model, then removed, is an ad hoc session held in
@@ -4258,7 +4270,6 @@ portal, and keeps these on purpose:
 - Automations. A routine that writes artifacts covers them.
 - Apps. They run React TSX, the part of apps that's due for a redesign, so a native host would be
   built on it.
-- The terminal.
 - Enabling or disabling a model provider, which is server setup.
 - A file browser. A channel's changes, the files its agents changed shown as a tree that opens
   each file read-only, is the candidate instead, and needs a design first.
