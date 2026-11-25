@@ -1,11 +1,12 @@
 import SwiftUI
-import ThrushUI
+import Thrush
 import ToyBoxClient
 import ToyBoxUI
 
 /// A server's shell over the whole app, in Thrush's pane, which draws every state of the shell
-/// itself. The title picks another server once there are several. Close and picking another server
-/// only leave the shell, so `exit` is the one way to end it, and the pane's Ended stays in place.
+/// itself. The title is a menu of the servers, even when there's one. Close and picking another
+/// server only leave the shell, so `exit` is the one way to end it, and the pane's Ended stays in
+/// place.
 struct TerminalViewer: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -17,8 +18,6 @@ struct TerminalViewer: View {
     }
 
     private var catalog: ChannelCatalogStore? { model.catalogs.first(at: server) }
-    /// The server's name, once there's another to tell it from.
-    private var serverName: String? { model.servers.shown.count > 1 ? catalog?.name : nil }
     private var serverSelection: Binding<String> {
         Binding { catalog?.api.baseURL.absoluteString ?? server } set: { server = $0 }
     }
@@ -33,20 +32,13 @@ struct TerminalViewer: View {
                         .ignoresSafeArea()
                 }
             }
-            // Names the viewer for VoiceOver, while the title item draws it.
+            // Names the viewer for VoiceOver, while the title menu draws it.
             .navigationTitle("Terminal")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(removing: .title)
             .toolbar {
-                if let serverName {
-                    ToolbarItem(placement: .topBarLeading) { serverMenu(serverName) }
-                } else {
-                    ToolbarItem(placement: .topBarLeading) {
-                        // Sized to the word, since the bar draws bare text in an icon-sized capsule.
-                        Text("Terminal").font(.headline)
-                            .fixedSize()
-                            .accessibilityAddTraits(.isHeader)
-                    }
+                if let catalog {
+                    ToolbarItem(placement: .topBarLeading) { serverMenu(catalog.name) }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .close) { dismiss() }
