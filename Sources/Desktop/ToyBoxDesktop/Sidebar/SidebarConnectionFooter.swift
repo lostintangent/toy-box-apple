@@ -3,16 +3,19 @@ import SwiftUI
 import ToyBoxUI
 
 /// The bottom of the sidebar: a status dot and how many servers there are, which opens Settings on
-/// the Servers tab, and a trailing Open Screen. It has no background of its own, so rows scroll
-/// beneath it under the system scroll edge effect. It never spins, since each server's header shows
-/// its own load, and never shows an error message, since the dot marks a problem and its help reads
-/// it. With no servers there's no footer.
+/// the Servers tab, and trailing Open Screen and Open Terminal. It has no background of its own, so
+/// rows scroll beneath it under the system scroll edge effect. It never spins, since each server's
+/// header shows its own load, and never shows an error message, since the dot marks a problem and
+/// its help reads it. With no servers there's no footer.
 struct SidebarConnectionFooter: View {
     let summary: SidebarFooter.Summary
     let openSettings: () -> Void
     /// File > Open Screen…, or nil without a server.
     let openScreen: (() -> Void)?
+    /// File > Open Terminal, or nil without a server.
+    let openTerminal: (() -> Void)?
     @Environment(\.channelTextScale) private var scale
+    @Namespace private var glass
 
     /// The dot's leading edge, 4 points before the channel icons.
     private static let leading: CGFloat = 20
@@ -39,18 +42,32 @@ struct SidebarConnectionFooter: View {
             .accessibilityValue(summary.accessibilityValue)
             .accessibilityHint(summary.accessibilityHint)
             Spacer(minLength: 0)
-            Button("Open Screen", systemImage: "display") { openScreen?() }
-                .labelStyle(.iconOnly)
-                .symbolRenderingMode(.monochrome)
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .controlSize(.large)
-                .help("Open Screen (Command-O)")
-                .disabled(openScreen == nil)
+            // One glass group, like a toolbar's, since both look into the server's Mac.
+            GlassEffectContainer {
+                HStack(spacing: 0) {
+                    serverButton("Open Screen", systemImage: "display", help: "Open Screen (Command-O)",
+                                 action: openScreen)
+                    serverButton("Open Terminal", systemImage: "apple.terminal", help: "Open Terminal (Command-T)",
+                                 action: openTerminal)
+                }
+            }
         }
         .padding(.horizontal, Self.leading - Self.capsuleOutset)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func serverButton(_ title: String, systemImage: String, help: String,
+                              action: (() -> Void)?) -> some View {
+        Button(title, systemImage: systemImage) { action?() }
+            .labelStyle(.iconOnly)
+            .symbolRenderingMode(.monochrome)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
+            .help(help)
+            .disabled(action == nil)
+            .glassEffectUnion(id: "server", namespace: glass)
     }
 }
 
