@@ -28,7 +28,6 @@ struct TerminalViewer: View {
                 if let catalog {
                     // Under the bar, which the pane takes as its safe area, so its first line starts below it.
                     TerminalPane(model.terminals.shell(on: catalog.api))
-                        .id(catalog.api.baseURL)
                         .ignoresSafeArea()
                 }
             }
@@ -50,12 +49,7 @@ struct TerminalViewer: View {
 
     private func serverMenu(_ serverName: String) -> some View {
         Menu {
-            Picker("Server", selection: serverSelection) {
-                ForEach(model.servers.shown, id: \.api.baseURL) { catalog in
-                    Text(catalog.name).tag(catalog.api.baseURL.absoluteString)
-                }
-            }
-            .pickerStyle(.inline)
+            ServerPicker(model.servers, selection: serverSelection)
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Terminal").font(.headline).foregroundStyle(.primary)
