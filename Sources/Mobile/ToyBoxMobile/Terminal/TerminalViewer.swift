@@ -33,20 +33,14 @@ struct TerminalViewer: View {
                         .ignoresSafeArea()
                 }
             }
-            // Names the viewer for VoiceOver, while the title item draws it.
             .navigationTitle("Terminal")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar(removing: .title)
+            // With one server the bar draws the title as plain text, like the channel list's, and
+            // with several the server menu takes its place.
+            .toolbar(removing: serverName == nil ? nil : .title)
             .toolbar {
                 if let serverName {
                     ToolbarItem(placement: .topBarLeading) { serverMenu(serverName) }
-                } else {
-                    ToolbarItem(placement: .topBarLeading) {
-                        // Sized to the word, since the bar draws bare text in an icon-sized capsule.
-                        Text("Terminal").font(.headline)
-                            .fixedSize()
-                            .accessibilityAddTraits(.isHeader)
-                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .close) { dismiss() }
