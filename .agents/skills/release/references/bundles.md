@@ -19,8 +19,9 @@ signing scripts.
   not SwiftPM's unstamped executable. `bun run validate` rejects recorded SDKs below macOS 27.
 - Mobile commands set `TOY_BOX_MOBILE=1` for the package's mobile graph and build in
   `mobile-simulator` or `mobile-testflight` under `SCRATCH_PATH`. Each links the same manifest,
-  sources and tests into a dependency-free workspace. Leave the default graph, the Mac build and
-  tests and the Sparkle lockfile unchanged. Never export the flag globally, run that graph in the
+  sources and tests into its own workspace, with `Package.mobile.resolved` as its lockfile, which
+  pins Thrush, so take a new Thrush by updating that file. Leave the default graph, the Mac build
+  and tests and the Sparkle lockfile unchanged. Never export the flag globally, run that graph in the
   repository root or share scratch paths across builds.
 - Never download simulator runtimes.
 

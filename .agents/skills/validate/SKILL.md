@@ -30,6 +30,7 @@ replace saved Settings.
 | `bun run demo` | 3210 | `studio-demo`, the isolated fixture server with the required catalog lead profile. Write tests and the shared screenshot baseline. Messages 9 and 15 start bookmarked |
 | `bun run demo:history` | 3211 | `history-demo`: 480 messages, canonical 100-message older pages and isolated read receipts. Paging and key-window read checks, without disturbing 3210. Message 250, two pages back, and 466 start bookmarked |
 | `bun run demo:perf` | 3292 | The benchmark fixture, started fresh by `bun run benchmark`. `TOY_BOX_PERF_PORT` changes it |
+| `bun run terminal-server` | 3212 | A real shell for the terminal pane. It serves only the terminal socket, so open the pane on `bun run demo`, which forwards its terminal sockets here |
 | Live Toy Box | 3100 | Reading only. Posting or mutating needs the Lead's approval of a specific scratch channel. Leave its process running |
 
 `TOY_BOX_DEMO_BOOKMARKS=empty` starts either demo with no bookmarks.

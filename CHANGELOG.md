@@ -8,6 +8,10 @@
 
 ## iPhone 0.1.50
 
+### Features
+
+- You can now open a terminal on your server right from your phone, and pick up the same shell when you come back to it, so you can run a quick command or check on a long one without going back to your Mac.
+
 ### Bugs/Polish
 
 - Opening a channel with new messages takes you straight to them again, without bouncing or briefly showing the top of the conversation first.
