@@ -225,13 +225,24 @@ public struct ChannelAPI: Sendable {
                                        cachePolicy: .reloadIgnoringLocalCacheData))
     }
 
-    /// A socket that streams a screen's frames, sized to fit its viewer's pixels. A full frame of a
-    /// large display can pass URLSession's 1 MiB message limit.
+    /// A socket that streams a screen's frames, sized to fit its viewer's pixels.
     public func screenSocket(id: String, size: CGSize) -> URLSessionWebSocketTask {
-        let query = [("service", "screens"), ("screen", id), ("width", String(Int(size.width.rounded()))),
-                     ("height", String(Int(size.height.rounded())))].map { URLQueryItem(name: $0, value: $1) }
+        socket(["service": "screens", "screen": id, "width": String(Int(size.width.rounded())),
+                "height": String(Int(size.height.rounded()))])
+    }
+
+    /// A suspended socket to the shell the client ID names on the server, at a grid of this size.
+    /// Reusing the ID resumes the shell while the server keeps it.
+    public func terminalSocket(clientID: String, columns: Int, rows: Int) -> URLSessionWebSocketTask {
+        socket(["service": "terminal", "clientId": clientID, "cols": String(columns), "rows": String(rows)])
+    }
+
+    /// A socket on the server's `/socket` route. One message can pass URLSession's 1 MiB limit: a
+    /// large display's full frame, or a resumed shell's history in color.
+    private func socket(_ query: KeyValuePairs<String, String>) -> URLSessionWebSocketTask {
         let scheme = baseURL.scheme?.lowercased() == "https" ? "wss" : "ws"
-        let socket = streamSession.webSocketTask(with: endpoint(["socket"], query: query, scheme: scheme))
+        let items = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        let socket = streamSession.webSocketTask(with: endpoint(["socket"], query: items, scheme: scheme))
         socket.maximumMessageSize = 16 << 20
         return socket
     }

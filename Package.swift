@@ -33,7 +33,9 @@ let package = Package(
         .executable(name: "ToyBoxDesktopShare", targets: ["ToyBoxDesktopShare"]),
         .executable(name: "ToyBoxDesktopWidget", targets: ["ToyBoxDesktopWidget"]),
     ]),
-    dependencies: mobile ? [] : [
+    dependencies: mobile ? [
+        .package(url: "https://github.com/lostintangent/thrush", from: "0.2.0"),
+    ] : [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
     ],
     targets: [
@@ -49,7 +51,8 @@ let package = Package(
                 path: "Sources/Mobile/ToyBoxMobileIntegrations",
                 swiftSettings: [.unsafeFlags(["-application-extension"])]),
         .executableTarget(name: "ToyBoxMobile", dependencies: [
-            "ToyBoxClient", "ToyBoxIntelligence", "ToyBoxUI", "ToyBoxMobileIntegrations"
+            "ToyBoxClient", "ToyBoxIntelligence", "ToyBoxUI", "ToyBoxMobileIntegrations",
+            .product(name: "Thrush", package: "thrush"),
         ], path: "Sources/Mobile/ToyBoxMobile", linkerSettings: simulatedEntitlements("dev.toybox.mobile")),
         .executableTarget(
             name: "ToyBoxMobileWidget", dependencies: ["ToyBoxKit", "ToyBoxMobileIntegrations", "ToyBoxWidgetViews"],

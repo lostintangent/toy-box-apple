@@ -41,19 +41,28 @@ export function mobilePushEnvironment(entitlements: Record<string, unknown>) {
     }
 }
 
+// The mobile graph keeps its own lockfile, because SwiftPM drops each graph's pins from a shared one.
+const mobileWorkspaceLinks = [
+    ["Package.swift", "Package.swift"],
+    ["Package.mobile.resolved", "Package.resolved"],
+    ["Sources", "Sources"],
+    ["Tests", "Tests"],
+] as const;
+
 export async function linkMobileWorkspace(sourceRoot: string, workspace: string) {
     await mkdir(workspace, { recursive: true });
-    for (const name of ["Package.swift", "Sources", "Tests"]) {
-        const target = join(sourceRoot, name);
+    for (const [source, name] of mobileWorkspaceLinks) {
+        const target = join(sourceRoot, source);
         const link = join(workspace, name);
         try {
             await symlink(target, link);
         } catch (error) {
             if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
-            if (!(await lstat(link)).isSymbolicLink()) {
+            // Builds before the mobile lockfile left SwiftPM's own resolution as a plain file.
+            if (!(await lstat(link)).isSymbolicLink() && name !== "Package.resolved") {
                 throw new Error(`Refusing to replace ${link}: the mobile workspace entry is not a symlink.`);
             }
-            if (await readlink(link) !== target) {
+            if (await readlink(link).catch(() => undefined) !== target) {
                 await unlink(link);
                 await symlink(target, link);
             }

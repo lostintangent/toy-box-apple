@@ -6,15 +6,19 @@ import { type Snapshot } from "./channels/types.ts";
 import { createDemoPushRoutes } from "./channels/push-routes.ts";
 import { writeHistoryPage } from "./channels/history-channel.ts";
 import { createDemoScreens } from "./channels/screens.ts";
+import { createDemoTerminal } from "./channels/terminal.ts";
 import { createDemoProviderRoutes } from "./channels/provider-routes.ts";
 import { createDemoServerRoutes } from "./channels/server-routes.ts";
 
 export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snapshot" | "onChange">, port: number) {
     const push = createDemoPushRoutes();
     const screens = createDemoScreens();
+    const terminal = createDemoTerminal();
     const release = createDemoServerRoutes(demo.server, { id: `studio-demo-${port}`, computer: "Studio Demo" });
     const providers = createDemoProviderRoutes();
-    demo.server.on("upgrade", screens.upgrade);
+    demo.server.on("upgrade", (request, socket, head) => {
+        if (!terminal.upgrade(request, socket, head)) screens.upgrade(request, socket, head);
+    });
     const catalog = createCatalogRoute(() => {
         const { lead: { name, role, avatar }, channel, request, members, presence } = demo.snapshot();
         return {
@@ -62,7 +66,7 @@ export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snap
         if (providers.handle(request, response, url)) return;
         originalHandler(request, response);
     });
-    return { push, catalog, screens, release };
+    return { push, catalog, screens, terminal, release };
 }
 
 if (import.meta.main) {
@@ -92,7 +96,7 @@ if (import.meta.main) {
             new URL("./fixtures/interaction-notes-long.md", import.meta.url)
         ).text());
     }
-    const { catalog, screens, release } = installDemoCatalogRoutes(demo, port);
+    const { catalog, screens, terminal, release } = installDemoCatalogRoutes(demo, port);
     demo.server.on("error", error => { console.error(error); process.exitCode = 1; });
     demo.server.listen(port, "127.0.0.1", () => {
         console.log(`Toy Box fixture: http://127.0.0.1:${port} · channel ${demo.snapshot().channel.id}`);
@@ -102,6 +106,7 @@ if (import.meta.main) {
         process.once(signal, () => {
             catalog.close();
             screens.close();
+            terminal.close();
             release.close();
             const wasUp = release.isUp;
             void demo.close().catch(error => {
