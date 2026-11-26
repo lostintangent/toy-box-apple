@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.52
+
+### Bugs/Polish
+
+- Tapping right after you swipe through Vim or less now works the first time, so you can bring up the keyboard without waiting for the text to stop moving.
+
 ## Mac 0.1.55
 
 ### Bugs/Polish
