@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/lostintangent/thrush",
       "state" : {
-        "revision" : "8cf7d4ebc222cdf33a010a36dd5b21e794d1aced",
-        "version" : "0.3.0"
+        "revision" : "c2ae0f41f20ded98791dabf98b313d9b88dc10e9",
+        "version" : "0.3.1"
       }
     }
   ],
