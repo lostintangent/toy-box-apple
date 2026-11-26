@@ -1,5 +1,20 @@
 # Changelog
 
+## Mac 0.1.55
+
+### Bugs/Polish
+
+- The terminal stays out of your way. While it connects you see only a small spinner where you type, coming back after a while gives you a fresh prompt with everything you'd run still above it, and opening the same shell somewhere else no longer ends it here, where a click takes it back.
+- Typing `exit` now closes the terminal, and opening it again starts a fresh shell, so you're never left looking at one that has ended.
+
+## iPhone 0.1.51
+
+### Bugs/Polish
+
+- The terminal stays out of your way. While it connects you see only a small spinner where you type, coming back after a while gives you a fresh prompt with everything you'd run still above it, and opening the same shell somewhere else no longer ends it on your phone, where a tap takes it back.
+- Swiping now scrolls inside full-screen programs like Vim, less and htop, so you can read a long file or log with your thumb.
+- Typing `exit` now closes the terminal, and opening it again starts a fresh shell, so you're never left looking at one that has ended.
+
 ## Mac 0.1.54
 
 ### Features

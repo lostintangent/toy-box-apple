@@ -34,7 +34,7 @@ let package = Package(
         .executable(name: "ToyBoxDesktopWidget", targets: ["ToyBoxDesktopWidget"]),
     ]),
     dependencies: [
-        .package(url: "https://github.com/lostintangent/thrush", from: "0.2.0"),
+        .package(url: "https://github.com/lostintangent/thrush", from: "0.3.0"),
     ] + (mobile ? [] : [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
     ]),
@@ -126,6 +126,7 @@ let package = Package(
         ),
         .testTarget(name: "ToyBoxClientTests", dependencies: ["ToyBoxClient"], path: "Tests/Shared/ToyBoxClientTests"),
         .testTarget(name: "ToyBoxUITests", dependencies: ["ToyBoxUI"], path: "Tests/Shared/ToyBoxUITests"),
+        .testTarget(name: "ToyBoxTerminalTests", dependencies: ["ToyBoxTerminal"], path: "Tests/Shared/ToyBoxTerminalTests"),
         .testTarget(
             name: "ToyBoxIntelligenceTests",
             dependencies: ["ToyBoxIntelligence"],

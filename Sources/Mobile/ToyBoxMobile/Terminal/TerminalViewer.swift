@@ -3,10 +3,9 @@ import Thrush
 import ToyBoxClient
 import ToyBoxUI
 
-/// A server's shell over the whole app, in Thrush's pane, which draws every state of the shell
-/// itself. The title is a menu of the servers, even when there's one. Close and picking another
-/// server only leave the shell, so `exit` is the one way to end it, and the pane's Ended stays in
-/// place.
+/// A server's shell over the whole app, in Thrush's terminal view. The title is a menu of the
+/// servers, even when there's one. Close and picking another server only leave the shell. Typing
+/// `exit` ends it and closes the viewer, like the web.
 struct TerminalViewer: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -26,9 +25,12 @@ struct TerminalViewer: View {
         NavigationStack {
             Group {
                 if let catalog {
-                    // Under the bar, which the pane takes as its safe area, so its first line starts below it.
-                    TerminalPane(model.terminals.shell(on: catalog.api))
-                        .ignoresSafeArea()
+                    let shell = model.terminals.shell(on: catalog.api)
+                    TerminalView(shell)
+                        .onChange(of: shell.hasEnded) { _, hasEnded in
+                            if hasEnded { dismiss() }
+                        }
+                        .onDisappear { model.terminals.leave(shell) }
                 }
             }
             // Names the viewer for VoiceOver, while the title menu draws it.

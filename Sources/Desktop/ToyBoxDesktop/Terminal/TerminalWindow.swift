@@ -5,11 +5,10 @@ import ToyBoxClient
 import ToyBoxTerminal
 import ToyBoxUI
 
-/// The app's one Terminal window: a server's shell in Thrush's pane, which draws every state of the
-/// shell itself. The title menu picks the server, even when there's one. The window keeps its server
-/// across relaunch, and a restored window waits for that server to open. Closing and picking
-/// another server only leave the shell, so `exit` is the one way to end it, and only Disconnect
-/// closes the window.
+/// The app's one Terminal window: a server's shell in Thrush's terminal view. The title menu picks
+/// the server, even when there's one. The window keeps its server across relaunch, and a restored
+/// window waits for that server to open. Closing and picking another server only leave the shell.
+/// Typing `exit` ends it and closes the window, like the web, and Disconnect closes it too.
 struct TerminalWindow: View {
     static let id = "terminal"
     /// The server the window shows, which it keeps across relaunch.
@@ -30,9 +29,12 @@ struct TerminalWindow: View {
         NavigationStack {
             Group {
                 if let catalog {
-                    // Under the toolbar, which the pane takes as its safe area, so its first line starts below it.
-                    TerminalPane(model.terminals.shell(on: catalog.api))
-                        .ignoresSafeArea()
+                    let shell = model.terminals.shell(on: catalog.api)
+                    TerminalView(shell)
+                        .onChange(of: shell.hasEnded) { _, hasEnded in
+                            if hasEnded { dismissWindow() }
+                        }
+                        .onDisappear { model.terminals.leave(shell) }
                 } else {
                     DelayedProgressView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -50,7 +52,6 @@ struct TerminalWindow: View {
                 }
             }
         }
-        // Only Disconnect closes the window.
         .onChange(of: model.catalogs.isEmpty, initial: true) { _, isEmpty in
             if isEmpty { dismissWindow() }
         }
