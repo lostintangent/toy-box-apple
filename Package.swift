@@ -126,6 +126,7 @@ let package = Package(
         ),
         .testTarget(name: "ToyBoxClientTests", dependencies: ["ToyBoxClient"], path: "Tests/Shared/ToyBoxClientTests"),
         .testTarget(name: "ToyBoxUITests", dependencies: ["ToyBoxUI"], path: "Tests/Shared/ToyBoxUITests"),
+        .testTarget(name: "ToyBoxTerminalTests", dependencies: ["ToyBoxTerminal"], path: "Tests/Shared/ToyBoxTerminalTests"),
         .testTarget(
             name: "ToyBoxIntelligenceTests",
             dependencies: ["ToyBoxIntelligence"],
