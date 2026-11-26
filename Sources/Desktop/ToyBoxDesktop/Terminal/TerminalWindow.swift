@@ -5,10 +5,10 @@ import ToyBoxClient
 import ToyBoxTerminal
 import ToyBoxUI
 
-/// The app's one Terminal window: a server's shell in Thrush's pane. The title menu picks the
-/// server, even when there's one. The window keeps its server across relaunch, and a restored window
-/// waits for that server to open. Closing and picking another server only leave the shell. Typing
-/// `exit` ends it and closes the window, like the web, and Disconnect closes it too.
+/// The app's one Terminal window: a server's shell in Thrush's terminal view. The title menu picks
+/// the server, even when there's one. The window keeps its server across relaunch, and a restored
+/// window waits for that server to open. Closing and picking another server only leave the shell.
+/// Typing `exit` ends it and closes the window, like the web, and Disconnect closes it too.
 struct TerminalWindow: View {
     static let id = "terminal"
     /// The server the window shows, which it keeps across relaunch.
@@ -30,9 +30,7 @@ struct TerminalWindow: View {
             Group {
                 if let catalog {
                     let shell = model.terminals.shell(on: catalog.api)
-                    // Under the toolbar, which the pane takes as its safe area, so its first line starts below it.
-                    TerminalPane(shell)
-                        .ignoresSafeArea()
+                    TerminalView(shell)
                         .onChange(of: shell.hasEnded) { _, hasEnded in
                             if hasEnded { dismissWindow() }
                         }

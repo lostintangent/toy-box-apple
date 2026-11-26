@@ -3,9 +3,9 @@ import Thrush
 import ToyBoxClient
 import ToyBoxUI
 
-/// A server's shell over the whole app, in Thrush's pane. The title is a menu of the servers, even
-/// when there's one. Close and picking another server only leave the shell. Typing `exit` ends it
-/// and closes the viewer, like the web.
+/// A server's shell over the whole app, in Thrush's terminal view. The title is a menu of the
+/// servers, even when there's one. Close and picking another server only leave the shell. Typing
+/// `exit` ends it and closes the viewer, like the web.
 struct TerminalViewer: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -26,9 +26,7 @@ struct TerminalViewer: View {
             Group {
                 if let catalog {
                     let shell = model.terminals.shell(on: catalog.api)
-                    // Under the bar, which the pane takes as its safe area, so its first line starts below it.
-                    TerminalPane(shell)
-                        .ignoresSafeArea()
+                    TerminalView(shell)
                         .onChange(of: shell.hasEnded) { _, hasEnded in
                             if hasEnded { dismiss() }
                         }
