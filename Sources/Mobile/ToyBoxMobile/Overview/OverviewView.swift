@@ -113,17 +113,13 @@ struct OverviewList<Content: View>: View {
 /// close over the list. The sheet keeps its bar horizontal in compact height, so the close stays
 /// trailing. Folded portrait's trailing bar keeps the close beside the status bar. The size class
 /// decides, not the reported edge, because a horizontal bar reports no edge, which would bring the
-/// vertical bar straight back. iOS 27.0 has no vertical-bar API, so it needs no override.
+/// vertical bar straight back.
 private struct SheetBarBehavior: ViewModifier {
     let placement: OverviewPlacement
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     func body(content: Content) -> some View {
-        if #available(iOS 27.1, *) {
-            content.toolbarVerticalBehavior(placement == .sheet && verticalSizeClass == .compact ? .disabled : .automatic)
-        } else {
-            content
-        }
+        content.toolbarVerticalBehavior(placement == .sheet && verticalSizeClass == .compact ? .disabled : .automatic)
     }
 }
 

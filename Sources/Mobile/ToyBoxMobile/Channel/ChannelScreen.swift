@@ -320,8 +320,6 @@ struct ChannelReaderVisibility {
 }
 
 extension EnvironmentValues {
-    /// Whether bar items stand in the system's vertical bar, as on the folded iPhone Duo. iOS 27.0 has none.
-    var usesVerticalToolbar: Bool {
-        if #available(iOS 27.1, *) { toolbarVerticalEdge != nil } else { false }
-    }
+    /// Whether bar items stand in the system's vertical bar, as on the folded iPhone Duo.
+    var usesVerticalToolbar: Bool { toolbarVerticalEdge != nil }
 }

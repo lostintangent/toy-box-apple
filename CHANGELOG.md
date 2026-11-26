@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.53
+
+### Bugs/Polish
+
+- Toy Box now needs iOS 27.2 or later.
+
 ## iPhone 0.1.52
 
 ### Bugs/Polish

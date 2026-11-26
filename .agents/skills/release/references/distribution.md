@@ -10,7 +10,8 @@ Releases are Developer ID signed, notarized and stapled, then published with the
 and Sparkle appcast by `.github/workflows/build-and-release.yml` on an approved `vX.Y.Z` tag.
 A manual run on `main` performs the same signing, notarization and appcast generation but keeps them
 as artifacts, without publishing.
-Local builds use Command Line Tools. CI uses its selected Xcode 27 toolchain on the `xcode-27` runner.
+Local builds use Command Line Tools. CI uses Xcode 27.2 on the `xcode-27` runner, whose default Xcode
+lacks the iOS 27.2 SDK. `XCODE_VERSION` in both workflows selects it.
 Checks run for pull requests and pushes to `main`, not standalone branch pushes. A newer revision
 cancels unfinished checks for the same pull request or ref. Release tags and manual dry runs retain
 their serialized, non-cancellable publication group. Tooling typechecking and workflow linting run
@@ -157,7 +158,8 @@ required metadata, privacy and export-compliance answers and tester access, plus
 external testers.
 
 `bun run testflight` is independent of the Mac release. It builds optimized arm64 with
-the selected Xcode 27+ iPhoneOS SDK through SwiftPM, without an Xcode project or Simulator.
+the selected Xcode's iPhoneOS SDK through SwiftPM, without an Xcode project or Simulator. The SDK
+must reach the app's `MinimumOSVersion`.
 `--version X.Y.Z` / `MOBILE_VERSION` sets the marketing version. `--build-number N` / `BUILD_NUMBER`
 sets the build and is required for validate/upload. Choose an unused number; App Store Connect
 rejects reused numbers, including uploads from other machines. Build-only may use the source

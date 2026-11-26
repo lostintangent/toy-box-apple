@@ -9,6 +9,22 @@ export const mobileEnvironment = {
     DEVELOPER_DIR: process.env.DEVELOPER_DIR || "/Applications/Xcode.app/Contents/Developer",
     TOY_BOX_MOBILE: "1",
 };
+
+/** The oldest iOS the app and its extensions run on, which its SDK and simulator runtime must also reach. */
+export function mobileMinimumOS() {
+    return plist(join(root, "Resources/Mobile/Info.plist"), ["Print :MinimumOSVersion"]);
+}
+
+/** Whether the dotted `version` is `minimum` or later. */
+export function reaches(version: string, minimum: string) {
+    const [have, need] = [version, minimum].map(value => value.split(".").map(Number));
+    for (let index = 0; index < Math.max(have.length, need.length); index++) {
+        const difference = (have[index] ?? 0) - (need[index] ?? 0);
+        if (difference) return difference > 0;
+    }
+    return true;
+}
+
 export const mobileBundleID = "dev.toybox.mobile";
 export const mobileAppGroup = "group.dev.toybox.mobile";
 export const mobileExtensions = [
@@ -87,8 +103,9 @@ export async function buildMobile(device = false, tests = false) {
     const platform = device ? "iphoneos" : "iphonesimulator";
     const sdk = await text(["xcrun", "--sdk", platform, "--show-sdk-path"], { env: mobileEnvironment });
     const version = await text(["xcrun", "--sdk", platform, "--show-sdk-version"], { env: mobileEnvironment });
-    if (!/^\d+(?:\.\d+)*$/.test(version) || Number(version.split(".")[0]) < 27) {
-        throw new Error("Toy Box Mobile requires iOS SDK 27 or later.");
+    const minimumOS = await mobileMinimumOS();
+    if (!/^\d+(?:\.\d+)*$/.test(version) || !reaches(version, minimumOS)) {
+        throw new Error(`Toy Box Mobile requires iOS SDK ${minimumOS} or later.`);
     }
     const scratch = join(scratchPath(), device ? "mobile-testflight" : "mobile-simulator");
     const workspace = join(scratch, "package");
@@ -107,7 +124,7 @@ export async function buildMobile(device = false, tests = false) {
     }
     const args = ["xcrun", "swift", "build", "--package-path", workspace, "--scratch-path", scratch,
         "--configuration", configuration,
-        "--sdk", sdk, "--triple", `arm64-apple-ios27.0${device ? "" : "-simulator"}`, "--jobs", "4"];
+        "--sdk", sdk, "--triple", `arm64-apple-ios${minimumOS}${device ? "" : "-simulator"}`, "--jobs", "4"];
     await command([...args, ...(tests ? ["--build-tests"] : [])],
         { env: environment });
     const bin = await text([...args, "--show-bin-path"], { env: environment });
