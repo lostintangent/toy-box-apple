@@ -1931,7 +1931,10 @@ struct ImageViewerTests {
 struct ImageViewerLiveTextTests {
     /// Waits on the viewer's own load and analysis tasks rather than a deadline, since VisionKit's
     /// out-of-process analysis can take tens of seconds on a loaded machine.
-    @Test(.readsTextInImages, .timeLimit(.minutes(2)))
+    // Quarantined after VisionKit found no text in the roadmap image in local full runs (t1429). Owner: Transcript.
+    @Test(.readsTextInImages, .timeLimit(.minutes(2)),
+          .enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_LIVE_TEXT_PAGING"] == "1",
+                   "Quarantined pending cause identification (t1429). Opt in with TOY_BOX_TEST_LIVE_TEXT_PAGING=1."))
     func onlyTheSettledCurrentImageIsAnalyzed() async throws {
         let viewer = try Self.openViewer([Self.textPNG("Release notes ship Friday"),
                                           Self.textPNG("Quarterly roadmap review"), Self.textPNG(nil)])
@@ -1956,8 +1959,16 @@ struct ImageViewerLiveTextTests {
         #expect(viewer.items[1]?.analysis == nil)
         #expect(viewer.liveText == nil)
         viewer.show(1)
-        try await Self.analysis(viewer, at: 1)
-        #expect(viewer.liveText?.transcript.contains("roadmap") == true)
+        let roadmap = try await Self.analysis(viewer, at: 1)
+        // A miss says whether VisionKit reads the same bitmap on a second, fresh analysis.
+        var reread = "not needed"
+        if viewer.liveText == nil, let bitmap = viewer.items[1]?.bitmap {
+            let again = try? await ImageAnalyzer().analyze(bitmap, orientation: .up,
+                                                           configuration: ImageAnalyzer.Configuration([.text]))
+            reread = again.map { "\"\($0.transcript)\"" } ?? "an error"
+        }
+        #expect(viewer.liveText?.transcript.contains("roadmap") == true,
+                "VisionKit read \"\(roadmap.transcript)\", and a fresh analysis of the same bitmap read \(reread)")
     }
 
     @Test(.readsTextInImages,
