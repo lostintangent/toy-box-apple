@@ -3,7 +3,9 @@ import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { command, main, plist, root, scratchPath, temporary, text } from "../shared/lib/index.ts";
 import { version as buildVersion } from "../shared/lib/build-version.ts";
-import { bundleMobile, mobileBundleID, mobileEnvironment, mobileExtensions } from "./bundle/index.ts";
+import {
+    bundleMobile, mobileBundleID, mobileEnvironment, mobileExtensions, mobileMinimumOS, reaches,
+} from "./bundle/index.ts";
 import { mobileSigning, signMobileBundles } from "./bundle/sign.ts";
 
 export type TestFlightVersion = { version: string; build: string };
@@ -23,15 +25,15 @@ export function testFlightAuthentication(env: NodeJS.ProcessEnv = process.env): 
 export async function testFlightMetadata() {
     const developer = mobileEnvironment.DEVELOPER_DIR;
     const xcode = join(developer, "../Info.plist");
-    const [sdk, sdkBuild, xcodeVersion, xcodeBuild, osBuild] = await Promise.all([
+    const [sdk, sdkBuild, xcodeVersion, xcodeBuild, osBuild, minimumOS] = await Promise.all([
         text(["xcrun", "--sdk", "iphoneos", "--show-sdk-version"], { env: mobileEnvironment }),
         text(["xcrun", "--sdk", "iphoneos", "--show-sdk-build-version"], { env: mobileEnvironment }),
         plist(xcode, ["Print :DTXcode"]), plist(xcode, ["Print :DTXcodeBuild"]),
-        text(["sw_vers", "-buildVersion"]),
+        text(["sw_vers", "-buildVersion"]), mobileMinimumOS(),
     ]);
-    if (!/^\d+(?:\.\d+)*$/.test(sdk) || Number(sdk.split(".")[0]) < 27
+    if (!/^\d+(?:\.\d+)*$/.test(sdk) || !reaches(sdk, minimumOS)
         || !/^\d{4}$/.test(xcodeVersion) || !sdkBuild || !xcodeBuild || !osBuild) {
-        throw new Error("TestFlight needs complete metadata from Xcode 27+ and its selected iPhoneOS SDK.");
+        throw new Error(`TestFlight needs complete metadata from Xcode and its selected iPhoneOS ${minimumOS}+ SDK.`);
     }
     return { DTCompiler: "com.apple.compilers.llvm.clang.1_0", DTXcode: xcodeVersion,
         DTXcodeBuild: xcodeBuild, DTSDKName: `iphoneos${sdk}`, DTSDKBuild: sdkBuild,

@@ -56,7 +56,7 @@ in the iOS build.
 
 - Main and pull-request CI builds the phone app, its extensions and the shared modules for the
   Simulator and verifies the extensions' signatures. It runs the iOS suites only with an installed
-  iOS 27+ runtime, and otherwise skips them explicitly.
+  iOS runtime at the app's minimum, and otherwise skips them explicitly.
 - Tags and manual release dry runs skip iOS.
 - The Mac runs ToyBoxClient once under the strict cooperative pool, then the remaining suites.
 - Bundle, Siri and signing checks run only in the release job.

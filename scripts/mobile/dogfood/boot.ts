@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { command, scratchPath, text } from "../../shared/lib/index.ts";
-import { mobileEnvironment } from "../bundle/index.ts";
+import { mobileEnvironment, mobileMinimumOS, reaches } from "../bundle/index.ts";
 
 type DeviceType = { identifier: string; productFamily: string };
 type Runtime = { identifier: string; version: string; isAvailable: boolean; supportedDeviceTypes: DeviceType[] };
@@ -38,15 +38,16 @@ export async function prepareMobileSimulator(duo: boolean, ifAvailable = false) 
 }
 
 /** The UDID of the simulator to use, created if it's missing, without booting it. Undefined only with
- * `ifAvailable` on a Mac without an iOS 27+ runtime. */
+ * `ifAvailable` on a Mac without a runtime for the app's minimum iOS. */
 export async function chooseMobileSimulator(duo: boolean, ifAvailable = false) {
     const { runtimes }: { runtimes: Runtime[] } = JSON.parse(
         await text(["xcrun", "simctl", "list", "runtimes", "-j"], { env: mobileEnvironment }));
+    const minimumOS = await mobileMinimumOS();
     const supported = runtimes.filter(runtime => runtime.isAvailable && runtime.identifier.includes(".iOS-")
-        && Number(runtime.version.split(".")[0]) >= 27)
+        && reaches(runtime.version, minimumOS))
         .sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }));
     if (!supported.length && ifAvailable) {
-        console.log("Skipping iOS tests: this runner has no installed iOS 27+ Simulator runtime.");
+        console.log(`Skipping iOS tests: this runner has no installed iOS ${minimumOS}+ Simulator runtime.`);
         return undefined;
     }
     const devices = await simulators();
@@ -55,7 +56,7 @@ export async function chooseMobileSimulator(duo: boolean, ifAvailable = false) {
     if (requested) {
         simulator = supported.flatMap(runtime => devices[runtime.identifier] ?? [])
             .find(device => device.udid === requested && device.isAvailable);
-        if (!simulator) throw new Error("MOBILE_SIMULATOR must name an available iOS 27+ simulator UDID.");
+        if (!simulator) throw new Error(`MOBILE_SIMULATOR must name an available iOS ${minimumOS}+ simulator UDID.`);
     } else {
         const duoType = "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo";
         const runtime = supported.find(item => item.supportedDeviceTypes.some(type => type.identifier === duoType))
@@ -63,8 +64,8 @@ export async function chooseMobileSimulator(duo: boolean, ifAvailable = false) {
         const type = runtime?.supportedDeviceTypes.find(item => item.identifier === duoType)
             ?? runtime?.supportedDeviceTypes.find(item => item.productFamily === "iPhone");
         if (!runtime || !type) {
-            throw new Error(duo ? "Install an iOS 27+ runtime supporting iPhone Duo, or set MOBILE_SIMULATOR."
-                : "Install an iOS 27+ Simulator runtime before running mobile tests.");
+            throw new Error(duo ? `Install an iOS ${minimumOS}+ runtime supporting iPhone Duo, or set MOBILE_SIMULATOR.`
+                : `Install an iOS ${minimumOS}+ Simulator runtime before running mobile tests.`);
         }
         const name = "Toy Box Mobile";
         simulator = devices[runtime.identifier]?.find(device =>

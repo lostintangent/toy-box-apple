@@ -8,7 +8,7 @@ signing scripts.
 | | Mac | iPhone |
 | --- | --- | --- |
 | Toolchain | Command Line Tools only | Xcode's toolchain and SDK through SwiftPM, never `xcodebuild` |
-| Requires | Swift tools 6.4+ and the macOS 27+ SDK on Apple Silicon | Swift 6.4, an iOS 27+ SDK, and a Duo runtime for the app or another iPhone's 27+ runtime for tests |
+| Requires | Swift tools 6.4+ and the macOS 27+ SDK on Apple Silicon | Swift 6.4, an iOS SDK and Simulator runtime at the app's `MinimumOSVersion` (27.2) or later, with a Duo runtime for the app or another iPhone's for tests |
 | Developer dir | `/Library/Developer/CommandLineTools` | `/Applications/Xcode.app/Contents/Developer`, or set `DEVELOPER_DIR` to another installed Xcode |
 
 - Use native `bun check` for the TypeScript tooling, without installing TypeScript. Platform

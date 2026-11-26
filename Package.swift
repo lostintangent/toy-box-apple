@@ -16,7 +16,7 @@ func simulatedEntitlements(_ bundleID: String) -> [LinkerSetting] {
 
 let package = Package(
     name: "ToyBoxDesktop",
-    platforms: [.macOS(.v27), .iOS(.v27)],
+    platforms: [.macOS(.v27), .iOS("27.2")],
     products: [
         .library(name: "ToyBoxKit", targets: ["ToyBoxKit"]),
         .library(name: "ToyBoxClient", targets: ["ToyBoxClient"]),

@@ -14,6 +14,10 @@ on:
 permissions:
   contents: read
 
+# The Xcode the TestFlight build uses, since the runner's default lacks the iOS 27.2 SDK the iPhone app needs.
+env:
+  XCODE_VERSION: "27.2"
+
 concurrency:
   group: mobile-testflight-publication
   cancel-in-progress: false
@@ -48,12 +52,12 @@ jobs:
           cat "$RUNNER_TEMP/iphone-release-notes.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Select and check the iPhoneOS toolchain
         run: |
-          DEVELOPER_DIR="$(xcode-select -p)"
+          DEVELOPER_DIR="/Applications/Xcode_$XCODE_VERSION.app/Contents/Developer"
           export DEVELOPER_DIR
           printf 'DEVELOPER_DIR=%s\n' "$DEVELOPER_DIR" >> "$GITHUB_ENV"
           xcrun swift --version
           sdk="$(xcrun --sdk iphoneos --show-sdk-version)"
-          test "${sdk%%.*}" -ge 27
+          printf '%s\n' "$XCODE_VERSION" "$sdk" | sort -C -V
       - name: Install temporary TestFlight signing material
         env:
           CERTIFICATE: ${{ secrets.MOBILE_SIGNING_CERTIFICATE }}
