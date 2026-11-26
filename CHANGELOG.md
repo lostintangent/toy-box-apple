@@ -2,9 +2,29 @@
 
 ## iPhone 0.1.53
 
+### Features
+
+- You can now add a new line in Claude Code or Codex without sending your prompt, by tapping Ctrl in the key row and choosing Shift before Return, or with Shift-Return on a keyboard.
+- Copying text in Vim, Neovim or tmux now puts it on your phone's clipboard, even though the program runs on your server, so you can paste it anywhere.
+
 ### Bugs/Polish
 
+- With the keyboard down, the terminal now runs to the bottom edge of the screen, so you see more of what's running.
+- Flicking through less or Vim now glides like any list on your phone, and a touch stops it right where you want.
+- Neovim and Helix now show their curly and dotted underlines, so you can spot errors and warnings at a glance.
 - Toy Box now needs iOS 27.2 or later.
+
+## Mac 0.1.56
+
+### Features
+
+- Shift-Return now adds a new line in Claude Code and Codex instead of sending your prompt.
+- Copying text in Vim, Neovim or tmux now puts it on your Mac's clipboard, even when the program runs on another machine, so you can paste it anywhere.
+
+### Bugs/Polish
+
+- Neovim and Helix now show their curly and dotted underlines, so you can spot errors and warnings at a glance.
+- The function keys and Insert now reach programs in the terminal.
 
 ## iPhone 0.1.52
 
