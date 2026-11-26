@@ -49,7 +49,8 @@ Signing, notarization, in-place updates and TestFlight are in the [release skill
 ## Architecture
 
 - Swift 6.4 (package tools 6.4) and SwiftUI on macOS 27 or later, Apple Silicon only, using AppKit where SwiftUI
-  falls short (text input, for example). The project is a Swift package built with `swift build`
+  falls short (text input, for example). The iPhone app needs iOS 27.2 or later, the terminal
+  package's minimum. The project is a Swift package built with `swift build`
   from Command Line Tools, so it needs no Xcode project or Xcode license. A script assembles and
   launches a signed-ad-hoc `.app` bundle, stamping the binary with the installed SDK version so
   macOS draws it with Liquid Glass rather than in compatibility mode.
@@ -1084,7 +1085,7 @@ and in regular width, Message View stays its own filter item. A compact scene wi
 has no room for it: a `.bottomBar` item would sit under the composer. There the same All Messages /
 Your Messages picker leads the title menu in a Message View section, and Your Messages adds a
 second line, "Your Messages", under the channel name inside the capsule. All Messages shows no
-second line. iOS 27.0 has no vertical-bar API, so it always takes the compact no-bar path. Open
+second line. Open
 readers keep their own system titles, without the button.
 
 **Phone Welcome.** With no working server the phone shows Welcome, not a titled form. Its
