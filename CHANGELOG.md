@@ -6,6 +6,7 @@
 
 - You can now add a new line in Claude Code or Codex without sending your prompt, by tapping Ctrl in the key row and choosing Shift before Return, or with Shift-Return on a keyboard.
 - Copying text in Vim, Neovim or tmux now puts it on your phone's clipboard, even though the program runs on your server, so you can paste it anywhere.
+- Links in the terminal now open with a tap, and a long press lets you copy or share them, so an address a program prints is one touch away.
 
 ### Bugs/Polish
 
@@ -20,11 +21,13 @@
 
 - Shift-Return now adds a new line in Claude Code and Codex instead of sending your prompt.
 - Copying text in Vim, Neovim or tmux now puts it on your Mac's clipboard, even when the program runs on another machine, so you can paste it anywhere.
+- Links in the terminal now open in your browser with ⌘-click, so an address a program prints is one click away.
 
 ### Bugs/Polish
 
 - Neovim and Helix now show their curly and dotted underlines, so you can spot errors and warnings at a glance.
 - The function keys and Insert now reach programs in the terminal.
+- Vim and other full-screen programs now redraw cleanly while you resize the terminal window.
 
 ## iPhone 0.1.52
 
