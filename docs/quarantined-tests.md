@@ -80,6 +80,25 @@ git history keeps closed incidents.
   window, so the candidate is that another test's window took the transcript's window off screen while
   its rows were built. Restoration needs the cause found, with deterministic coverage.
 
+## Live Text after paging back
+
+- `ImageViewerLiveTextTests.onlyTheSettledCurrentImageIsAnalyzed` is quarantined in t1429, behind
+  `TOY_BOX_TEST_LIVE_TEXT_PAGING=1`. Owner: Transcript. Its assertions are unchanged, and the
+  default run skips it with its reason. CI already skipped it, because its runners' VisionKit reads
+  no text.
+- First seen by Overview on 2026-11-26 in local full Mac runs on the shared Mac while the screen was
+  locked. It failed on main before #222 merged in one of two runs, and on #222's branch, a package
+  bump, in three of three. Each run took 53 to 85 seconds. After the viewer paged to the roadmap
+  image, past it before it settled, and back to it, VisionKit returned an analysis with no text, so
+  `liveText` was nil (`TranscriptTests.swift:1960`). The first image read "Release" every time.
+- Transcript's six local runs the same day, three alone and three full, with the screen locked and
+  load averages of about 90 to 160, all passed in 1 to 33 seconds.
+- The cause is not established. The candidate is VisionKit's out-of-process analysis returning an
+  empty result under heavier load rather than an error, since the viewer analyzes the same decoded
+  bitmap each time and the cancelled visit never reaches VisionKit. A miss now reports what VisionKit
+  read and what a fresh analysis of the same bitmap reads, which separates VisionKit from the bitmap.
+  Restoration needs that miss explained, with deterministic coverage.
+
 ## Artifact HTML origin probe
 
 - `ArtifactViewerTests.HTMLKeepsAnOpaqueOriginAndCanLoadOnlyTheServersFileResources` is quarantined
